@@ -1,55 +1,92 @@
-# PLAN — Sprint 0 · Sesión 2: portar auth + RBAC + audit log desde SISMO-V3
+# PLAN v2 — Sprint 0 · Sesión 2: portar auth + RBAC + audit log desde SISMO-V3
 
-**Fase:** `sprint0-auth-rbac-audit` · **Fecha:** 2026-07-18
-**Base:** rama `sprint0/sesion2-auth-rbac-audit` (apilada sobre el esqueleto de Sesión 1)
-**Contrato:** Spec §1.1 (User), §1.11 (AuditLog, catálogo de 30), §2.4 (autoridad), §4.1 (matriz permiso×endpoint), §5 DoD (#1 RBAC, #6 audit, #11 auth endurecida)
-**Fuente a portar:** `../SISMO-V3/backend/app/` → `core/security.py`, `models/user.py`, `models/audit_log.py`, `routers/auth.py`, `schemas/auth.py`, `services/audit/`
+**Fase:** `sprint0-auth-rbac-audit` · **Fecha:** 2026-07-18 · **Rev:** v2 (post-auditoría Kimi I-PLAN 7.8→correcciones)
+**Base de rama:** commit `61048ac` (Sesión 1, verde). Si Sesión 1 se mueve → rebase + suite verde antes de cada gate (Kimi Baja-6).
+**Rama:** `sprint0/sesion2-auth-rbac-audit` (apilada sobre `sprint0/sesion1-esqueleto`).
+**Contrato:** Spec §1.1, §1.11, §2.2.6, §2.4, §4, §4.1, §5 (DoD #1/#6/#11) · CR-001 (catálogo=30) · RUNBOOK §2/§5.
+**Fuente a portar:** `../SISMO-V3/backend/app/`: `core/security.py`, `models/user.py`, `models/audit_log.py`, `routers/auth.py`, `schemas/auth.py`, `services/audit/`.
 
 ## Objetivo
-Traer de SISMO-V3 la estructura de autenticación JWT, RBAC por dependencia y audit log append-only, **adaptándola al Spec de COMPAS**, y **construir lo que SISMO no tiene** (token_version, denylist de refresh, rotación con detección de reuso). Documentar lo portado en `docs/PORTADO_DE_SISMO.md` (entregable para Iván).
+Portar de SISMO-V3 la estructura de auth JWT, RBAC por dependencia y audit log append-only,
+**adaptada al Spec de COMPAS**, y **construir** lo que SISMO no tiene (token_version, estado
+server-side de refresh con rotación atómica + detección de reuso). Documentar en
+`docs/PORTADO_DE_SISMO.md` (tabla por archivo: portado / adaptado / construido — mitiga bus-factor).
 
-## Qué se PORTA vs. qué se CONSTRUYE (hallazgo del escaneo de ../SISMO-V3)
-- **Se porta (existe en SISMO):** patrón `get_current_user` + `require_role(*roles)` como dependencies FastAPI; `AuditLog` model append-only + router/service de auditoría; hashing bcrypt; estructura de `routers/auth.py`.
-- **Se construye (NO existe en SISMO — nuevo del Spec COMPAS):** `token_version` en el claim y su validación por request; `jwt_denylist` (jti, TTL 30 días); rotación de refresh con **detección de reuso** (refresh ya rotado → revoca la familia); `require_permission` + config único de permisos derivado de la matriz §4.1; roles COMPAS `admin|directivo|financiero|consulta` (SISMO usa otros).
+## Porta vs. construye (verificado con grep sobre SISMO, no asumido)
+- **Se porta:** patrón `get_current_user` + `require_role`; `AuditLog` model + router/service; hashing bcrypt; estructura de `routers/auth.py`.
+- **Se construye (NO existe en SISMO):** `token_version` + su validación por request y en refresh; colección `refresh_sessions` (familia); rotación atómica con detección de reuso; `jwt_denylist`; `require_permission` + config único ≡ matriz §4.1; roles COMPAS `admin|directivo|financiero|consulta`.
 
-## Desglose en PRs (cada uno = gate de auditoría Kimi ≥ 9.0)
+---
 
-### PR-1 — Núcleo de auth (JWT + endurecimiento)
-- `User` (Beanie Document): `email` único, `password_hash` (bcrypt), `rol`, `token_version` (default 1), `activo`, timestamps `now_bogota()`.
-- Password: bcrypt; política de longitud mínima (12 admin/directivo, 10 resto); backoff por cuenta (5 fallos → 15 min). **HIBP y MFA TOTP quedan para Sprint 0b** (fuera de esta sesión).
-- JWT: access 15 min (memoria SPA), refresh en cookie HttpOnly/Secure/SameSite=Strict path `/auth`; `token_version` en el claim, validado en cada request → desactivar usuario o cambiar contraseña revoca todo.
-- Endpoints: `POST /api/v1/auth/login`, `/auth/refresh` (rotación + detección de reuso → revoca familia), `/auth/logout` (jti a `jwt_denylist`).
-- `jwt_denylist`: índice `(jti)` único + TTL 30 días.
-- **TDD:** tests de login OK/fallido, token_version revoca, logout revoca, rotación detecta reuso. Los que dependen del índice TTL/único → `@requires_real_mongo` (mongomock no soporta TTL ni unicidad real).
+## Convenciones de la fase (correcciones Kimi A-04, Q6)
 
-### PR-2 — RBAC por dependencia (matriz §4.1)
+### Tiempo (A-04 — crítico)
+- **Persistencia, TTL de Mongo y claims JWT (`exp`, `iat`): SIEMPRE UTC aware** (`datetime.now(timezone.utc)`). Mongo TTL usa reloj UTC del servidor; PyMongo interpreta *naive* como UTC; PyJWT convierte `exp` como UTC → un *naive* Bogotá quedaría −5 h (un access de 15 min viviría ~5 h). 
+- `now_bogota()` (aware, ZoneInfo) **solo para presentación** (Spec §0.2).
+- **Prohibido `datetime` naive** en el backend → guardián de lint en CI (Sesión 3).
+
+### Frontera mongomock / Mongo real (Q6)
+Van **contra Mongo real** con `@requires_real_mongo` (y el marker **FALLA, no skip**, si no hay mongod con auth): índices únicos parciales, TTL, permisos de BD, transacciones multi-documento, agregaciones, montos Decimal128 y **tests de concurrencia** (doble submit del mismo refresh).
+
+### Cripto del port (Kimi Bajas 3/4)
+`algorithms=['HS256']` explícito en `decode`; `leeway=30s`; `jti` uuid4 (≥128 bits) en access **y** refresh; `JWT_SECRET` ≥32 bytes por entorno con plan de rotación; bcrypt `rounds=12` + test de latencia < 1 s (la política "12/10 chars" es longitud, no costo).
+
+---
+
+## Desglose en PRs (REORDENADO por A-05; cada PR = gate Kimi ≥ 9.0)
+
+### PR-1 — Audit base (antes que auth, para que el login pueda emitir eventos)
+- `AuditLog` (Beanie, **append-only**), **catálogo cerrado de 30 eventos** como enum (§1.11: 29 + `extracto.cargado` de CR-001 — normativo; ver §Errata). `emit_audit(evento, entidad, entidad_id, actor_id, metadata)`.
+- **Inmutabilidad por privilegios de servidor (M-06, Q4):** conexión dedicada `compas_audit` (único con rol `audit_writer` = insert+find, **sin update/remove**); el **usuario general de la app NO tiene update/remove** sobre `audit_log`. `$jsonSchema` como defensa en profundidad (Spec §2.2.6), que valida forma pero **no sustituye** privilegios.
+- Script idempotente de creación de rol/usuario en el repo (local + CI); documentado en RUNBOOK §2.
+- **Tests (@requires_real_mongo, mongod con auth):** negativo (update/remove → error 13) **y positivo** (insert/find como `compas_audit` funcionan — sin él, un rol roto sin insert pasaría el negativo y el audit moriría en silencio).
+- Residual declarado: el admin de Atlas siempre puede alterar la colección (mitigar: least-privilege + Activity Feed + backups).
+
+### PR-2 — Núcleo de auth (JWT endurecido, emite eventos desde el primer commit)
+- `User` (Beanie): `email` único **normalizado** (`strip().lower()`), `password_hash` (bcrypt rounds=12), `rol`, `token_version` (default 1), `activo`, timestamps UTC-aware.
+- **Login:** respuesta **uniforme** (mensaje/timing/lockout sin oráculo; bcrypt dummy si el email no existe → anti-enumeración, M-04). Emite `user.login` / `user.login_fallido` / `user.bloqueado` vía `emit_audit` (de PR-1).
+- **Rate limit doble (M-05):** por **IP** (del baseline, ausente del PLAN v1) **+ por cuenta** (backoff 5 fallos → 15 min); reset en login exitoso; flujo de desbloqueo por admin/break-glass; evento `user.bloqueado` + alerta. Evita el DoS selectivo contra el CEO.
+- **JWT:** access 15 min (memoria SPA) + refresh en cookie. **`token_version` validado en cada request Y en `/auth/refresh`** (M-01/Q2): un usuario desactivado NO renueva access. Bump de `token_version` **atómico** con desactivar/cambiar contraseña/re-activar (una sola operación). No cachear el usuario en el camino de auth (5–10 usuarios → lectura por request viable).
+- **Cookie (A-01/M-03):** `Set-Cookie: refresh=<jwt>; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth; Max-Age=2592000` + test de integración del Set-Cookie. API en **`api.compas.roddos.com`** (same-site por eTLD+1 con `compas.roddos.com`; con `*.onrender.com` la cookie nunca viaja). CORS `Allow-Origin: https://compas.roddos.com` exacto + `Allow-Credentials: true`; `fetch(credentials:'include')`; **verificación de Origin en mutaciones** (Spec §4).
+- **Estado server-side del refresh — colección `refresh_sessions` (A-03):** `{jti único, usuario_id, family_id, family_created_at, ultimo_uso, rotado, revocado}`, TTL en `family_created_at + 30 d`. En `/auth/refresh` validar: `exp`, `ultimo_uso + 12h` (idle), `family_created_at + 30d` (máx), `token_version`, `activo`.
+- **Rotación atómica + detección de reuso (A-02):** `findOneAndUpdate({jti, rotado:false} → {rotado:true})`; resultado `null` ⇒ **reuso** ⇒ `update_many({family_id},{revocado:true})` + evento `user.bloqueado` con `metadata={motivo:'reuso_refresh'}` (Baja-1 — NO se inventa evento nuevo). Single-flight en la SPA + `leeway` de 10 s post-rotación que reenvía la respuesta original (no auto-revocar 2 pestañas legítimas). **Test TDD de concurrencia:** dos refresh del mismo `jti` → exactamente uno 200 (@requires_real_mongo).
+- **Logout (M-02):** deniega el `jti` del refresh **y** del access (TTL ≤ 15 min en denylist); `get_current_user` consulta la denylist; opera con access expirado identificando la sesión por cookie.
+- **`jwt_denylist`:** índice `(jti)` único + TTL por tipo de token (access 15 min / refresh 30 d — M-11).
+
+### PR-3 — RBAC por dependencia (matriz §4.1 como fuente única)
 - `Role(StrEnum)`: `admin | directivo | financiero | consulta`.
-- `get_current_user`, `require_role(*roles)`, `require_permission("<cap>")`.
-- **Config único de permisos** derivado de la matriz §4.1 (una sola fuente; el navbar del frontend se derivará de aquí en su momento).
-- **DoD #1:** tests NEGATIVOS por rol (incl. export de Consulta denegado).
+- `get_current_user` (valida token_version, activo, denylist), `require_permission("<cap>")`.
+- **Config único de permisos ≡ matriz §4.1** (una sola fuente). **§2.4 se codifica como capacidades `ciclo:aprobar|cerrar|reabrir|config`** dentro del mismo config (M-09). **Regla:** endpoints de negocio usan solo `require_permission`; **`require_role` prohibido en negocio** (queda para casos de identidad como superadmin).
+- **Navbar sin drift (M-07):** `GET /api/v1/auth/capabilities` devuelve las capacidades efectivas del usuario; el frontend renderiza desde ahí (M13.1 #6 prohíbe mapas rol→ítems en el front).
+- **Tests (DoD #1):** routers de prueba **solo-test** (uno por capacidad) para ejercitar negativos por rol, incl. **export de Consulta denegado** (`export:*`) (M-08).
+- **Test de completitud del config (M-10):** triple — (a) toda capacidad usada en decoradores ∈ config; (b) config ≡ §4.1 canónica (lista congelada en el test); (c) sin capacidades huérfanas ni roles vacíos. (Coherente con exigir catálogo cerrado testeado para eventos.)
 
-### PR-3 — Audit log append-only (catálogo de 30) + inmutabilidad en CI
-- `AuditLog` (append-only), catálogo **cerrado de 30 eventos** (§1.11: 29 + `extracto.cargado` de CR-001) como enum; helper `emit_audit(...)`.
-- Rol Mongo custom `audit_writer` (insert+find, sin update/remove) — documentado en RUNBOOK §2.
-- **DoD #6:** test automatizado en CI de que `update`/`remove` sobre `audit_log` **FALLA** → `@requires_real_mongo` (permisos de BD reales; correr contra mongod en CI del Sprint 0/0b).
+---
+
+## Errata documental (A-06, M-03) — registrada como CR-002, pendiente firma CEO
+El **catálogo = 30** ya es normativo: CR-001 ("catálogo pasa de 29 a 30", firmado CEO), CLAUDE.md regla 11, y la hoja DoD #6 del tracker. `extracto.cargado` es **distinto** de `carga.completada` (extracto mensual oficial vs. carga diaria de movimientos). Lo único desincronizado son los `.docx` certificados. Errata a folder en el próximo re-baseline (CR-001 §metadata ya lo previó como v1.2):
+1. Spec §1.11 / DoD #6 / PRD §5 / INFO-000: "29" → **"30"** (incorporar `extracto.cargado`).
+2. Spec §4: cookie refresh `Path=/auth` → **`Path=/api/v1/auth`**.
+3. Confirmar API en `api.compas.roddos.com` (ya en RUNBOOK §5) + verificación de Origin en mutaciones.
+Ver `docs/COMPAS_ERRATA_PENDIENTE_v1_1_3.md`.
 
 ## Reglas innegociables aplicables
-- Pydantic `strict=True` en todos los schemas nuevos (regla 3).
-- `now_bogota()` en toda marca temporal (regla 2).
-- Sin secretos en el repo: `JWT_SECRET` por env (regla 12).
-- Audit append-only (regla 4); catálogo cerrado de 30 (regla 11) — no inventar eventos.
-- Nada de localStorage para tokens (access en memoria, refresh cookie HttpOnly).
+Pydantic `strict=True` (r3); tiempo UTC-aware en persistencia + `now_bogota()` en presentación (r2); audit append-only (r4); catálogo cerrado de 30, no inventar eventos (r11); `JWT_SECRET` por env, sin secretos en repo (r12); access en memoria, refresh en cookie HttpOnly (no localStorage).
 
-## Fuera de alcance (para no violar el "no scope creep")
-MFA TOTP + códigos de respaldo + step-up (Sprint 0b) · HIBP k-anonymity (0b) · cabeceras de seguridad/CSP (0b) · workflows de CI (Sesión 3) · aplicación de `require_permission` a endpoints de negocio que aún no existen.
+## Fuera de alcance (sin scope creep)
+MFA TOTP + respaldo + step-up (Sprint 0b) · HIBP k-anonymity (0b) · cabeceras CSP/HSTS (0b) · workflows CI (Sesión 3) · aplicar `require_permission` a endpoints de negocio inexistentes. **G1 (0b) debe verificar que el PLAN de 0b incluye TOTP + respaldo + step-up + HIBP + CSP** (Q5).
 
 ## DoD cubierto por esta sesión
-- Parcial #1 (RBAC + tests negativos), parcial #6 (audit inmutable + test CI), parcial #11 (auth endurecida: logout revoca, token_version, backoff). MFA de #11 queda en 0b.
+Parcial #1 (RBAC + negativos), parcial #6 (audit inmutable + tests neg/pos; el CI real lo recoge en Sesión 3 — marker `@requires_real_mongo`, mongod de CI **con auth**), parcial #11 (auth endurecida: logout revoca, token_version, backoff IP+cuenta). MFA de #11 → 0b.
 
-## Riesgos
-1. **Deriva de semántica al portar** (SISMO usa otros roles y no tiene token_version) → mitigación: construir el endurecimiento fresco con TDD, no adaptar a ciegas; documentar en PORTADO_DE_SISMO.md.
-2. **Tests que mongomock no cubre** (TTL, unicidad, permisos de BD) → marcados `@requires_real_mongo`; el CI del Sprint 0/0b debe levantar un mongod real.
-3. **Orden de branch:** esta rama se apila sobre Sesión 1 (aún no mergeada a main).
+## Riesgos (ampliado, Baja-5)
+1. Deriva de semántica al portar (SISMO usa otros roles, sin token_version) → construir el endurecimiento fresco con TDD; PORTADO_DE_SISMO.md.
+2. **Concurrencia de rotación** → rotación atómica + test de carrera obligatorio.
+3. **A-05 orden de PRs** → mitigado (audit primero).
+4. **Errata baseline (A-06)** → CR-002 antes del merge de PR-1; si no se firma, se construye con 30 igual (ya normativo por CR-001) pero se deja la nota de erratum.
+5. **Drift config↔§4.1** → test de completitud (M-10).
+6. **Dependencia `audit_writer`↔CI** → mongod de CI con auth habilitada; markers fallan (no skip) sin él.
+7. Base de rama sobre Sesión 1 no mergeada → pin `61048ac` + rebase si se mueve.
 
 ## Gate
-Auditoría Kimi del PLAN (esta) ≥ 9.0 → construir. Luego PR-1, PR-2, PR-3, cada uno con su gate Kimi ≥ 9.0 antes de merge.
+Re-auditoría Kimi del PLAN v2 (**R-PLAN**) ≥ 9.0 → construir PR-1 → PR-2 → PR-3, cada uno con su gate Kimi ≥ 9.0 antes de merge.
