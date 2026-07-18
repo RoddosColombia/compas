@@ -6,14 +6,18 @@ Kimi no tiene CLI/API aquí: este PDF se sube a mano al chat de Kimi y la respue
 pega en el AUDITORIA-KIMI-*.md correspondiente.
 
 Uso:
-    python scripts/generate_kimi_audit_pdf.py <ruta-a-SOLICITUD-AUDITORIA-*.md> [salida.pdf]
+    python scripts/generate_kimi_audit_pdf.py <SOLICITUD.md> [más_docs.md ...] [salida.pdf]
+
+Se puede pasar más de un .md (p. ej. la SOLICITUD + el PLAN corregido + la errata):
+se renderizan en orden, con salto de página entre cada uno. Si el último argumento
+termina en .pdf, es la ruta de salida; si no, se deriva del primer .md.
 
 Junta:
-  1. El texto de la SOLICITUD (markdown → texto formateado).
+  1. El texto de los .md indicados (markdown → texto formateado).
   2. Un extracto del control (tracker docs/COMPAS_Control_Desarrollo.xlsx): Tareas, DoD, Gates.
   3. La rúbrica del umbral (≥ 9.0).
 
-Salida por defecto: docs/audits/<nombre-de-la-solicitud>.pdf
+Salida por defecto: docs/audits/<nombre-del-primer-.md>.pdf
 """
 
 from __future__ import annotations
@@ -122,19 +126,27 @@ def _append_tracker_extract(pdf: PDF) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        sys.exit("Uso: python scripts/generate_kimi_audit_pdf.py <SOLICITUD.md> [salida.pdf]")
-    solicitud = Path(sys.argv[1]).resolve()
-    if not solicitud.exists():
-        sys.exit(f"No existe: {solicitud}")
+    args = sys.argv[1:]
+    if not args:
+        sys.exit("Uso: python scripts/generate_kimi_audit_pdf.py <SOLICITUD.md> [más.md ...] [salida.pdf]")
+
+    out_arg = args[-1] if args[-1].lower().endswith(".pdf") else None
+    md_args = args[:-1] if out_arg else args
+    md_files = [Path(a).resolve() for a in md_args]
+    for f in md_files:
+        if not f.exists():
+            sys.exit(f"No existe: {f}")
+    if not md_files:
+        sys.exit("Falta al menos un .md de entrada.")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = Path(sys.argv[2]) if len(sys.argv) > 2 else OUT_DIR / f"{solicitud.stem}.pdf"
+    out = Path(out_arg) if out_arg else OUT_DIR / f"{md_files[0].stem}.pdf"
 
     pdf = PDF()
     pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    _write_markdown(pdf, solicitud.read_text(encoding="utf-8"))
+    for i, md in enumerate(md_files):
+        pdf.add_page()
+        _write_markdown(pdf, md.read_text(encoding="utf-8"))
     _append_tracker_extract(pdf)
 
     # Rúbrica
