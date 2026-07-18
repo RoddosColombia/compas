@@ -1,0 +1,36 @@
+# ── Secretos y entorno (regla 12: ningún secreto en el repo) ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Python / backend ──
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.mypy_cache/
+
+# ── Node / frontend ──
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+coverage/
+
+# ── Sistema operativo / editor ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# ── Fixtures bancarios (solo anonimizados; reales viven en S3) ──
+# Los .xlsx/.csv de extractos reales NO entran al repo (Spec §1.6.1).

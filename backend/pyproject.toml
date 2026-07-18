@@ -1,0 +1,26 @@
+[project]
+name = "compas-backend"
+version = "0.0.1"
+description = "COMPAS — control presupuestal y flujo de caja de RODDOS S.A.S."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "requires_real_mongo: necesita un Mongo REAL (índice único parcial del Sprint 1 y transacciones multi-documento del Sprint 4; mongomock no los soporta). Correr con: pytest -m requires_real_mongo",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+# B008: `Depends(...)` en defaults es el patrón idiomático de FastAPI.
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
