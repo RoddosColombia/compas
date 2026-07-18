@@ -51,3 +51,14 @@ RODDOS vende motos a cuotas semanales (Raider, Sport, Apache). 5 grupos de rubro
 
 ## Cierre de sesión (obligatorio)
 Al terminar cada sesión de trabajo: (1) actualiza docs/COMPAS_Control_Desarrollo.xlsx con openpyxl — busca la fila de la tarea en la hoja 'Tareas' por su ID, cambia Estado (Hecha/En curso/Bloqueada), pon Fecha cierre (YYYY-MM-DD) y en Evidencia el hash del commit o PR; NO toques encabezados, fórmulas del Dashboard ni las validaciones de datos; (2) si el trabajo cerró un punto del DoD o un Gate, actualiza esa hoja también; (3) commit del Excel junto con el código de la sesión. Si una tarea nueva no existe en el tracker, agrégala como fila nueva siguiendo el formato de las existentes en vez de construir sin registro.
+
+## Auditoría adversarial con Kimi (obligatorio antes de merge crítico)
+Procedimiento portado de SISMO-V3. Kimi es **auditor adversarial externo**: revisa ANTES de todo merge crítico y **NO genera código**. No reemplaza al par revisor humano (Iván) ni al CI; es una capa adicional.
+
+- **Alcance (gate obligatorio):** (1) el **PLAN** de cada sprint/sesión crítica ANTES de construir; (2) los **PRs críticos**: auth/RBAC/audit log, parsers/cargas bancarias, aprobación de presupuesto, cierre de mes, y migraciones de datos reales. Lo no-crítico no requiere gate.
+- **Umbral:** **≥ 9.0** (plan y código). Merge solo con nota ≥ 9.0 + autorización del CEO. RECHAZO o nota < 9.0 bloquea el merge.
+- **Rondas:** `I` (inicial) → `R` (re-auditoría tras resolver hallazgos) → `R…B` si hace falta otra vuelta, hasta alcanzar el umbral.
+- **Artefactos** en `.planning/phases/<fase>/`: `SOLICITUD-AUDITORIA-<ronda>[-PR<N>].md` (lo escribe Claude) → `AUDITORIA-KIMI-<ronda>[-PR<N>].md` (Andrés pega la respuesta de Kimi). Formato en `.planning/TEMPLATES/`.
+- **Entrega (loop manual):** Claude genera un PDF con `python scripts/generate_kimi_audit_pdf.py <ruta-solicitud>` (SOLICITUD + extracto del tracker) en `docs/audits/`; Andrés lo sube al chat de Kimi y pega la respuesta. Kimi no tiene CLI/API en este entorno.
+- **La SOLICITUD debe traer evidencia, no promesas:** qué hace, cambios de valores verificados "al peso", semántica preservada, puntos a auditar con lupa, y evidencia local (pytest/ruff/build verdes). 
+- **Regla de oro:** ningún merge crítico sin `AUDITORIA-KIMI ≥ 9.0` registrada; el resultado del gate se anota en la hoja 'Gates' del tracker.
