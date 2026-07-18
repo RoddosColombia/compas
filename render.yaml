@@ -1,0 +1,98 @@
+# render.yaml — Blueprint COMPAS (STACK v1.1.2 §6, F-37)
+# Regla F-01: el servicio web NUNCA arranca el scheduler (RUN_SCHEDULER=false);
+# los jobs financieros viven SOLO en el worker compas-jobs (1 instancia).
+# Producción NO auto-despliega: deploy por tag v* vía GitHub Actions con required reviewer (Iván).
+
+services:
+  # ── API de producción ─────────────────────────────────────────────
+  - type: web
+    name: compas-api
+    runtime: python
+    plan: standard              # 2 GB RAM / 1 vCPU (STACK §5, nit 5)
+    region: TBD_HEREDAR_DE_SISMO   # anotar la región real en RUNBOOK-INFRA §0
+    branch: main
+    autoDeploy: false           # producción solo por tag + reviewer (F-32)
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /health
+    envVars:
+      - key: RUN_SCHEDULER
+        value: "false"          # NUNCA true en el web (F-01)
+      - key: APP_ENV
+        value: production
+      - key: TZ
+        value: America/Bogota
+      - key: MONGODB_URI_COMPAS
+        sync: false             # secreto — se carga a mano (RUNBOOK §8)
+      - key: JWT_SECRET
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+
+  # ── Worker de jobs financieros (F-01) ─────────────────────────────
+  - type: worker
+    name: compas-jobs
+    runtime: python
+    plan: starter               # 1 instancia SIEMPRE — jamás escalar horizontalmente
+    region: TBD_HEREDAR_DE_SISMO
+    branch: main
+    autoDeploy: false
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.jobs.scheduler   # APScheduler: coalesce=True, misfire_grace_time por job
+    envVars:
+      - key: RUN_SCHEDULER
+        value: "true"           # SOLO aquí
+      - key: APP_ENV
+        value: production
+      - key: TZ
+        value: America/Bogota   # el job de las 8:30 depende de esta TZ
+      - key: MONGODB_URI_COMPAS
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: BETTER_STACK_HEARTBEATS   # 8 URLs, una por job (RUNBOOK §7)
+        sync: false
+
+  # ── Staging (paridad para demos/UAT; DR y carga contra instancia temporal) ──
+  - type: web
+    name: compas-api-stg
+    runtime: python
+    plan: starter               # sin sleep (F-35)
+    region: TBD_HEREDAR_DE_SISMO
+    branch: main
+    autoDeploy: true            # staging SÍ auto-despliega desde main
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: RUN_SCHEDULER
+        value: "false"
+      - key: APP_ENV
+        value: staging
+      - key: TZ
+        value: America/Bogota
+      - key: MONGODB_URI_COMPAS   # apunta a compas_stg (datos anonimizados, F-25)
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+# Nota: el frontend (proyecto 'compas') vive en Vercel, no en este blueprint.
+# Nota: no hay Render Cron Jobs — toda la programación vive en APScheduler dentro de compas-jobs
+# para mantener jobstore en Mongo, catch-up e idempotencia (STACK §2).
