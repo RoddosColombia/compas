@@ -28,6 +28,8 @@ services:
         value: America/Bogota
       - key: MONGODB_URI_COMPAS
         sync: false             # secreto — se carga a mano (RUNBOOK §8)
+      - key: MONGODB_URI_AUDIT  # usuario compas_audit (audit_writer); fail-fast C-01 sin él
+        sync: false
       - key: JWT_SECRET
         sync: false
       - key: MFA_ENC_KEY        # Fernet urlsafe-b64 32B — cifra el secreto TOTP (DoD #11)
@@ -60,6 +62,8 @@ services:
       - key: TZ
         value: America/Bogota   # el job de las 8:30 depende de esta TZ
       - key: MONGODB_URI_COMPAS
+        sync: false
+      - key: MONGODB_URI_AUDIT   # el worker también emite eventos de auditoría (§8)
         sync: false
       - key: JWT_SECRET
         sync: false
@@ -94,6 +98,8 @@ services:
       - key: TZ
         value: America/Bogota
       - key: MONGODB_URI_COMPAS   # apunta a compas_stg (datos anonimizados, F-25)
+        sync: false
+      - key: MONGODB_URI_AUDIT
         sync: false
       - key: JWT_SECRET
         sync: false

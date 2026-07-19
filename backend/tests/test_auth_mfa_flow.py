@@ -153,6 +153,30 @@ async def test_backup_code_un_solo_uso(client):
         )
 
 
+# ── Challenge de un solo uso (M1) ────────────────────────────────────────
+async def test_challenge_no_reutilizable(client):
+    s = _settings()
+    secret = await _enroll(s)
+    ch = await service.login(s, email="a@roddos.com", password=PWD, ip="1.1.1.1")
+    # 1er canje: éxito
+    await service.mfa_verify(
+        s,
+        challenge_token=ch.challenge_token,
+        code=pyotp.TOTP(secret).now(),
+        ip="1.1.1.1",
+    )
+    # Reusar el MISMO challenge (aunque el código TOTP sea válido) → replay → falla.
+    with pytest.raises(service.AuthError):
+        await service.mfa_verify(
+            s,
+            challenge_token=ch.challenge_token,
+            code=pyotp.TOTP(secret).now(),
+            ip="1.1.1.1",
+        )
+    # Solo se acuñó UNA familia de sesión.
+    assert await client["compas_test"]["refresh_sessions"].count_documents({}) == 1
+
+
 # ── Throttle ──────────────────────────────────────────────────────────────
 async def test_verify_throttle_429(client):
     s = _settings(mfa_verify_max=3)

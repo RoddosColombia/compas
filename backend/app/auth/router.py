@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
 
 from app.auth import service
-from app.auth.deps import get_current_user, require_step_up
+from app.auth.deps import (
+    get_current_user,
+    get_current_user_with_claims,
+    mfa_reciente,
+    require_step_up,
+)
 from app.auth.models import User
 from app.auth.permissions import capabilities_for
 from app.config import Settings, get_settings
@@ -128,10 +133,16 @@ async def mfa_verify(
 async def mfa_setup(
     body: MfaSetupBody,
     settings: Settings = Depends(_settings),
-    user: User = Depends(get_current_user),
+    both: tuple[User, dict] = Depends(get_current_user_with_claims),
     _: None = Depends(verify_origin),
 ):
-    """Inicia el enrolamiento: devuelve secreto + URI otpauth (para el QR) UNA vez."""
+    """Inicia el enrolamiento: devuelve secreto + URI otpauth (para el QR) UNA vez.
+
+    Si el usuario YA tiene MFA (re-enrolamiento), exige step-up (Kimi B1): re-enrolar
+    pisa el secreto y deshabilita MFA → misma protección que /reset."""
+    user, claims = both
+    if user.mfa_habilitado and not mfa_reciente(claims, settings):
+        raise HTTPException(403, "Step-up MFA requerido para re-enrolar.")
     try:
         return await service.mfa_setup(settings, user=user, password=body.password)
     except service.AuthError as e:

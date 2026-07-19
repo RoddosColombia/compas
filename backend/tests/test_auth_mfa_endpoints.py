@@ -5,7 +5,7 @@ import httpx
 import pyotp
 import pytest_asyncio
 from app.audit.service import configure_audit, reset_audit
-from app.auth import passwords, repository
+from app.auth import passwords, repository, tokens
 from app.auth.models import User
 from app.auth.roles import Role
 from app.config import get_settings
@@ -104,6 +104,29 @@ async def test_step_up_bloquea_sin_mfa_reciente(api):
     access = await _login(api)
     r = await api.post(
         "/api/v1/auth/mfa/reset", headers={"Authorization": f"Bearer {access}"}
+    )
+    assert r.status_code == 403
+
+
+async def test_reenrolar_sin_step_up_403(api):
+    """B1: con MFA ya habilitado, un access SIN mfa_at reciente (p.ej. tras refresh)
+    NO puede re-enrolar (re-enrolar pisa el secreto y deshabilita MFA)."""
+    access = await _login(api)
+    h = {"Authorization": f"Bearer {access}"}
+    r = await api.post("/api/v1/auth/mfa/setup", json={"password": PWD}, headers=h)
+    secret = r.json()["secret"]
+    await api.post(
+        "/api/v1/auth/mfa/activate",
+        json={"code": pyotp.TOTP(secret).now()},
+        headers=h,
+    )
+    # Access forjado SIN mfa_at (como el que emite un /refresh) para el mismo usuario.
+    u = await repository.get_user_by_email("a@roddos.com")
+    stale = tokens.create_access_token("x" * 40, sub=u.id, tv=u.token_version)
+    r = await api.post(
+        "/api/v1/auth/mfa/setup",
+        json={"password": PWD},
+        headers={"Authorization": f"Bearer {stale}"},
     )
     assert r.status_code == 403
 

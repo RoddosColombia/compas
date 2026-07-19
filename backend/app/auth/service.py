@@ -287,7 +287,12 @@ async def mfa_verify(
         )
     except tokens.TokenError as e:
         raise AuthError(_INVALID) from e
-    sub, tv = claims["sub"], claims["tv"]
+    sub, tv, jti = claims["sub"], claims["tv"], claims["jti"]
+
+    # M1 (Kimi): el challenge es de UN SOLO USO. Si ya se canjeó (está en la denylist)
+    # → replay → 401. Sin esto acuñaría familias ilimitadas en sus 5 min de vida.
+    if await repository.denylist_contains(jti):
+        raise AuthError(_INVALID)
 
     count = await repository.register_mfa_attempt(
         sub, ip, window_min=settings.mfa_verify_window_min
@@ -327,7 +332,8 @@ async def mfa_verify(
         )
         raise AuthError(_INVALID)
 
-    # Éxito del 2º factor.
+    # Éxito del 2º factor. Quemamos el challenge (M1): denylist hasta su exp natural.
+    await repository.denylist_add(jti, _exp_dt(claims))
     await repository.reset_mfa_attempts(sub, ip)
     now = now_utc()
     family_id = uuid4().hex

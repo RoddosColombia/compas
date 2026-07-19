@@ -53,5 +53,14 @@ el doble-submit revoca la familia → re-login), sin replay server-side. Es segu
 (degrada UX, no seguridad); mitigado por el single-flight del SPA. El test de concurrencia ya
 codifica el criterio estricto. **Compromiso:** implementar el replay server-side en **Sprint 0b/1**.
 
+## E-9 — Catálogo de auditoría: 30 → 32 · eventos de ciclo de vida de MFA (Kimi M3, PR-2)
+Habilitar y resetear MFA son **eventos de seguridad forense** y hoy son invisibles (el catálogo
+cerrado de 30 se respetó — regla 11 — pero queda el hueco). Añadir **`mfa.habilitado`** (tras
+`/auth/mfa/activate`) y **`mfa.reset`** (tras `/auth/mfa/reset` y el reset admin futuro) →
+catálogo **32**. Mientras no se firme: el mapeo actual (`user.login` solo tras el 2º factor;
+`user.login_fallido{factor:'mfa'}`) es aceptable (Kimi lo acepta como puente). Al firmar: agregar
+los 2 a `AuditEvento`/`CATALOGO_EVENTOS`, emitirlos en `service.mfa_activate`/`mfa_reset`, y
+actualizar Spec §1.11 / DoD #6 / regla 11 (30 → 32).
+
 ---
 **Firma CEO:** ☐ Aprobada — se folda en v1.1.3 en el próximo re-baseline.  Fecha: ________
