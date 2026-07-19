@@ -42,11 +42,7 @@ Al cierre de 0b: auth endurecida (✓ Sesión 2) + audit inmutable (test real en
 - **Sesión 3 (S0-05):** CI con pip-audit/gitleaks **y mongod real** (para los `@requires_real_mongo` de índices únicos de PR-1). No es "en paralelo": es prerrequisito duro de G1.
 - **Break-glass (S0-07):** custodio nombrado y documentado antes de evaluar G1.
 
-**Mecanismo de aprobación (Kimi A-01 — aprobador ≠ ejecutor):** Andrés es co-ejecutor, así que no puede aprobar solo. Se resuelve por UNA de dos vías, ANTES de evaluar G1 (no bloquea el arranque de PR-1):
-- **(a) preferida:** Iván aprueba G1 → **EXT-03** (cuenta de Iván + colaborador repo + reviewer de production) pasa a prerrequisito duro de G1; Kimi queda como evidencia del checklist, no como aprobador.
-- **(b) alternativa:** CR formal que cambia la regla de G1 a "Kimi adversarial (evidencia) + CEO Andrés (aprobación)", reconociendo que debilita el segundo-par-humano; sin CR, "Kimi + Andrés" no es mecanismo válido.
-
-*Decisión pendiente del CEO — ver `AUDITORIA-KIMI-I-PLAN.md` §A-01.*
+**Mecanismo de aprobación (Kimi A-01 — RESUELTO por el CEO, `CR-003`):** la única autoridad de COMPAS es el CEO (Andrés) ([[revisor-solo-andres]]); Iván no aprueba (rol nominal, derogado). Se adopta la vía (b): **G1 lo aprueba el CEO Andrés (decisión) + auditoría adversarial Kimi ≥ 9.0 (evidencia independiente del ejecutor)**. Formalizado en `docs/cambios/CR-003-gate-g1-aprobador.md` (re-baseline v1.1.3). Se reconoce que debilita el segundo-par-humano; aceptado por el CEO, compensado por el gate Kimi.
 
 ## Micro-ítems de arrastre (Sesión 2) — YA en repo, se exhiben aquí
 - **B-1**: `cookie`/`set-cookie` en `_PII_KEYS` (`app/main.py`, commit `c34f9c9`).
