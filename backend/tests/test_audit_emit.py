@@ -30,6 +30,10 @@ async def test_emit_audit_inserta_doc_bien_formado(audit_col):
     assert doc is not None
     assert doc["entidad"] == "user"
     assert doc["metadata"] == {"ip": "1.2.3.4"}
+    # H-06: el evento se persiste como str puro (no el enum). StrEnum == str, así que
+    # sin este type-check el aserto pasaría aunque se guardara el enum de Python.
+    assert type(doc["evento"]) is str
+    assert doc["evento"] == "user.login"
 
 
 async def test_emit_audit_timestamp_es_utc_aware(audit_col):

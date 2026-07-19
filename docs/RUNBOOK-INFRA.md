@@ -34,7 +34,8 @@
 - [ ] Database `compas` y `compas_stg` en el cluster M10 existente
 - [ ] Usuario `compas_app`: readWrite SOLO sobre `compas` (otro usuario para `compas_stg`)
 - [ ] Rol custom `audit_writer`: insert + find sobre `compas.audit_log`, SIN update/remove (verificado por test en CI)
-- [ ] Usuario `compas_audit` con SOLO el rol `audit_writer` (2ª cadena `MONGODB_URI_AUDIT` a la MISMA db `compas`; ver §8). El usuario general `compas_app` NO tiene update/remove sobre `audit_log`. Crear con `python scripts/create_audit_role.py "<admin_uri>"` (idempotente)
+- [ ] Usuario `compas_audit` con SOLO el rol `audit_writer` (2ª cadena `MONGODB_URI_AUDIT` a la MISMA db `compas`; ver §8). El usuario general `compas_app` NO tiene update/remove sobre `audit_log`. Crear con `COMPAS_AUDIT_PWD=… python scripts/create_audit_role.py "<admin_uri>"` (idempotente; el operador necesita `userAdmin` sobre `compas`; contraseña ≥16 chars por env, nunca por argv)
+  - **Tier Atlas (Kimi H-01):** `createRole`/`createUser` funcionan en **M10+** (nuestro cluster, Opción A). En **Free/Flex** están bloqueados → crear el rol/usuario por **Atlas UI o Admin API** (los cambios de custom roles tardan ~30 s). El script detecta el rechazo y remite aquí.
 - [ ] Atlas Alerts al canal del Tech Lead: CPU > 70% sostenida, conexiones > 60% del límite (disparadores de migración a cluster propio, STACK §7)
 - [ ] Anotar región del cluster en §0
 

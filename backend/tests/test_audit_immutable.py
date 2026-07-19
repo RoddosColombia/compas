@@ -6,7 +6,12 @@ un mongod REAL con auth y el rol `audit_writer` (usuario `compas_audit`), y el
 usuario general de la app SIN update/remove. Se validan en el CI de la Sesión 3.
 
 Por decisión (CEO 18-jul): diferidos a CI. El marker @requires_real_mongo hace que
-FALLEN (no skip) si se piden con `-m requires_real_mongo` sin un mongod con auth."""
+FALLEN (no skip) si se piden con `-m requires_real_mongo` sin un mongod con auth.
+
+IMPORTANTE (Kimi Baja): en la Sesión 3, el job de CI que corre `-m requires_real_mongo`
+DEBE ser un required check que BLOQUEE el merge — si no, DoD #6 nunca se verifica de
+verdad y nadie lo nota. El mongod de CI debe tener auth habilitada + el rol audit_writer
+cableado (sin auth, el test de permisos pasa en falso)."""
 
 import pytest
 

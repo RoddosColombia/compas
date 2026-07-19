@@ -8,7 +8,7 @@ conexión (`MONGODB_URI_AUDIT`) a la MISMA database `compas` — NO una db separ
 no tiene update/remove sobre `audit_log`.
 
 En la app real, `configure_audit` se llama en el lifespan con el cliente de auditoría;
-en tests se inyecta un cliente mongomock."""
+en tests se inyecta un cliente mongomock_motor."""
 
 from typing import Any
 
@@ -63,7 +63,7 @@ async def emit_audit(
         metadata=metadata or {},
         timestamp=now_utc(),
     )
-    payload = doc.model_dump(mode="python", exclude={"id"})
+    payload = doc.model_dump(mode="python")
     payload["evento"] = doc.evento.value  # str para BSON, no el enum de Python
     await _audit_collection.insert_one(payload)
     return doc

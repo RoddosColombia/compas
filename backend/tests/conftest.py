@@ -59,6 +59,17 @@ def pytest_collection_modifyitems(
             item.add_marker(skip)
 
 
+@pytest.fixture(autouse=True)
+def _clear_settings_cache():
+    """Limpia el cache de get_settings antes y después de cada test — evita que un
+    test que cambia env vars contamine a otro (Kimi Baja)."""
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def mock_mongo_client() -> AsyncMongoMockClient:
     """Cliente Mongo simulado para tests de esta sesión."""
