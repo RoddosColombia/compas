@@ -38,19 +38,22 @@ async def lifespan(app: FastAPI):
     # NOTA (Sprint 0b): cuando existan document models, llamar aquí
     #   await mongo.init_beanie_for(client, settings.mongodb_db)
 
-    # Conexión DEDICADA de auditoría (DoD #6). En prod, MONGODB_URI_AUDIT usa el
-    # usuario `compas_audit` (audit_writer). En dev, si no está, cae a la conexión
-    # general (sin separación real de privilegios) con aviso.
+    # Conexión DEDICADA de auditoría (DoD #6). MONGODB_URI_AUDIT usa el usuario
+    # `compas_audit` (audit_writer). FAIL-FAST fuera de dev (Kimi C-01): un warning
+    # no es un control — degradar el canal de auditoría en prod es degradación
+    # silenciosa de un requisito de primera clase. Solo dev cae a la conexión general.
     if settings.mongodb_uri_audit:
         audit_client = mongo.create_client(settings.mongodb_uri_audit)
+    elif settings.app_env == "development":
+        audit_client = client  # fallback SOLO en dev (sin separación de privilegios)
+        logger.warning(
+            "audit por conexión general (dev): sin separación de privilegios."
+        )
     else:
-        audit_client = client
-        if settings.app_env != "development":
-            logger.warning(
-                "MONGODB_URI_AUDIT ausente en %s: el audit_log NO tiene conexión "
-                "dedicada; la inmutabilidad por privilegios queda sin efecto.",
-                settings.app_env,
-            )
+        raise RuntimeError(
+            "MONGODB_URI_AUDIT requerido fuera de dev: el canal de auditoría no "
+            "puede degradarse silenciosamente (DoD #6, Kimi C-01)."
+        )
     app.state.audit_client = audit_client
     audit_service.configure_audit(audit_client, settings.mongodb_db)
 

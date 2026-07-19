@@ -39,7 +39,17 @@ async def emit_audit(
     metadata: dict | None = None,
 ) -> AuditLog:
     """Inserta un evento en `audit_log`. Valida contra el catálogo cerrado (30);
-    `AuditEvento(evento)` lanza ValueError si el evento no existe (regla 11)."""
+    `AuditEvento(evento)` lanza ValueError si el evento no existe (regla 11).
+
+    Política de fallo ante error de BD (Kimi O1) — `emit_audit` **propaga** la
+    excepción (fail-closed por defecto):
+      • Operaciones de estado del ciclo (aprobar/cerrar/reabrir/config): el llamador
+        NO debe continuar sin audit — sin auditoría no hay operación (principio del
+        sistema). Dejar propagar dentro de la transacción multi-documento → rollback.
+      • Eventos no críticos (p. ej. lecturas/exportaciones): el llamador envuelve en
+        try/except + logger.error + Sentry y continúa.
+    `entidad_id` (Kimi O2) se persiste como **str** (forma canónica del id
+    referenciado), consistente con el índice forense de audit_log (Spec §2.3)."""
     if _audit_collection is None:
         raise RuntimeError(
             "audit no configurado: llamar configure_audit(client) primero"

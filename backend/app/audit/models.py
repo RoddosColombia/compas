@@ -30,6 +30,9 @@ class AuditLog(BaseModel):
 
     evento: AuditEvento
     entidad: str
+    # entidad_id / actor_id: str (forma canónica en texto del id referenciado) para
+    # consultas forenses consistentes con el índice (entidad, entidad_id, timestamp).
+    # Kimi O2: decisión explícita str (no ObjectId); el _id del audit lo pone Mongo.
     entidad_id: str | None = None
     actor_id: str | None = None
     metadata: dict = Field(default_factory=dict)

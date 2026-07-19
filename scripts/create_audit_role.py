@@ -76,6 +76,15 @@ def main() -> None:
         else:
             raise
 
+    # 3) Índice forense (Kimi O3): lo crea el setup con privilegios de admin, NO el
+    # rol audit_writer (solo insert+find). Idempotente (createIndex no duplica).
+    # Debe coincidir con AUDIT_INDEXES de app/audit/models.py.
+    db["audit_log"].create_index(
+        [("entidad", 1), ("entidad_id", 1), ("timestamp", 1)],
+        name="forense_entidad_ts",
+    )
+    print("Índice forense (entidad, entidad_id, timestamp) asegurado.")
+
     print(
         "Listo. El usuario general de la app NO debe tener update/remove sobre "
         f"{db_name}.audit_log (verificar su rol readWrite acotado)."
