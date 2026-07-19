@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # ── Conexión a Mongo (secreto: sync=false en render.yaml) ──────────
     mongodb_uri_compas: str = "mongodb://localhost:27017"
     mongodb_db: str = "compas"
+    # Segunda cadena a la MISMA database `compas`, usuario `compas_audit`
+    # (rol audit_writer). Inmutabilidad del audit_log (DoD #6 / errata E-7).
+    # Opcional en dev; obligatoria en staging/producción.
+    mongodb_uri_audit: str | None = None
 
     # ── Secretos (opcionales en dev/skeleton; obligatorios en prod) ────
     jwt_secret: str | None = None

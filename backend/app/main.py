@@ -5,14 +5,18 @@ Regla 6 de CLAUDE.md: el servicio web NUNCA arranca el scheduler. El lifespan
 falla en duro si detecta RUN_SCHEDULER=true (defensa contra un despliegue mal
 configurado)."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app import __version__
 from app.api.v1 import api_router
+from app.audit import service as audit_service
 from app.config import get_settings
 from app.db import mongo
+
+logger = logging.getLogger("compas")
 
 
 @asynccontextmanager
@@ -33,9 +37,29 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     # NOTA (Sprint 0b): cuando existan document models, llamar aquí
     #   await mongo.init_beanie_for(client, settings.mongodb_db)
+
+    # Conexión DEDICADA de auditoría (DoD #6). En prod, MONGODB_URI_AUDIT usa el
+    # usuario `compas_audit` (audit_writer). En dev, si no está, cae a la conexión
+    # general (sin separación real de privilegios) con aviso.
+    if settings.mongodb_uri_audit:
+        audit_client = mongo.create_client(settings.mongodb_uri_audit)
+    else:
+        audit_client = client
+        if settings.app_env != "development":
+            logger.warning(
+                "MONGODB_URI_AUDIT ausente en %s: el audit_log NO tiene conexión "
+                "dedicada; la inmutabilidad por privilegios queda sin efecto.",
+                settings.app_env,
+            )
+    app.state.audit_client = audit_client
+    audit_service.configure_audit(audit_client, settings.mongodb_db)
+
     try:
         yield
     finally:
+        audit_service.reset_audit()
+        if audit_client is not client:
+            audit_client.close()
         client.close()
 
 

@@ -34,6 +34,7 @@
 - [ ] Database `compas` y `compas_stg` en el cluster M10 existente
 - [ ] Usuario `compas_app`: readWrite SOLO sobre `compas` (otro usuario para `compas_stg`)
 - [ ] Rol custom `audit_writer`: insert + find sobre `compas.audit_log`, SIN update/remove (verificado por test en CI)
+- [ ] Usuario `compas_audit` con SOLO el rol `audit_writer` (2ª cadena `MONGODB_URI_AUDIT` a la MISMA db `compas`; ver §8). El usuario general `compas_app` NO tiene update/remove sobre `audit_log`. Crear con `python scripts/create_audit_role.py "<admin_uri>"` (idempotente)
 - [ ] Atlas Alerts al canal del Tech Lead: CPU > 70% sostenida, conexiones > 60% del límite (disparadores de migración a cluster propio, STACK §7)
 - [ ] Anotar región del cluster en §0
 
@@ -74,6 +75,7 @@
 | Secreto | Dónde vive | Rotación |
 |---|---|---|
 | MONGODB_URI_COMPAS / _STG | Render (api y worker) / Actions | Semestral |
+| MONGODB_URI_AUDIT | Render (api y worker) / Actions — usuario `compas_audit` (audit_writer) | Semestral |
 | JWT_SECRET (propio, ≠ SISMO) | Render | Semestral; compromiso → rotar + bump global de token_version |
 | SENTRY_DSN ×2 | Render / Vercel | — |
 | AWS keys IAM `compas-app` | Render | Semestral |
