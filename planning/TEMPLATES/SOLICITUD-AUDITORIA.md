@@ -1,7 +1,7 @@
 # SOLICITUD DE AUDITORÍA — <FASE> <RONDA>[-PR<N>]: <título corto>
 
 **Para:** Kimi · **Umbral:** ≥ 9.0 · **Fecha:** YYYY-MM-DD
-**Plan padre:** `.planning/phases/<fase>/PLAN.md` · **Docs contrato:** Spec §X, PRD MX
+**Plan padre:** `planning/phases/<fase>/PLAN.md` · **Docs contrato:** Spec §X, PRD MX
 **Rama / PR:** `<rama>` / #<n> (si aplica)
 
 ## Qué hace

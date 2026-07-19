@@ -2,7 +2,7 @@
 
 **Para:** Kimi · **Umbral:** ≥ 9.0 · **Fecha:** 2026-07-18
 **Ronda:** R (re-auditoría) · **Previa:** I-PLAN 7.8/10 NO-GO (6 Altas, 11 Medias, 6 Bajas)
-**Plan padre:** `.planning/phases/sprint0-auth-rbac-audit/PLAN.md` (v2)
+**Plan padre:** `planning/phases/sprint0-auth-rbac-audit/PLAN.md` (v2)
 **Errata:** `docs/COMPAS_ERRATA_PENDIENTE_v1_1_3.md` (CR-002, pendiente firma CEO)
 **Nivel:** auditoría de PLAN (pre-código). Sigue sin haber código.
 

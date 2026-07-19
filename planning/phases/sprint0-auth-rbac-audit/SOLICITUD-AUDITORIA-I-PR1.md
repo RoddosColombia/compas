@@ -1,7 +1,7 @@
 # SOLICITUD DE AUDITORÍA — sprint0-auth-rbac-audit · I-PR1: audit base
 
 **Para:** Kimi · **Umbral:** ≥ 9.0 · **Fecha:** 2026-07-18
-**Plan padre:** `.planning/phases/sprint0-auth-rbac-audit/PLAN.md` (v3, R-PLAN 9.1 GO)
+**Plan padre:** `planning/phases/sprint0-auth-rbac-audit/PLAN.md` (v3, R-PLAN 9.1 GO)
 **Docs contrato:** Spec §1.11 (catálogo), §2.3 (índice audit_log), §2.2.6 · DoD #6 · CR-001
 **Rama:** `sprint0/sesion2-auth-rbac-audit` (sobre `61048ac`) · **Nivel:** PR (código)
 

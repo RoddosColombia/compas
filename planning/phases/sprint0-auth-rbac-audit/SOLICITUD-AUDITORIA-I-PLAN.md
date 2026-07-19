@@ -1,7 +1,7 @@
 # SOLICITUD DE AUDITORÍA — sprint0-auth-rbac-audit · I-PLAN: portar auth + RBAC + audit log
 
 **Para:** Kimi · **Umbral:** ≥ 9.0 · **Fecha:** 2026-07-18
-**Plan padre:** `.planning/phases/sprint0-auth-rbac-audit/PLAN.md`
+**Plan padre:** `planning/phases/sprint0-auth-rbac-audit/PLAN.md`
 **Docs contrato:** Spec §1.1, §1.11, §2.4, §4.1, §5 (DoD #1/#6/#11) · PRD M2
 **Rama:** `sprint0/sesion2-auth-rbac-audit` (apilada sobre `sprint0/sesion1-esqueleto`)
 **Nivel:** auditoría de PLAN (antes de construir). No hay código aún.

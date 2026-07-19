@@ -1,4 +1,4 @@
-# `.planning/` — Auditoría adversarial con Kimi (COMPAS)
+# `planning/` — Auditoría adversarial con Kimi (COMPAS)
 
 Esta carpeta contiene los artefactos del **procedimiento de auditoría adversarial con Kimi**,
 portado de SISMO-V3. Es el *estado ejecutable* del gate de auditoría; el **contrato del
@@ -14,7 +14,7 @@ proyecto sigue viviendo en `docs/`** (PRD, Spec, STACK, PLAN de trabajo) + el tr
 ## Estructura
 
 ```
-.planning/
+planning/
 ├── README.md                     # este archivo
 ├── TEMPLATES/
 │   ├── SOLICITUD-AUDITORIA.md     # plantilla que escribe Claude
@@ -42,5 +42,5 @@ proyecto sigue viviendo en `docs/`** (PRD, Spec, STACK, PLAN de trabajo) + el tr
 
 ## Nota
 
-No corremos la suite GSD de Claude Code automáticamente; `.planning/` aquí es solo el
+No corremos la suite GSD de Claude Code automáticamente; `planning/` aquí es solo el
 soporte del gate de auditoría, no un framework de gestión.

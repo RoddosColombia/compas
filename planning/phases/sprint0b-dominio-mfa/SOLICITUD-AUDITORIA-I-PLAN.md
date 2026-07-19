@@ -1,7 +1,7 @@
 # SOLICITUD DE AUDITORÍA — sprint0b-dominio-mfa · I-PLAN
 
 **Para:** Kimi · **Umbral:** ≥ 9.0 · **Fecha:** 2026-07-19
-**Plan padre:** `.planning/phases/sprint0b-dominio-mfa/PLAN.md`
+**Plan padre:** `planning/phases/sprint0b-dominio-mfa/PLAN.md`
 **Docs:** Spec §1.2/§1.3/§1.10/§1.11/§8.1/§8.3 · PLAN §3 · DoD #6/#11/#12 · RUNBOOK §9 (G1)
 **Base:** `main` con Sesión 2 mergeada (audit+auth+RBAC, 3/3 GO) · **Nivel:** PLAN (pre-código).
 
