@@ -105,5 +105,6 @@ Procedimiento de compromiso: rotar el secreto afectado → `token_version` globa
 - [ ] Deploy a staging por merge a `main` funcionando; deploy a producción BLOQUEADO sin tag+reviewer (probar el bloqueo)
 - [ ] Test CI de inmutabilidad de `audit_log` en verde
 - [ ] pip-audit + gitleaks bloqueando un PR de prueba con secreto sembrado
+- [ ] Cabeceras de seguridad vivas (DoD #12): `curl -I https://compas.roddos.com` (SPA) y `curl -I https://api.compas.roddos.com/health` (API) muestran CSP/HSTS/nosniff/Referrer-Policy/X-Frame-Options. Nota: HSTS puede venir de Cloudflare Y del origen (benigno); definir un dueño. `style-src` de la SPA usa `'unsafe-inline'` a propósito (estilos inline de Radix/Recharts; `script-src 'self'` cierra XSS) — Kimi B-2.
 - [ ] Región primaria y de réplica anotadas en §0; buckets y CRR verificados con un objeto de prueba
 - [ ] Este runbook completo, con fecha e iniciales por sección

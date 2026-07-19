@@ -54,3 +54,18 @@ def test_cabeceras_tambien_en_404(app):
         r = client.get("/no-existe")
     assert r.status_code == 404
     assert r.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_cabeceras_en_preflight_cors(app):
+    """B-1 (Kimi): Security es la capa MÁS EXTERNA → cubre las respuestas que genera
+    CORS (preflight OPTIONS), no solo las de la app."""
+    with TestClient(app) as client:
+        r = client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "https://compas.roddos.com",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]

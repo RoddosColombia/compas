@@ -160,9 +160,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Cabeceras de seguridad en TODA respuesta (Spec §8.3 / DoD #12).
-    app.add_middleware(SecurityHeadersMiddleware)
-
     # CORS: origen exacto del frontend + credenciales (cookie de refresh). Spec §4.
     settings = get_settings()
     app.add_middleware(
@@ -172,6 +169,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Cabeceras de seguridad en TODA respuesta (Spec §8.3 / DoD #12). Se añade DESPUÉS
+    # de CORS a propósito (Kimi B-1): el último add_middleware es la capa MÁS EXTERNA,
+    # así Security envuelve también las respuestas de CORS (preflight, rechazos).
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.get("/health", tags=["health"])
     def liveness() -> dict[str, str]:
