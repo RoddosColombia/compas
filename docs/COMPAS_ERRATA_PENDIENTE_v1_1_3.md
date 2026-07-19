@@ -46,5 +46,12 @@ La inmutabilidad del audit usa una **segunda cadena de conexión a la MISMA data
 usuario exclusivo (`audit_writer`). Añadir `MONGODB_URI_AUDIT` por entorno a STACK §5.1 (Render/Actions).
 **No** es database separada (evita sacar `audit_log` del dump/restore/archivado).
 
+## E-8 — Rotación de refresh: reuso estricto sin replay de leeway (desviación PR-2, Kimi L7)
+El PLAN v2/v3 especificaba un **replay de 10 s** dentro del leeway para que un doble-submit
+legítimo (2 pestañas) no revocara la familia. **PR-2 implementa reuso ESTRICTO** (fail-closed:
+el doble-submit revoca la familia → re-login), sin replay server-side. Es seguro para Fase 0–1
+(degrada UX, no seguridad); mitigado por el single-flight del SPA. El test de concurrencia ya
+codifica el criterio estricto. **Compromiso:** implementar el replay server-side en **Sprint 0b/1**.
+
 ---
 **Firma CEO:** ☐ Aprobada — se folda en v1.1.3 en el próximo re-baseline.  Fecha: ________
