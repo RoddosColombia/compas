@@ -10,3 +10,5 @@ anyio==4.12.1
 httpx==0.28.1
 openpyxl==3.1.5
 APScheduler==3.11.2
+bcrypt==5.0.0
+PyJWT==2.12.1

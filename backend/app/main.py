@@ -9,10 +9,12 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.v1 import api_router
 from app.audit import service as audit_service
+from app.auth import repository as auth_repository
 from app.config import get_settings
 from app.db import mongo
 
@@ -57,10 +59,14 @@ async def lifespan(app: FastAPI):
     app.state.audit_client = audit_client
     audit_service.configure_audit(audit_client, settings.mongodb_db)
 
+    # Auth usa la conexión GENERAL de la app (no la de auditoría).
+    auth_repository.configure_auth(client, settings.mongodb_db)
+
     try:
         yield
     finally:
         audit_service.reset_audit()
+        auth_repository.reset_auth()
         if audit_client is not client:
             audit_client.close()
         client.close()
@@ -71,6 +77,16 @@ def create_app() -> FastAPI:
         title="COMPAS API",
         version=__version__,
         lifespan=lifespan,
+    )
+
+    # CORS: origen exacto del frontend + credenciales (cookie de refresh). Spec §4.
+    settings = get_settings()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.frontend_origin],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.get("/health", tags=["health"])

@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     # docs/COMPAS_ERRATA_PENDIENTE_v1_1_3.md). Opcional en dev; obligatoria fuera.
     mongodb_uri_audit: str | None = None
 
+    # ── Auth / sesiones (Spec §4/§8.1) ────────────────────────────────
+    access_ttl_min: int = 15  # access token (memoria SPA)
+    refresh_ttl_days: int = 30  # vida máxima de la familia de refresh
+    refresh_idle_hours: int = 12  # idle máximo del refresh
+    login_max_intentos: int = 5  # backoff por cuenta
+    login_lock_min: int = 15  # bloqueo tras superar intentos
+    login_ip_max: int = 20  # rate limit por IP en la ventana
+    login_ip_window_min: int = 15
+    cookie_secure: bool = True  # false solo para pruebas locales sin TLS
+    frontend_origin: str = "https://compas.roddos.com"  # CORS + verificación de Origin
+
     # ── Secretos (opcionales en dev/skeleton; obligatorios en prod) ────
     jwt_secret: str | None = None
     sentry_dsn: str | None = None
