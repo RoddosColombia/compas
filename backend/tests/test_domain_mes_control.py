@@ -5,6 +5,7 @@ inmutabilidad de meses cerrados (regla 4 de CLAUDE.md)."""
 from decimal import Decimal
 
 import pytest
+from app.domain.bancos import Banco
 from app.domain.mes_control import (
     EstadoMes,
     MesCerradoError,
@@ -37,11 +38,18 @@ def test_saldos_banco():
         saldo_inicial_caja=Decimal("0"),
         saldos_banco=[
             SaldoBanco(
-                banco="Bancolombia", saldo=Decimal("100.00"), fecha_reporte="2026-07-31"
+                banco="bancolombia", saldo=Decimal("100.00"), fecha_reporte="2026-07-31"
             )
         ],
     )
-    assert m.saldos_banco[0].banco == "Bancolombia"
+    assert m.saldos_banco[0].banco is Banco.BANCOLOMBIA
+
+
+@pytest.mark.parametrize("malo", ["Bancolombia", "BANCOLOMBIA", "nequi", "davivienda"])
+def test_saldos_banco_rechaza_banco_no_enum(malo):
+    # B-2: sin enum, 'Bancolombia'/'bancolombia'/'BANCOLOMBIA' serían 3 bancos.
+    with pytest.raises(ValidationError):
+        SaldoBanco(banco=malo, saldo=Decimal("1"), fecha_reporte="2026-07-31")
 
 
 def test_estado_enum_completo():

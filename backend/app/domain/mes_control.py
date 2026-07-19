@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo import IndexModel
 
 from app.core.money import Money
+from app.domain.bancos import Banco
 
 MESES_CONTROL_COLLECTION = "meses_control"
 
@@ -49,9 +50,14 @@ class MesCerradoError(Exception):
 class SaldoBanco(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    banco: str
+    banco: Banco  # enum, no texto libre (Kimi B-2)
     saldo: Money
     fecha_reporte: str
+
+    @field_validator("banco", mode="before")
+    @classmethod
+    def _cast_banco(cls, v: object) -> object:
+        return v if isinstance(v, Banco) else Banco(v)
 
     @field_validator("fecha_reporte")
     @classmethod
