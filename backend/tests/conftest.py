@@ -59,6 +59,27 @@ def pytest_collection_modifyitems(
             item.add_marker(skip)
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _beanie_documents_initialized():
+    """Beanie 2.0 no permite INSTANCIAR un Document sin init_beanie previo. Los
+    tests unitarios de dominio (construcción/validación, sin I/O) necesitan las
+    clases inicializadas. Lo hacemos una vez por sesión contra mongomock; los
+    tests de persistencia re-inicializan con su propia BD dentro de su event loop."""
+    import asyncio
+
+    from app.domain import DOMAIN_DOCUMENTS
+    from beanie import init_beanie
+
+    async def _do() -> None:
+        client = AsyncMongoMockClient()
+        await init_beanie(
+            database=client["compas_construct"], document_models=DOMAIN_DOCUMENTS
+        )
+
+    asyncio.run(_do())
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _clear_settings_cache():
     """Limpia el cache de get_settings antes y después de cada test — evita que un
@@ -77,15 +98,20 @@ def mock_mongo_client() -> AsyncMongoMockClient:
 
 
 @pytest.fixture
-def app(mock_mongo_client: AsyncMongoMockClient):
+def app(mock_mongo_client: AsyncMongoMockClient, monkeypatch: pytest.MonkeyPatch):
     """App FastAPI con el cliente Mongo real reemplazado por el mock.
 
     RUN_SCHEDULER queda en false (default): el servicio web NUNCA arranca el
-    scheduler (regla 6 de CLAUDE.md)."""
+    scheduler (regla 6 de CLAUDE.md).
+
+    El lifespan ahora llama `init_beanie` (Sprint 0b): parcheamos `create_client`
+    para que use el mock, no un cliente real que colgaría al intentar conectar."""
     from app.config import get_settings
+    from app.db import mongo
 
     os.environ.pop("RUN_SCHEDULER", None)
     get_settings.cache_clear()
+    monkeypatch.setattr(mongo, "create_client", lambda _uri: mock_mongo_client)
     application = create_app()
     application.dependency_overrides[get_mongo_client] = lambda: mock_mongo_client
     return application

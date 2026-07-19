@@ -61,6 +61,22 @@ def _init_sentry(settings) -> None:
     )
 
 
+async def ensure_beanie(app: FastAPI, client, db_name: str) -> bool:
+    """Inicializa Beanie una sola vez (idempotente). NO fatal: si Mongo está caído
+    devuelve False y deja `app.state.beanie_ready=False`, sin tumbar la liveness.
+    Readiness lo reintenta hasta que la BD responda."""
+    if getattr(app.state, "beanie_ready", False):
+        return True
+    try:
+        await mongo.init_beanie_for(client, db_name)
+        app.state.beanie_ready = True
+        return True
+    except Exception:  # noqa: BLE001 — degradación controlada, no crash de startup
+        logger.warning("init_beanie falló (Mongo no disponible aún); se reintentará.")
+        app.state.beanie_ready = False
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -90,8 +106,12 @@ async def lifespan(app: FastAPI):
     client = mongo.create_client(settings.mongodb_uri_compas)
     app.state.mongo_client = client
     app.state.settings = settings
-    # NOTA (Sprint 0b): cuando existan document models, llamar aquí
-    #   await mongo.init_beanie_for(client, settings.mongodb_db)
+    app.state.beanie_ready = False
+
+    # init_beanie SÍ conecta (crea índices) → si Mongo está caído al arrancar,
+    # colgaría/reventaría el startup y romperia la garantía "liveness sin BD".
+    # Por eso es NO fatal aquí y se reintenta idempotentemente desde readiness.
+    await ensure_beanie(app, client, settings.mongodb_db)
 
     # Conexión DEDICADA de auditoría (DoD #6). MONGODB_URI_AUDIT usa el usuario
     # `compas_audit` (audit_writer). FAIL-FAST fuera de dev (Kimi C-01): un warning

@@ -58,7 +58,12 @@ Procedimiento portado de SISMO-V3. Kimi es **auditor adversarial externo**: revi
 - **Alcance (gate obligatorio):** (1) el **PLAN** de cada sprint/sesión crítica ANTES de construir; (2) los **PRs críticos**: auth/RBAC/audit log, parsers/cargas bancarias, aprobación de presupuesto, cierre de mes, y migraciones de datos reales. Lo no-crítico no requiere gate.
 - **Umbral:** **≥ 9.0** (plan y código). Merge solo con nota ≥ 9.0 + autorización del CEO. RECHAZO o nota < 9.0 bloquea el merge.
 - **Rondas:** `I` (inicial) → `R` (re-auditoría tras resolver hallazgos) → `R…B` si hace falta otra vuelta, hasta alcanzar el umbral.
-- **Artefactos** en `.planning/phases/<fase>/`: `SOLICITUD-AUDITORIA-<ronda>[-PR<N>].md` (lo escribe Claude) → `AUDITORIA-KIMI-<ronda>[-PR<N>].md` (Andrés pega la respuesta de Kimi). Formato en `.planning/TEMPLATES/`.
-- **Entrega (loop manual):** Claude genera un PDF con `python scripts/generate_kimi_audit_pdf.py <ruta-solicitud>` (SOLICITUD + extracto del tracker) en `docs/audits/`; Andrés lo sube al chat de Kimi y pega la respuesta. Kimi no tiene CLI/API en este entorno.
-- **La SOLICITUD debe traer evidencia, no promesas:** qué hace, cambios de valores verificados "al peso", semántica preservada, puntos a auditar con lupa, y evidencia local (pytest/ruff/build verdes). **En auditorías de PR (código), el PDF DEBE incluir los archivos/diff reales + las salidas de tests** (una descripción no es evidencia; Kimi da NO-GO por evidencia si falta el código). Generar el paquete con `generate_kimi_audit_pdf.py <SOLICITUD.md> <EVIDENCIA.md>`.
+- **Artefactos — UNA carpeta por ronda, autocontenida.** Cada intercambio con Kimi vive en `planning/phases/<fase>/auditorias/<TARGET>-<RONDA>/` (TARGET ∈ `PLAN|PR1|PR2|PR3`, RONDA ∈ `I|R|R2…`), con nombres FIJOS:
+  - `SOLICITUD.md` — lo escribe Claude.
+  - `EVIDENCIA.md` — solo en PRs de código (diff + tests reales).
+  - `PAQUETE.pdf` — lo genera Claude; **es el que Andrés sube a Kimi**.
+  - `RESPUESTA.md` — Andrés pega la respuesta de Kimi. `CERTIFICADO.md` si hay un cierre/GO aparte.
+  Formato de SOLICITUD/RESPUESTA en `planning/TEMPLATES/`. NO usar nombres ad-hoc ni `docs/audits/`.
+- **Entrega (loop manual):** `python scripts/generate_kimi_audit_pdf.py <carpeta-ronda>/SOLICITUD.md [<carpeta-ronda>/EVIDENCIA.md]` → escribe `<carpeta-ronda>/PAQUETE.pdf` (SOLICITUD [+ EVIDENCIA] + extracto del tracker). Andrés sube ese PDF a Kimi y pega la respuesta en `RESPUESTA.md` de la misma carpeta. Kimi no tiene CLI/API en este entorno.
+- **La SOLICITUD debe traer evidencia, no promesas:** qué hace, cambios de valores verificados "al peso", semántica preservada, puntos a auditar con lupa, y evidencia local (pytest/ruff/build verdes). **En auditorías de PR (código), el PDF DEBE incluir los archivos/diff reales + las salidas de tests** (una descripción no es evidencia; Kimi da NO-GO por evidencia si falta el código).
 - **Regla de oro:** ningún merge crítico sin `AUDITORIA-KIMI ≥ 9.0` registrada; el resultado del gate se anota en la hoja 'Gates' del tracker.
