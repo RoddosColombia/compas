@@ -1,14 +1,16 @@
 # backend/app/db/mongo.py
 """Conexión a MongoDB (Motor) e inicialización de Beanie.
 
-Sprint 0, Sesión 1: dejamos el plumbing listo y probado, pero SIN registrar
-document models todavía (no existen). `init_beanie_for` se probará contra
-mongomock y se cableará en el lifespan del web en el Sprint 0b, cuando lleguen
-los primeros modelos (Rubro, MesControl, Configuracion, AuditLog...).
+Sprint 0b: se registran los primeros Documents de dominio (Rubro, MesControl,
+Configuracion) y se cablea `init_beanie` en el lifespan. `AuditLog`, `User` y
+`RefreshSession` NO son Documents de Beanie: sus escrituras van por Motor crudo
+(conexión dedicada de auditoría / repositorios de auth), decisión de la Sesión 2.
 
 Diseño consciente: el cliente Motor se crea de forma perezosa (no conecta
 hasta el primer comando), por eso el servicio web arranca aunque Mongo esté
-caído — la liveness (/health) no depende de la BD; la readiness sí.
+caído — la liveness (/health) no depende de la BD; la readiness sí. Como
+`init_beanie` sí conecta (crea índices), en el lifespan se llama de forma NO
+fatal y se reintenta desde readiness (ver app.main), preservando esa garantía.
 """
 
 from typing import Any
@@ -16,10 +18,11 @@ from typing import Any
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# Document models de Beanie (para lecturas), se poblará cuando existan Documents.
-# AuditLog NO va aquí: es un Pydantic plano y sus escrituras van por la conexión
-# dedicada `compas_audit` (app.audit.service), no por el ODM general.
-DOCUMENT_MODELS: list[type] = []
+from app.domain import DOMAIN_DOCUMENTS
+
+# Document models de Beanie. Fuente única: el registro explícito de app.domain
+# (Kimi M-04). AuditLog/User/RefreshSession NO van aquí (Motor crudo).
+DOCUMENT_MODELS: list[type] = DOMAIN_DOCUMENTS
 
 
 def create_client(uri: str) -> AsyncIOMotorClient:
@@ -27,12 +30,12 @@ def create_client(uri: str) -> AsyncIOMotorClient:
     return AsyncIOMotorClient(uri, tz_aware=True)
 
 
-async def init_beanie_for(client: Any, db_name: str) -> None:
-    """Inicializa Beanie sobre la database indicada.
-
-    En la Sesión 1 `DOCUMENT_MODELS` está vacío; se irá llenando por sprint.
-    """
-    await init_beanie(database=client[db_name], document_models=DOCUMENT_MODELS)
+async def init_beanie_for(
+    client: Any, db_name: str, document_models: list[type] | None = None
+) -> None:
+    """Inicializa Beanie sobre la database indicada con los Documents de dominio."""
+    models = DOCUMENT_MODELS if document_models is None else document_models
+    await init_beanie(database=client[db_name], document_models=models)
 
 
 async def ping(client: Any) -> None:

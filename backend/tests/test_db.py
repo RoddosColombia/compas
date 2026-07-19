@@ -11,9 +11,14 @@ async def test_ping_ok_con_mongomock():
     await mongo.ping(client)
 
 
-async def test_init_beanie_sin_modelos_no_falla():
-    """DOCUMENT_MODELS aún vacío (AuditLog es Pydantic plano, no Beanie Document);
-    init_beanie debe ser un no-op seguro."""
+async def test_init_beanie_registra_los_documents_de_dominio():
+    """Sprint 0b: DOCUMENT_MODELS = los 3 Documents de dominio (Kimi M-04).
+    AuditLog/User/RefreshSession NO están (Motor crudo)."""
+    from app.audit.models import AuditLog
+    from app.domain import DOMAIN_DOCUMENTS
+
+    assert mongo.DOCUMENT_MODELS == DOMAIN_DOCUMENTS
+    assert len(DOMAIN_DOCUMENTS) == 3
+    assert AuditLog not in mongo.DOCUMENT_MODELS
     client = AsyncMongoMockClient()
-    assert mongo.DOCUMENT_MODELS == []
-    await mongo.init_beanie_for(client, "compas_test")
+    await mongo.init_beanie_for(client, "compas_test")  # no debe lanzar
