@@ -17,6 +17,7 @@ from app.audit import service as audit_service
 from app.auth import repository as auth_repository
 from app.config import get_settings
 from app.db import mongo
+from app.security import SecurityHeadersMiddleware
 
 logger = logging.getLogger("compas")
 
@@ -158,6 +159,9 @@ def create_app() -> FastAPI:
         version=__version__,
         lifespan=lifespan,
     )
+
+    # Cabeceras de seguridad en TODA respuesta (Spec §8.3 / DoD #12).
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # CORS: origen exacto del frontend + credenciales (cookie de refresh). Spec §4.
     settings = get_settings()
