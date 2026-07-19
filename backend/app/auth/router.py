@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
 
 from app.auth import service
+from app.auth.deps import get_current_user
+from app.auth.models import User
+from app.auth.permissions import capabilities_for
 from app.config import Settings, get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -114,3 +117,10 @@ async def logout(
     await service.logout(settings, access_token=at, refresh_token=rt)
     response.delete_cookie(REFRESH_COOKIE, path=COOKIE_PATH)
     return {"status": "ok"}
+
+
+@router.get("/capabilities")
+async def capabilities(user: User = Depends(get_current_user)):
+    """Capacidades efectivas del usuario. El navbar del frontend renderiza desde aquí
+    (M13.1 #6: prohibido mapear rol→ítems en el front). Fuente única §4.1/§2.4."""
+    return {"rol": user.rol.value, "capabilities": capabilities_for(user.rol)}
