@@ -9,6 +9,7 @@ Exactamente uno de los tres va poblado, y debe coincidir con el tipo de la clave
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -98,8 +99,6 @@ class Configuracion(Document):
 
 # --- Semilla real (fechas IVA de RODDOS, NIT 901012622 dígito 2) ---
 # ene–abr → 13-may-26 · may–ago → 10-sep-26 · sep–dic → 14-ene-27
-from decimal import Decimal  # noqa: E402
-
 SEMILLA_CONFIGURACION: list[dict] = [
     {
         "clave": "UMBRAL_DIF_BANCO_CIERRE",
