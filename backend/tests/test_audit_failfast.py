@@ -11,14 +11,28 @@ from fastapi.testclient import TestClient
 
 def test_arranque_falla_sin_uri_audit_fuera_de_dev(monkeypatch):
     monkeypatch.setenv("APP_ENV", "staging")
-    monkeypatch.setenv(
-        "JWT_SECRET", "x" * 40
-    )  # pasa el fail-fast de JWT (L3) para llegar al de audit
+    # Pasa los fail-fast previos (JWT L3, MFA) para LLEGAR al de audit.
+    monkeypatch.setenv("JWT_SECRET", "x" * 40)
+    monkeypatch.setenv("MFA_ENC_KEY", "k" * 44)
     monkeypatch.delenv("MONGODB_URI_AUDIT", raising=False)
     monkeypatch.delenv("RUN_SCHEDULER", raising=False)
     get_settings.cache_clear()
     app = create_app()
     with pytest.raises(RuntimeError, match="MONGODB_URI_AUDIT"):
+        with TestClient(app):
+            pass
+    get_settings.cache_clear()
+
+
+def test_arranque_falla_sin_mfa_key_fuera_de_dev(monkeypatch):
+    # DoD #11: sin MFA_ENC_KEY el secreto TOTP no se puede descifrar → fail-fast.
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("JWT_SECRET", "x" * 40)
+    monkeypatch.delenv("MFA_ENC_KEY", raising=False)
+    monkeypatch.delenv("RUN_SCHEDULER", raising=False)
+    get_settings.cache_clear()
+    app = create_app()
+    with pytest.raises(RuntimeError, match="MFA_ENC_KEY"):
         with TestClient(app):
             pass
     get_settings.cache_clear()

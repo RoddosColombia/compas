@@ -5,6 +5,7 @@ solo el prefijo de 5 hex del SHA-1; el sufijo se compara localmente."""
 import hashlib
 
 from app.auth import passwords
+from app.auth.roles import Role
 
 
 def _sha1_upper(s: str) -> str:
@@ -51,3 +52,43 @@ async def test_pwned_cuenta_prefijada_en_la_linea():
         return f"{h[5:]}:24230577"
 
     assert await passwords.password_pwned(pwd, fetch=fetch) is True
+
+
+# ── Política completa (longitud + HIBP) ──────────────────────────────────
+async def _no_pwned(_p):
+    return ""
+
+
+async def test_politica_rechaza_corta():
+    ok, motivo = await passwords.password_acceptable(
+        "corta", Role.admin, fetch=_no_pwned
+    )
+    assert ok is False and "longitud" in motivo.lower()
+
+
+async def test_politica_rechaza_filtrada():
+    pwd = "password1234"  # 12 chars (cumple longitud admin) pero filtrada
+    h = _sha1_upper(pwd)
+
+    async def fetch(_p):
+        return f"{h[5:]}:5"
+
+    ok, motivo = await passwords.password_acceptable(pwd, Role.admin, fetch=fetch)
+    assert ok is False and "HIBP" in motivo
+
+
+async def test_politica_acepta_larga_y_no_filtrada():
+    ok, motivo = await passwords.password_acceptable(
+        "clave-unica-larga-2026", Role.admin, fetch=_no_pwned
+    )
+    assert ok is True and motivo is None
+
+
+async def test_politica_hibp_caido_no_bloquea():
+    async def fetch_falla(_p):
+        raise RuntimeError("HIBP caído")
+
+    ok, _ = await passwords.password_acceptable(
+        "clave-unica-larga-2026", Role.admin, fetch=fetch_falla
+    )
+    assert ok is True  # fail-open

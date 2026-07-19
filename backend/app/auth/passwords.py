@@ -5,11 +5,14 @@ Costo fijo rounds=12 (no solo longitud). Política de LONGITUD: 12 para admin/di
 10 para el resto. HIBP (k-anonymity) añadido en Sprint 0b / PR-2."""
 
 import hashlib
+import logging
 from collections.abc import Awaitable, Callable
 
 import bcrypt
 
 from app.auth.roles import Role
+
+logger = logging.getLogger("compas.auth")
 
 ROUNDS = 12
 _LARGOS = {Role.admin: 12, Role.directivo: 12, Role.financiero: 10, Role.consulta: 10}
@@ -63,3 +66,24 @@ async def password_pwned(
         if parte == suffix:
             return True
     return False
+
+
+async def password_acceptable(
+    password: str,
+    rol: Role,
+    *,
+    fetch: Callable[[str], Awaitable[str]] = _default_fetch,
+) -> tuple[bool, str | None]:
+    """Política completa (§8.1): longitud por rol + no estar en HIBP. Punto de
+    integración para el alta/cambio de contraseña (módulo /users, futuro).
+
+    HIBP es advisory: si la API no responde, NO bloqueamos el cambio (fail-open con
+    log) — no dejamos al usuario sin poder operar por una caída de un tercero."""
+    if not password_meets_policy(password, rol):
+        return False, "La contraseña no cumple la longitud mínima."
+    try:
+        if await password_pwned(password, fetch=fetch):
+            return False, "Contraseña presente en filtraciones conocidas (HIBP)."
+    except Exception:  # noqa: BLE001 — HIBP caído no debe bloquear (advisory)
+        logger.warning("HIBP no disponible; se omite la verificación.", exc_info=True)
+    return True, None

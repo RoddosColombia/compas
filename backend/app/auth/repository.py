@@ -114,6 +114,48 @@ async def reset_failed_login(user_id: str) -> None:
     )
 
 
+# ── MFA ────────────────────────────────────────────────────────────────
+async def _set_user(user_id: str, campos: dict) -> None:
+    from bson import ObjectId
+
+    campos["updated_at"] = now_utc()
+    await _col(USERS_COLLECTION).update_one(
+        {"_id": ObjectId(user_id)}, {"$set": campos}
+    )
+
+
+async def set_mfa_secret(user_id: str, enc_secret: str) -> None:
+    """Enrolamiento (setup): guarda el secreto CIFRADO; mfa_habilitado sigue False
+    hasta que /activate confirme un código válido."""
+    await _set_user(user_id, {"mfa_secret": enc_secret, "mfa_habilitado": False})
+
+
+async def enable_mfa(user_id: str, hashed_backup_codes: list[str]) -> None:
+    """Activación: habilita MFA y fija los códigos de respaldo (hashes)."""
+    await _set_user(
+        user_id,
+        {"mfa_habilitado": True, "mfa_backup_codes": hashed_backup_codes},
+    )
+
+
+async def replace_backup_codes(user_id: str, hashed_backup_codes: list[str]) -> None:
+    await _set_user(user_id, {"mfa_backup_codes": hashed_backup_codes})
+
+
+async def clear_mfa(user_id: str, new_token_version: int) -> None:
+    """Reset de MFA: borra secreto y códigos, deshabilita y BUMP token_version
+    (revoca todas las sesiones activas — el access viejo deja de validar)."""
+    await _set_user(
+        user_id,
+        {
+            "mfa_secret": None,
+            "mfa_habilitado": False,
+            "mfa_backup_codes": [],
+            "token_version": new_token_version,
+        },
+    )
+
+
 # ── Refresh sessions ───────────────────────────────────────────────────
 async def create_refresh_session(session: RefreshSession) -> None:
     await _col(REFRESH_SESSIONS_COLLECTION).insert_one(
@@ -182,3 +224,29 @@ async def reset_ip_attempts(ip: str) -> None:
     """Libera el cupo de la IP tras un login exitoso (Kimi H1): así una ráfaga
     legítima desde una NAT de oficina no se auto-bloquea con 429."""
     await _col(LOGIN_THROTTLE_COLLECTION).delete_one({"_id": f"ip:{ip}"})
+
+
+async def _bump_throttle(key: str, window_min: int) -> int:
+    doc = await _col(LOGIN_THROTTLE_COLLECTION).find_one_and_update(
+        {"_id": key},
+        {
+            "$inc": {"count": 1},
+            "$setOnInsert": {"expires_at": now_utc() + timedelta(minutes=window_min)},
+        },
+        upsert=True,
+        return_document=True,
+    )
+    return doc.get("count", 1) if doc else 1
+
+
+async def register_mfa_attempt(user_id: str, ip: str, *, window_min: int) -> int:
+    """Throttle de /auth/mfa/verify por CUENTA e IP (6 dígitos = fuerza bruta viable).
+    Devuelve el mayor de los dos contadores. Mismo TTL que el rate limit de login."""
+    a = await _bump_throttle(f"mfa:acct:{user_id}", window_min)
+    b = await _bump_throttle(f"mfa:ip:{ip}", window_min)
+    return max(a, b)
+
+
+async def reset_mfa_attempts(user_id: str, ip: str) -> None:
+    await _col(LOGIN_THROTTLE_COLLECTION).delete_one({"_id": f"mfa:acct:{user_id}"})
+    await _col(LOGIN_THROTTLE_COLLECTION).delete_one({"_id": f"mfa:ip:{ip}"})
