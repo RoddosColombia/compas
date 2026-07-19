@@ -20,6 +20,44 @@ from app.db import mongo
 
 logger = logging.getLogger("compas")
 
+# Campos de dominio que NUNCA deben salir a Sentry (STACK §7, F-23).
+_PII_KEYS = {
+    "descripcion",
+    "proveedor",
+    "acreedor",
+    "valor",
+    "authorization",
+    "password",
+}
+
+
+def _scrub_pii(event: dict, _hint: dict) -> dict:
+    """before_send de Sentry: elimina campos sensibles antes de enviar."""
+    req = event.get("request", {})
+    if isinstance(req.get("headers"), dict):
+        req["headers"] = {
+            k: v for k, v in req["headers"].items() if k.lower() not in _PII_KEYS
+        }
+    return event
+
+
+def _init_sentry(settings) -> None:
+    """Inicializa Sentry si hay DSN y el SDK está instalado (H3). send_default_pii=False
+    + scrubbing. Import guardado: dev/tests sin el paquete no fallan."""
+    if not settings.sentry_dsn:
+        return
+    try:
+        import sentry_sdk
+    except ImportError:
+        logger.warning("SENTRY_DSN presente pero sentry_sdk no instalado.")
+        return
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        send_default_pii=False,
+        before_send=_scrub_pii,
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,6 +69,19 @@ async def lifespan(app: FastAPI):
             "RUN_SCHEDULER=true en el servicio web: prohibido (regla 6). "
             "Los jobs viven solo en el worker compas-jobs."
         )
+
+    # L3 (Kimi): fail-fast del secreto JWT fuera de dev — mismo principio que C-01.
+    # Sin esto la app arranca "sana" (health no toca auth) y cada login da 500.
+    if settings.app_env != "development" and (
+        not settings.jwt_secret or len(settings.jwt_secret) < 32
+    ):
+        raise RuntimeError(
+            "JWT_SECRET requerido y >= 32 bytes fuera de dev (Spec §8.1)."
+        )
+
+    _init_sentry(
+        settings
+    )  # H3: observabilidad de errores (incl. fallos del canal audit)
 
     # Cliente Motor perezoso (no conecta hasta el primer comando) → el web
     # arranca aunque Mongo esté caído; la liveness no depende de la BD.

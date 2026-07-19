@@ -140,10 +140,13 @@ async def rotate_refresh_session(jti: str) -> bool:
     return doc is not None
 
 
-async def revoke_family(family_id: str) -> None:
-    await _col(REFRESH_SESSIONS_COLLECTION).update_many(
-        {"family_id": family_id}, {"$set": {"revocado": True}}
+async def revoke_family(family_id: str) -> int:
+    """Revoca la familia y devuelve cuántas sesiones NO-revocadas pasó a revocadas
+    (para emitir el evento solo en la transición — Kimi H5)."""
+    res = await _col(REFRESH_SESSIONS_COLLECTION).update_many(
+        {"family_id": family_id, "revocado": False}, {"$set": {"revocado": True}}
     )
+    return getattr(res, "modified_count", 0)
 
 
 # ── Denylist ───────────────────────────────────────────────────────────
@@ -159,7 +162,9 @@ async def denylist_contains(jti: str) -> bool:
 
 # ── Rate limit por IP ──────────────────────────────────────────────────
 async def register_ip_attempt(ip: str, *, window_min: int) -> int:
-    """Incrementa el contador de intentos de la IP en la ventana y devuelve el total."""
+    """Incrementa el contador de intentos de la IP en la ventana y devuelve el total.
+    El TTL (expires_at + índice expireAfterSeconds:0) reinicia la ventana; sin ese
+    índice el contador sería monótono para siempre (Kimi L4)."""
     col = _col(LOGIN_THROTTLE_COLLECTION)
     doc = await col.find_one_and_update(
         {"_id": f"ip:{ip}"},
@@ -171,3 +176,9 @@ async def register_ip_attempt(ip: str, *, window_min: int) -> int:
         return_document=True,
     )
     return doc.get("count", 1) if doc else 1
+
+
+async def reset_ip_attempts(ip: str) -> None:
+    """Libera el cupo de la IP tras un login exitoso (Kimi H1): así una ráfaga
+    legítima desde una NAT de oficina no se auto-bloquea con 429."""
+    await _col(LOGIN_THROTTLE_COLLECTION).delete_one({"_id": f"ip:{ip}"})

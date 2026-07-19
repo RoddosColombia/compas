@@ -48,6 +48,13 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normaliza_email(cls, v: object) -> object:
+        # L5: normalizar en ESCRITURA (no solo en login); si no, A@Roddos.com
+        # queda inlogueable. Unicidad por el índice sobre el valor normalizado.
+        return v.strip().lower() if isinstance(v, str) else v
+
     @field_validator("rol", mode="before")
     @classmethod
     def _cast_rol(cls, v: object) -> Role:

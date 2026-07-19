@@ -36,6 +36,21 @@ def verify_origin(request: Request, settings: Settings = Depends(_settings)) -> 
         raise HTTPException(403, "Origin no permitido.")
 
 
+def client_ip(request: Request) -> str:
+    """IP real del cliente tras Cloudflare→Render (Kimi L2). `request.client.host`
+    a secas sería la IP del proxy → un solo bucket para todos (rate limit inútil y
+    DoS colectivo). Preferimos `CF-Connecting-IP` (canónica de Cloudflare), luego el
+    primer salto de `X-Forwarded-For`, y por último el peer. Requiere que el origen
+    Render solo sea alcanzable vía Cloudflare + `uvicorn --proxy-headers` (RUNBOOK)."""
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _set_refresh_cookie(response: Response, settings: Settings, token: str) -> None:
     response.set_cookie(
         REFRESH_COOKIE,
@@ -56,7 +71,7 @@ async def login(
     settings: Settings = Depends(_settings),
     _: None = Depends(verify_origin),
 ):
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     try:
         pair = await service.login(
             settings, email=body.email, password=body.password, ip=ip

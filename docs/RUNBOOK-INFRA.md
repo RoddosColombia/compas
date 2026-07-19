@@ -56,6 +56,7 @@
 
 - [ ] `compas.roddos.com` → Vercel · `api.compas.roddos.com` → Render
 - [ ] TLS full-strict · WAF básico · HSTS
+- [ ] **Restringir el origen Render a IPs de Cloudflare** (firewall / Authenticated Origin Pulls) para que `CF-Connecting-IP` no sea spoofeable (Kimi L2). El backend corre con `uvicorn --proxy-headers` y lee la IP real de ese header.
 
 ## 6. S3 (cuenta AWS existente)
 

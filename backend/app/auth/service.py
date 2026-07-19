@@ -44,7 +44,14 @@ async def _safe_emit(evento: AuditEvento, **kw) -> None:
     try:
         await emit_audit(evento, **kw)
     except Exception:  # noqa: BLE001 — auth no debe fallar por el canal de audit (O1)
+        # H3: registrar Y alertar (Sentry si está), no tragar en silencio.
         logger.error("no se pudo emitir %s", evento, exc_info=True)
+        try:
+            import sentry_sdk
+
+            sentry_sdk.capture_exception()
+        except ImportError:
+            pass
 
 
 def _issue_pair(
@@ -92,21 +99,30 @@ async def login(settings: Settings, *, email: str, password: str, ip: str) -> To
     email = email.strip().lower()
     user = await repository.get_user_by_email(email)
 
-    # Anti-enumeración: si no existe, gastamos el mismo tiempo con el hash dummy.
+    # Anti-enumeración: si no existe, gastamos el mismo tiempo con el hash dummy (L1).
     if user is None:
         passwords.verify_password(password, passwords.DUMMY_HASH)
         await _safe_emit(
-            AuditEvento.user_login_fallido, entidad="user", metadata={"email": email}
+            AuditEvento.user_login_fallido,
+            entidad="user",
+            metadata={"email": email, "ip": ip},
         )
         raise AuthError(_INVALID)
 
-    bloqueado = user.locked_until is not None and user.locked_until > now_utc()
-    if (
-        bloqueado
-        or not user.activo
-        or not passwords.verify_password(password, user.password_hash)
-    ):
-        # Solo cuenta como fallo real (no si ya estaba bloqueado/inactivo).
+    now = now_utc()
+    # L6: si el bloqueo ya expiró, la condena se cumplió → ventana nueva (reset ANTES
+    # de evaluar; si no, un fallo tras la expiración re-bloquea con 6≥5).
+    if user.locked_until is not None and user.locked_until <= now:
+        await repository.reset_failed_login(user.id)
+        user.failed_attempts = 0
+        user.locked_until = None
+
+    bloqueado = user.locked_until is not None and user.locked_until > now
+    # L1: verificar SIEMPRE (una vez), incluso si está bloqueado/inactivo → sin oráculo
+    # de timing (el cortocircuito del `or` delataba la cuenta con un 401 inmediato).
+    password_ok = passwords.verify_password(password, user.password_hash)
+
+    if bloqueado or not user.activo or not password_ok:
         if user.activo and not bloqueado:
             await repository.register_failed_login(
                 user.id,
@@ -114,21 +130,25 @@ async def login(settings: Settings, *, email: str, password: str, ip: str) -> To
                 lock_min=settings.login_lock_min,
             )
             refreshed = await repository.get_user_by_email(email)
-            if (
-                refreshed
-                and refreshed.locked_until
-                and refreshed.failed_attempts >= settings.login_max_intentos
-            ):
+            # H5: emitir bloqueado SOLO en la transición exacta (== max).
+            if refreshed and refreshed.failed_attempts == settings.login_max_intentos:
                 await _safe_emit(
-                    AuditEvento.user_bloqueado, entidad="user", entidad_id=user.id
+                    AuditEvento.user_bloqueado,
+                    entidad="user",
+                    entidad_id=user.id,
+                    metadata={"ip": ip},
                 )
         await _safe_emit(
-            AuditEvento.user_login_fallido, entidad="user", entidad_id=user.id
+            AuditEvento.user_login_fallido,
+            entidad="user",
+            entidad_id=user.id,
+            metadata={"ip": ip},
         )
         raise AuthError(_INVALID)
 
     # Éxito.
     await repository.reset_failed_login(user.id)
+    await repository.reset_ip_attempts(ip)  # H1: liberar el cupo IP en éxito
     family_id = uuid4().hex
     pair, session = _issue_pair(settings, user, family_id, now_utc())
     await repository.create_refresh_session(session)
@@ -140,6 +160,19 @@ async def login(settings: Settings, *, email: str, password: str, ip: str) -> To
         metadata={"ip": ip},
     )
     return pair
+
+
+async def _flag_reuse(family_id: str, sub: str) -> None:
+    """Revoca la familia y emite user.bloqueado SOLO si hubo transición (H5:
+    evita el doble evento por carrera o por replays sucesivos)."""
+    revocadas = await repository.revoke_family(family_id)
+    if revocadas > 0:
+        await _safe_emit(
+            AuditEvento.user_bloqueado,
+            entidad="user",
+            entidad_id=sub,
+            metadata={"motivo": "reuso_refresh"},
+        )
 
 
 async def refresh(settings: Settings, *, refresh_token: str) -> TokenPair:
@@ -165,13 +198,7 @@ async def refresh(settings: Settings, *, refresh_token: str) -> TokenPair:
     session = await repository.get_refresh_session(jti)
     if session is None or session.revocado:
         # jti desconocido o familia revocada → tratar como reuso: revocar familia.
-        await repository.revoke_family(family_id)
-        await _safe_emit(
-            AuditEvento.user_bloqueado,
-            entidad="user",
-            entidad_id=sub,
-            metadata={"motivo": "reuso_refresh"},
-        )
+        await _flag_reuse(family_id, sub)
         raise AuthError(_INVALID)
 
     now = now_utc()
@@ -186,13 +213,7 @@ async def refresh(settings: Settings, *, refresh_token: str) -> TokenPair:
     # Rotación ATÓMICA. Si perdemos (ya rotado) → REUSO → revocar familia.
     gano = await repository.rotate_refresh_session(jti)
     if not gano:
-        await repository.revoke_family(family_id)
-        await _safe_emit(
-            AuditEvento.user_bloqueado,
-            entidad="user",
-            entidad_id=sub,
-            metadata={"motivo": "reuso_refresh"},
-        )
+        await _flag_reuse(family_id, sub)
         raise AuthError(_INVALID)
 
     # Nueva sesión en la MISMA familia (family_created_at heredado → TTL estable).

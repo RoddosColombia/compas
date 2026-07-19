@@ -14,7 +14,10 @@ services:
     autoDeploy: false           # producción solo por tag + reviewer (F-32)
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    # --proxy-headers: honra X-Forwarded-* del edge. La IP real del cliente se lee en
+    # código vía CF-Connecting-IP (Kimi L2); el origen DEBE quedar restringido a IPs de
+    # Cloudflare (RUNBOOK §5) para que ese header no sea spoofeable.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2 --proxy-headers
     healthCheckPath: /health
     envVars:
       - key: RUN_SCHEDULER
@@ -79,7 +82,7 @@ services:
     autoDeploy: true            # staging SÍ auto-despliega desde main
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
     healthCheckPath: /health
     envVars:
       - key: RUN_SCHEDULER
