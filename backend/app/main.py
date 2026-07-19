@@ -28,6 +28,8 @@ _PII_KEYS = {
     "valor",
     "authorization",
     "password",
+    "cookie",  # Kimi B-1: la cookie de refresh no debe viajar a Sentry
+    "set-cookie",
 }
 
 
