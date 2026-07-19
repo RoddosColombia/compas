@@ -30,6 +30,8 @@ services:
         sync: false             # secreto — se carga a mano (RUNBOOK §8)
       - key: JWT_SECRET
         sync: false
+      - key: MFA_ENC_KEY        # Fernet urlsafe-b64 32B — cifra el secreto TOTP (DoD #11)
+        sync: false
       - key: SENTRY_DSN
         sync: false
       - key: AWS_ACCESS_KEY_ID
@@ -94,6 +96,8 @@ services:
       - key: MONGODB_URI_COMPAS   # apunta a compas_stg (datos anonimizados, F-25)
         sync: false
       - key: JWT_SECRET
+        sync: false
+      - key: MFA_ENC_KEY
         sync: false
 
 # Nota: el frontend (proyecto 'compas') vive en Vercel, no en este blueprint.
