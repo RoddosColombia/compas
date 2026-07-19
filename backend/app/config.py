@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     cookie_secure: bool = True  # false solo para pruebas locales sin TLS
     frontend_origin: str = "https://compas.roddos.com"  # CORS + verificación de Origin
 
+    # ── MFA (Spec §8.1 / DoD #11) ──────────────────────────────────────
+    mfa_stepup_window_min: int = 5  # "MFA reciente" para step-up (claim mfa_at)
+    mfa_backup_codes: int = 10  # códigos de respaldo de un solo uso
+    mfa_verify_max: int = 5  # backoff en /auth/mfa/verify (6 dígitos = fuerza bruta)
+    mfa_verify_window_min: int = 15
+    # Clave de cifrado del mfa_secret en reposo (Fernet, urlsafe-b64 de 32 bytes).
+    # Fail-fast fuera de dev (como JWT_SECRET): sin ella el TOTP no se puede descifrar.
+    mfa_enc_key: str | None = None
+
     # ── Secretos (opcionales en dev/skeleton; obligatorios en prod) ────
     jwt_secret: str | None = None
     sentry_dsn: str | None = None
