@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+/* Tailwind 4 (CSS-first). Los tokens de tema de shadcn se añadirán cuando
+   entre el sistema de diseño; en la Sesión 1 basta con el reset de Tailwind. */

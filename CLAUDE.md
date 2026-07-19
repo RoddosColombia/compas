@@ -48,3 +48,6 @@ RODDOS vende motos a cuotas semanales (Raider, Sport, Apache). 5 grupos de rubro
 - No microservicios, no GraphQL, no Docker (Render hace el build), no localStorage para tokens (access en memoria, refresh en cookie HttpOnly).
 - No agregar alcance sin CR: el patrón del proyecto es declarar ANTES de construir (lección de la auditoría — ver histórico de versiones en los docs).
 - No tocar la lógica de un mes cerrado ni "corregir" el histórico en migraciones.
+
+## Cierre de sesión (obligatorio)
+Al terminar cada sesión de trabajo: (1) actualiza docs/COMPAS_Control_Desarrollo.xlsx con openpyxl — busca la fila de la tarea en la hoja 'Tareas' por su ID, cambia Estado (Hecha/En curso/Bloqueada), pon Fecha cierre (YYYY-MM-DD) y en Evidencia el hash del commit o PR; NO toques encabezados, fórmulas del Dashboard ni las validaciones de datos; (2) si el trabajo cerró un punto del DoD o un Gate, actualiza esa hoja también; (3) commit del Excel junto con el código de la sesión. Si una tarea nueva no existe en el tracker, agrégala como fila nueva siguiendo el formato de las existentes en vez de construir sin registro.

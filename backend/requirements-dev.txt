@@ -1,0 +1,7 @@
+# COMPAS backend — dependencias de desarrollo y test
+-r requirements.txt
+pytest==9.0.3
+pytest-asyncio==1.3.0
+pytest-cov==7.1.0
+mongomock-motor==0.0.36   # SOLO Sesión 1; ver comentario en tests/conftest.py
+ruff>=0.6
