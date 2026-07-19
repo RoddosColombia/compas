@@ -16,7 +16,9 @@ from typing import Any
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# Se poblará desde el Sprint 0b con los Document de Beanie.
+# Document models de Beanie (para lecturas), se poblará cuando existan Documents.
+# AuditLog NO va aquí: es un Pydantic plano y sus escrituras van por la conexión
+# dedicada `compas_audit` (app.audit.service), no por el ODM general.
 DOCUMENT_MODELS: list[type] = []
 
 

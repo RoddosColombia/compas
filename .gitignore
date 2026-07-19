@@ -34,3 +34,6 @@ Thumbs.db
 
 # ── Fixtures bancarios (solo anonimizados; reales viven en S3) ──
 # Los .xlsx/.csv de extractos reales NO entran al repo (Spec §1.6.1).
+
+# ── Auditoría Kimi: PDFs generados (regenerables desde el .md + tracker) ──
+docs/audits/*.pdf

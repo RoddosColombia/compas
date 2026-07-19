@@ -1,0 +1,30 @@
+# Portado de SISMO-V3 → COMPAS (entregable para el par revisor)
+
+Tabla por artefacto: **portado** (traído casi igual), **adaptado** (traído y modificado al
+Spec de COMPAS) o **construido** (nuevo, no existe en SISMO). Mitiga bus-factor (riesgo #1/#8).
+
+## Sesión 2 · PR-1 — Audit base
+
+| Artefacto COMPAS | Origen SISMO | Clasif. | Notas |
+|---|---|---|---|
+| `app/audit/events.py` (`AuditEvento`, 30) | `models/audit_log.py` (tenía su propio set de eventos) | **construido** | Catálogo CERRADO de 30 del Spec §1.11 + `extracto.cargado` (CR-001). Distinto al de SISMO. |
+| `app/audit/models.py` (`AuditLog` Pydantic) | `models/audit_log.py` (Beanie Document) | **adaptado** | En COMPAS es Pydantic plano: las escrituras van por conexión dedicada, no por el ODM general. |
+| `app/audit/service.py` (`emit_audit`) | `services/audit/` | **adaptado** | Escribe por `compas_audit` (audit_writer); valida contra el catálogo cerrado. |
+| Inmutabilidad por privilegios + `compas_audit` | (SISMO usa readWrite) | **construido** | 2ª conexión a la MISMA db `compas`; app general sin update/remove; test neg+pos (@requires_real_mongo, CI S3). |
+| `scripts/create_audit_role.py` | — | **construido** | Rol/usuario idempotente para el gate de inmutabilidad. |
+| `app/core/time.py::now_utc` | `utils/time.py::now_bogota` | **construido** | Convención A-04: UTC-aware en persistencia; `now_bogota` solo presentación. |
+
+## Sesión 2 · PR-2 — auth (JWT endurecido)
+
+| Artefacto COMPAS | Origen SISMO | Clasif. | Notas |
+|---|---|---|---|
+| `app/auth/tokens.py` (JWT) | `core/security.py` (JWT básico) | **construido** | HS256 explícito, jti uuid4 en ambos, family_id, verify_exp para logout. |
+| `app/auth/service.py` (login/refresh/logout) | `routers/auth.py` (estructura) | **construido** | token_version, rotación atómica + reuso, backoff IP+cuenta, anti-enumeración. SISMO no tenía nada de esto. |
+| `app/auth/repository.py` | — | **construido** | Motor crudo; rotación findOneAndUpdate; TTL/índices. |
+| `app/auth/passwords.py` | `core/security.py` (bcrypt) | **adaptado** | bcrypt rounds=12 + política por rol + DUMMY_HASH. |
+| `app/auth/roles.py` | `models/user.py::Role` | **adaptado** | Roles COMPAS (admin/directivo/financiero/consulta), distintos de SISMO. |
+| `app/auth/deps.py::get_current_user` | `core/security.py::get_current_user` | **adaptado** | + denylist + token_version por request. |
+| `scripts/create_auth_indexes.py` | — | **construido** | Índices idempotentes (email/jti únicos, TTL). |
+
+## Sesión 2 · PR-3 (RBAC)
+_(se completará al construir PR-3)_

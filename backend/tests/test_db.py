@@ -12,8 +12,8 @@ async def test_ping_ok_con_mongomock():
 
 
 async def test_init_beanie_sin_modelos_no_falla():
-    """En la Sesión 1 DOCUMENT_MODELS está vacío; init_beanie debe ser un
-    no-op seguro (el cableado real llega en el Sprint 0b)."""
+    """DOCUMENT_MODELS aún vacío (AuditLog es Pydantic plano, no Beanie Document);
+    init_beanie debe ser un no-op seguro."""
     client = AsyncMongoMockClient()
     assert mongo.DOCUMENT_MODELS == []
     await mongo.init_beanie_for(client, "compas_test")
