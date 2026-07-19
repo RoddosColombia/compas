@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
 
 from app.auth import service
-from app.auth.deps import get_current_user
+from app.auth.deps import (
+    get_current_user,
+    get_current_user_with_claims,
+    mfa_reciente,
+    require_step_up,
+)
 from app.auth.models import User
 from app.auth.permissions import capabilities_for
 from app.config import Settings, get_settings
@@ -23,6 +28,22 @@ class LoginBody(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
     email: str
     password: str
+
+
+class MfaSetupBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    password: str  # re-autenticación para proteger el enrolamiento
+
+
+class MfaActivateBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    code: str
+
+
+class MfaVerifyBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    mfa_token: str
+    code: str
 
 
 def _settings() -> Settings:
@@ -76,13 +97,85 @@ async def login(
 ):
     ip = client_ip(request)
     try:
-        pair = await service.login(
+        result = await service.login(
             settings, email=body.email, password=body.password, ip=ip
+        )
+    except service.AuthError as e:
+        raise HTTPException(e.status, e.detail) from e
+    # Usuario con MFA: 1er paso OK → challenge (sin cookie ni access).
+    if isinstance(result, service.MfaChallenge):
+        return {"mfa_required": True, "mfa_token": result.challenge_token}
+    _set_refresh_cookie(response, settings, result.refresh_token)
+    return {"access_token": result.access_token, "token_type": "bearer"}
+
+
+@router.post("/mfa/verify")
+async def mfa_verify(
+    body: MfaVerifyBody,
+    request: Request,
+    response: Response,
+    settings: Settings = Depends(_settings),
+    _: None = Depends(verify_origin),
+):
+    """2º paso del login: canjea challenge + código (TOTP o respaldo) por los tokens."""
+    ip = client_ip(request)
+    try:
+        pair = await service.mfa_verify(
+            settings, challenge_token=body.mfa_token, code=body.code, ip=ip
         )
     except service.AuthError as e:
         raise HTTPException(e.status, e.detail) from e
     _set_refresh_cookie(response, settings, pair.refresh_token)
     return {"access_token": pair.access_token, "token_type": "bearer"}
+
+
+@router.post("/mfa/setup")
+async def mfa_setup(
+    body: MfaSetupBody,
+    settings: Settings = Depends(_settings),
+    both: tuple[User, dict] = Depends(get_current_user_with_claims),
+    _: None = Depends(verify_origin),
+):
+    """Inicia el enrolamiento: devuelve secreto + URI otpauth (para el QR) UNA vez.
+
+    Si el usuario YA tiene MFA (re-enrolamiento), exige step-up (Kimi B1): re-enrolar
+    pisa el secreto y deshabilita MFA → misma protección que /reset."""
+    user, claims = both
+    if user.mfa_habilitado and not mfa_reciente(claims, settings):
+        raise HTTPException(403, "Step-up MFA requerido para re-enrolar.")
+    try:
+        return await service.mfa_setup(settings, user=user, password=body.password)
+    except service.AuthError as e:
+        raise HTTPException(e.status, e.detail) from e
+
+
+@router.post("/mfa/activate")
+async def mfa_activate(
+    body: MfaActivateBody,
+    settings: Settings = Depends(_settings),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_origin),
+):
+    """Confirma el enrolamiento con un código válido → habilita MFA y entrega los
+    códigos de respaldo (en claro, UNA vez)."""
+    try:
+        codes = await service.mfa_activate(settings, user=user, code=body.code)
+    except service.AuthError as e:
+        raise HTTPException(e.status, e.detail) from e
+    return {"backup_codes": codes}
+
+
+@router.post("/mfa/reset")
+async def mfa_reset(
+    settings: Settings = Depends(_settings),
+    user: User = Depends(require_step_up()),
+    _: None = Depends(verify_origin),
+):
+    """Reset del PROPIO MFA (exige step-up: MFA reciente). Borra secreto/códigos y
+    revoca sesiones (bump token_version). El reset de OTRO usuario lo hará el Admin
+    desde el módulo /users."""
+    await service.mfa_reset(settings, user_id=user.id)
+    return {"status": "ok"}
 
 
 @router.post("/refresh")

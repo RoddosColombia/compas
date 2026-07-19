@@ -79,11 +79,25 @@
 | MONGODB_URI_COMPAS / _STG | Render (api y worker) / Actions | Semestral |
 | MONGODB_URI_AUDIT | Render (api y worker) / Actions — usuario `compas_audit` (audit_writer) | Semestral |
 | JWT_SECRET (propio, ≠ SISMO) | Render | Semestral; compromiso → rotar + bump global de token_version |
+| MFA_ENC_KEY (Fernet urlsafe-b64 32B) | Render (api + api-stg) | Cifra el `mfa_secret` TOTP en reposo (DoD #11). Generar: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. **Rotación = re-enrolar** (los secretos cifrados con la clave vieja dejan de descifrar): coordinar reset de MFA de los usuarios. |
 | SENTRY_DSN ×2 | Render / Vercel | — |
 | AWS keys IAM `compas-app` | Render | Semestral |
 | BETTER_STACK_TOKEN + heartbeat URLs | Render (worker) | — |
 
 Procedimiento de compromiso: rotar el secreto afectado → `token_version` global +1 → verificar sesiones caídas → registrar en audit log.
+
+### Break-glass de MFA (usuario que perdió su segundo factor)
+1. El usuario usa un **código de respaldo** en `/auth/mfa/verify` para entrar; luego re-enrola (`/auth/mfa/setup` → `/auth/mfa/activate`).
+2. Si también perdió los respaldos → el **Admin** resetea su MFA (borra secreto/códigos y hace bump de `token_version`); el usuario re-enrola en el próximo login. (Endpoint admin sobre otro usuario: módulo `/users`, sprint posterior; hoy el reset self con step-up ya existe, y el Admin puede resetear vía script/DB con `repository.clear_mfa`).
+3. Todo reset de MFA revoca las sesiones activas del usuario (bump `token_version`).
+
+> **Decisión de UX (Kimi B3):** el claim `mfa_at` NO se propaga en el `/auth/refresh` → el
+> access rotado no lo lleva. En la práctica, el step-up exige **re-verificar el 2º factor**
+> pasados `mfa_stepup_window_min` (5 min) desde el último `/mfa/verify`. Aceptable para
+> operaciones de alta sensibilidad (reabrir/config/saldo inicial). Mejora futura: endpoint
+> `/auth/step-up` que emita un access fresco con `mfa_at` sin re-login completo.
+
+> `MONGODB_URI_AUDIT` y `MFA_ENC_KEY` están declarados en `render.yaml` (api, worker y api-stg, `sync:false`): el operador carga los valores a mano antes del primer deploy no-dev (sin ellos: fail-fast C-01 / MFA). Corregido en PR-2 (Kimi M2).
 
 ## 9. Verificación de cierre del Sprint 0 (evidencias para G1)
 

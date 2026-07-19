@@ -97,6 +97,13 @@ async def lifespan(app: FastAPI):
             "JWT_SECRET requerido y >= 32 bytes fuera de dev (Spec §8.1)."
         )
 
+    # MFA_ENC_KEY: sin ella el mfa_secret no se puede descifrar → MFA inservible.
+    # Fail-fast fuera de dev (mismo principio que JWT/audit).
+    if settings.app_env != "development" and not settings.mfa_enc_key:
+        raise RuntimeError(
+            "MFA_ENC_KEY requerida fuera de dev: cifra el secreto TOTP (DoD #11)."
+        )
+
     _init_sentry(
         settings
     )  # H3: observabilidad de errores (incl. fallos del canal audit)

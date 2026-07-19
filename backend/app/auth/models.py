@@ -45,6 +45,10 @@ class User(BaseModel):
     activo: bool = True
     failed_attempts: int = 0
     locked_until: datetime | None = None
+    # ── MFA (Spec §8.1 / DoD #11) ──
+    mfa_habilitado: bool = False
+    mfa_secret: str | None = None  # CIFRADO en reposo (Fernet); nunca en claro
+    mfa_backup_codes: list[str] = Field(default_factory=list)  # hashes bcrypt, un uso
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 

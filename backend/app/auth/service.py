@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
-from app.auth import passwords, repository, tokens
+from app.auth import mfa, passwords, repository, tokens
 from app.auth.models import RefreshSession, User
 from app.config import Settings
 from app.core.time import now_utc
@@ -40,6 +40,14 @@ class TokenPair:
     refresh_expires_at: datetime
 
 
+@dataclass
+class MfaChallenge:
+    """1er paso del login para usuarios con MFA: no da acceso; se canjea en
+    /auth/mfa/verify con un código TOTP o de respaldo."""
+
+    challenge_token: str
+
+
 async def _safe_emit(evento: AuditEvento, **kw) -> None:
     try:
         await emit_audit(evento, **kw)
@@ -55,7 +63,12 @@ async def _safe_emit(evento: AuditEvento, **kw) -> None:
 
 
 def _issue_pair(
-    settings: Settings, user: User, family_id: str, family_created_at: datetime
+    settings: Settings,
+    user: User,
+    family_id: str,
+    family_created_at: datetime,
+    *,
+    mfa_at: int | None = None,
 ) -> tuple[TokenPair, RefreshSession]:
     secret = settings.jwt_secret
     access = tokens.create_access_token(
@@ -63,6 +76,7 @@ def _issue_pair(
         sub=user.id,
         tv=user.token_version,
         ttl=timedelta(minutes=settings.access_ttl_min),
+        mfa_at=mfa_at,
     )
     jti = uuid4().hex
     refresh = tokens.create_refresh_token(
@@ -85,7 +99,9 @@ def _issue_pair(
     return TokenPair(access, refresh, expires_at), session
 
 
-async def login(settings: Settings, *, email: str, password: str, ip: str) -> TokenPair:
+async def login(
+    settings: Settings, *, email: str, password: str, ip: str
+) -> TokenPair | MfaChallenge:
     if not settings.jwt_secret:
         raise AuthError("servicio de auth no configurado", status=500)
 
@@ -146,9 +162,19 @@ async def login(settings: Settings, *, email: str, password: str, ip: str) -> To
         )
         raise AuthError(_INVALID)
 
-    # Éxito.
+    # Contraseña correcta (1er factor).
     await repository.reset_failed_login(user.id)
     await repository.reset_ip_attempts(ip)  # H1: liberar el cupo IP en éxito
+
+    # 2º factor: si el usuario tiene MFA, NO emitimos login ni creamos sesión aún;
+    # devolvemos un challenge que se canjea en /auth/mfa/verify.
+    if user.mfa_habilitado:
+        return MfaChallenge(
+            tokens.create_challenge_token(
+                settings.jwt_secret, sub=user.id, tv=user.token_version
+            )
+        )
+
     family_id = uuid4().hex
     pair, session = _issue_pair(settings, user, family_id, now_utc())
     await repository.create_refresh_session(session)
@@ -246,8 +272,129 @@ async def logout(
             pass
 
 
-async def authenticate(settings: Settings, *, access_token: str) -> User:
-    """Valida el access por request: firma, tipo, denylist, activo y token_version."""
+# ── MFA: verificación (2º paso), enrolamiento y reset ───────────────────
+async def mfa_verify(
+    settings: Settings, *, challenge_token: str, code: str, ip: str
+) -> TokenPair:
+    """2º paso del login: canjea el challenge + un código TOTP (o de respaldo) por el
+    par de tokens, con claim `mfa_at`. Throttle por cuenta+IP (fuerza bruta de 6
+    dígitos)."""
+    if not settings.jwt_secret or not settings.mfa_enc_key:
+        raise AuthError("servicio de auth no configurado", status=500)
+    try:
+        claims = tokens.decode_token(
+            settings.jwt_secret, challenge_token, expected_type="mfa_challenge"
+        )
+    except tokens.TokenError as e:
+        raise AuthError(_INVALID) from e
+    sub, tv, jti = claims["sub"], claims["tv"], claims["jti"]
+
+    # M1 (Kimi): el challenge es de UN SOLO USO. Si ya se canjeó (está en la denylist)
+    # → replay → 401. Sin esto acuñaría familias ilimitadas en sus 5 min de vida.
+    if await repository.denylist_contains(jti):
+        raise AuthError(_INVALID)
+
+    count = await repository.register_mfa_attempt(
+        sub, ip, window_min=settings.mfa_verify_window_min
+    )
+    if count > settings.mfa_verify_max:
+        raise AuthError("Demasiados intentos. Intente más tarde.", status=429)
+
+    user = await repository.get_user_by_id(sub)
+    if (
+        user is None
+        or not user.activo
+        or user.token_version != tv
+        or not user.mfa_habilitado
+        or not user.mfa_secret
+    ):
+        raise AuthError(_INVALID)
+
+    try:
+        secret_plano = mfa.decrypt_secret(user.mfa_secret, settings.mfa_enc_key)
+    except Exception as e:  # noqa: BLE001 — clave de cifrado mala = error de config
+        logger.error("no se pudo descifrar mfa_secret", exc_info=True)
+        raise AuthError("servicio de auth no configurado", status=500) from e
+
+    ok = mfa.verify_totp(secret_plano, code)
+    if not ok:
+        consumido, restantes = mfa.consume_backup_code(code, user.mfa_backup_codes)
+        if consumido:
+            ok = True
+            await repository.replace_backup_codes(user.id, restantes)
+
+    if not ok:
+        await _safe_emit(
+            AuditEvento.user_login_fallido,
+            entidad="user",
+            entidad_id=user.id,
+            metadata={"ip": ip, "factor": "mfa"},
+        )
+        raise AuthError(_INVALID)
+
+    # Éxito del 2º factor. Quemamos el challenge (M1): denylist hasta su exp natural.
+    await repository.denylist_add(jti, _exp_dt(claims))
+    await repository.reset_mfa_attempts(sub, ip)
+    now = now_utc()
+    family_id = uuid4().hex
+    pair, session = _issue_pair(
+        settings, user, family_id, now, mfa_at=int(now.timestamp())
+    )
+    await repository.create_refresh_session(session)
+    await _safe_emit(
+        AuditEvento.user_login,
+        entidad="user",
+        entidad_id=user.id,
+        actor_id=user.id,
+        metadata={"ip": ip, "mfa": True},
+    )
+    return pair
+
+
+async def mfa_setup(settings: Settings, *, user: User, password: str) -> dict:
+    """Enrolamiento: re-verifica la contraseña (paso protegido), genera el secreto,
+    lo guarda CIFRADO (mfa_habilitado sigue False) y devuelve el secreto + URI para el
+    QR UNA sola vez. No se activa hasta /mfa/activate con un código válido."""
+    if not settings.mfa_enc_key:
+        raise AuthError("MFA no configurado", status=500)
+    if not passwords.verify_password(password, user.password_hash):
+        raise AuthError(_INVALID)
+    secret = mfa.new_totp_secret()
+    await repository.set_mfa_secret(
+        user.id, mfa.encrypt_secret(secret, settings.mfa_enc_key)
+    )
+    return {"secret": secret, "otpauth_uri": mfa.totp_uri(secret, user.email)}
+
+
+async def mfa_activate(settings: Settings, *, user: User, code: str) -> list[str]:
+    """Confirma el enrolamiento con un código TOTP válido → habilita MFA y devuelve
+    los códigos de respaldo (en claro, UNA vez)."""
+    if not settings.mfa_enc_key:
+        raise AuthError("MFA no configurado", status=500)
+    if not user.mfa_secret:
+        raise AuthError("Primero /auth/mfa/setup.", status=400)
+    secret = mfa.decrypt_secret(user.mfa_secret, settings.mfa_enc_key)
+    if not mfa.verify_totp(secret, code):
+        raise AuthError("Código inválido.", status=400)
+    plain, hashed = mfa.generate_backup_codes(settings.mfa_backup_codes)
+    await repository.enable_mfa(user.id, hashed)
+    return plain
+
+
+async def mfa_reset(settings: Settings, *, user_id: str) -> None:
+    """Reset de MFA (self con step-up, o Admin sobre otro): borra secreto/códigos y
+    hace BUMP de token_version → revoca todas las sesiones."""
+    user = await repository.get_user_by_id(user_id)
+    if user is None:
+        raise AuthError("Usuario no encontrado.", status=404)
+    await repository.clear_mfa(user_id, user.token_version + 1)
+
+
+async def authenticate_with_claims(
+    settings: Settings, *, access_token: str
+) -> tuple[User, dict]:
+    """Valida el access por request: firma, tipo, denylist, activo y token_version.
+    Devuelve también los claims (para el step-up, que lee `mfa_at`)."""
     try:
         claims = tokens.decode_token(
             settings.jwt_secret, access_token, expected_type="access"
@@ -259,6 +406,11 @@ async def authenticate(settings: Settings, *, access_token: str) -> User:
     user = await repository.get_user_by_id(claims["sub"])
     if user is None or not user.activo or user.token_version != claims["tv"]:
         raise AuthError("Sesión revocada.")
+    return user, claims
+
+
+async def authenticate(settings: Settings, *, access_token: str) -> User:
+    user, _ = await authenticate_with_claims(settings, access_token=access_token)
     return user
 
 

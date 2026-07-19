@@ -17,6 +17,7 @@ ALGO = "HS256"
 LEEWAY = 30
 ACCESS_TTL = timedelta(minutes=15)
 REFRESH_TTL = timedelta(days=30)
+CHALLENGE_TTL = timedelta(minutes=5)  # ventana para completar el 2º paso (MFA)
 
 
 class TokenError(Exception):
@@ -34,6 +35,7 @@ def create_access_token(
     tv: int,
     jti: str | None = None,
     ttl: timedelta = ACCESS_TTL,
+    mfa_at: int | None = None,
 ) -> str:
     now = now_utc()
     claims = {
@@ -41,6 +43,26 @@ def create_access_token(
         "tv": tv,
         "type": "access",
         "jti": jti or _new_jti(),
+        "iat": now,
+        "exp": now + ttl,
+    }
+    if mfa_at is not None:
+        # Epoch UTC del último factor MFA superado → base del step-up (ventana).
+        claims["mfa_at"] = mfa_at
+    return jwt.encode(claims, secret, algorithm=ALGO)
+
+
+def create_challenge_token(
+    secret: str, *, sub: str, tv: int, ttl: timedelta = CHALLENGE_TTL
+) -> str:
+    """Token efímero del 1er paso del login cuando el usuario tiene MFA: NO da acceso;
+    solo autoriza a canjear un código en /auth/mfa/verify."""
+    now = now_utc()
+    claims = {
+        "sub": sub,
+        "tv": tv,
+        "type": "mfa_challenge",
+        "jti": _new_jti(),
         "iat": now,
         "exp": now + ttl,
     }
