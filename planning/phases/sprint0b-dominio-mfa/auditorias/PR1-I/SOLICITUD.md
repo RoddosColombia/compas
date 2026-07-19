@@ -4,7 +4,7 @@
 **Base:** `main` + rama `sprint0b-dominio-mfa` · **Commit:** `203e23f`
 **Plan padre:** `planning/phases/sprint0b-dominio-mfa/PLAN.md` (I-PLAN 8.7 GO CONDICIONADO)
 **Docs contrato:** Spec §1.2/§1.3/§1.10/§0.1/§2.2.6 · PRD M1 · reglas 1/2/3/4 de CLAUDE.md
-**Nivel:** PR (código) — evidencia con diff + tests en `EVIDENCIA-I-PR1.md`.
+**Nivel:** PR (código) — evidencia con diff + tests en `EVIDENCIA.md` (misma carpeta).
 
 ## Qué hace PR-1 (dominio base)
 Modelos de dominio como **Beanie Documents** (decisión del CEO: PLAN literal) + `init_beanie`
@@ -46,7 +46,7 @@ cableado sin romper "arranca sin BD":
 - **D-4 `Money` rechaza `int`/`str`:** fuerza a pasar `Decimal` explícito; la API parseará el
   string→Decimal antes de construir. ¿Muy estricto o correcto?
 
-## Evidencia (en EVIDENCIA-I-PR1.md)
+## Evidencia (en EVIDENCIA.md)
 Código fuente completo de los módulos nuevos + diffs de `mongo.py`/`main.py`/`health.py`,
 salida de `pytest` (129 passed, 9 skipped @requires_real_mongo) y `ruff` limpio, y self-check
 de la semilla "al peso".

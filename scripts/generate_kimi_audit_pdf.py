@@ -8,16 +8,17 @@ pega en el AUDITORIA-KIMI-*.md correspondiente.
 Uso:
     python scripts/generate_kimi_audit_pdf.py <SOLICITUD.md> [más_docs.md ...] [salida.pdf]
 
-Se puede pasar más de un .md (p. ej. la SOLICITUD + el PLAN corregido + la errata):
+Se puede pasar más de un .md (p. ej. la SOLICITUD + la EVIDENCIA):
 se renderizan en orden, con salto de página entre cada uno. Si el último argumento
-termina en .pdf, es la ruta de salida; si no, se deriva del primer .md.
+termina en .pdf, es la ruta de salida; si no, se usa el default.
 
 Junta:
   1. El texto de los .md indicados (markdown → texto formateado).
   2. Un extracto del control (tracker docs/COMPAS_Control_Desarrollo.xlsx): Tareas, DoD, Gates.
   3. La rúbrica del umbral (≥ 9.0).
 
-Salida por defecto: docs/audits/<nombre-del-primer-.md>.pdf
+Salida por defecto: PAQUETE.pdf en la MISMA carpeta del primer .md (la carpeta de
+la ronda: planning/phases/<fase>/auditorias/<RONDA>/PAQUETE.pdf).
 """
 
 from __future__ import annotations
@@ -35,14 +36,13 @@ _NL = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TRACKER = REPO_ROOT / "docs" / "COMPAS_Control_Desarrollo.xlsx"
-OUT_DIR = REPO_ROOT / "docs" / "audits"
 
 # fpdf2 con fuentes core codifica latin-1. Mapear lo que no es latin-1 a ASCII.
 _REPLACEMENTS = {
     "—": "-", "–": "-", "→": "->", "←": "<-", "≥": ">=", "≤": "<=",
     "•": "-", "·": "-", "…": "...", "“": '"', "”": '"', "‘": "'", "’": "'",
     "✅": "[OK]", "❌": "[X]", "⚠": "[!]", "🟢": "[VER]", "🟡": "[AMA]",
-    "🔴": "[ROJ]", "✔": "[OK]", "✖": "[X]", "≡": "=", "×": "x", "→": "->",
+    "🔴": "[ROJ]", "✔": "[OK]", "✖": "[X]", "≡": "=", "×": "x",
 }
 
 
@@ -139,8 +139,11 @@ def main() -> None:
     if not md_files:
         sys.exit("Falta al menos un .md de entrada.")
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = Path(out_arg) if out_arg else OUT_DIR / f"{md_files[0].stem}.pdf"
+    # Por defecto el PDF se llama PAQUETE.pdf y vive JUNTO a la SOLICITUD, en la
+    # carpeta de la ronda (planning/phases/<fase>/auditorias/<RONDA>/). Así cada
+    # intercambio con Kimi queda autocontenido y no hay nombres ad-hoc.
+    out = Path(out_arg) if out_arg else md_files[0].parent / "PAQUETE.pdf"
+    out.parent.mkdir(parents=True, exist_ok=True)
 
     pdf = PDF()
     pdf.set_auto_page_break(auto=True, margin=15)

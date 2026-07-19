@@ -35,5 +35,7 @@ Thumbs.db
 # ── Fixtures bancarios (solo anonimizados; reales viven en S3) ──
 # Los .xlsx/.csv de extractos reales NO entran al repo (Spec §1.6.1).
 
-# ── Auditoría Kimi: PDFs generados (regenerables desde el .md + tracker) ──
+# ── Auditoría Kimi: PDFs generados (regenerables desde SOLICITUD/EVIDENCIA + tracker) ──
+# Cada ronda vive en planning/phases/<fase>/auditorias/<RONDA>/PAQUETE.pdf.
+planning/phases/**/PAQUETE.pdf
 docs/audits/*.pdf
