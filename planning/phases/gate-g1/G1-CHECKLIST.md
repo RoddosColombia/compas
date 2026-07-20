@@ -25,16 +25,28 @@
 ## C. Operacional (infra real) — responsable: CEO/Andrés (S0B-03)
 | # | Requisito | Estado | Evidencia a adjuntar |
 |---|---|---|---|
-| C1 | `render.yaml` aplicado; `/health` 200 en staging | ⏳ | captura/HTTP 200 de `compas-api-stg` |
+| C1 | **Readiness** 200 en staging (no solo liveness): `GET /api/v1/health/ready` → `{status:"ready", mongo:"up", beanie:"ready"}` (Kimi G-2 — `/health` daría 200 aunque Mongo esté caído) | ⏳ | salida del `GET /api/v1/health/ready` de `compas-api-stg` |
 | C2 | Deploy staging por merge a main; **producción BLOQUEADA** sin tag `v*`+reviewer (probar el bloqueo) | ⏳ | evidencia del intento de deploy a prod bloqueado |
 | C3 | pip-audit + gitleaks **bloquean un PR de prueba con secreto sembrado** | ⏳ | run rojo del PR de prueba (secreto sembrado) |
 | C4 | Cabeceras vivas: `curl -I https://compas.roddos.com` y `.../api/health` | ⏳ | salida de `curl -I` (CSP/HSTS/nosniff/…) |
 | C5 | Región primaria y de réplica anotadas (§0); buckets + CRR verificados | ⏳ | objeto de prueba replicado + notas §0 |
 | C6 | Provisionar `MONGODB_URI_AUDIT` y `MFA_ENC_KEY` en Render (valores) | ⏳ | secretos cargados (RUNBOOK §8) |
+| C7 | **Aprovisionamiento de datos/roles en Atlas** (Kimi G-1) — `compas_stg` primero, `compas` después: `scripts/create_audit_role.py` (rol `audit_writer` + `compas_audit`; sin él los inserts a `audit_log` fallan en runtime), `scripts/create_auth_indexes.py` (únicos + TTL; sin TTL regresa la L4), `migrations/20260901_seed_rubros.py` y `..._seed_configuracion.py` (semillas idempotentes) | ⏳ | logs idempotentes de los 4 scripts contra `compas_stg` |
+
+## G-3 (Kimi) — reviewer de deploy a producción
+CR-003 resolvió el aprobador de **G1** (CEO + evidencia Kimi; Iván derogado). Para el **deploy a
+producción** (F-32: tag `v*` + required reviewer), y siendo coherentes con CR-003 y con que el CEO
+es la autoridad única: el **required reviewer de producción es el CEO Andrés**, con la evidencia
+adversarial de Kimi como control independiente (mismo patrón que G1). Se acepta la limitación de
+operador único (mismo tradeoff de bus-factor ya reconocido en CR-003). *A confirmar por el CEO en
+RUNBOOK §9; si prefiere reactivar a Iván solo para deploys, es una decisión suya.*
 
 ## Prerrequisitos duros antes de evaluar G1
 1. **Sesión 3 (CI)** verde y con gate de código Kimi ≥ 9.0 (cierra A5/A6). ← en curso (PR #6).
-2. **Checklist §9 (bloque C)** con evidencias — operacional del CEO (S0B-03).
+2. **Bloque C con evidencia** — operacional del CEO (S0-06/S0-07/S0B-03), **incluida C7**
+   (aprovisionamiento de Atlas: rol/usuario de audit + índices de auth + semillas).
+3. **Ruta crítica (orden):** S0-06 (infra) → C6/C7 (secretos + Atlas) → C1 (readiness) → C4
+   (cabeceras vivas) · en paralelo: run verde de Actions para A5/A6.
 
-Cuando A5/A6 estén verdes y el bloque C tenga evidencia, se genera el paquete de auditoría G1
-(`auditorias/G1-I/`) para el veredicto final de Kimi del Sprint 0.
+Cuando A5/A6 estén verdes y el bloque C (C1–C7) tenga evidencia, se genera el paquete de auditoría
+G1 (`auditorias/G1-I/`) para el veredicto final de Kimi del Sprint 0.

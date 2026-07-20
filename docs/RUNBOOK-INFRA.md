@@ -101,9 +101,10 @@ Procedimiento de compromiso: rotar el secreto afectado → `token_version` globa
 
 ## 9. Verificación de cierre del Sprint 0 (evidencias para G1)
 
-- [ ] `render.yaml` aplicado y servicios arriba (`/health` 200 en staging)
-- [ ] Deploy a staging por merge a `main` funcionando; deploy a producción BLOQUEADO sin tag+reviewer (probar el bloqueo)
-- [ ] Test CI de inmutabilidad de `audit_log` en verde
+- [ ] `render.yaml` aplicado y servicios arriba. **Evidencia = READINESS, no liveness** (Kimi G-2): `GET /api/v1/health/ready` → `{status:"ready", mongo:"up", beanie:"ready"}` en staging (`/health` daría 200 aunque Mongo esté caído)
+- [ ] **Aprovisionamiento de Atlas** (Kimi G-1), `compas_stg` primero y `compas` después: `create_audit_role.py` (rol `audit_writer` + `compas_audit`), `create_auth_indexes.py` (únicos + TTL), `migrations/20260901_seed_rubros.py` y `..._seed_configuracion.py` (semillas). Sin esto: staging arranca pero los inserts a `audit_log` fallan y la app está vacía
+- [ ] Deploy a staging por merge a `main` funcionando; deploy a producción BLOQUEADO sin tag+reviewer (probar el bloqueo). **Required reviewer de producción = CEO Andrés + evidencia Kimi** (patrón CR-003; Iván derogado — Kimi G-3)
+- [ ] Test CI de inmutabilidad de `audit_log` en verde (job `backend-real-mongo` como required check)
 - [ ] pip-audit + gitleaks bloqueando un PR de prueba con secreto sembrado
 - [ ] Cabeceras de seguridad vivas (DoD #12): `curl -I https://compas.roddos.com` (SPA) y `curl -I https://api.compas.roddos.com/health` (API) muestran CSP/HSTS/nosniff/Referrer-Policy/X-Frame-Options. Nota: HSTS puede venir de Cloudflare Y del origen (benigno); definir un dueño. `style-src` de la SPA usa `'unsafe-inline'` a propósito (estilos inline de Radix/Recharts; `script-src 'self'` cierra XSS) — Kimi B-2.
 - [ ] Región primaria y de réplica anotadas en §0; buckets y CRR verificados con un objeto de prueba
