@@ -34,7 +34,7 @@ El Spec exige `id_banco String(40)` "de extracto si banco ≠ manual" (§1.5) y 
 real de Bancolombia (Día 0) no trae un identificador de transacción nativo y estable, tenemos:
 - **A1 — Usar el ID nativo del extracto** si existe (columna tipo "referencia"/"documento"). ✅ cumple
   "transforman, no interpretan"; dedup trivial. *Depende de que el layout lo traiga.*
-- **A2 — Clave determinista de campos inmutables** (`fecha|valor|descripcion|secuencia_en_archivo`).
+- **A2 — Clave determinista de campos inmutables.**
   ⚠️ es *derivación*, roza la regla 7 y fija semántica de dedup e inmutabilidad → **requiere CR y
   bendición del CEO**; riesgo de colisión de dos movimientos idénticos legítimos el mismo día.
 - **A3 — Bloquear** hasta congelar el layout real y decidir con evidencia.
@@ -42,10 +42,23 @@ real de Bancolombia (Día 0) no trae un identificador de transacción nativo y e
   congelamiento de layouts (F-51) es el PRIMER entregable y **precondición** del parser. **No se
   escribe el parser adivinando el `id_banco`.**
 
+> **Contenido mínimo de la CR de A2 (Kimi PLAN-I M-1 — obligatorio si se llega a A2):** una clave
+> determinista ingenua (`hash(fecha+descripcion+valor)`) colapsaría dos movimientos legítimos
+> idénticos el mismo día (p. ej. dos transferencias iguales al mismo proveedor) → el dedup **borraría
+> dinero real** (falso positivo, el peor fallo del sistema). Por eso la CR DEBE exigir: (1) la clave
+> **incluye posición en el extracto** — `(banco, sha256(archivo_hash || nro_fila))` o equivalente,
+> **nunca solo el contenido de la fila**; o (2) si el extracto trae **saldo resultante** por
+> movimiento, usar `(banco, saldo_corrido+fecha+secuencia)` (el saldo corrido es rompe-empates casi
+> único); y (3) **análisis de colisión sobre los fixtures reales congelados** como evidencia de la CR
+> (cuántas filas `(fecha, descripcion, valor)` idénticas existen en los extractos reales de RODDOS —
+> lo verifica el Financiero). Si el layout revela ID nativo (A1), la CR no se necesita y M-1 se archiva.
+
 ### Decisión B — Decimal al leer celdas .xlsx
 `openpyxl` devuelve números como `float`/`int`; pasar por `float` viola la regla 1 y pierde precisión.
-- **B1 — `Decimal(str(cell.value))`** por celda; para celdas texto, parsear locale **es-CO**
-  explícito (punto=miles, coma=decimales — al revés que SISMO, que asumía formato US). ✅
+- **B1 — `Decimal(repr(cell.value))`** para celdas numéricas (Kimi PLAN-I: `repr` da la
+  representación corta round-trip, `0.1`→`'0.1'`; `str()` de un float de openpyxl puede arrastrar el
+  error binario completo). Para celdas de **texto**, normalización locale **es-CO** explícita
+  (`1.234.567,89` → quitar puntos de miles, coma→punto — al revés que SISMO, que asumía formato US). ✅
 - **B2 — pandas** (`read_excel`): reintroduce float64 en el camino. ❌ (lo usaba SISMO para Nequi).
 - **Elección: B1.** Reutiliza `app/core/money.py` (`Money`, `money_str`); nunca `float()` sobre montos.
 

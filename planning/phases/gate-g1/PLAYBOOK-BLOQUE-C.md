@@ -20,6 +20,9 @@ En Render, servicios `compas-api`, `compas-jobs` (worker) y `compas-api-stg`, pe
    Pégala en `compas-api` y `compas-api-stg`. ⚠️ **Rotarla = re-enrolar MFA de todos** (RUNBOOK §8).
 2. **`MONGODB_URI_AUDIT`** — cadena del usuario `compas_audit` (rol `audit_writer`), MISMA db `compas`.
    La obtienes en C7. Cárgala en `compas-api` y `compas-jobs`.
+   > ⚠️ **URL-encode de la contraseña (Kimi Playbook):** si la clave de `compas_audit` contiene
+   > `@ : / # ? & %`, la URI se rompe o autentica mal **en silencio**. Genera la clave **alfanumérica**
+   > (sin símbolos) o codifícala en percent-encoding al armar la cadena. Ahorra 30 min de depuración.
 3. Verifica que `MONGODB_URI_COMPAS` / `_STG` y `JWT_SECRET` ya estén (RUNBOOK §8).
 
 *Sin `MFA_ENC_KEY`/`MONGODB_URI_AUDIT` el arranque no-dev hace fail-fast a propósito (C-01/MFA).*
@@ -42,7 +45,11 @@ python migrations/20260901_seed_configuracion.py "<MONGODB_URI_STG>" compas_stg
 ```
 Cuando salga OK en staging, **repite los 4 contra `compas`** (cambiando `compas_stg`→`compas` y las URIs).
 La cadena de `compas_audit` que armes en el paso 1 es la `MONGODB_URI_AUDIT` de **C6**.
-**Evidencia G1:** pega los logs idempotentes de los 4 scripts (staging y prod).
+> **Evidencia de idempotencia (Kimi Playbook):** corre cada script **dos veces** por entorno y pega
+> **ambos** logs — la 1ª con "N nuevos" y la 2ª con "0 nuevos". Eso prueba idempotencia, no solo que
+> ejecutó. Recuerda que los usuarios Mongo son **por-database**: el rol/usuario se crea en `compas_stg`
+> **y** en `compas`.
+**Evidencia G1:** los logs (×2) idempotentes de los 4 scripts en staging y prod.
 
 ---
 
@@ -67,8 +74,11 @@ X-Frame-Options. (HSTS puede venir de Cloudflare **y** del origen: benigno; solo
 ---
 
 ## Resto del bloque C (completan G1)
-- **C2 — Bloqueo de producción:** intenta desplegar a prod SIN tag `v*`+reviewer → debe fallar.
-  Evidencia: captura del intento bloqueado. (Reviewer de prod = CEO + evidencia Kimi, CR-003.)
+- **C2 — Bloqueo de producción** (Kimi Playbook: 2 evidencias para probar AMBOS gates):
+  (a) captura de `compas-api` (prod) en Render con **`autoDeploy: false`**; y
+  (b) `git tag v0.0.1-g1 && git push origin v0.0.1-g1` → el job de Actions queda **esperando el
+  required reviewer** del environment `production` (no despliega). Sin la (b) solo se prueba el
+  autoDeploy, no el gate humano. (Reviewer de prod = CEO + evidencia Kimi, CR-003.)
 - **C3 — PR con secreto sembrado:** abre un PR de prueba con un secreto falso → pip-audit/gitleaks
   deben ponerlo ROJO. ⚠️ **Espera a que el incidente de Actions se resuelva** (igual que A5/A6).
 - **C5 — Buckets + CRR:** anota región primaria/réplica en RUNBOOK §0; sube un objeto de prueba y
