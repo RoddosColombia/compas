@@ -9,8 +9,14 @@ title = "COMPAS gitleaks"
 useDefault = true
 
 [allowlist]
-description = "Credenciales efímeras del mongod de CI (job backend-real-mongo)."
+description = "Credenciales efímeras del mongod de CI + inventario de secretos (decisión CEO)."
 regexes = [
   '''audit-pwd-16chars!''',
   '''rootpw''',
+]
+# Decisión del CEO (2026-07-20, repo privado sin cara al público): el inventario guarda los
+# valores reales de secretos y se exceptúa del escaneo. Se acepta su permanencia en el historial
+# de git (sacarlos exigiría rotarlos). NO hacer público el repo sin revisar ese archivo.
+paths = [
+  '''docs/INVENTARIO-SECRETOS\.xlsx''',
 ]

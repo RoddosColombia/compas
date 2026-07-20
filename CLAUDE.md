@@ -24,7 +24,7 @@ Los documentos en `/docs` son el contrato. Ante cualquier duda, leerlos ANTES de
 9. **RBAC por dependencia FastAPI** según la matriz del Spec §4.1. La tabla de autoridad §2.4 manda sobre cualquier otra redacción. Navbar del frontend derivado de un único config de permisos.
 10. **Fórmula del sugerido = la del Excel, exacta** (Spec §1.4.1): prom_3m + tendencia + prom_3m × crec_pct. Los compromisos programados son fila informativa, NO entran en la fórmula. Todas las líneas en `modo_calculo='historico'` (el modo ventas es Fase 1.5).
 11. **Eventos de auditoría:** catálogo cerrado de 30 (29 del Spec §1.11 + `extracto.cargado` de CR-001). No inventar eventos nuevos sin CR.
-12. **Ningún secreto en el repo.** gitleaks corre en CI y bloquea. Fixtures bancarios solo anonimizados.
+12. **Ningún secreto en el repo** — EXCEPTO `docs/INVENTARIO-SECRETOS.xlsx`, que por **decisión del CEO** (2026-07-20; repo privado, sin cara al público) guarda los valores reales de secretos y está en el allowlist de gitleaks. Se acepta que esos valores queden en el historial de git (sacarlos exigiría rotarlos) y que el repo NO se haga público sin revisarlo. gitleaks corre en CI y bloquea todo lo demás. Fixtures bancarios solo anonimizados.
 
 ## Estructura
 ```
