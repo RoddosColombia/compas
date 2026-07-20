@@ -9,7 +9,7 @@ services:
     name: compas-api
     runtime: python
     plan: standard              # 2 GB RAM / 1 vCPU (STACK §5, nit 5)
-    region: TBD_HEREDAR_DE_SISMO   # anotar la región real en RUNBOOK-INFRA §0
+    region: ohio            # heredada de SISMO (servicios roddos-* en Ohio)
     branch: main
     autoDeploy: false           # producción solo por tag + reviewer (F-32)
     rootDir: backend
@@ -48,7 +48,7 @@ services:
     name: compas-jobs
     runtime: python
     plan: starter               # 1 instancia SIEMPRE — jamás escalar horizontalmente
-    region: TBD_HEREDAR_DE_SISMO
+    region: ohio            # heredada de SISMO (servicios roddos-* en Ohio)
     branch: main
     autoDeploy: false
     rootDir: backend
@@ -83,7 +83,7 @@ services:
     name: compas-api-stg
     runtime: python
     plan: starter               # sin sleep (F-35)
-    region: TBD_HEREDAR_DE_SISMO
+    region: ohio            # heredada de SISMO (servicios roddos-* en Ohio)
     branch: main
     autoDeploy: true            # staging SÍ auto-despliega desde main
     rootDir: backend

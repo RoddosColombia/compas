@@ -14,7 +14,7 @@
 | Par revisor / required reviewer de producción | Iván Echeverri | GitHub environment `production` |
 | Custodio del break-glass | Andrés Sanjuan | Sobre sellado o gestor; uso dispara alerta; revisión trimestral |
 | Acceso a secretos de producción (máx. 2) | Andrés Sanjuan + Iván Echeverri | Inventario en §8 |
-| Región primaria cloud | ☐ PENDIENTE — leer de las cuentas SISMO (Render dashboard → región del servicio; Atlas → región del cluster; S3 → región del bucket) y ANOTAR AQUÍ: `________` | La zona horaria de la app es América/Bogotá; la región cloud es la heredada de SISMO |
+| Región primaria cloud | Render = **Ohio** (confirmado 20-jul-2026: servicios `roddos-*` de SISMO están en Ohio; `render.yaml` fijado a `ohio`). ☐ Confirmar que Atlas (región del cluster) y S3 (región del bucket) coincidan/anotar: `________` | La zona horaria de la app es América/Bogotá; la región cloud es la heredada de SISMO |
 | Región de réplica (CRR) | ☐ Elegir una segunda región distinta a la primaria: `________` | Para compas/backups/ y compas-archivo |
 
 ---
