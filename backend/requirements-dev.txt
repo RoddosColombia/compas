@@ -5,4 +5,5 @@ pytest-asyncio==1.3.0
 pytest-cov==7.1.0
 mongomock-motor==0.0.36   # SOLO Sesión 1; ver comentario en tests/conftest.py
 ruff>=0.6
-fpdf2==2.8.7              # generador de PDF para auditoría Kimi (scripts/generate_kimi_audit_pdf.py)
+pip-audit>=2.7           # escaneo de CVEs en dependencias (CI Sesión 3, DoD #8)
+fpdf2==2.8.7             # generador de PDF para auditoría Kimi (scripts/generate_kimi_audit_pdf.py)

@@ -10,9 +10,7 @@ import pytest
 
 @pytest.mark.requires_real_mongo
 def test_placeholder_dedup_indice_unico_parcial():
-    # Sprint 1: aquí irá el test del índice único parcial (banco, id_banco)
-    # con partialFilterExpression {id_banco:{$type:'string'}} + DuplicateKeyError.
-    # mongomock NO lo soporta → debe correr contra Mongo real.
-    raise AssertionError(
-        "Este test no debería ejecutarse sin `-m requires_real_mongo`."
-    )
+    # Dedup parcial (banco, id_banco) con partialFilterExpression: es de SPRINT 1
+    # (necesita el modelo Transaccion). Se EXCLUYE del job de la Sesión 3 con un skip
+    # explícito (Kimi P-1) para no dejar la CI roja; se hará al portar los parsers.
+    pytest.skip("Sprint 1: dedup parcial (banco, id_banco) requiere Transaccion.")
