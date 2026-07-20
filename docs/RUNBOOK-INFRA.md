@@ -21,13 +21,12 @@
 
 ## 1. GitHub (org existente)
 
-> ⚠️ **Discrepancia detectada (19-jul-2026):** el repo vive hoy en la **cuenta personal
-> `RoddosCol`** (privado), no en una org. El contrato pide **org existente** (org del CEO:
-> `RoddosColombia`). Acción del CEO: transferir el repo a la org (habilita environments con
-> required reviewer, billing y políticas de org). Cambia la URL del remoto para todos.
-> **Bloqueo de Actions:** además hay un **budget de Actions en $0 con "Stop usage: Yes"** en la
-> cuenta que, pasado el incidente actual de GitHub, bloquearía runs de repo privado por encima
-> del tier gratis → subir/quitar ese tope en Settings → Billing → Budgets and alerts.
+> ✅ **Resuelto (19-jul-2026):** el repo fue transferido a la org **`RoddosColombia`**
+> (`https://github.com/RoddosColombia/compas`, privado) — misma org que SISMO-V2. PRs #1–#6 e
+> historial preservados; remoto local actualizado.
+> ⚠️ **Pendiente de verificar (CEO):** que la org `RoddosColombia` NO tenga un **budget de Actions
+> en $0 con "Stop usage: Yes"** (Settings → Billing → Budgets), o bloquearía runs de repo privado
+> por encima del tier gratis una vez pase el incidente actual de GitHub Actions.
 
 - [ ] Repo privado `compas` (monorepo `backend/` + `frontend/`) **en la org, no en cuenta personal**
 - [ ] Branch protection en `main`: PR obligatorio + CI verde + 1 review
