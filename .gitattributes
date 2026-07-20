@@ -1,0 +1,16 @@
+# Line endings deterministas: LF en el repo y en TODOS los checkouts (incl. Windows).
+# Evita que biome/ruff fallen por CRLF en CI y elimina el churn LF↔CRLF.
+* text=auto eol=lf
+
+# Binarios (nunca normalizar).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.xlsx binary
+*.xls binary
+*.docx binary
+*.ico binary
+*.woff binary
+*.woff2 binary

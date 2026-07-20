@@ -7,6 +7,10 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Sin esto, el script de consola `pytest` (CI) no pone backend/ en sys.path y falla
+# `import app` (ModuleNotFoundError). `python -m pytest` sí lo hacía por el cwd; pythonpath
+# lo fija para AMBAS invocaciones y no depende de un tests/__init__.py.
+pythonpath = ["."]
 addopts = "-ra"
 markers = [
     "requires_real_mongo: necesita un Mongo REAL (índice único parcial del Sprint 1 y transacciones multi-documento del Sprint 4; mongomock no los soporta). Correr con: pytest -m requires_real_mongo",

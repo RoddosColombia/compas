@@ -1,0 +1,115 @@
+name: CI
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Backend: lint + suite rápida (mongomock) + cobertura (solo reporte) ──
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -q --cov=app --cov-report=term-missing
+
+  # ── Backend real-mongo: los @requires_real_mongo de verdad (DoD #6, índices, concurrencia) ──
+  backend-real-mongo:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: rootpw
+    env:
+      ADMIN_URI: "mongodb://root:rootpw@localhost:27017/?authSource=admin"
+      COMPAS_TEST_MONGO_URI: "mongodb://root:rootpw@localhost:27017/?authSource=admin"
+      COMPAS_TEST_AUDIT_URI: "mongodb://compas_audit:audit-pwd-16chars!@localhost:27017/compas?authSource=compas"
+      COMPAS_AUDIT_PWD: "audit-pwd-16chars!"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r backend/requirements-dev.txt
+      # Los servicios de Actions arrancan asíncronos → esperar a mongo (Kimi §4).
+      - name: wait-for-mongo
+        run: |
+          python - <<'PY'
+          import os, time, pymongo
+          uri = os.environ["ADMIN_URI"]
+          for _ in range(30):
+              try:
+                  pymongo.MongoClient(uri, serverSelectionTimeoutMS=1000).admin.command("ping")
+                  print("mongo listo"); break
+              except Exception:
+                  time.sleep(2)
+          else:
+              raise SystemExit("mongo no respondió a tiempo")
+          PY
+      # Rol audit_writer + usuario compas_audit (mismo script que el operador, RUNBOOK §2).
+      - name: crear rol de auditoría
+        run: python scripts/create_audit_role.py "$ADMIN_URI" compas
+      - name: pytest @requires_real_mongo
+        working-directory: backend
+        run: pytest -m requires_real_mongo -q
+
+  # ── Frontend: lint (biome) + type-check/build (tsc+vite) + tests (vitest) ──
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test
+
+  # ── Escaneo de CVEs en dependencias de runtime (DoD #8) ──
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      # Bloqueante. Excepciones: pinear con --ignore-vuln <GHSA> aquí, revisado por PR (Kimi §4).
+      - run: pip-audit --requirement backend/requirements.txt --strict
+
+  # ── Escaneo de secretos (regla 12) ──
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          VER=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" | tar -xz gitleaks
+          ./gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --exit-code 1

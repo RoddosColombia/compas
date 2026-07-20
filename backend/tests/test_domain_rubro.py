@@ -1,7 +1,6 @@
 # backend/tests/test_domain_rubro.py
 """Rubro (Spec §1.2) + semilla real del Excel congelado (PRD M1, Kimi M-02)."""
 
-
 import pytest
 from app.domain.rubro import (
     SEMILLA_RUBROS,

@@ -1,0 +1,16 @@
+# Config de gitleaks para COMPAS (regla 12: gitleaks bloquea en CI).
+# Mantiene TODAS las reglas por defecto y solo permite credenciales EFÍMERAS de CI
+# (mueren con el runner, nunca son secretos reales). Allowlist NARROW (por valor
+# exacto), no por rutas amplias — un secreto real seguiría bloqueando.
+
+title = "COMPAS gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Credenciales efímeras del mongod de CI (job backend-real-mongo)."
+regexes = [
+  '''audit-pwd-16chars!''',
+  '''rootpw''',
+]
