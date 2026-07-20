@@ -1,6 +1,6 @@
 // shadcn/ui Button (estilo base). Prueba que el pipeline cva + cn + Tailwind
 // funciona; el resto de componentes se añaden con `npx shadcn add ...`.
-import { cva, type VariantProps } from "class-variance-authority";
+import { type VariantProps, cva } from "class-variance-authority";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";

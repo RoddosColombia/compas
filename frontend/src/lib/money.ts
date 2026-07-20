@@ -37,8 +37,18 @@ export function formatCOP(value: string | Decimal): string {
 }
 
 const MESES = [
-  "ene", "feb", "mar", "abr", "may", "jun",
-  "jul", "ago", "sep", "oct", "nov", "dic",
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
 ];
 
 /** Formatea una fecha `YYYY-MM-DD` como `dd-mmm-aaaa` (ej: 18-jul-2026). */
