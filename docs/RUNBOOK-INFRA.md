@@ -21,7 +21,15 @@
 
 ## 1. GitHub (org existente)
 
-- [ ] Repo privado `compas` (monorepo `backend/` + `frontend/`)
+> ⚠️ **Discrepancia detectada (19-jul-2026):** el repo vive hoy en la **cuenta personal
+> `RoddosCol`** (privado), no en una org. El contrato pide **org existente** (org del CEO:
+> `RoddosColombia`). Acción del CEO: transferir el repo a la org (habilita environments con
+> required reviewer, billing y políticas de org). Cambia la URL del remoto para todos.
+> **Bloqueo de Actions:** además hay un **budget de Actions en $0 con "Stop usage: Yes"** en la
+> cuenta que, pasado el incidente actual de GitHub, bloquearía runs de repo privado por encima
+> del tier gratis → subir/quitar ese tope en Settings → Billing → Budgets and alerts.
+
+- [ ] Repo privado `compas` (monorepo `backend/` + `frontend/`) **en la org, no en cuenta personal**
 - [ ] Branch protection en `main`: PR obligatorio + CI verde + 1 review
 - [ ] Tags `v*` protegidos (solo Tech Lead crea)
 - [ ] Environments: `staging` (sin reviewer) y `production` (**required reviewer: Iván**)
