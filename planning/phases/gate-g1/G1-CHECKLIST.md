@@ -26,7 +26,7 @@
 | # | Requisito | Estado | Evidencia a adjuntar |
 |---|---|---|---|
 | C1 | **Readiness** 200 en staging (no solo liveness): `GET /api/v1/health/ready` → `{status:"ready", mongo:"up", beanie:"ready"}` (Kimi G-2 — `/health` daría 200 aunque Mongo esté caído) | ⏳ | salida del `GET /api/v1/health/ready` de `compas-api-stg` |
-| C2 | Deploy staging por merge a main; **producción BLOQUEADA** sin tag `v*`+reviewer (probar el bloqueo) | ⏳ | evidencia del intento de deploy a prod bloqueado |
+| C2 | Deploy staging por merge a main; **producción BLOQUEADA** — control sin costo (repo Free): Render prod `autoDeploy:false` + tags `v*` solo el CEO (único admin del repo) + deploy manual | ⏳ | captura de `compas-api` con Auto-Deploy OFF; merge a main NO despliega prod (solo `compas-api-stg`). *Nota: required-reviewer nativo requiere GitHub Team — diferido por decisión del CEO* |
 | C3 | pip-audit + gitleaks **bloquean un PR de prueba con secreto sembrado** | ⏳ | run rojo del PR de prueba (secreto sembrado) |
 | C4 | Cabeceras vivas: `curl -I https://compas.roddos.com` y `.../api/health` | ⏳ | salida de `curl -I` (CSP/HSTS/nosniff/…) |
 | C5 | Región primaria y de réplica anotadas (§0); buckets + CRR verificados | ⏳ | objeto de prueba replicado + notas §0 |

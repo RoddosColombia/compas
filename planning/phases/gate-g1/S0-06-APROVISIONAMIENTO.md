@@ -21,7 +21,8 @@ lo confirmé: HTTP 422). Opciones:
   sola) + tags `v*` protegidos (solo tú los creas) + deploy manual en Render. Documentamos ESO como
   el control de C2. Cumple el espíritu (nada llega a prod sin acción deliberada tuya), sin reviewer nativo.
 - **Mi recomendación:** (b) por ahora (no gastar), y (a) cuando quieras el gate humano formal.
-**Dime a) o b)** y ajusto C2.
+- ✅ **DECISIÓN DEL CEO (20-jul-2026): opción (b)** — control sin costo. Documentado en RUNBOOK §9 y
+  G1-CHECKLIST C2. La Fase 4 queda como (b); si en el futuro se sube a Team, se activa (a) con 1 comando `gh`.
 
 ---
 

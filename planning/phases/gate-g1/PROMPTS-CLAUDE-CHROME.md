@@ -84,17 +84,16 @@ URLs:
 Devuélveme una tabla cabecera | valor, una por URL. Marca cuáles faltan.
 ```
 
-## PROMPT 5 — C2: bloqueo de producción
-Parte (a) — Chrome, ahora:
+## PROMPT 5 — C2: bloqueo de producción  *(control sin costo — decisión CEO opción b)*
 ```
-En Render, servicio compas-api, ve a Settings y dime si "Auto-Deploy" está en Off (debe estarlo).
+En Render, servicio compas-api (producción), ve a Settings y dime:
+1) si "Auto-Deploy" está en Off (debe estarlo),
+2) confirma que un merge/push a main NO dispara deploy de compas-api (solo compas-api-stg despliega).
+Repórtame ambas cosas con captura.
 ```
-Parte (b) — yo (Claude Code) empujo un tag `v0.0.1-g1` desde la terminal cuando me digas; entonces:
-```
-Ve a github.com/RoddosColombia/compas → pestaña Actions. Dime si el workflow de deploy a
-producción quedó DETENIDO esperando la aprobación de un reviewer del environment "production"
-(no debe desplegar solo). Repórtame qué ves.
-```
+Evidencia de C2 = esa captura (Auto-Deploy OFF + prod no despliega solo). El deploy a prod es
+manual/por tag, y solo el CEO (único admin del repo) puede crear tags `v*`. *(El reviewer nativo de
+GitHub se difirió: requiere plan Team.)*
 
 ## PROMPT 6 — C5: región AWS + réplica
 ```
