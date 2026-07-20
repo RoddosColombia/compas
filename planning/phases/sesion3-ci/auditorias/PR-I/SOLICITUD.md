@@ -38,9 +38,10 @@
 
 ## Evidencia (en EVIDENCIA.md)
 Código de `ci.yml`/`dependabot.yml`/`.gitleaks.toml` + los tests real-mongo implementados;
-**verificación local** contra `mongo:7` docker con auth (**10 passed, 1 skipped**); y el **run
-real de GitHub Actions del PR #6 verde** (todos los jobs) — adjuntado cuando GitHub se recupere
-del incidente en curso.
+**verificación local** (172 passed / 11 skipped; pip-audit 0 vulns; ruff+biome limpios); y el
+**run real de GitHub Actions del PR #6 VERDE** — run `29771391813`, los **5 jobs** en verde
+(`backend-real-mongo` incl.). Ver `EVIDENCIA.md` (incluye las 4 correcciones red→green tras la
+primera corrida real post-incidente).
 
 ## Pregunta al auditor
 ¿La CI (real-mongo bloqueante + escáneres + Dependabot + supply-chain) cierra DoD #8 y satisface
