@@ -8,7 +8,7 @@ services:
   - type: web
     name: compas-api
     runtime: python
-    plan: standard              # 2 GB RAM / 1 vCPU (STACK §5, nit 5)
+    plan: free                  # DEV: $0 (Free duerme por inactividad). Subir a 'standard' (2GB) en go-live — STACK §5
     region: ohio            # heredada de SISMO (servicios roddos-* en Ohio)
     branch: main
     autoDeploy: false           # producción solo por tag + reviewer (F-32)
@@ -43,46 +43,49 @@ services:
       - key: S3_BUCKET
         sync: false
 
-  # ── Worker de jobs financieros (F-01) ─────────────────────────────
-  - type: worker
-    name: compas-jobs
-    runtime: python
-    plan: starter               # 1 instancia SIEMPRE — jamás escalar horizontalmente
-    region: ohio            # heredada de SISMO (servicios roddos-* en Ohio)
-    branch: main
-    autoDeploy: false
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m app.jobs.scheduler   # APScheduler: coalesce=True, misfire_grace_time por job
-    envVars:
-      - key: RUN_SCHEDULER
-        value: "true"           # SOLO aquí
-      - key: APP_ENV
-        value: production
-      - key: TZ
-        value: America/Bogota   # el job de las 8:30 depende de esta TZ
-      - key: MONGODB_URI_COMPAS
-        sync: false
-      - key: MONGODB_URI_AUDIT   # el worker también emite eventos de auditoría (§8)
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: SENTRY_DSN
-        sync: false
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: S3_BUCKET
-        sync: false
-      - key: BETTER_STACK_HEARTBEATS   # 8 URLs, una por job (RUNBOOK §7)
-        sync: false
+  # ── Worker de jobs financieros (F-01) — DIFERIDO a Sprint 5-6 ─────────────
+  # No hay jobs todavía (el scheduler y sus 8 jobs llegan en Sprint 5-6). Render NO ofrece plan Free
+  # para workers, así que crearlo ahora costaría ~$7/mes sin uso. Se RE-HABILITA (Starter) cuando
+  # existan los jobs. Config preservada, comentada:
+  # - type: worker
+  #   name: compas-jobs
+  #   runtime: python
+  #   plan: starter               # 1 instancia SIEMPRE — jamás escalar horizontalmente
+  #   region: ohio
+  #   branch: main
+  #   autoDeploy: false
+  #   rootDir: backend
+  #   buildCommand: pip install -r requirements.txt
+  #   startCommand: python -m app.jobs.scheduler
+  #   envVars:
+  #     - key: RUN_SCHEDULER
+  #       value: "true"           # SOLO aquí
+  #     - key: APP_ENV
+  #       value: production
+  #     - key: TZ
+  #       value: America/Bogota   # el job de las 8:30 depende de esta TZ
+  #     - key: MONGODB_URI_COMPAS
+  #       sync: false
+  #     - key: MONGODB_URI_AUDIT   # el worker también emite eventos de auditoría (§8)
+  #       sync: false
+  #     - key: JWT_SECRET
+  #       sync: false
+  #     - key: SENTRY_DSN
+  #       sync: false
+  #     - key: AWS_ACCESS_KEY_ID
+  #       sync: false
+  #     - key: AWS_SECRET_ACCESS_KEY
+  #       sync: false
+  #     - key: S3_BUCKET
+  #       sync: false
+  #     - key: BETTER_STACK_HEARTBEATS   # 8 URLs, una por job (RUNBOOK §7)
+  #       sync: false
 
   # ── Staging (paridad para demos/UAT; DR y carga contra instancia temporal) ──
   - type: web
     name: compas-api-stg
     runtime: python
-    plan: starter               # sin sleep (F-35)
+    plan: free                  # DEV: $0 (Free duerme; suficiente para C1/C4 y dev). Sin-sleep (F-35) en go-live
     region: ohio            # heredada de SISMO (servicios roddos-* en Ohio)
     branch: main
     autoDeploy: true            # staging SÍ auto-despliega desde main
