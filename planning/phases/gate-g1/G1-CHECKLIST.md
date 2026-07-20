@@ -11,8 +11,8 @@
 | A2 | RBAC por dependencia (§4.1/§2.4) + tests negativos por rol | ✅ | Sesión 2 PR-3 (RBAC) GO 9.5 |
 | A3 | MFA TOTP admin/directivo + step-up + respaldo + HIBP + reset | ✅ | Sprint 0b PR-2 — Gate 'Kimi PR-2 R' GO; **DoD #11 Cumplido** |
 | A4 | Cabeceras de seguridad (CSP/HSTS/nosniff/Referrer/frame-ancestors) API+SPA | ✅ | Sprint 0b PR-3 — Gate 'Kimi PR-3' 9.2 GO; **DoD #12 Cumplido** |
-| A5 | `audit_log` append-only verificado en CI (update/remove FALLA; insert/find OK) | 🟢 | `tests/test_audit_immutable.py`; job `backend-real-mongo` **VERDE en Actions** (run `29771391813`, PR #6); **pendiente solo el gate de código Kimi** (PAQUETE PR-I listo) |
-| A6 | CI con pip-audit + gitleaks + Dependabot bloqueantes | 🟢 | Sesión 3 PR #6 (`ci.yml`, `dependabot.yml`, `.gitleaks.toml`); **run VERDE** los 5 jobs (`29771391813`); pip-audit 0 CVEs; **pendiente solo el gate de código Kimi** |
+| A5 | `audit_log` append-only verificado en CI (update/remove FALLA; insert/find OK) | ✅ | `tests/test_audit_immutable.py`; job `backend-real-mongo` VERDE (run `29771391813`); **Gate 'Kimi PR-I Sesión 3' GO 9.5** → A5 CERRADO |
+| A6 | CI con pip-audit + gitleaks + Dependabot bloqueantes | ✅ | Sesión 3 PR #6; 5 jobs VERDES (`29771391813`); pip-audit 0 CVEs; **Kimi PR-I GO 9.5 → DoD #8 CUMPLIDO**, A6 CERRADO |
 | A7 | Secretos fuera del repo; fail-fast fuera de dev (JWT/MFA/AUDIT) | ✅ | `app/main.py` fail-fast; `render.yaml` (`sync:false`); `tests/test_audit_failfast.py` |
 
 ## B. Gobernanza — responsable: CEO
