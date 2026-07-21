@@ -43,4 +43,6 @@ el diff staged completo antes de cada commit de un PR crítico y declarar TODO c
 de CLAUDE.md/gobernanza en la SOLICITUD del gate.**
 
 ---
-**Firma CEO:** ☐ Aprobada · Fecha: ________ · Se folda al re-baseline v1.1.3 (con E-9 y CR-S2).
+**Firma CEO:** ☑ **Aprobada** · Fecha: **2026-07-20** (aprobación explícita del CEO en sesión
+de trabajo con Claude Code: "CR-S3.md revisado, toma este chat como firma y aprobación").
+Se folda al re-baseline v1.1.3 (con E-9 y CR-S2).
