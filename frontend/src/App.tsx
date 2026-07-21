@@ -18,9 +18,15 @@ const queryClient = new QueryClient({
 });
 
 function Protegida({ children }: { children: ReactNode }) {
-  const { cargando, autenticado } = useAuth();
+  const { cargando, despertando, autenticado } = useAuth();
   if (cargando) {
-    return <p className="p-8 text-sm text-slate-500">Cargando sesión…</p>;
+    return (
+      <p className="p-8 text-sm text-slate-500">
+        {despertando
+          ? "Despertando el servidor… (la primera carga tras un rato puede tardar ~1 min)"
+          : "Cargando sesión…"}
+      </p>
+    );
   }
   return autenticado ? <>{children}</> : <Navigate to="/login" replace />;
 }

@@ -18,6 +18,7 @@ import * as api from "@/lib/api";
 
 interface AuthState {
   cargando: boolean;
+  despertando: boolean;
   autenticado: boolean;
   rol: string | null;
   capacidades: string[];
@@ -30,6 +31,9 @@ const Ctx = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [cargando, setCargando] = useState(true);
+  // `despertando`: cold-start de Render Free (>2.5s en el refresh de arranque)
+  // → mensaje intencional en vez de un spinner que parece congelado.
+  const [despertando, setDespertando] = useState(false);
   const [autenticado, setAutenticado] = useState(false);
   const [rol, setRol] = useState<string | null>(null);
   const [capacidades, setCapacidades] = useState<string[]>([]);
@@ -42,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const lento = setTimeout(() => setDespertando(true), 2500);
     (async () => {
       if (await api.restaurarSesion()) {
         try {
@@ -50,8 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAutenticado(false);
         }
       }
+      clearTimeout(lento);
+      setDespertando(false);
       setCargando(false);
     })();
+    return () => clearTimeout(lento);
   }, [refrescarCapacidades]);
 
   const cerrarSesion = useCallback(async () => {
@@ -64,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(
     () => ({
       cargando,
+      despertando,
       autenticado,
       rol,
       capacidades,
@@ -73,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       cargando,
+      despertando,
       autenticado,
       rol,
       capacidades,

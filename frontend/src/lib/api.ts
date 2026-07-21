@@ -29,20 +29,30 @@ export class ApiError extends Error {
   }
 }
 
+// Timeout del refresh de arranque: en Render Free un cold-start puede tardar
+// ~50s; sin tope, el spinner de "Cargando sesión…" se ve congelado. Con 15s el
+// arranque cae al login en vez de colgarse, y el reintento del usuario ya
+// encuentra el server despierto.
+const REFRESH_TIMEOUT_MS = 15000;
+
 async function refrescar(): Promise<boolean> {
   refreshEnCurso ??= (async () => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), REFRESH_TIMEOUT_MS);
     try {
       const r = await fetch(`${API}/auth/refresh`, {
         method: "POST",
         credentials: "include",
+        signal: ctrl.signal,
       });
       if (!r.ok) return false;
       const data = (await r.json()) as { access_token: string };
       accessToken = data.access_token;
       return true;
     } catch {
-      return false;
+      return false; // 401, red caída, o timeout (cold-start) → sin sesión
     } finally {
+      clearTimeout(t);
       refreshEnCurso = null;
     }
   })();
