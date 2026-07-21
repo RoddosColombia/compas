@@ -12,13 +12,15 @@ async def test_ping_ok_con_mongomock():
 
 
 async def test_init_beanie_registra_los_documents_de_dominio():
-    """Sprint 0b: DOCUMENT_MODELS = los 3 Documents de dominio (Kimi M-04).
-    AuditLog/User/RefreshSession NO están (Motor crudo)."""
+    """DOCUMENT_MODELS = los Documents de dominio (Kimi M-04): Rubro, MesControl,
+    Configuracion y Transaccion (§1.5). AuditLog/User/RefreshSession NO están
+    (Motor crudo)."""
     from app.audit.models import AuditLog
-    from app.domain import DOMAIN_DOCUMENTS
+    from app.domain import DOMAIN_DOCUMENTS, Transaccion
 
     assert mongo.DOCUMENT_MODELS == DOMAIN_DOCUMENTS
-    assert len(DOMAIN_DOCUMENTS) == 3
+    assert len(DOMAIN_DOCUMENTS) == 5
+    assert Transaccion in mongo.DOCUMENT_MODELS
     assert AuditLog not in mongo.DOCUMENT_MODELS
     client = AsyncMongoMockClient()
     await mongo.init_beanie_for(client, "compas_test")  # no debe lanzar

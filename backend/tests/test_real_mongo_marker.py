@@ -10,7 +10,7 @@ import pytest
 
 @pytest.mark.requires_real_mongo
 def test_placeholder_dedup_indice_unico_parcial():
-    # Dedup parcial (banco, id_banco) con partialFilterExpression: es de SPRINT 1
-    # (necesita el modelo Transaccion). Se EXCLUYE del job de la Sesión 3 con un skip
-    # explícito (Kimi P-1) para no dejar la CI roja; se hará al portar los parsers.
-    pytest.skip("Sprint 1: dedup parcial (banco, id_banco) requiere Transaccion.")
+    # Dedup parcial (banco, id_banco) con partialFilterExpression: IMPLEMENTADO al
+    # portar los parsers (Sprint 1). La cobertura real vive en
+    # tests/test_transaccion_dedup.py (solape no duplica + coexistencia de 2 manuales).
+    pytest.skip("Cubierto en test_transaccion_dedup.py (Transaccion, Sprint 1).")
