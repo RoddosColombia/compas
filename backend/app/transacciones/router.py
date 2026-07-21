@@ -13,6 +13,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pymongo.errors import DuplicateKeyError
 
 from app.auth.deps import require_permission
 from app.auth.models import User
@@ -107,7 +108,14 @@ async def crear_manual(
         key=idempotency_key,
         request_hash=req_hash,
     )
-    await marca.insert()
+    try:
+        await marca.insert()
+    except DuplicateKeyError:
+        # Kimi B-1: doble-clic real (2 requests concurrentes) — el índice único
+        # `scope_unico` atrapa al 2º → 409, no 500.
+        raise HTTPException(
+            409, "petición con esta Idempotency-Key en curso"
+        ) from None
 
     try:
         tx = await service.crear_transaccion_manual(

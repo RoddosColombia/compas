@@ -184,6 +184,37 @@ async def test_mes_inexistente_422(api):
     assert r.status_code == 422
 
 
+async def test_toda_creacion_manual_emite_creada(api):
+    # Kimi M-1 (CR-S2): el POST manual es la única vía de dinero sin archivo de
+    # banco → TODA creación manual deja `transaccion.creada` (aunque caiga en
+    # 'Por clasificar'); la IdempotencyKey expira a 24h y no sirve de rastro.
+    ac, c = api
+    h = await _token(ac)
+    r = await _post(ac, h, _body())  # sin rubro explícito
+    assert r.status_code == 201
+    ev = await c["compas_test"]["audit_log"].find_one({"evento": "transaccion.creada"})
+    assert ev is not None
+    assert ev["entidad_id"] == r.json()["id"]
+    assert ev["metadata"]["origen"] == "manual"
+
+
+async def test_carrera_idempotency_key_da_409(api, monkeypatch):
+    # Kimi B-1: dos requests concurrentes con la misma key → el 2º insert choca
+    # con el índice único → 409 (no 500). Se simula el DuplicateKeyError.
+    from app.domain.idempotency import IdempotencyKey
+    from pymongo.errors import DuplicateKeyError
+
+    ac, _ = api
+    h = await _token(ac)
+
+    async def _choca(self):
+        raise DuplicateKeyError("E11000 duplicate key")
+
+    monkeypatch.setattr(IdempotencyKey, "insert", _choca)
+    r = await _post(ac, h, _body(), key="k-race")
+    assert r.status_code == 409
+
+
 async def test_rubro_explicito_emite_clasificada(api):
     ac, c = api
     h = await _token(ac)

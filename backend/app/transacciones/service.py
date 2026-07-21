@@ -7,8 +7,9 @@ Reglas: id_banco = 'MAN-'+ULID (único por construcción → dos manuales idént
 coexisten, F-04); el mes de la fecha debe existir y NO estar cerrado (regla 4 —
 las tardías llegan con el flujo de cierre, Sprint 4); rubro explícito debe existir,
 estar activo y ser coherente con tipo_flujo (regla 7: no se adivina); sin rubro →
-'Por clasificar'. Evento `transaccion.clasificada` SOLO con rubro explícito (el
-catálogo cerrado no tiene 'creación manual'; declarado al gate Kimi — regla 11)."""
+'Por clasificar'. Eventos: `transaccion.creada` en TODA creación manual (CR-S2,
+Kimi M-1 — rastro forense permanente) + `transaccion.clasificada` si además el
+usuario clasificó (rubro explícito)."""
 
 from decimal import Decimal
 
@@ -86,6 +87,20 @@ async def crear_transaccion_manual(
         clasificada_at=now_utc() if clasificada else None,
     )
     await tx.insert()
+
+    # CR-S2 (Kimi M-1): TODA creación manual deja rastro forense permanente —
+    # es la única vía por la que entra dinero sin archivo de banco.
+    await emit_audit(
+        AuditEvento.transaccion_creada,
+        entidad="transaccion",
+        entidad_id=str(tx.id),
+        actor_id=usuario_id,
+        metadata={
+            "origen": "manual",
+            "valor": f"{valor:.2f}",
+            "tipo_flujo": tipo_flujo.value,
+        },
+    )
 
     if clasificada:
         await emit_audit(

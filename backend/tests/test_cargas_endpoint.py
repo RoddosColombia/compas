@@ -42,10 +42,13 @@ async def api(monkeypatch, tmp_path):
     await init_beanie(database=c["compas_test"], document_models=DOMAIN_DOCUMENTS)
     repository.configure_auth(c, "compas_test")
     configure_audit(c, "compas_test")
-    await repository.create_user(
-        User(email="fin@roddos.com",
-             password_hash=passwords.hash_password(PWD), rol=Role.financiero)
-    )
+    for correo, rol in [
+        ("fin@roddos.com", Role.financiero),
+        ("consulta@roddos.com", Role.consulta),
+    ]:
+        await repository.create_user(
+            User(email=correo, password_hash=passwords.hash_password(PWD), rol=rol)
+        )
     await Rubro(
         grupo="otros", nombre="Por clasificar", orden=98, es_sistema=True
     ).insert()
@@ -59,10 +62,8 @@ async def api(monkeypatch, tmp_path):
     get_settings.cache_clear()
 
 
-async def _h(ac) -> dict:
-    r = await ac.post(
-        "/api/v1/auth/login", json={"email": "fin@roddos.com", "password": PWD}
-    )
+async def _h(ac, email: str = "fin@roddos.com") -> dict:
+    r = await ac.post("/api/v1/auth/login", json={"email": email, "password": PWD})
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
@@ -125,3 +126,15 @@ async def test_listar_cargas_vacio(api):
     r = await api.get("/api/v1/cargas", headers=h)
     assert r.status_code == 200
     assert r.json() == {"items": [], "next_cursor": None}
+
+
+async def test_consulta_403_en_cargas(api):
+    # Kimi B-2 / M13.1: Consulta no gestiona cargas (su visibilidad es el dashboard).
+    h = await _h(api, "consulta@roddos.com")
+    assert (await api.get("/api/v1/cargas", headers=h)).status_code == 403
+    r = await api.post(
+        "/api/v1/cargas",
+        files={"archivo": ("e.xlsx", b"PK", "application/x")},
+        headers=h,
+    )
+    assert r.status_code == 403

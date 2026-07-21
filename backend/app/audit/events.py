@@ -1,7 +1,9 @@
 # backend/app/audit/events.py
-"""Catálogo CERRADO de eventos de auditoría (regla 11 / Spec §1.11 / CR-001).
+"""Catálogo CERRADO de eventos de auditoría (regla 11 / Spec §1.11 / CR-001 / CR-S2).
 
-29 del Spec §1.11 (10 v1.0 + 12 v1.1 + 7 v1.1.1) + `extracto.cargado` (CR-001) = 30.
+29 del Spec §1.11 (10 v1.0 + 12 v1.1 + 7 v1.1.1) + `extracto.cargado` (CR-001)
++ `transaccion.creada` (CR-S2 — Kimi M-1 sprint2-cargas: rastro forense permanente
+del POST manual, la única vía de dinero sin archivo de banco) = 31.
 NO se inventan eventos sin CR. El nombre del miembro usa `_`; el valor usa
 `<dominio>.<acción>`."""
 
@@ -44,9 +46,12 @@ class AuditEvento(StrEnum):
     factura_emitida_editada = "factura_emitida.editada"
     factura_emitida_anulada = "factura_emitida.anulada"
 
-    # ── CR-001 (1) → total 30 ──
+    # ── CR-001 (1) ──
     extracto_cargado = "extracto.cargado"
 
+    # ── CR-S2 (1) → total 31 ──
+    transaccion_creada = "transaccion.creada"
 
-# Conjunto de los 30 valores canónicos (para validación/tests de completitud).
+
+# Conjunto de los 31 valores canónicos (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)

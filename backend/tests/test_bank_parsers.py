@@ -284,6 +284,44 @@ class TestFronteraAnio:
         assert m.fecha == date(2027, 1, 1)
 
 
+class TestLimitesF22:
+    def test_tope_de_filas(self, tmp_path, monkeypatch):
+        # Kimi M-2 (F-22): más de MAX_FILAS → error explícito, no minutos de CPU.
+        import app.parsers.bank_parsers as bp
+
+        monkeypatch.setattr(bp, "MAX_FILAS", 3)
+        p = tmp_path / "muchas.xlsx"
+        _crear_bbva(p, [(f"1{d}-03-2026", "X", -1000) for d in range(5)])
+        with pytest.raises(ValueError, match="filas"):
+            parse_bbva(str(p))
+
+    def test_tope_20001_filas_real(self, tmp_path):
+        # El tope real del Spec (~20.000): 20.001 filas de datos → rechazo.
+        p = tmp_path / "tope.xlsx"
+        wb = openpyxl.Workbook(write_only=True)
+        ws = wb.create_sheet()
+        for _ in range(13):
+            ws.append([])
+        ws.append(["FECHA DE OPERACIÓN", "CONCEPTO", "IMPORTE"])
+        for _ in range(20_001):
+            ws.append(["15-03-2026", "X", -1000])
+        wb.save(str(p))
+        with pytest.raises(ValueError, match="filas"):
+            parse_bbva(str(p))
+
+    def test_zip_bomb_rechazada(self, tmp_path):
+        # Kimi M-2 (F-22): ratio de descompresión acotado (xlsx = zip).
+        import zipfile
+
+        from app.parsers.bank_parsers import _validar_zip
+
+        p = tmp_path / "bomba.xlsx"
+        with zipfile.ZipFile(p, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("xl/worksheets/sheet1.xml", b"\x00" * (60 * 1024 * 1024))
+        with pytest.raises(ValueError, match="descompr"):
+            _validar_zip(str(p))
+
+
 class TestParseExtracto:
     def test_autodetecta_y_rutea(self, tmp_path):
         p = tmp_path / "g.xlsx"
