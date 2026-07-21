@@ -113,7 +113,18 @@ class TestDerivarIdBanco:
         a = derivar_id_banco(**args)
         b = derivar_id_banco(**args)
         assert a == b  # determinista → dedup de solape
-        assert len(a) <= 40 and a.isalnum()
+        assert len(a) <= 40
+        assert a.endswith("|1")  # huella MD5 + ordinal de ocurrencia (A-01)
+
+    def test_ordinal_distingue_identicos(self):
+        # A-01: misma huella, distinta ocurrencia → id distinto (no colapsan).
+        base = dict(
+            banco=Banco.BANCOLOMBIA, fecha="2026-03-15", descripcion="ABONO",
+            valor=Decimal("50000"), tipo_flujo=TipoFlujo.EGRESO,
+        )
+        assert derivar_id_banco(**base, ocurrencia=1) != derivar_id_banco(
+            **base, ocurrencia=2
+        )
 
     def test_huella_cambia_con_el_monto(self):
         base = dict(

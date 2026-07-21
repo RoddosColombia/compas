@@ -117,6 +117,7 @@ class TestServicioCarga:
             archivo_path=str(p),
             archivo_nombre=nombre,
             usuario_id=PydanticObjectId(),
+            dir_originales=str(tmp_path / "orig"),
         )
 
     async def test_completada_inserta_transacciones(self, entorno, tmp_path):
@@ -145,7 +146,7 @@ class TestServicioCarga:
         p = tmp_path / "dup.xlsx"
         _crear_bbva(p, [("15-03-2026", "COMPRA", -50000)])
         kw = dict(banco=Banco.BBVA, archivo_path=str(p), archivo_nombre="dup.xlsx",
-                  usuario_id=PydanticObjectId())
+                  usuario_id=PydanticObjectId(), dir_originales=str(tmp_path / "orig"))
         await procesar_carga(**kw)
         with pytest.raises(CargaDuplicadaError):
             await procesar_carga(**kw)  # mismo hash, ya completada → F-02
@@ -166,3 +167,54 @@ class TestServicioCarga:
         doc = await col.find_one({"evento": AuditEvento.carga_completada.value})
         assert doc is not None
         assert doc["entidad_id"] == str(carga.id)
+
+    async def test_identicos_en_un_archivo_no_colapsan(self, entorno, tmp_path):
+        # A-01: dos cuotas legítimas idénticas el mismo día → AMBAS entran.
+        carga = await self._procesar(tmp_path, [
+            ("15-03-2026", "ABONO", -50000),
+            ("15-03-2026", "ABONO", -50000),
+        ])
+        assert carga.nuevas == 2
+        assert carga.duplicadas == 0
+
+    async def test_solape_dedup_conserva_identicos(self, entorno, tmp_path):
+        # A-01 + dedup: archivo A [X,X]; archivo B (otro hash) [X,X,Z] → solo Z nuevo.
+        await self._procesar(tmp_path, [
+            ("15-03-2026", "ABONO", -50000),
+            ("15-03-2026", "ABONO", -50000),
+        ], "a.xlsx")
+        carga2 = await self._procesar(tmp_path, [
+            ("15-03-2026", "ABONO", -50000),
+            ("15-03-2026", "ABONO", -50000),
+            ("17-03-2026", "OTRO", -3000),
+        ], "b.xlsx")
+        assert carga2.nuevas == 1
+        assert carga2.duplicadas == 2
+
+    async def test_valor_crudo_se_propaga(self, entorno, tmp_path):
+        # Regla 7 / Kimi: el texto crudo ambiguo llega al Financiero.
+        carga = await self._procesar(tmp_path, [
+            ("15-03-2026", "OK", -1000),
+            ("15-03-2026", "RARO", "N/A"),
+        ])
+        assert carga.errores == 1
+        assert carga.errores_detalle[0].valor_crudo == "N/A"
+
+    async def test_sin_preservacion_rechaza(self, entorno, tmp_path):
+        # M-04 (regla dura): sin S3 ni dir_originales, no se carga.
+        from app.cargas.service import OriginalNoPreservableError, procesar_carga
+
+        p = tmp_path / "np.xlsx"
+        _crear_bbva(p, [("15-03-2026", "X", -1000)])
+        with pytest.raises(OriginalNoPreservableError):
+            await procesar_carga(
+                banco=Banco.BBVA, archivo_path=str(p),
+                archivo_nombre="np.xlsx", usuario_id=PydanticObjectId(),
+            )
+
+    async def test_preserva_original_local(self, entorno, tmp_path):
+        from anyio import Path as AsyncPath
+
+        carga = await self._procesar(tmp_path, [("15-03-2026", "X", -1000)])
+        assert carga.archivo_s3_key.startswith("local://")
+        assert await AsyncPath(carga.archivo_s3_key.removeprefix("local://")).exists()

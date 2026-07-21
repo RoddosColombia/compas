@@ -25,8 +25,12 @@ def movimiento_a_transaccion(
     rubro_id: PydanticObjectId,
     mes_id: PydanticObjectId,
     carga_id: PydanticObjectId | None = None,
+    ocurrencia: int = 1,
 ) -> Transaccion:
-    """Construye una Transaccion 'Por clasificar' a partir de un movimiento parseado."""
+    """Construye una Transaccion 'Por clasificar' a partir de un movimiento parseado.
+
+    `ocurrencia` es el ordinal de la huella dentro del archivo (Kimi A-01): lo asigna
+    el servicio de carga contando repeticiones por (fecha, tipo, desc, monto)."""
     fecha = mov.fecha.isoformat()  # date → 'YYYY-MM-DD'
     tipo_flujo = _TIPO_A_FLUJO[mov.tipo]
     id_banco = derivar_id_banco(
@@ -36,6 +40,7 @@ def movimiento_a_transaccion(
         valor=mov.monto,
         tipo_flujo=tipo_flujo,
         referencia=mov.referencia,
+        ocurrencia=ocurrencia,
     )
     # Moneda extranjera (Global66): si el parser capturó moneda, se conserva el
     # original re-derivable (hoy la hoja COP → 'COP'/1; valor_original == valor).
