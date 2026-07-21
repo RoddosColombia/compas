@@ -40,6 +40,7 @@ class ErrorCarga(BaseModel):
 
     fila: int  # número de fila del extracto; -1 = error no ligado a una fila
     motivo: str
+    valor_crudo: str | None = None  # texto crudo para el Financiero (regla 7)
 
 
 class CargaBancaria(Document):

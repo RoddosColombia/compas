@@ -33,7 +33,7 @@ import openpyxl
 from pydantic import BaseModel, ConfigDict
 
 from app.core.money import Money
-from app.core.time import now_bogota
+from app.core.time import today_bogota
 from app.domain.bancos import Banco
 
 
@@ -156,16 +156,26 @@ def _fecha_dmy(raw, con_anio: bool) -> date:
             return datetime.strptime(s, "%d-%m-%Y").date()
         except (ValueError, TypeError):
             raise _FilaError("fecha inválida", s) from None
-    # Bancolombia: d/m (sin año) → completar con el año actual (Bogotá); o d/m/Y
-    # explícito. Se antepone el año en vez de usar el default yearless de strptime
-    # (DeprecationWarning en py3.15, y falla el 29-feb).
-    anio = now_bogota().year
-    for candidato in (f"{s}/{anio}", s):
+    # d/m/Y explícito (con año) → tal cual.
+    try:
+        return datetime.strptime(s, "%d/%m/%Y").date()
+    except (ValueError, TypeError):
+        pass
+    # d/m sin año: se completa con el año actual, PERO una fecha d/m no puede ser
+    # futura → si cae en el futuro (frontera dic/ene: cargar el 2-ene un movimiento
+    # del 31-dic), es del año anterior (Kimi M-01). El fix definitivo es leer el año
+    # del encabezado del extracto; se hará al congelar los fixtures reales (S1-01).
+    hoy = today_bogota()
+    try:
+        dt = datetime.strptime(f"{s}/{hoy.year}", "%d/%m/%Y").date()
+    except (ValueError, TypeError):
+        raise _FilaError("fecha inválida", s) from None
+    if dt > hoy:
         try:
-            return datetime.strptime(candidato, "%d/%m/%Y").date()
-        except (ValueError, TypeError):
-            continue
-    raise _FilaError("fecha inválida", s) from None
+            dt = dt.replace(year=dt.year - 1)
+        except ValueError:  # 29-feb en año no bisiesto
+            dt = dt.replace(year=dt.year - 1, day=28)
+    return dt
 
 
 def _fecha_iso(raw) -> date:

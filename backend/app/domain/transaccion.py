@@ -42,18 +42,24 @@ def derivar_id_banco(
     valor,
     tipo_flujo: TipoFlujo,
     referencia: str | None = None,
+    ocurrencia: int = 1,
 ) -> str:
     """Clave de deduplicación estable (regla 5).
 
-    - Global66 trae una referencia de transacción nativa → se usa tal cual.
+    - Global66 trae una referencia de transacción nativa → se usa tal cual (única).
     - Bancolombia/BBVA no traen ID → huella determinista del contenido
-      (banco|fecha|tipo|descripcion|valor), precedente de SISMO v2. MD5 (no
-      criptográfico, solo fingerprint) = 32 hex, cabe en String(40).
+      (banco|fecha|tipo|descripcion|valor), precedente de SISMO v2 (MD5, no
+      criptográfico, solo fingerprint), con el **ordinal de ocurrencia dentro del
+      archivo** (`…|1`, `…|2`) — Kimi A-01: dos movimientos legítimos idénticos el
+      mismo día (p. ej. dos cuotas de igual valor con descripción 'Abono') NO
+      colapsan; y el solape re-subido, al ir en el mismo orden de fila, conserva el
+      mismo ordinal → la dedup sigue detectándolo. MD5(32)+'|'+ordinal cabe en 40.
     """
     if banco is Banco.GLOBAL66 and referencia:
         return referencia
     clave = f"{banco.value}|{fecha}|{tipo_flujo.value}|{descripcion}|{valor:.2f}"
-    return hashlib.md5(clave.encode("utf-8"), usedforsecurity=False).hexdigest()
+    huella = hashlib.md5(clave.encode("utf-8"), usedforsecurity=False).hexdigest()
+    return f"{huella}|{ocurrencia}"
 
 
 class Transaccion(Document):

@@ -265,6 +265,25 @@ class TestGlobal66:
 # ── Dispatcher ───────────────────────────────────────────────────────────
 
 
+class TestFronteraAnio:
+    def test_diciembre_leido_en_enero_no_salta_al_futuro(self, tmp_path, monkeypatch):
+        # M-01 (Kimi): cargar el 2-ene-2027 un movimiento "31/12" → 2026-12-31.
+        import app.parsers.bank_parsers as bp
+        monkeypatch.setattr(bp, "today_bogota", lambda: date(2027, 1, 2))
+        p = tmp_path / "b.xlsx"
+        _crear_bancolombia(p, [("31/12", "PAGO", -5000)])
+        m = parse_bancolombia(str(p)).movimientos[0]
+        assert m.fecha == date(2026, 12, 31)
+
+    def test_fecha_del_anio_actual_se_mantiene(self, tmp_path, monkeypatch):
+        import app.parsers.bank_parsers as bp
+        monkeypatch.setattr(bp, "today_bogota", lambda: date(2027, 1, 2))
+        p = tmp_path / "b.xlsx"
+        _crear_bancolombia(p, [("01/01", "PAGO", -5000)])
+        m = parse_bancolombia(str(p)).movimientos[0]
+        assert m.fecha == date(2027, 1, 1)
+
+
 class TestParseExtracto:
     def test_autodetecta_y_rutea(self, tmp_path):
         p = tmp_path / "g.xlsx"
