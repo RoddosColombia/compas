@@ -11,6 +11,7 @@ from app.domain.carga import CargaBancaria
 from app.domain.configuracion import Configuracion
 from app.domain.idempotency import IdempotencyKey
 from app.domain.mes_control import MesControl
+from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import Rubro
 from app.domain.transaccion import Transaccion
 
@@ -21,6 +22,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     Transaccion,
     CargaBancaria,
     IdempotencyKey,
+    PresupuestoLinea,
 ]
 
 __all__ = [
@@ -30,5 +32,6 @@ __all__ = [
     "Transaccion",
     "CargaBancaria",
     "IdempotencyKey",
+    "PresupuestoLinea",
     "DOMAIN_DOCUMENTS",
 ]
