@@ -96,6 +96,113 @@ async def test_mes_duplicado_409(api):
     assert await MesControl.find_all().count() == 1
 
 
+# ── M-1 (Kimi): el saldo inicial se ARRASTRA del mes anterior (F-14/US-01) ──
+
+
+async def test_arrastra_saldo_del_consolidado_anterior(api):
+    # Abrir N+1 → saldo_inicial_caja == consolidado bancario de N (no input).
+    ac, _ = api
+    h = await _token(ac)
+    await ac.post(
+        "/api/v1/meses",
+        json=_body(
+            mes="2026-07-01",
+            saldos_banco=[
+                {
+                    "banco": "bancolombia",
+                    "saldo": "2500000",
+                    "fecha_reporte": "2026-07-01",
+                },
+                {"banco": "bbva", "saldo": "500000", "fecha_reporte": "2026-07-01"},
+            ],
+        ),
+        headers=h,
+    )
+    r = await ac.post(
+        "/api/v1/meses",
+        json={
+            "mes": "2026-08-01",
+            "saldos_banco": [
+                {
+                    "banco": "bancolombia",
+                    "saldo": "3000000",
+                    "fecha_reporte": "2026-08-01",
+                }
+            ],
+        },
+        headers=h,
+    )
+    assert r.status_code == 201
+    assert r.json()["saldo_inicial_caja"] == "3000000.00"  # consolidado de N
+
+
+async def test_saldo_explicito_con_predecesor_422(api):
+    # Con mes anterior, digitar el saldo es override → ciclo:config+step-up (futuro).
+    ac, _ = api
+    h = await _token(ac)
+    await ac.post("/api/v1/meses", json=_body(mes="2026-07-01"), headers=h)
+    r = await ac.post(
+        "/api/v1/meses", json=_body(mes="2026-08-01"), headers=h
+    )  # trae saldo_inicial_caja
+    assert r.status_code == 422
+    assert "deriva" in r.json()["detail"].lower()
+
+
+async def test_primer_mes_sin_saldo_422(api):
+    ac, _ = api
+    h = await _token(ac)
+    body = _body()
+    del body["saldo_inicial_caja"]
+    r = await ac.post("/api/v1/meses", json=body, headers=h)
+    assert r.status_code == 422
+
+
+async def test_predecesor_sin_saldos_banco_422(api):
+    # No se adivina (regla 7): si N no reportó saldos bancarios, no hay de dónde
+    # arrastrar → error explícito, no 0.
+    ac, _ = api
+    h = await _token(ac)
+    await ac.post(
+        "/api/v1/meses", json=_body(mes="2026-07-01", saldos_banco=[]), headers=h
+    )
+    r = await ac.post(
+        "/api/v1/meses", json={"mes": "2026-08-01", "saldos_banco": []}, headers=h
+    )
+    assert r.status_code == 422
+    assert (
+        "consolidado" in r.json()["detail"].lower()
+        or "saldos" in r.json()["detail"].lower()
+    )
+
+
+async def test_mes_no_contiguo_422(api):
+    # El ciclo es secuencial: el arrastre solo tiene sentido mes a mes.
+    ac, _ = api
+    h = await _token(ac)
+    await ac.post("/api/v1/meses", json=_body(mes="2026-07-01"), headers=h)
+    r = await ac.post(
+        "/api/v1/meses", json={"mes": "2026-09-01", "saldos_banco": []}, headers=h
+    )
+    assert r.status_code == 422
+    assert "2026-08" in r.json()["detail"]
+
+
+async def test_manual_en_saldos_422(api):
+    # B-2 (Kimi): 'manual' no es un banco de saldos (§1.3).
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(
+        "/api/v1/meses",
+        json=_body(
+            saldos_banco=[
+                {"banco": "manual", "saldo": "1", "fecha_reporte": "2026-07-01"}
+            ]
+        ),
+        headers=h,
+    )
+    assert r.status_code == 422
+
+
 async def test_mes_no_normalizado_422(api):
     ac, _ = api
     h = await _token(ac)
@@ -166,7 +273,11 @@ async def test_listar_meses(api):
     ac, _ = api
     h = await _token(ac)
     await ac.post("/api/v1/meses", json=_body(mes="2026-06-01"), headers=h)
-    await ac.post("/api/v1/meses", json=_body(mes="2026-07-01"), headers=h)
+    # El 2º mes se abre SIN saldo (se arrastra del consolidado de junio, M-1).
+    r2 = await ac.post(
+        "/api/v1/meses", json={"mes": "2026-07-01", "saldos_banco": []}, headers=h
+    )
+    assert r2.status_code == 201
     r = await ac.get("/api/v1/meses", headers=h)
     assert r.status_code == 200
     meses = [m["mes"] for m in r.json()["items"]]

@@ -35,7 +35,9 @@ class AbrirMesBody(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     mes: str  # YYYY-MM-01 (valida el Document)
-    saldo_inicial_caja: str  # string (regla 1)
+    # M-1 (F-14): SOLO para el primer mes de la historia; con predecesor se
+    # deriva del consolidado bancario anterior y traerlo es 422.
+    saldo_inicial_caja: str | None = None
     saldos_banco: list[SaldoBancoBody] = Field(default_factory=list)
     ingresos_esperados_semana: str | None = None
 
@@ -97,7 +99,11 @@ async def abrir_mes(
     try:
         mc = await service.abrir_mes(
             mes=body.mes,
-            saldo_inicial_caja=_decimal(body.saldo_inicial_caja, "saldo_inicial_caja"),
+            saldo_inicial_caja=(
+                _decimal(body.saldo_inicial_caja, "saldo_inicial_caja")
+                if body.saldo_inicial_caja is not None
+                else None
+            ),
             saldos_banco=saldos,
             ingresos_esperados_semana=(
                 _decimal(body.ingresos_esperados_semana, "ingresos_esperados_semana")
@@ -108,6 +114,8 @@ async def abrir_mes(
         )
     except service.MesYaAbiertoError as e:
         raise HTTPException(409, f"el mes {e.mes[:7]} ya está abierto") from e
+    except service.AperturaInvalidaError as e:
+        raise HTTPException(422, e.detalle) from e
     except ValueError as e:  # validación del Document (mes no normalizado, etc.)
         raise HTTPException(422, str(e)) from e
     return _serializar(mc)

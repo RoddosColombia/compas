@@ -26,6 +26,21 @@ jobs:
       - run: ruff format --check .
       - run: pytest -q --cov=app --cov-report=term-missing
 
+  # ── Smoke de imports con SOLO requirements.txt (Kimi B-1 sprint3) ──
+  # Reproduce el entorno de Render (runtime puro, sin deps de dev): atrapa el
+  # drift que tumbó el deploy c1566dc (python-multipart ausente en requirements).
+  runtime-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements.txt
+      - name: importar la app como uvicorn (create_app monta todos los routers)
+        working-directory: backend
+        run: python -c "from app.main import create_app; create_app(); print('imports runtime OK')"
+
   # ── Backend real-mongo: los @requires_real_mongo de verdad (DoD #6, índices, concurrencia) ──
   # El mongod corre como REPLICA SET de 1 nodo con auth (keyFile): las transacciones
   # multi-documento (regla 8: finalización de carga, y luego aprobación/cierre) NO
