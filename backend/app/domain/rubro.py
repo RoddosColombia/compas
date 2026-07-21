@@ -3,9 +3,10 @@
 
 La semilla NO es de juguete: sale de `Flujo de pagos deudas.xlsx` (hoja
 'Presupuesto', fuente de verdad del negocio, PRD M1). Son las 31 categorías reales
-de RODDOS agrupadas en los 5 grupos + el rubro de sistema 'Ajuste de conciliación'
-(que no está en el Excel pero exige el Spec §2.2.6 para el cierre de mes). En total
-32 rubros; 2 de sistema ('Por clasificar' y 'Ajuste de conciliación'), inmutables.
+de RODDOS agrupadas en los 5 grupos + 2 rubros de sistema que no viven en el Excel:
+'Ajuste de conciliación' (cierre de mes, Spec §2.2.6) y 'Recaudo' (tipo INGRESO,
+Kimi B-1/S0B-05: destino de los abonos de cuotas, PRD M7). En total 33 rubros;
+3 de sistema ('Por clasificar', 'Ajuste de conciliación', 'Recaudo'), inmutables.
 """
 
 from enum import StrEnum
@@ -140,6 +141,20 @@ def _seed() -> list[dict]:
             "grupo": G.OTROS.value,
             "nombre": "Ajuste de conciliación",
             "tipo_flujo": "egreso",
+            "orden": orden,
+            "activo": True,
+            "es_sistema": True,
+        }
+    )
+    # 'Recaudo': de sistema, tipo INGRESO (Kimi B-1 / S0B-05). Destino de los
+    # abonos de cuotas (regla PRD M7 'Abono' → ingreso recaudo); sin él, la
+    # clasificación automática de ingresos no tiene rubro. Tampoco vive en el Excel.
+    orden += 1
+    filas.append(
+        {
+            "grupo": G.OTROS.value,
+            "nombre": "Recaudo",
+            "tipo_flujo": "ingreso",
             "orden": orden,
             "activo": True,
             "es_sistema": True,

@@ -53,10 +53,10 @@ async def test_seed_rubros_idempotente(db):
     total1 = await Rubro.find_all().count()
     n2 = await seed_rubros(db)  # segunda corrida: no debe duplicar
     total2 = await Rubro.find_all().count()
-    assert n1 == 32 and total1 == 32
-    assert n2 == 0 and total2 == 32
+    assert n1 == 33 and total1 == 33
+    assert n2 == 0 and total2 == 33
     sistema = await Rubro.find(Rubro.es_sistema == True).count()  # noqa: E712
-    assert sistema == 2
+    assert sistema == 3
 
 
 async def test_seed_configuracion_idempotente(db):

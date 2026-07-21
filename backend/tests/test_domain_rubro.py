@@ -43,22 +43,25 @@ def test_nombre_max_80():
 # ---- Semilla real (frozen: Flujo de pagos deudas.xlsx, hoja 'Presupuesto') ----
 
 
-def test_semilla_tiene_32_rubros():
-    # 31 categorías del Excel + 'Ajuste de conciliación' (de sistema, Spec §2.2.6)
-    assert len(SEMILLA_RUBROS) == 32
+def test_semilla_tiene_33_rubros():
+    # 31 categorías del Excel + 'Ajuste de conciliación' (Spec §2.2.6) + 'Recaudo'
+    # (ingreso, Kimi B-1 / S0B-05: destino de los abonos de cuotas, PRD M7)
+    assert len(SEMILLA_RUBROS) == 33
 
 
 def test_semilla_cubre_los_cinco_grupos():
     assert {r["grupo"] for r in SEMILLA_RUBROS} == GRUPOS
 
 
-def test_semilla_dos_rubros_de_sistema():
+def test_semilla_tres_rubros_de_sistema():
     sistema = [r["nombre"] for r in SEMILLA_RUBROS if r["es_sistema"]]
-    assert set(sistema) == {"Por clasificar", "Ajuste de conciliación"}
+    assert set(sistema) == {"Por clasificar", "Ajuste de conciliación", "Recaudo"}
 
 
-def test_semilla_todos_egreso():
-    assert all(r["tipo_flujo"] == "egreso" for r in SEMILLA_RUBROS)
+def test_semilla_unico_ingreso_es_recaudo():
+    # Kimi B-1: la regla PRD M7 ('Abono' → ingreso recaudo) necesita rubro destino.
+    ingresos = [r["nombre"] for r in SEMILLA_RUBROS if r["tipo_flujo"] == "ingreso"]
+    assert ingresos == ["Recaudo"]
 
 
 def test_semilla_nombres_unicos_por_grupo():
@@ -71,7 +74,7 @@ def test_semilla_nombres_unicos_por_grupo():
 
 def test_semilla_ordenes_unicos_y_consecutivos():
     ordenes = sorted(r["orden"] for r in SEMILLA_RUBROS)
-    assert ordenes == list(range(1, 33))
+    assert ordenes == list(range(1, 34))
 
 
 def test_semilla_construye_modelos_validos():

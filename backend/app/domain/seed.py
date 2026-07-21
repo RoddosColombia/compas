@@ -46,7 +46,7 @@ async def _upsert_muchos(
 
 
 async def seed_rubros(db: Any) -> int:
-    """Inserta las 32 categorías reales (idempotente por (grupo, nombre))."""
+    """Inserta las 33 categorías (31 del Excel + 2 de sistema; idempotente)."""
     return await _upsert_muchos(
         db, RUBROS_COLLECTION, SEMILLA_RUBROS, ["grupo", "nombre"]
     )
