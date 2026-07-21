@@ -1,4 +1,23 @@
 @import "tailwindcss";
 
-/* Tailwind 4 (CSS-first). Los tokens de tema de shadcn se añadirán cuando
-   entre el sistema de diseño; en la Sesión 1 basta con el reset de Tailwind. */
+/* ── Identidad RODDOS — TEMA CLARO (decisión CEO 2026-07-21) ──
+   Fondo blanco; verde y turquesa como acentos; rojo/ámbar para semáforos.
+   Tokens expuestos como variables Tailwind 4 (@theme) para usarlos como
+   clases utilitarias (bg-brand, text-brand-turq, …) en toda la app. */
+@theme {
+  --color-brand: #12a312;
+  --color-brand-soft: #1dc91d;
+  --color-turq: #0fa9b8;
+  --color-turq-soft: #76e5ec;
+  --color-alert: #e0524d;
+  --color-warn: #e8a83a;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: #ffffff;
+  color: #0f172a; /* slate-900 */
+}

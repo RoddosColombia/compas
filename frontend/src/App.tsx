@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui/button";
 import CargasPage from "@/pages/CargasPage";
 import LoginPage from "@/pages/LoginPage";
+import MesesPage from "@/pages/MesesPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -31,6 +32,14 @@ function Layout({ children }: { children: ReactNode }) {
       <nav className="mb-8 flex items-center justify-between border-b border-slate-200 pb-4">
         <div className="flex items-center gap-6">
           <h1 className="text-lg font-bold tracking-tight">COMPAS</h1>
+          {puede("dashboard:leer") && (
+            <Link
+              to="/meses"
+              className="text-sm text-slate-600 hover:text-slate-900"
+            >
+              Meses
+            </Link>
+          )}
           {puede("cargas:gestionar") && (
             <Link
               to="/cargas"
@@ -64,6 +73,16 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route
+              path="/meses"
+              element={
+                <Protegida>
+                  <Layout>
+                    <MesesPage />
+                  </Layout>
+                </Protegida>
+              }
+            />
+            <Route
               path="/cargas"
               element={
                 <Protegida>
@@ -73,7 +92,7 @@ export default function App() {
                 </Protegida>
               }
             />
-            <Route path="*" element={<Navigate to="/cargas" replace />} />
+            <Route path="*" element={<Navigate to="/meses" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>
