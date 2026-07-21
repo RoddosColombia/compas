@@ -1,0 +1,56 @@
+# backend/app/cargas/mapper.py
+"""Puente parser → dominio: MovimientoBancario (DTO del parser) → Transaccion.
+
+Puro y sin Mongo: el servicio de carga resuelve `rubro_id` ('Por clasificar') y
+`mes_id` (MesControl del mes derivado de la fecha) y se los pasa aquí. La
+derivación de `id_banco` y el mapeo tipo(débito/crédito)→tipo_flujo(egreso/ingreso)
+viven aquí para que sean verificables sin base de datos.
+"""
+
+from beanie import PydanticObjectId
+
+from app.domain.rubro import TipoFlujo
+from app.domain.transaccion import Transaccion, derivar_id_banco
+from app.parsers.bank_parsers import MovimientoBancario, TipoMovimiento
+
+_TIPO_A_FLUJO = {
+    TipoMovimiento.CREDITO: TipoFlujo.INGRESO,  # entra plata
+    TipoMovimiento.DEBITO: TipoFlujo.EGRESO,  # sale plata
+}
+
+
+def movimiento_a_transaccion(
+    mov: MovimientoBancario,
+    *,
+    rubro_id: PydanticObjectId,
+    mes_id: PydanticObjectId,
+    carga_id: PydanticObjectId | None = None,
+) -> Transaccion:
+    """Construye una Transaccion 'Por clasificar' a partir de un movimiento parseado."""
+    fecha = mov.fecha.isoformat()  # date → 'YYYY-MM-DD'
+    tipo_flujo = _TIPO_A_FLUJO[mov.tipo]
+    id_banco = derivar_id_banco(
+        banco=mov.banco,
+        fecha=fecha,
+        descripcion=mov.descripcion,
+        valor=mov.monto,
+        tipo_flujo=tipo_flujo,
+        referencia=mov.referencia,
+    )
+    # Moneda extranjera (Global66): si el parser capturó moneda, se conserva el
+    # original re-derivable (hoy la hoja COP → 'COP'/1; valor_original == valor).
+    valor_original = mov.monto if mov.moneda_original is not None else None
+    return Transaccion(
+        fecha=fecha,
+        descripcion=mov.descripcion,
+        valor=mov.monto,
+        tipo_flujo=tipo_flujo,
+        rubro_id=rubro_id,
+        mes_id=mes_id,
+        banco=mov.banco,
+        id_banco=id_banco,
+        moneda_original=mov.moneda_original,
+        valor_original=valor_original,
+        tasa_cambio=mov.tasa_cambio,
+        carga_id=carga_id,
+    )

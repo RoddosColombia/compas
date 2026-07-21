@@ -7,10 +7,25 @@ por repositorios con Motor crudo/conexión dedicada (decisión de la Sesión 2),
 el ODM general.
 """
 
+from app.domain.carga import CargaBancaria
 from app.domain.configuracion import Configuracion
 from app.domain.mes_control import MesControl
 from app.domain.rubro import Rubro
+from app.domain.transaccion import Transaccion
 
-DOMAIN_DOCUMENTS: list[type] = [Rubro, MesControl, Configuracion]
+DOMAIN_DOCUMENTS: list[type] = [
+    Rubro,
+    MesControl,
+    Configuracion,
+    Transaccion,
+    CargaBancaria,
+]
 
-__all__ = ["Rubro", "MesControl", "Configuracion", "DOMAIN_DOCUMENTS"]
+__all__ = [
+    "Rubro",
+    "MesControl",
+    "Configuracion",
+    "Transaccion",
+    "CargaBancaria",
+    "DOMAIN_DOCUMENTS",
+]

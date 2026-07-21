@@ -1,0 +1,168 @@
+# backend/tests/test_carga.py
+"""CargaBancaria (Spec §1.6) + servicio de carga.
+
+MARCADO PARA AUDITORÍA KIMI (flujo crítico: cargas bancarias).
+
+Decisión de contrato registrada: el §1.6 especifica `insertMany ordered=False`
+contando duplicados por DuplicateKeyError (idempotente, NO transaccional). La regla 8
+lista "finalización de carga" como transacción multi-doc, PERO es incompatible con el
+conteo-y-continúa del §1.6 (una transacción abortaría en el 1er duplicado). Se sigue el
+§1.6 (data dictionary manda) → pendiente nota/CR y gate Kimi.
+
+Los tests del servicio necesitan Mongo real (índice único parcial + insertMany dedup):
+@requires_real_mongo. Los del modelo son puros.
+"""
+
+import os
+from decimal import Decimal
+
+import openpyxl
+import pytest
+from app.audit import service as audit_service
+from app.audit.events import AuditEvento
+from app.domain import DOMAIN_DOCUMENTS
+from app.domain.bancos import Banco
+from app.domain.carga import CARGAS_COLLECTION, CargaBancaria, EstadoCarga
+from app.domain.mes_control import MesControl
+from app.domain.rubro import Rubro
+from app.domain.transaccion import Transaccion
+from beanie import PydanticObjectId, init_beanie
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import ValidationError
+
+# ── Modelo (puro) ─────────────────────────────────────────────────────────
+
+
+def _carga(**over) -> CargaBancaria:
+    base = dict(
+        banco=Banco.BBVA,
+        archivo_nombre="extracto.xlsx",
+        archivo_hash="a" * 64,
+        usuario_id=PydanticObjectId(),
+    )
+    base.update(over)
+    return CargaBancaria(**base)
+
+
+class TestModeloCarga:
+    def test_estado_inicial_procesando(self):
+        c = _carga()
+        assert c.estado is EstadoCarga.PROCESANDO
+        assert c.total_filas == 0 and c.nuevas == 0 and c.duplicadas == 0
+        assert CargaBancaria.Settings.name == CARGAS_COLLECTION
+
+    def test_banco_manual_no_es_carga(self):
+        # Una carga proviene SIEMPRE de un archivo de banco real, nunca 'manual'.
+        with pytest.raises(ValidationError):
+            _carga(banco=Banco.MANUAL)
+
+    def test_hash_debe_ser_sha256_hex(self):
+        with pytest.raises(ValidationError):
+            _carga(archivo_hash="no-es-hash")
+
+    def test_rechaza_campo_extra(self):
+        with pytest.raises(ValidationError):
+            _carga(inventado="x")
+
+
+# ── Helper de fixture xlsx (BBVA, fechas explícitas) ─────────────────────
+
+
+def _crear_bbva(path, filas):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for i, h in enumerate(["FECHA DE OPERACIÓN", "CONCEPTO", "IMPORTE"], start=1):
+        ws.cell(row=14, column=i, value=h)
+    for off, (f, d, v) in enumerate(filas):
+        ws.cell(row=15 + off, column=1, value=f)
+        ws.cell(row=15 + off, column=2, value=d)
+        ws.cell(row=15 + off, column=3, value=v)
+    wb.save(str(path))
+    wb.close()
+
+
+# ── Servicio (Mongo real) ────────────────────────────────────────────────
+
+
+@pytest.mark.requires_real_mongo
+class TestServicioCarga:
+    @pytest.fixture
+    async def entorno(self):
+        uri = os.environ.get("COMPAS_TEST_MONGO_URI")
+        if not uri:
+            pytest.skip("COMPAS_TEST_MONGO_URI no configurado")
+        client = AsyncIOMotorClient(uri, tz_aware=True)
+        dbname = "compas_test_carga"
+        await client.drop_database(dbname)
+        db = client[dbname]
+        await init_beanie(database=db, document_models=DOMAIN_DOCUMENTS)
+        audit_service.configure_audit(client, dbname)
+        # Semillas mínimas: rubro 'Por clasificar' + MesControl de marzo 2026.
+        await Rubro(
+            grupo="otros", nombre="Por clasificar", orden=99, es_sistema=True
+        ).insert()
+        await MesControl(mes="2026-03-01", saldo_inicial_caja=Decimal("0")).insert()
+        yield db
+        audit_service.reset_audit()
+        await client.drop_database(dbname)
+        client.close()
+
+    async def _procesar(self, tmp_path, filas, nombre="ext.xlsx"):
+        from app.cargas.service import procesar_carga
+
+        p = tmp_path / nombre
+        _crear_bbva(p, filas)
+        return await procesar_carga(
+            banco=Banco.BBVA,
+            archivo_path=str(p),
+            archivo_nombre=nombre,
+            usuario_id=PydanticObjectId(),
+        )
+
+    async def test_completada_inserta_transacciones(self, entorno, tmp_path):
+        carga = await self._procesar(tmp_path, [
+            ("15-03-2026", "COMPRA", -50000),
+            ("16-03-2026", "NOMINA", 900000),
+        ])
+        assert carga.estado is EstadoCarga.COMPLETADA
+        assert carga.nuevas == 2
+        assert carga.duplicadas == 0
+        assert await Transaccion.find(Transaccion.carga_id == carga.id).count() == 2
+
+    async def test_solape_no_duplica(self, entorno, tmp_path):
+        # 1ª carga: 1 movimiento. 2ª carga (archivo distinto): el mismo + 1 nuevo.
+        await self._procesar(tmp_path, [("15-03-2026", "COMPRA", -50000)], "a.xlsx")
+        carga2 = await self._procesar(tmp_path, [
+            ("15-03-2026", "COMPRA", -50000),   # solape → duplicado
+            ("17-03-2026", "PAGO", -3000),      # nuevo
+        ], "b.xlsx")
+        assert carga2.nuevas == 1
+        assert carga2.duplicadas == 1
+
+    async def test_archivo_completado_se_rechaza(self, entorno, tmp_path):
+        from app.cargas.service import CargaDuplicadaError, procesar_carga
+
+        p = tmp_path / "dup.xlsx"
+        _crear_bbva(p, [("15-03-2026", "COMPRA", -50000)])
+        kw = dict(banco=Banco.BBVA, archivo_path=str(p), archivo_nombre="dup.xlsx",
+                  usuario_id=PydanticObjectId())
+        await procesar_carga(**kw)
+        with pytest.raises(CargaDuplicadaError):
+            await procesar_carga(**kw)  # mismo hash, ya completada → F-02
+
+    async def test_movimiento_sin_mes_va_a_errores(self, entorno, tmp_path):
+        # Abril no tiene MesControl → ese movimiento no se inserta, cuenta como error.
+        carga = await self._procesar(tmp_path, [
+            ("15-03-2026", "OK MARZO", -1000),
+            ("15-04-2026", "SIN MES ABRIL", -2000),
+        ])
+        assert carga.nuevas == 1
+        assert carga.errores == 1
+        assert any("2026-04" in e.motivo for e in carga.errores_detalle)
+
+    async def test_emite_evento_carga_completada(self, entorno, tmp_path):
+        carga = await self._procesar(tmp_path, [("15-03-2026", "X", -1000)])
+        col = entorno["audit_log"]
+        doc = await col.find_one({"evento": AuditEvento.carga_completada.value})
+        assert doc is not None
+        assert doc["entidad_id"] == str(carga.id)
