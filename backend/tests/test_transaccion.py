@@ -100,15 +100,22 @@ class TestModelo:
 class TestDerivarIdBanco:
     def test_global66_usa_referencia_nativa(self):
         idb = derivar_id_banco(
-            banco=Banco.GLOBAL66, fecha="2026-03-15", descripcion="X",
-            valor=Decimal("1000"), tipo_flujo=TipoFlujo.EGRESO, referencia="TXN-002",
+            banco=Banco.GLOBAL66,
+            fecha="2026-03-15",
+            descripcion="X",
+            valor=Decimal("1000"),
+            tipo_flujo=TipoFlujo.EGRESO,
+            referencia="TXN-002",
         )
         assert idb == "TXN-002"
 
     def test_bancolombia_es_huella_determinista(self):
         args = dict(
-            banco=Banco.BANCOLOMBIA, fecha="2026-03-15", descripcion="COMPRA",
-            valor=Decimal("50000"), tipo_flujo=TipoFlujo.EGRESO,
+            banco=Banco.BANCOLOMBIA,
+            fecha="2026-03-15",
+            descripcion="COMPRA",
+            valor=Decimal("50000"),
+            tipo_flujo=TipoFlujo.EGRESO,
         )
         a = derivar_id_banco(**args)
         b = derivar_id_banco(**args)
@@ -119,8 +126,11 @@ class TestDerivarIdBanco:
     def test_ordinal_distingue_identicos(self):
         # A-01: misma huella, distinta ocurrencia → id distinto (no colapsan).
         base = dict(
-            banco=Banco.BANCOLOMBIA, fecha="2026-03-15", descripcion="ABONO",
-            valor=Decimal("50000"), tipo_flujo=TipoFlujo.EGRESO,
+            banco=Banco.BANCOLOMBIA,
+            fecha="2026-03-15",
+            descripcion="ABONO",
+            valor=Decimal("50000"),
+            tipo_flujo=TipoFlujo.EGRESO,
         )
         assert derivar_id_banco(**base, ocurrencia=1) != derivar_id_banco(
             **base, ocurrencia=2
@@ -128,7 +138,9 @@ class TestDerivarIdBanco:
 
     def test_huella_cambia_con_el_monto(self):
         base = dict(
-            banco=Banco.BBVA, fecha="2026-03-15", descripcion="X",
+            banco=Banco.BBVA,
+            fecha="2026-03-15",
+            descripcion="X",
             tipo_flujo=TipoFlujo.EGRESO,
         )
         assert derivar_id_banco(valor=Decimal("100"), **base) != derivar_id_banco(
@@ -137,7 +149,9 @@ class TestDerivarIdBanco:
 
     def test_huella_cambia_con_el_banco(self):
         base = dict(
-            fecha="2026-03-15", descripcion="X", valor=Decimal("100"),
+            fecha="2026-03-15",
+            descripcion="X",
+            valor=Decimal("100"),
             tipo_flujo=TipoFlujo.EGRESO,
         )
         assert derivar_id_banco(banco=Banco.BANCOLOMBIA, **base) != derivar_id_banco(
@@ -162,8 +176,9 @@ def _mov(**over):
 
 class TestMapper:
     def test_debito_mapea_a_egreso(self):
-        t = movimiento_a_transaccion(_mov(tipo=TipoMovimiento.DEBITO),
-                                     rubro_id=_RUBRO, mes_id=_MES)
+        t = movimiento_a_transaccion(
+            _mov(tipo=TipoMovimiento.DEBITO), rubro_id=_RUBRO, mes_id=_MES
+        )
         assert t.tipo_flujo is TipoFlujo.EGRESO
         assert t.valor == Decimal("50000")  # magnitud positiva
         assert t.fecha == "2026-03-15"  # date → string YYYY-MM-DD
@@ -171,14 +186,18 @@ class TestMapper:
         assert t.tardia is False
 
     def test_credito_mapea_a_ingreso(self):
-        t = movimiento_a_transaccion(_mov(tipo=TipoMovimiento.CREDITO),
-                                     rubro_id=_RUBRO, mes_id=_MES)
+        t = movimiento_a_transaccion(
+            _mov(tipo=TipoMovimiento.CREDITO), rubro_id=_RUBRO, mes_id=_MES
+        )
         assert t.tipo_flujo is TipoFlujo.INGRESO
 
     def test_global66_conserva_moneda_y_usa_referencia(self):
         mov = _mov(
-            banco=Banco.GLOBAL66, tipo=TipoMovimiento.CREDITO,
-            moneda_original="COP", tasa_cambio=Decimal("1"), referencia="TXN-77",
+            banco=Banco.GLOBAL66,
+            tipo=TipoMovimiento.CREDITO,
+            moneda_original="COP",
+            tasa_cambio=Decimal("1"),
+            referencia="TXN-77",
         )
         t = movimiento_a_transaccion(mov, rubro_id=_RUBRO, mes_id=_MES)
         assert t.moneda_original == "COP"
@@ -188,8 +207,11 @@ class TestMapper:
     def test_bancolombia_id_banco_es_huella(self):
         t = movimiento_a_transaccion(_mov(), rubro_id=_RUBRO, mes_id=_MES)
         esperado = derivar_id_banco(
-            banco=Banco.BANCOLOMBIA, fecha="2026-03-15", descripcion="COMPRA",
-            valor=Decimal("50000"), tipo_flujo=TipoFlujo.EGRESO,
+            banco=Banco.BANCOLOMBIA,
+            fecha="2026-03-15",
+            descripcion="COMPRA",
+            valor=Decimal("50000"),
+            tipo_flujo=TipoFlujo.EGRESO,
         )
         assert t.id_banco == esperado
 

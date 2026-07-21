@@ -73,9 +73,20 @@ def _crear_global66(path, filas):
     ws.title = "Movimientos de cuenta COP"
     ws.cell(row=1, column=1, value="Movimientos de cuenta COP")
     headers = [
-        "Tipo transaccion", "Fecha", "Monto debitado", "Monto acreditado",
-        "E", "F", "G", "Nombre tercero", "DNI tercero", "J", "K", "L",
-        "ID transaccion", "Comentario",
+        "Tipo transaccion",
+        "Fecha",
+        "Monto debitado",
+        "Monto acreditado",
+        "E",
+        "F",
+        "G",
+        "Nombre tercero",
+        "DNI tercero",
+        "J",
+        "K",
+        "L",
+        "ID transaccion",
+        "Comentario",
     ]
     for i, h in enumerate(headers, start=1):
         ws.cell(row=4, column=i, value=h)
@@ -86,10 +97,31 @@ def _crear_global66(path, filas):
     wb.close()
 
 
-def _g66_fila(tipo="Debito", fecha="2026-03-15 10:30:00", debito=None,
-              credito=None, tercero="TERCERO SA", ref="TXN-001", com="COMENTARIO"):
-    return [tipo, fecha, debito, credito, None, None, None, tercero,
-            "900123456", None, None, None, ref, com]
+def _g66_fila(
+    tipo="Debito",
+    fecha="2026-03-15 10:30:00",
+    debito=None,
+    credito=None,
+    tercero="TERCERO SA",
+    ref="TXN-001",
+    com="COMENTARIO",
+):
+    return [
+        tipo,
+        fecha,
+        debito,
+        credito,
+        None,
+        None,
+        None,
+        tercero,
+        "900123456",
+        None,
+        None,
+        None,
+        ref,
+        com,
+    ]
 
 
 # ── Detección de banco ─────────────────────────────────────────────────
@@ -149,10 +181,13 @@ class TestReglaDecimal:
 class TestBancolombia:
     def test_debito_y_credito(self, tmp_path):
         p = tmp_path / "b.xlsx"
-        _crear_bancolombia(p, [
-            ("15/03", "COMPRA", -50000),
-            ("16/03", "ABONO", 120000),
-        ])
+        _crear_bancolombia(
+            p,
+            [
+                ("15/03", "COMPRA", -50000),
+                ("16/03", "ABONO", 120000),
+            ],
+        )
         res = parse_bancolombia(str(p))
         assert isinstance(res, ResultadoParseo)
         assert res.errores == []
@@ -167,10 +202,13 @@ class TestBancolombia:
 
     def test_fila_totalmente_vacia_se_omite(self, tmp_path):
         p = tmp_path / "b.xlsx"
-        _crear_bancolombia(p, [
-            (None, None, None),
-            ("17/03", "PAGO", -3000),
-        ])
+        _crear_bancolombia(
+            p,
+            [
+                (None, None, None),
+                ("17/03", "PAGO", -3000),
+            ],
+        )
         res = parse_bancolombia(str(p))
         assert len(res.movimientos) == 1
         assert res.errores == []
@@ -199,10 +237,13 @@ class TestBancolombia:
 class TestBBVA:
     def test_parse_basico(self, tmp_path):
         p = tmp_path / "v.xlsx"
-        _crear_bbva(p, [
-            ("15-03-2026", "RETIRO", -75000),
-            ("16-03-2026", "NOMINA", 900000),
-        ])
+        _crear_bbva(
+            p,
+            [
+                ("15-03-2026", "RETIRO", -75000),
+                ("16-03-2026", "NOMINA", 900000),
+            ],
+        )
         res = parse_bbva(str(p))
         assert res.errores == []
         deb, cred = res.movimientos
@@ -219,9 +260,18 @@ class TestBBVA:
 class TestGlobal66:
     def test_egreso_columna_debito(self, tmp_path):
         p = tmp_path / "g.xlsx"
-        _crear_global66(p, [_g66_fila(
-            tipo="Debito", debito=150000.0, ref="TXN-001", com="ALMUERZO",
-            tercero="RESTAURANTE XYZ")])
+        _crear_global66(
+            p,
+            [
+                _g66_fila(
+                    tipo="Debito",
+                    debito=150000.0,
+                    ref="TXN-001",
+                    com="ALMUERZO",
+                    tercero="RESTAURANTE XYZ",
+                )
+            ],
+        )
         res = parse_global66(str(p))
         m = res.movimientos[0]
         assert m.tipo is TipoMovimiento.DEBITO
@@ -234,8 +284,9 @@ class TestGlobal66:
 
     def test_ingreso_columna_credito(self, tmp_path):
         p = tmp_path / "g.xlsx"
-        _crear_global66(p, [_g66_fila(
-            tipo="Abono", debito=None, credito=2500000.0, ref="TXN-002")])
+        _crear_global66(
+            p, [_g66_fila(tipo="Abono", debito=None, credito=2500000.0, ref="TXN-002")]
+        )
         res = parse_global66(str(p))
         m = res.movimientos[0]
         assert m.tipo is TipoMovimiento.CREDITO
@@ -253,10 +304,13 @@ class TestGlobal66:
 
     def test_omite_filas_sin_valor(self, tmp_path):
         p = tmp_path / "g.xlsx"
-        _crear_global66(p, [
-            _g66_fila(tipo="GMF", debito=None, credito=None, ref="TXN-VACIO"),
-            _g66_fila(tipo="Debito", debito=5000.0, ref="TXN-OK"),
-        ])
+        _crear_global66(
+            p,
+            [
+                _g66_fila(tipo="GMF", debito=None, credito=None, ref="TXN-VACIO"),
+                _g66_fila(tipo="Debito", debito=5000.0, ref="TXN-OK"),
+            ],
+        )
         res = parse_global66(str(p))
         assert len(res.movimientos) == 1
         assert res.movimientos[0].referencia == "TXN-OK"
@@ -269,6 +323,7 @@ class TestFronteraAnio:
     def test_diciembre_leido_en_enero_no_salta_al_futuro(self, tmp_path, monkeypatch):
         # M-01 (Kimi): cargar el 2-ene-2027 un movimiento "31/12" → 2026-12-31.
         import app.parsers.bank_parsers as bp
+
         monkeypatch.setattr(bp, "today_bogota", lambda: date(2027, 1, 2))
         p = tmp_path / "b.xlsx"
         _crear_bancolombia(p, [("31/12", "PAGO", -5000)])
@@ -277,6 +332,7 @@ class TestFronteraAnio:
 
     def test_fecha_del_anio_actual_se_mantiene(self, tmp_path, monkeypatch):
         import app.parsers.bank_parsers as bp
+
         monkeypatch.setattr(bp, "today_bogota", lambda: date(2027, 1, 2))
         p = tmp_path / "b.xlsx"
         _crear_bancolombia(p, [("01/01", "PAGO", -5000)])

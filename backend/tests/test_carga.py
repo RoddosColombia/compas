@@ -121,10 +121,13 @@ class TestServicioCarga:
         )
 
     async def test_completada_inserta_transacciones(self, entorno, tmp_path):
-        carga = await self._procesar(tmp_path, [
-            ("15-03-2026", "COMPRA", -50000),
-            ("16-03-2026", "NOMINA", 900000),
-        ])
+        carga = await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "COMPRA", -50000),
+                ("16-03-2026", "NOMINA", 900000),
+            ],
+        )
         assert carga.estado is EstadoCarga.COMPLETADA
         assert carga.nuevas == 2
         assert carga.duplicadas == 0
@@ -133,10 +136,14 @@ class TestServicioCarga:
     async def test_solape_no_duplica(self, entorno, tmp_path):
         # 1ª carga: 1 movimiento. 2ª carga (archivo distinto): el mismo + 1 nuevo.
         await self._procesar(tmp_path, [("15-03-2026", "COMPRA", -50000)], "a.xlsx")
-        carga2 = await self._procesar(tmp_path, [
-            ("15-03-2026", "COMPRA", -50000),   # solape → duplicado
-            ("17-03-2026", "PAGO", -3000),      # nuevo
-        ], "b.xlsx")
+        carga2 = await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "COMPRA", -50000),  # solape → duplicado
+                ("17-03-2026", "PAGO", -3000),  # nuevo
+            ],
+            "b.xlsx",
+        )
         assert carga2.nuevas == 1
         assert carga2.duplicadas == 1
 
@@ -145,18 +152,26 @@ class TestServicioCarga:
 
         p = tmp_path / "dup.xlsx"
         _crear_bbva(p, [("15-03-2026", "COMPRA", -50000)])
-        kw = dict(banco=Banco.BBVA, archivo_path=str(p), archivo_nombre="dup.xlsx",
-                  usuario_id=PydanticObjectId(), dir_originales=str(tmp_path / "orig"))
+        kw = dict(
+            banco=Banco.BBVA,
+            archivo_path=str(p),
+            archivo_nombre="dup.xlsx",
+            usuario_id=PydanticObjectId(),
+            dir_originales=str(tmp_path / "orig"),
+        )
         await procesar_carga(**kw)
         with pytest.raises(CargaDuplicadaError):
             await procesar_carga(**kw)  # mismo hash, ya completada → F-02
 
     async def test_movimiento_sin_mes_va_a_errores(self, entorno, tmp_path):
         # Abril no tiene MesControl → ese movimiento no se inserta, cuenta como error.
-        carga = await self._procesar(tmp_path, [
-            ("15-03-2026", "OK MARZO", -1000),
-            ("15-04-2026", "SIN MES ABRIL", -2000),
-        ])
+        carga = await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "OK MARZO", -1000),
+                ("15-04-2026", "SIN MES ABRIL", -2000),
+            ],
+        )
         assert carga.nuevas == 1
         assert carga.errores == 1
         assert any("2026-04" in e.motivo for e in carga.errores_detalle)
@@ -170,33 +185,47 @@ class TestServicioCarga:
 
     async def test_identicos_en_un_archivo_no_colapsan(self, entorno, tmp_path):
         # A-01: dos cuotas legítimas idénticas el mismo día → AMBAS entran.
-        carga = await self._procesar(tmp_path, [
-            ("15-03-2026", "ABONO", -50000),
-            ("15-03-2026", "ABONO", -50000),
-        ])
+        carga = await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "ABONO", -50000),
+                ("15-03-2026", "ABONO", -50000),
+            ],
+        )
         assert carga.nuevas == 2
         assert carga.duplicadas == 0
 
     async def test_solape_dedup_conserva_identicos(self, entorno, tmp_path):
         # A-01 + dedup: archivo A [X,X]; archivo B (otro hash) [X,X,Z] → solo Z nuevo.
-        await self._procesar(tmp_path, [
-            ("15-03-2026", "ABONO", -50000),
-            ("15-03-2026", "ABONO", -50000),
-        ], "a.xlsx")
-        carga2 = await self._procesar(tmp_path, [
-            ("15-03-2026", "ABONO", -50000),
-            ("15-03-2026", "ABONO", -50000),
-            ("17-03-2026", "OTRO", -3000),
-        ], "b.xlsx")
+        await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "ABONO", -50000),
+                ("15-03-2026", "ABONO", -50000),
+            ],
+            "a.xlsx",
+        )
+        carga2 = await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "ABONO", -50000),
+                ("15-03-2026", "ABONO", -50000),
+                ("17-03-2026", "OTRO", -3000),
+            ],
+            "b.xlsx",
+        )
         assert carga2.nuevas == 1
         assert carga2.duplicadas == 2
 
     async def test_valor_crudo_se_propaga(self, entorno, tmp_path):
         # Regla 7 / Kimi: el texto crudo ambiguo llega al Financiero.
-        carga = await self._procesar(tmp_path, [
-            ("15-03-2026", "OK", -1000),
-            ("15-03-2026", "RARO", "N/A"),
-        ])
+        carga = await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "OK", -1000),
+                ("15-03-2026", "RARO", "N/A"),
+            ],
+        )
         assert carga.errores == 1
         assert carga.errores_detalle[0].valor_crudo == "N/A"
 
@@ -208,8 +237,10 @@ class TestServicioCarga:
         _crear_bbva(p, [("15-03-2026", "X", -1000)])
         with pytest.raises(OriginalNoPreservableError):
             await procesar_carga(
-                banco=Banco.BBVA, archivo_path=str(p),
-                archivo_nombre="np.xlsx", usuario_id=PydanticObjectId(),
+                banco=Banco.BBVA,
+                archivo_path=str(p),
+                archivo_nombre="np.xlsx",
+                usuario_id=PydanticObjectId(),
             )
 
     async def test_preserva_original_local(self, entorno, tmp_path):

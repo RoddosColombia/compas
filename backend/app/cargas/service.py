@@ -190,7 +190,8 @@ async def procesar_carga(
                 # cargas (el ordinal hace únicos los de ESTE archivo).
                 existentes = set()
                 async for t in Transaccion.find(
-                    Transaccion.banco == banco, In(Transaccion.id_banco, ids),
+                    Transaccion.banco == banco,
+                    In(Transaccion.id_banco, ids),
                     session=session,
                 ):
                     existentes.add(t.id_banco)

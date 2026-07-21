@@ -58,7 +58,10 @@ async def api(monkeypatch):
         grupo="otros", nombre="Por clasificar", orden=98, es_sistema=True
     ).insert()
     await Rubro(
-        grupo="otros", nombre="Recaudo", tipo_flujo="ingreso", orden=99,
+        grupo="otros",
+        nombre="Recaudo",
+        tipo_flujo="ingreso",
+        orden=99,
         es_sistema=True,
     ).insert()
     await MesControl(mes="2026-03-01", saldo_inicial_caja=Decimal("0")).insert()
@@ -93,7 +96,8 @@ def _body(**over):
 
 async def _post(ac, h, body, key="k-001"):
     return await ac.post(
-        "/api/v1/transacciones", json=body,
+        "/api/v1/transacciones",
+        json=body,
         headers={**h, "Idempotency-Key": key},
     )
 
@@ -219,9 +223,15 @@ async def test_rubro_explicito_emite_clasificada(api):
     ac, c = api
     h = await _token(ac)
     recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo")
-    r = await _post(ac, h, _body(
-        tipo_flujo="ingreso", rubro_id=str(recaudo.id), descripcion="ABONO CUOTA",
-    ))
+    r = await _post(
+        ac,
+        h,
+        _body(
+            tipo_flujo="ingreso",
+            rubro_id=str(recaudo.id),
+            descripcion="ABONO CUOTA",
+        ),
+    )
     assert r.status_code == 201
     ev = await c["compas_test"]["audit_log"].find_one(
         {"evento": "transaccion.clasificada"}

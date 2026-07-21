@@ -94,9 +94,7 @@ async def crear_manual(
     )
     if previa is not None:
         if previa.request_hash != req_hash:
-            raise HTTPException(
-                422, "Idempotency-Key ya usada con un payload distinto"
-            )
+            raise HTTPException(422, "Idempotency-Key ya usada con un payload distinto")
         if previa.response_status is None:
             raise HTTPException(409, "petición con esta Idempotency-Key en curso")
         # Replay: la respuesta ORIGINAL, con su status original (§1.12).
@@ -113,9 +111,7 @@ async def crear_manual(
     except DuplicateKeyError:
         # Kimi B-1: doble-clic real (2 requests concurrentes) — el índice único
         # `scope_unico` atrapa al 2º → 409, no 500.
-        raise HTTPException(
-            409, "petición con esta Idempotency-Key en curso"
-        ) from None
+        raise HTTPException(409, "petición con esta Idempotency-Key en curso") from None
 
     try:
         tx = await service.crear_transaccion_manual(

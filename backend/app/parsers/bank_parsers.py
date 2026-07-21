@@ -132,9 +132,7 @@ def _cell(row: tuple, idx: int):
 
 
 def _fila_vacia(row: tuple) -> bool:
-    return all(
-        v is None or (isinstance(v, str) and v.strip() == "") for v in row
-    )
+    return all(v is None or (isinstance(v, str) and v.strip() == "") for v in row)
 
 
 def _mapear_columnas(ws, header_row: int, spec: dict[str, str]) -> dict[str, int]:
@@ -248,9 +246,7 @@ def detectar_banco(file_path: str) -> Banco:
         fila14 = [str(c.value or "") for c in ws[14]]
         if any("FECHA DE OPERACI" in c.upper() for c in fila14):
             return Banco.BBVA
-        raise ValueError(
-            "No se pudo identificar el banco (Bancolombia/BBVA/Global66)."
-        )
+        raise ValueError("No se pudo identificar el banco (Bancolombia/BBVA/Global66).")
     finally:
         wb.close()
 
@@ -270,9 +266,11 @@ def _parse_signo(
         col = _mapear_columnas(
             ws,
             header_row,
-            {"fecha": "FECHA", "descripcion": "CONCEPTO" if banco is Banco.BBVA
-             else "DESCRIPCI", "valor": "IMPORTE" if banco is Banco.BBVA
-             else "VALOR"},
+            {
+                "fecha": "FECHA",
+                "descripcion": "CONCEPTO" if banco is Banco.BBVA else "DESCRIPCI",
+                "valor": "IMPORTE" if banco is Banco.BBVA else "VALOR",
+            },
         )
         for r_idx, row in enumerate(
             ws.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1
@@ -290,9 +288,7 @@ def _parse_signo(
                     descripcion=str(_cell(row, col["descripcion"]) or "").strip(),
                     monto=abs(signed),
                     tipo=(
-                        TipoMovimiento.DEBITO
-                        if signed < 0
-                        else TipoMovimiento.CREDITO
+                        TipoMovimiento.DEBITO if signed < 0 else TipoMovimiento.CREDITO
                     ),
                     banco=banco,
                 )
