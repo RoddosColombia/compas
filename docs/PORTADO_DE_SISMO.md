@@ -28,3 +28,16 @@ Spec de COMPAS) o **construido** (nuevo, no existe en SISMO). Mitiga bus-factor 
 
 ## Sesión 2 · PR-3 (RBAC)
 _(se completará al construir PR-3)_
+
+## Sprint 1 — Parsers bancarios + Transaccion + carga (GO Kimi R-PR1 9.3, merge 72034a0)
+
+| Artefacto COMPAS | Origen SISMO | Clasif. | Notas |
+|---|---|---|---|
+| `app/parsers/bank_parsers.py` (3 bancos + auto-detect) | **SISMO-V2** `backend/services/bank_parsers.py` (5 bancos, float, silencioso) | **adaptado** | Conocimiento de formatos reusado (Bancolombia hoja 'Extracto' fila 15, BBVA fila 14, Global66 hoja COP fila 4); reescrito por TDD para las reglas COMPAS: Decimal/`Money` (regla 1), fail-loud `ErrorFila` (regla 7), FX Global66 (`moneda_original`/`tasa_cambio`). Se descartaron Davivienda y Nequi (no son bancos de RODDOS) → sin pandas/pdfplumber. |
+| `app/domain/transaccion.py` (`derivar_id_banco`) | **SISMO-V2** `services/anti_duplicados.py::hash_movimiento` (MD5 fecha\|desc\|monto) | **adaptado** | Huella determinista con banco+tipo en la clave y **ordinal de ocurrencia por archivo** (Kimi A-01: dos movimientos legítimos idénticos no colapsan). Global66 usa su referencia nativa. |
+| `Transaccion` (§1.5) + índice único parcial (banco, id_banco) | — | **construido** | Dedup como restricción de BD (regla 5); probado contra Mongo real (solape→0, 2 manuales coexisten). |
+| `CargaBancaria` (§1.6) + `app/cargas/service.py` | (V2 hacía conciliación por colecciones de hashes) | **construido** | Ciclo procesando→completada/fallida, F-02, transacción multi-doc real (pre-filtro + `with_transaction`; se refutó con evidencia el catch-and-commit), preservación del original (M-04), eventos `carga.completada/fallida`. |
+| `app/cargas/mapper.py` | — | **construido** | MovimientoBancario→Transaccion ('Por clasificar', debito→egreso/credito→ingreso). |
+
+## Infra (20-jul-2026) — no es porte de código, pero cierra el ciclo
+Base `compas` en el **cluster de SISMO-V3** (decisión CEO: facilita integraciones futuras); usuarios `compas_app`/`compas_audit` + rol `audit_writer` creados por **Atlas UI** (Atlas bloquea createUser/createRole por driver en todos los tiers — corrección a la nota H-01, ver RUNBOOK §2). API live: `https://compas-api-von1.onrender.com` (auto-deploy desde main, fase desarrollo).
