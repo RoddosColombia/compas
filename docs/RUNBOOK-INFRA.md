@@ -62,11 +62,12 @@
 - [ ] Proyecto `compas` (frontend), previews por PR
 - [ ] Auto-deploy de producción desactivado (mismo flujo por tag)
 
-## 5. Cloudflare (zona roddos.com existente)
+## 5. DNS (GoDaddy — CORRECCIÓN 20-jul-2026: el baseline decía "Cloudflare, zona existente"; era un supuesto FALSO — el DNS de roddos.com vive en GoDaddy)
 
-- [ ] `compas.roddos.com` → Vercel · `api.compas.roddos.com` → Render
-- [ ] TLS full-strict · WAF básico · HSTS
-- [ ] **Restringir el origen Render a IPs de Cloudflare** (firewall / Authenticated Origin Pulls) para que `CF-Connecting-IP` no sea spoofeable (Kimi L2). El backend corre con `uvicorn --proxy-headers` y lee la IP real de ese header.
+- [x] `compas.roddos.com` → Vercel (CNAME específico del proyecto) · `api.compas.roddos.com` → Render (CNAME) · TXT `_vercel` de verificación (20-jul-2026)
+- TLS lo emiten Vercel/Render en el origen (Let's Encrypt automático); HSTS ya vive en las cabeceras de la app (DoD #12).
+- El código lee la IP real con `CF-Connecting-IP` → fallback `X-Forwarded-For` (Render) → peer; **sin Cloudflare el fallback es el camino activo** y es correcto en Render.
+- **Diferido a go-live (decisión pendiente):** si se quiere WAF/proxy (Cloudflare u otro), evaluar entonces migrar el DNS o poner el proxy delante; la restricción de origen a IPs del proxy (Kimi L2) aplica SOLO si se adopta un proxy.
 
 ## 6. S3 (cuenta AWS existente)
 
