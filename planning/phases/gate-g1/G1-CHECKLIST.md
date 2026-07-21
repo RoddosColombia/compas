@@ -22,16 +22,21 @@
 | B2 | Custodio del break-glass nombrado | ✅ | RUNBOOK §0 (Andrés); break-glass MFA documentado §8 |
 | B3 | Acceso a secretos de producción (máx. 2) | ✅ | RUNBOOK §0 (Andrés + Iván) |
 
-## C. Operacional (infra real) — responsable: CEO/Andrés (S0B-03)
-| # | Requisito | Estado | Evidencia a adjuntar |
+## C. Operacional (infra real) — responsable: CEO/Andrés (S0B-03) — **EJECUTADO 20-jul-2026**
+> **Contexto (decisión CEO 20-jul, principio rector en CLAUDE.md):** fase de desarrollo con
+> **entorno ÚNICO** — `compas-api` (auto-deploy desde `main`) contra la base `compas` en el
+> cluster de SISMO-V3. `compas-api-stg`/`compas_stg` y el endurecimiento de producción
+> (tag `v*` + reviewer) se montan en **go-live**. C1/C4/C7 se evaluaron sobre el entorno único.
+
+| # | Requisito | Estado | Evidencia |
 |---|---|---|---|
-| C1 | **Readiness** 200 en staging (no solo liveness): `GET /api/v1/health/ready` → `{status:"ready", mongo:"up", beanie:"ready"}` (Kimi G-2 — `/health` daría 200 aunque Mongo esté caído) | ⏳ | salida del `GET /api/v1/health/ready` de `compas-api-stg` |
-| C2 | Deploy staging por merge a main; **producción BLOQUEADA** — control sin costo (repo Free): Render prod `autoDeploy:false` + tags `v*` solo el CEO (único admin del repo) + deploy manual | ⏳ | captura de `compas-api` con Auto-Deploy OFF; merge a main NO despliega prod (solo `compas-api-stg`). *Nota: required-reviewer nativo requiere GitHub Team — diferido por decisión del CEO* |
-| C3 | pip-audit + gitleaks **bloquean un PR de prueba con secreto sembrado** | ⏳ | run rojo del PR de prueba (secreto sembrado) |
-| C4 | Cabeceras vivas: `curl -I https://compas.roddos.com` y `.../api/health` | ⏳ | salida de `curl -I` (CSP/HSTS/nosniff/…) |
-| C5 | Región primaria y de réplica anotadas (§0); buckets + CRR verificados | ⏳ | objeto de prueba replicado + notas §0 |
-| C6 | Provisionar `MONGODB_URI_AUDIT` y `MFA_ENC_KEY` en Render (valores) | ⏳ | secretos cargados (RUNBOOK §8) |
-| C7 | **Aprovisionamiento de datos/roles en Atlas** (Kimi G-1) — `compas_stg` primero, `compas` después: `scripts/create_audit_role.py` (rol `audit_writer` + `compas_audit`; sin él los inserts a `audit_log` fallan en runtime), `scripts/create_auth_indexes.py` (únicos + TTL; sin TTL regresa la L4), `migrations/20260901_seed_rubros.py` y `..._seed_configuracion.py` (semillas idempotentes) | ⏳ | logs idempotentes de los 4 scripts contra `compas_stg` |
+| C1 | **Readiness** 200 (no solo liveness): `GET /api/v1/health/ready` | ✅ | `https://compas-api-von1.onrender.com/api/v1/health/ready` → HTTP 200 `{"status":"ready","mongo":"up","beanie":"ready"}` (20-jul) |
+| C2 | Deploy por merge a main; producción bloqueada | 🔁 **Sustituido por decisión CEO** (20-jul): en desarrollo hay UN solo servicio con auto-deploy; no existe prod separada que bloquear. El control (autoDeploy:false + tag v* + reviewer CEO) se **reactiva en go-live** — documentado en `render.yaml` y CLAUDE.md | commit `74e25bc` (render.yaml + principio rector) |
+| C3 | pip-audit + gitleaks **bloquean un PR de prueba con secreto sembrado** | ✅ | PR #20 (credenciales AWS falsas sembradas): **gitleaks FAIL en 7s** — run `29797947548`; PR cerrado sin merge (20-jul) |
+| C4 | Cabeceras vivas en el API | ✅ | `curl -I https://compas-api-von1.onrender.com/health`: CSP `default-src 'none'`, HSTS preload, nosniff, X-Frame DENY, no-referrer (20-jul). *Dominio `compas.roddos.com` (Cloudflare): diferido, se re-verifica al cablearlo* |
+| C5 | Región primaria/réplica anotadas; buckets + CRR verificados | ⏳ **Diferido a pre-carga-real** (S3/AWS = bloque C pendiente). Guardrail vigente: la regla dura M-04 (Kimi R-PR1) **bloquea cargas reales sin S3/preservación** — no hay datos reales que respaldar todavía | RUNBOOK §6 pendiente; M-04 en `app/cargas/service.py` |
+| C6 | Provisionar `MONGODB_URI_AUDIT` y `MFA_ENC_KEY` en Render | ✅ | 4 secretos cargados vía Blueprint (URI_COMPAS/URI_AUDIT/JWT/MFA_ENC_KEY); fail-fast NO saltó (el arranque exige los 4); INVENTARIO-SECRETOS col VALOR (20-jul) |
+| C7 | **Aprovisionamiento de datos/roles en Atlas** (Kimi G-1) | ✅ | Base `compas` en cluster SISMO-V3: rol `audit_writer` + `compas_audit` + `compas_app` por **Atlas UI** (corrección a H-01: Atlas bloquea createUser/createRole por driver en TODOS los tiers — RUNBOOK §2); índices auth+forense+dominio y semillas (33 rubros, 3 config) por scripts idempotentes; **verificado en vivo**: `compas_audit` NO puede escribir fuera de `audit_log` ni update en él (DoD #6). `compas_stg`: N/A por decisión de entorno único |
 
 ## G-3 (Kimi) — reviewer de deploy a producción
 CR-003 resolvió el aprobador de **G1** (CEO + evidencia Kimi; Iván derogado). Para el **deploy a
