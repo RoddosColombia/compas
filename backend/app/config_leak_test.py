@@ -1,0 +1,3 @@
+# ARCHIVO DE PRUEBA C3 (gate G1): secreto sembrado a propósito — el CI DEBE ponerse rojo.
+AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
+AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
