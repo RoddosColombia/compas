@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     # Fail-fast fuera de dev (como JWT_SECRET): sin ella el TOTP no se puede descifrar.
     mfa_enc_key: str | None = None
 
+    # ── Cargas (M-04, interim hasta S3) ────────────────────────────────
+    # Directorio local donde se preserva el original de cada extracto. En Render
+    # el disco es efímero: esto es un puente de DESARROLLO; la carga real exige
+    # S3 (DISP-02). Sin destino, procesar_carga rechaza (OriginalNoPreservableError).
+    originales_dir: str | None = None
+
     # ── Secretos (opcionales en dev/skeleton; obligatorios en prod) ────
     jwt_secret: str | None = None
     sentry_dsn: str | None = None

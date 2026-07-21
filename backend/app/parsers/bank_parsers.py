@@ -25,6 +25,7 @@ Formatos (heredados de la realidad de cada banco):
 import os
 import shutil
 import tempfile
+import zipfile
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -84,14 +85,46 @@ class _FilaError(Exception):
 # ── Utilidades ───────────────────────────────────────────────────────────
 
 
+# F-22 (Kimi M-2): topes duros ANTES de gastar CPU/memoria en un archivo hostil.
+MAX_FILAS = 20_000
+_MAX_DESCOMPRIMIDO = 200 * 1024 * 1024  # xlsx = zip; 200 MB descomprimidos
+_MAX_RATIO = 100  # ratio descomprimido/comprimido típico de una zip-bomb: >1000
+
+
+def _validar_zip(file_path: str) -> None:
+    """F-22: acota el ratio de descompresión (un .xlsx es un zip; una bomba de
+    10 MB puede expandir a GB). Lanza ValueError antes de abrir con openpyxl."""
+    try:
+        comprimido = os.path.getsize(file_path)
+        with zipfile.ZipFile(file_path) as z:
+            total = sum(i.file_size for i in z.infolist())
+    except zipfile.BadZipFile:
+        return  # no es zip (p. ej. .xls binario legacy): openpyxl decidirá
+    ratio_excedido = comprimido > 0 and total / comprimido > _MAX_RATIO
+    if total > _MAX_DESCOMPRIMIDO or ratio_excedido:
+        raise ValueError(
+            "el extracto excede el límite de descompresión permitido (F-22): "
+            f"{total // (1024 * 1024)} MB descomprimidos"
+        )
+
+
 def _open_workbook(file_path: str):
     """Abre el .xlsx; si la extensión .xls confunde a openpyxl, copia a temp."""
+    _validar_zip(file_path)  # F-22 (Kimi M-2)
     try:
         return openpyxl.load_workbook(file_path, data_only=True)
     except Exception:
         tmp = os.path.join(tempfile.mkdtemp(), "extract.xlsx")
         shutil.copy2(file_path, tmp)
         return openpyxl.load_workbook(tmp, data_only=True)
+
+
+def _check_tope_filas(fila_datos: int) -> None:
+    """F-22: tope de filas de datos (Kimi M-2). Error explícito, no minutos de CPU."""
+    if fila_datos > MAX_FILAS:
+        raise ValueError(
+            f"el extracto supera el tope de {MAX_FILAS} filas de datos (F-22)"
+        )
 
 
 def _cell(row: tuple, idx: int):
@@ -244,6 +277,7 @@ def _parse_signo(
         for r_idx, row in enumerate(
             ws.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1
         ):
+            _check_tope_filas(r_idx - header_row)  # F-22 (Kimi M-2)
             if _fila_vacia(row):
                 continue
             try:
@@ -295,6 +329,7 @@ def parse_global66(file_path: str) -> ResultadoParseo:
         if ws is None:
             raise ValueError("No se encontró la hoja 'Movimientos de cuenta COP'.")
         for r_idx, row in enumerate(ws.iter_rows(min_row=5, values_only=True), start=5):
+            _check_tope_filas(r_idx - 4)  # F-22 (Kimi M-2)
             if _fila_vacia(row):
                 continue
             debito, credito = _cell(row, 2), _cell(row, 3)
