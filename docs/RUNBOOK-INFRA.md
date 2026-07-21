@@ -38,13 +38,16 @@
 
 ## 2. MongoDB Atlas (organización existente — Opción A)
 
-- [ ] Database `compas` y `compas_stg` en el cluster M10 existente
-- [ ] Usuario `compas_app`: readWrite SOLO sobre `compas` (otro usuario para `compas_stg`)
-- [ ] Rol custom `audit_writer`: insert + find sobre `compas.audit_log`, SIN update/remove (verificado por test en CI)
-- [ ] Usuario `compas_audit` con SOLO el rol `audit_writer` (2ª cadena `MONGODB_URI_AUDIT` a la MISMA db `compas`; ver §8). El usuario general `compas_app` NO tiene update/remove sobre `audit_log`. Crear con `COMPAS_AUDIT_PWD=… python scripts/create_audit_role.py "<admin_uri>"` (idempotente; el operador necesita `userAdmin` sobre `compas`; contraseña ≥16 chars por env, nunca por argv)
-  - **Tier Atlas (Kimi H-01):** `createRole`/`createUser` funcionan en **M10+** (nuestro cluster, Opción A). En **Free/Flex** están bloqueados → crear el rol/usuario por **Atlas UI o Admin API** (los cambios de custom roles tardan ~30 s). El script detecta el rechazo y remite aquí.
+> ✅ **Ejecutado (20-jul-2026, decisión CEO):** `compas` vive en el **cluster del proyecto SISMO-V3** (`sismo-v3.onh5xm.mongodb.net`) — facilita futuras integraciones con SISMO-V3 y es donde ya existía `compas_app`. Entorno ÚNICO de desarrollo (sin `compas_stg`, ver principio rector de CLAUDE.md); staging se monta en go-live. Sembrado verificado: índices auth+forense+dominio, 32 rubros, 3 config. `compas_audit` probado en vivo: no puede escribir fuera de `audit_log` ni hacer update en él (DoD #6). La `compas` huérfana sembrada por error en `sismo-prod` (V2) fue eliminada.
+
+- [x] Database `compas` en el cluster de SISMO-V3 (`compas_stg`: diferida a go-live)
+- [x] Usuario `compas_app`: readWrite SOLO sobre `compas`
+- [x] Rol custom `audit_writer`: insert + find sobre `compas.audit_log`, SIN update/remove (verificado en vivo 20-jul; el test de CI sigue como control continuo)
+- [x] Usuario `compas_audit` con SOLO el rol `audit_writer` (2ª cadena `MONGODB_URI_AUDIT` a la MISMA db `compas`; ver §8). El usuario general `compas_app` NO tiene update/remove sobre `audit_log`.
+  - **CORRECCIÓN (20-jul-2026, reemplaza la nota Kimi H-01):** Atlas **NO permite `createUser`/`createRole` por driver/mongosh en NINGÚN tier** (`CMD_NOT_ALLOWED`, AtlasError 8000) — los usuarios/roles se gestionan SOLO por **Atlas UI o Admin API**. El flujo real: rol y usuarios se crean en la UI (Custom Roles / Database Users) y los índices+semillas se corren por script (`scripts/create_auth_indexes.py`, migraciones). `scripts/create_audit_role.py` queda útil solo para mongod self-hosted (p. ej. el mongod efímero del CI).
+  - Los usuarios creados por la UI autentican contra `admin` (las URIs NO llevan `authSource=compas`).
 - [ ] Atlas Alerts al canal del Tech Lead: CPU > 70% sostenida, conexiones > 60% del límite (disparadores de migración a cluster propio, STACK §7)
-- [ ] Anotar región del cluster en §0
+- [ ] Anotar región del cluster en §0 · ⚠️ pendiente de seguridad: el proyecto SISMO-V3 tiene `0.0.0.0/0` en la IP Access List (abierto a internet) — restringir antes del go-live
 
 ## 3. Render (cuenta existente)
 
