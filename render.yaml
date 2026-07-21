@@ -11,7 +11,7 @@ services:
     plan: free                  # DEV: $0 (Free duerme por inactividad). Subir a 'standard' (2GB) en go-live — STACK §5
     region: ohio            # heredada de SISMO (servicios roddos-* en Ohio)
     branch: main
-    autoDeploy: false           # producción solo por tag + reviewer (F-32)
+    autoDeploy: true            # FASE DESARROLLO (decisión CEO): push a main = vivo. En GO-LIVE volver a false + tag v* + reviewer (F-32) y reactivar compas-api-stg.
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     # --proxy-headers: honra X-Forwarded-* del edge. La IP real del cliente se lee en
@@ -81,33 +81,11 @@ services:
   #     - key: BETTER_STACK_HEARTBEATS   # 8 URLs, una por job (RUNBOOK §7)
   #       sync: false
 
-  # ── Staging (paridad para demos/UAT; DR y carga contra instancia temporal) ──
-  - type: web
-    name: compas-api-stg
-    runtime: python
-    plan: free                  # DEV: $0 (Free duerme; suficiente para C1/C4 y dev). Sin-sleep (F-35) en go-live
-    region: ohio            # heredada de SISMO (servicios roddos-* en Ohio)
-    branch: main
-    autoDeploy: true            # staging SÍ auto-despliega desde main
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
-    healthCheckPath: /health
-    envVars:
-      - key: RUN_SCHEDULER
-        value: "false"
-      - key: APP_ENV
-        value: staging
-      - key: TZ
-        value: America/Bogota
-      - key: MONGODB_URI_COMPAS   # apunta a compas_stg (datos anonimizados, F-25)
-        sync: false
-      - key: MONGODB_URI_AUDIT
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: MFA_ENC_KEY
-        sync: false
+  # ── Staging — DIFERIDO a GO-LIVE (decisión CEO: fase desarrollo = UN solo entorno) ──
+  # Mientras desarrollamos hay un único entorno: `compas-api` (auto-deploy desde main)
+  # contra la base `compas`. En go-live se reactiva este servicio de staging (auto-deploy
+  # desde main) y `compas-api` pasa a tag v* + reviewer. La config previa (compas-api-stg →
+  # compas_stg) queda en el historial de git; es un paso de go-live, no algo descartado.
 
 # Nota: el frontend (proyecto 'compas') vive en Vercel, no en este blueprint.
 # Nota: no hay Render Cron Jobs — toda la programación vive en APScheduler dentro de compas-jobs

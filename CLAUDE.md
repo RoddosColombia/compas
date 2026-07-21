@@ -2,6 +2,12 @@
 
 Sistema de control presupuestal y flujo de caja de RODDOS S.A.S. Este archivo lo lee Claude Code al inicio de CADA sesión. Las reglas de aquí son innegociables.
 
+## Principio rector (decisión CEO)
+**Hacerle fácil la vida a Andrés (CEO, desarrollador solo) para construir esto.** En concreto:
+- **Un solo entorno mientras desarrollamos**, con auto-deploy desde `main` (push = vivo) y una sola base `compas` aprovisionada una vez con scripts idempotentes. El endurecimiento de producción (tag `v*` + reviewer + `compas-api-stg` al lado) es tarea de **go-live**, no de ahora — queda documentado, no borrado.
+- **Minimizar el trabajo manual del CEO:** Claude hace el trabajo pesado (aprovisionar, scripts, tracker, PRs, preparar los paquetes Kimi). Andrés decide y corre el loop manual de Kimi solo en merges realmente críticos.
+- Ante dos caminos, elegir el de menos fricción y menos pasos manuales para el CEO — **sin** sacrificar las reglas innegociables de dinero/auditoría/seguridad de abajo.
+
 ## Fuente de verdad
 Los documentos en `/docs` son el contrato. Ante cualquier duda, leerlos ANTES de escribir código:
 - `docs/COMPAS_Discovery_PRD_v1_1_2.docx` — qué se construye (módulos M1–M13)
