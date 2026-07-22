@@ -1,15 +1,17 @@
 # backend/tests/test_audit_events.py
-"""Catálogo CERRADO de auditoría — regla 11 / Spec §1.11 / CR-001.
+"""Catálogo CERRADO de auditoría — regla 11 / Spec §1.11 / CR-001 / CR-S2 / CR-S4.
 
 29 (Spec §1.11) + extracto.cargado (CR-001) + transaccion.creada (CR-S2, Kimi
-M-1 sprint2-cargas) = 31. No se inventan eventos sin CR."""
+M-1 sprint2-cargas) + rubro.creado/rubro.editado (CR-S4, C1 categorías
+administrables — `rubro.desactivado` ya venía en v1.0) = 33. No se inventan
+eventos sin CR."""
 
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_31_eventos():
-    assert len(AuditEvento) == 31
-    assert len(CATALOGO_EVENTOS) == 31
+def test_catalogo_tiene_exactamente_33_eventos():
+    assert len(AuditEvento) == 33
+    assert len(CATALOGO_EVENTOS) == 33
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():
@@ -29,6 +31,9 @@ def test_eventos_clave_presentes():
         "iva_generado.override",
         "factura_emitida.anulada",
         "transaccion.creada",  # CR-S2 (Kimi M-1): rastro forense del POST manual
+        "rubro.creado",  # CR-S4 (C1): alta de categoría desde la app
+        "rubro.editado",  # CR-S4 (C1): edición (incl. reactivación B-3)
+        "rubro.desactivado",  # v1.0: baja lógica (verificado Kimi PLAN-I C1)
     ):
         assert esperado in CATALOGO_EVENTOS
 

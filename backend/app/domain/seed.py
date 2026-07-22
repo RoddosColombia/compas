@@ -33,8 +33,13 @@ def _a_bson(v: Any) -> Any:
 
 async def _upsert_muchos(
     db: Any, coleccion: str, filas: list[dict], llave: list[str]
-) -> int:
+) -> tuple[int, list[dict]]:
+    """Upsert idempotente. Devuelve (insertados, colisiones) — B-4 (Kimi PLAN-I C1):
+    cada llave donde $setOnInsert OMITIÓ por doc preexistente se reporta con el doc
+    existente y lo que la semilla habría puesto, para verificación manual (un doc
+    viejo con tipo_flujo/orden distintos ya no pasa en silencio)."""
     insertados = 0
+    colisiones: list[dict] = []
     col = db[coleccion]
     for fila in filas:
         filtro = {k: fila[k] for k in llave}
@@ -42,11 +47,25 @@ async def _upsert_muchos(
         res = await col.update_one(filtro, {"$setOnInsert": doc}, upsert=True)
         if res.upserted_id is not None:
             insertados += 1
-    return insertados
+        else:
+            existente = await col.find_one(filtro, {"_id": 0})
+            colisiones.append({**filtro, "existente": existente, "semilla": fila})
+    return insertados, colisiones
 
 
 async def seed_rubros(db: Any) -> int:
-    """Inserta las 33 categorías (31 del Excel + 2 de sistema; idempotente)."""
+    """Inserta las 34 categorías (31 reales de MODELO.md + 3 de sistema;
+    idempotente). Compat: devuelve solo el conteo — el reporte B-4 está en
+    `seed_rubros_reporte`."""
+    insertados, _ = await _upsert_muchos(
+        db, RUBROS_COLLECTION, SEMILLA_RUBROS, ["grupo", "nombre"]
+    )
+    return insertados
+
+
+async def seed_rubros_reporte(db: Any) -> tuple[int, list[dict]]:
+    """Como `seed_rubros`, pero devuelve también el reporte de colisiones (B-4).
+    Lo usa la migración del re-seed C1."""
     return await _upsert_muchos(
         db, RUBROS_COLLECTION, SEMILLA_RUBROS, ["grupo", "nombre"]
     )
@@ -54,6 +73,7 @@ async def seed_rubros(db: Any) -> int:
 
 async def seed_configuracion(db: Any) -> int:
     """Inserta las claves iniciales (idempotente por (clave, vigente_desde))."""
-    return await _upsert_muchos(
+    insertados, _ = await _upsert_muchos(
         db, CONFIGURACION_COLLECTION, SEMILLA_CONFIGURACION, ["clave", "vigente_desde"]
     )
+    return insertados

@@ -168,6 +168,22 @@ async def test_bordes_semaforo(api):
         assert f["semaforo"] == sem, nombre
 
 
+async def test_linea_de_rubro_inactivo_se_conserva(api):
+    # B-2c (Kimi PLAN-I C1): desactivar un rubro NO borra su línea del ciclo en
+    # curso — la Vista Control sigue mostrando el histórico (itera por líneas).
+    h = await _token(api)
+    mc = await _mes()
+    ru = await _rubro("Renting")
+    await _linea(mc, ru, "800000")
+    await _tx(mc, ru, "300000")
+    ru.activo = False  # baja lógica DESPUÉS de tener línea + ejecutado
+    await ru.save()
+    data = (await api.get("/api/v1/meses/2026-07/control", headers=h)).json()
+    f = _fila(data, str(ru.id))
+    assert f["definido"] == "800000.00"
+    assert f["ejecutado"] == "300000.00"
+
+
 async def test_semaforo_definido_cero(api):
     h = await _token(api)
     mc = await _mes()
