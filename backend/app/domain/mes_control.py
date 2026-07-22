@@ -47,6 +47,20 @@ class MesCerradoError(Exception):
     """Se intentó editar un mes cerrado (histórico inmutable, regla 4)."""
 
 
+class CierreInfo(BaseModel):
+    """Rastro del cierre para poder REVERTIR en la reapertura (M-4).
+
+    `ancla_anterior_siguiente` = `saldo_inicial_caja(M+1)` ANTES de re-anclarlo a R_M
+    (M-2); la reapertura lo restaura. `diferencia` = R_M − C_M (puede ser negativa).
+    `ajuste_tx_id` = id del 'Ajuste de conciliación' creado en M+1 (None si dif==0)."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    ancla_anterior_siguiente: Money
+    diferencia: Money
+    ajuste_tx_id: str | None = None
+
+
 class SaldoBanco(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
@@ -77,6 +91,7 @@ class MesControl(Document):
     definido_at: datetime | None = None
     cerrado_por: str | None = None
     cerrado_at: datetime | None = None
+    cierre_info: CierreInfo | None = None  # rastro para revertir (M-4)
 
     class Settings:
         name = MESES_CONTROL_COLLECTION

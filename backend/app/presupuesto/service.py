@@ -265,7 +265,10 @@ async def aprobar_presupuesto(*, mes: str, usuario_id: str) -> dict:
             if ln.monto_definido is None:  # D2: aceptar la recomendación del motor
                 ln.monto_definido = ln.monto_sugerido
                 await ln.save(session=session)
-        mc.estado = EstadoMes.DEFINIDO
+        # M-1 (Kimi Sprint 4): la aprobación deja el mes en EN_EJECUCION (US-02: "el
+        # mes pasa a en_ejecucion"). `definido_por/at` + el evento presupuesto.definido
+        # son el registro de la aprobación; no se usa un estado 'definido' en reposo.
+        mc.estado = EstadoMes.EN_EJECUCION
         mc.definido_por = usuario_id
         mc.definido_at = now_utc()
         await mc.save(session=session)
