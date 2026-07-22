@@ -17,7 +17,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from beanie import PydanticObjectId
 from bson.decimal128 import Decimal128
 
-from app.cierre.service import _RUBRO_AJUSTE, _caja_libro
+from app.cierre.service import _caja_libro, _rubro_ajuste
 from app.core.money import money_str
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
@@ -87,9 +87,9 @@ async def control(mes: str) -> dict:
     ).to_list()
     rubros = {r.id: r for r in await Rubro.find_all().to_list()}
     egresos = await _egresos_por_rubro(mc.id)
-    rubro_aj = next(
-        (r for r in rubros.values() if r.nombre == _RUBRO_AJUSTE and r.es_sistema), None
-    )
+    # B-1 (Kimi I-PR1): fail-loud como el cierre. Un lookup blando (None) haría que la
+    # caja excluyera transacciones equivocadas en silencio si el rubro no está sembrado.
+    rubro_aj = await _rubro_ajuste()
 
     por_grupo: dict[str, list[dict]] = {}
     con_linea: set[str] = set()
@@ -157,9 +157,7 @@ async def control(mes: str) -> dict:
             continue
         sin_presupuesto.append({"rubro": r.nombre, "ejecutado": money_str(total)})
 
-    caja = await _caja_libro(
-        mc.id, rubro_aj.id if rubro_aj else None, mc.saldo_inicial_caja
-    )
+    caja = await _caja_libro(mc.id, rubro_aj.id, mc.saldo_inicial_caja)
     return {
         "mes": mes[:7],
         "estado": mc.estado.value,
