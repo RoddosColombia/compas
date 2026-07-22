@@ -80,16 +80,17 @@ async def _rubro(nombre: str, orden: int, sistema: bool = False) -> Rubro:
 _SEQ = [0]
 
 
-async def _ejec(rubro_id, mes_id, monto: str):
-    """Una transacción de egreso que aporta `monto` al ejecutado del rubro/mes."""
+async def _ejec(rubro_id, mc: MesControl, monto: str):
+    """Una transacción de egreso que aporta `monto` al ejecutado del rubro/mes.
+    Baja #5: la fecha cae DENTRO del mes (antes 2026-01-15 fija → incoherente)."""
     _SEQ[0] += 1
     await Transaccion(
-        fecha="2026-01-15",
+        fecha=f"{mc.mes[:7]}-15",
         descripcion="EJEC",
         valor=Decimal(monto),
         tipo_flujo="egreso",
         rubro_id=rubro_id,
-        mes_id=mes_id,
+        mes_id=mc.id,
         banco="manual",
         id_banco=f"MAN-EJEC-{_SEQ[0]}",
     ).insert()
@@ -104,10 +105,10 @@ async def test_ejemplo_oficial_end_to_end(api):
     await _mes("2026-07-01", EstadoMes.SUGERIDO)  # objetivo (abierto)
     rubro = await _rubro("Arriendos", 4)
     # dos transacciones en un mes para verificar que E(i) SUMA
-    await _ejec(rubro.id, abr.id, "20000000")
-    await _ejec(rubro.id, abr.id, "28000000")  # abr total 48M
-    await _ejec(rubro.id, may.id, "61000000")
-    await _ejec(rubro.id, jun.id, "75000000")
+    await _ejec(rubro.id, abr, "20000000")
+    await _ejec(rubro.id, abr, "28000000")  # abr total 48M
+    await _ejec(rubro.id, may, "61000000")
+    await _ejec(rubro.id, jun, "75000000")
 
     r = await api.post(
         "/api/v1/meses/2026-07/sugerido", json={"crec_pct": "0.15"}, headers=h
@@ -129,7 +130,7 @@ async def test_solo_cuenta_meses_cerrados(api):
     await _mes("2026-07-01", EstadoMes.SUGERIDO)  # abierto, no cerrado
     await _mes("2026-08-01", EstadoMes.SUGERIDO)  # objetivo
     rubro = await _rubro("Arriendos", 4)
-    await _ejec(rubro.id, jun.id, "50000000")
+    await _ejec(rubro.id, jun, "50000000")
     r = await api.post("/api/v1/meses/2026-08/sugerido", json={}, headers=h)
     ln = next(x for x in r.json()["lineas"] if x["rubro_id"] == str(rubro.id))
     assert ln["historia_incompleta"] is True  # solo 1 mes cerrado

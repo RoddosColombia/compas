@@ -7,16 +7,21 @@ RBAC §2.4: generar = `ciclo:abrir` (fila "Abrir mes / generar sugerido"); leer 
 `dashboard:leer`. `crec_pct` viaja como string (Decimal exacto). `mes` en la ruta es
 YYYY-MM (se normaliza al día 1)."""
 
+import hashlib
+import json
 import re
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
+from pymongo.errors import DuplicateKeyError
 
 from app.auth.deps import require_permission
 from app.auth.models import User
 from app.auth.router import verify_origin
 from app.core.money import money_str
+from app.domain.idempotency import IdempotencyKey
 from app.domain.mes_control import MesControl
 from app.domain.presupuesto import PresupuestoLinea
 from app.presupuesto import service
@@ -24,12 +29,20 @@ from app.presupuesto import service
 router = APIRouter(prefix="/meses", tags=["presupuesto"])
 
 _MES = re.compile(r"^\d{4}-\d{2}$")
+_ENDPOINT_APROBAR = "POST /meses/{mes}/presupuesto/aprobar"
 
 
 class GenerarSugeridoBody(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     crec_pct: str = "0"  # tasa como string (p. ej. "0.15"); Decimal exacto
+
+
+class AcotarBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    monto_definido: str  # monto COP como string (regla 1)
+    comentario: str | None = Field(default=None, max_length=300)
 
 
 def _mes_key(mes: str) -> str:
@@ -92,3 +105,89 @@ async def listar_presupuesto(
         PresupuestoLinea.vigente == True,  # noqa: E712
     ).to_list()
     return {"mes": mes, "lineas": [_serializar(x) for x in lineas]}
+
+
+def _parse_monto(s: str) -> Decimal:
+    try:
+        v = Decimal(s)
+    except InvalidOperation:
+        raise HTTPException(422, "monto_definido no es un decimal válido") from None
+    if v < 0:
+        raise HTTPException(422, "monto_definido no puede ser negativo")
+    return v
+
+
+@router.patch("/{mes}/presupuesto/{rubro_id}")
+async def acotar_linea(
+    mes: str,
+    rubro_id: str,
+    body: AcotarBody,
+    user: User = Depends(require_permission("presupuesto:acotar")),
+    _: None = Depends(verify_origin),
+):
+    monto = _parse_monto(body.monto_definido)
+    try:
+        ln = await service.acotar_linea(
+            mes=_mes_key(mes),
+            rubro_id=rubro_id,
+            monto_definido=monto,
+            comentario=body.comentario,
+            usuario_id=user.id,
+        )
+    except service.AcotarError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _serializar(ln)
+
+
+@router.post("/{mes}/presupuesto/aprobar")
+async def aprobar_presupuesto(
+    mes: str,
+    idempotency_key: str = Header(
+        alias="Idempotency-Key", min_length=1, max_length=128
+    ),
+    user: User = Depends(require_permission("ciclo:aprobar")),
+    _: None = Depends(verify_origin),
+):
+    # §1.12 replay seguro (aprobaciones): scope (usuario, endpoint, key). Reusado
+    # además para CONVERGER si el proceso cae entre el commit y el emit de auditoría.
+    req_hash = hashlib.sha256(
+        json.dumps({"mes": mes}, sort_keys=True).encode()
+    ).hexdigest()
+    previa = await IdempotencyKey.find_one(
+        IdempotencyKey.usuario_id == user.id,
+        IdempotencyKey.endpoint == _ENDPOINT_APROBAR,
+        IdempotencyKey.key == idempotency_key,
+    )
+    if previa is not None:
+        if previa.request_hash != req_hash:
+            raise HTTPException(422, "Idempotency-Key ya usada con un payload distinto")
+        if previa.response_status is None:
+            raise HTTPException(409, "petición con esta Idempotency-Key en curso")
+        return JSONResponse(previa.response_body, status_code=previa.response_status)
+
+    marca = IdempotencyKey(
+        usuario_id=user.id,
+        endpoint=_ENDPOINT_APROBAR,
+        key=idempotency_key,
+        request_hash=req_hash,
+    )
+    try:
+        await marca.insert()
+    except DuplicateKeyError:
+        raise HTTPException(409, "petición con esta Idempotency-Key en curso") from None
+
+    try:
+        resultado = await service.aprobar_presupuesto(
+            mes=_mes_key(mes), usuario_id=user.id
+        )
+    except service.AprobarError as e:
+        await marca.delete()  # una petición fallida no quema la key
+        raise HTTPException(e.status, e.detalle) from e
+    except Exception:
+        await marca.delete()
+        raise
+
+    marca.response_status = 200
+    marca.response_body = resultado
+    await marca.save()
+    return resultado

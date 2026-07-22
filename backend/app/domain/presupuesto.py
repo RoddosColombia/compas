@@ -38,6 +38,7 @@ class Ajuste(BaseModel):
     valor_nuevo: Money
     por: str  # usuario_id
     at: datetime
+    comentario: str | None = None  # Baja #3 (US-02: motivo, p. ej. "renegociado")
 
 
 class PresupuestoLinea(Document):
@@ -54,6 +55,7 @@ class PresupuestoLinea(Document):
     )
     compromisos_programados: Money = Decimal("0")  # informativo; NO entra en la fórmula
     monto_definido: Money | None = None  # null hasta aprobar (F-07)
+    creada_por: str | None = None  # Baja #1: actor de la generación (rastro)
     historia_incompleta: bool
     modo_calculo: ModoCalculo = ModoCalculo.HISTORICO
     ajustes: list[Ajuste] = Field(default_factory=list)
