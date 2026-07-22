@@ -8,8 +8,12 @@ Sistema de control presupuestal y flujo de caja de RODDOS S.A.S. Este archivo lo
 - **Minimizar el trabajo manual del CEO:** Claude hace el trabajo pesado (aprovisionar, scripts, tracker, PRs, preparar los paquetes Kimi). Andrés decide y corre el loop manual de Kimi solo en merges realmente críticos.
 - Ante dos caminos, elegir el de menos fricción y menos pasos manuales para el CEO — **sin** sacrificar las reglas innegociables de dinero/auditoría/seguridad de abajo.
 
+## Norte del producto (LEER PRIMERO — prevalece sobre alcance)
+COMPAS es un **sistema PREDICTIVO e inteligente para administrar el presupuesto mensual y proyectar la caja**, para tomar decisiones presupuestales (objetivo inmediato: superar el umbral de caja de mayo-2027; largo plazo: objetivos de venta para sostenibilidad, fecha exacta de pago a proveedores, IVA mínimo, proyecciones de deuda/inversión). **NO es un sistema contable.** El ciclo presupuestal es el CIMIENTO que alimenta la predicción, no el fin. Toda la data es **persistente desde el inicio**. Detalle completo y no negociable en **`docs/COMPAS_NORTE.md`** — ante cualquier decisión de alcance, ese doc manda.
+
 ## Fuente de verdad
 Los documentos en `/docs` son el contrato. Ante cualquier duda, leerlos ANTES de escribir código:
+- `docs/COMPAS_NORTE.md` — **el norte del producto (qué ES y qué NO); prevalece sobre todo lo demás en alcance**
 - `docs/COMPAS_Discovery_PRD_v1_1_2.docx` — qué se construye (módulos M1–M13)
 - `docs/COMPAS_Spec_Tecnica_v1_1_2.docx` — data dictionary, reglas de integridad, API, DoD de 12 puntos
 - `docs/COMPAS_STACK_v1_1_2.docx` — stack, infraestructura, seguridad
