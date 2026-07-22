@@ -46,3 +46,24 @@
 
 ## Pregunta al auditor
 ¿El diseño de acotar + aprobar —en especial la **transacción multi-doc**, la **saga de auditoría** por conexión dedicada, y las 4 decisiones declaradas— es correcto para arrancar a construir con TDD, o hay un riesgo a resolver en el PLAN antes de escribir código?
+
+---
+
+## Incorporaciones post-gate (GO I-PLAN 9.2 — requeridas por Kimi, sin re-auditoría)
+
+**M-1 — `PATCH acotar` transiciona `sugerido → propuesto` en el primer acotamiento.**
+El estado `propuesto` ES literalmente "los directivos ajustan cifra por cifra" (M2). Sin la
+transición, un mes con ajustes seguiría mostrando `sugerido` → inconsistencia de estado. Se
+añade una línea en el servicio (si mes==`sugerido` → `propuesto`) + test dedicado; con esto el
+verbo `proponer` explícito queda innecesario en este PR (decisión D4 resuelta).
+
+**M-2 — `acotar` también es O1 fail-closed (saga), igual que `aprobar`.**
+`presupuesto.acotado` es una decisión financiera con autor (la vara de medición del mes) —
+clase F-21, no puede perderse en silencio. Si el emit de auditoría falla, se **compensa** (1
+documento): revertir el `Ajuste` recién añadido y restaurar el `monto_definido` previo (y el
+estado del mes si M-1 lo cambió). El acotar deja de ser un `save` suelto y pasa a saga
+capturar-previo → escribir → emitir → compensar-si-falla.
+
+**Tests exigidos:** el `$group` (Baja #4) se valida con el mismo test dorado end-to-end
+(48/61/75M → 84.033.333,33). El test "aprobación interrumpida converge" cubre los DOS puntos
+de fallo: (a) abort de la transacción de datos, (b) fallo del emit → compensación.
