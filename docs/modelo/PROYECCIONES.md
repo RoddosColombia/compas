@@ -41,6 +41,18 @@ umbral mínimo requerido** (el "umbral de mayo-2027" del norte = un valor concre
 - **Costos operativos:** GPS por moto activa/mes, costo por moto nueva (GPS+SOAT+…),
   adelanto de cuota Auteco por moto, TRM USD/COP.
 
+## Modelos de moto ADMINISTRABLES (requisito CEO, 2026-07-22)
+
+El motor NO trae los modelos hardcodeados. Debe permitir **agregar modelos nuevos**
+cuando se necesite, cada uno con su **estructura de cobro de cuotas** propia:
+`nombre del modelo · costo Auteco · precio venta + IVA · cuota inicial · cuota semanal ·
+plazo (semanas/meses) · matrícula` (+ mix/participación en la proyección). Hoy: Sport,
+Raider (y Apache en la variante `CAMBIOS CON APACHE`). Es el paralelo de C1 (categorías
+administrables) pero para los **modelos de moto** del simulador: alta/edición desde la
+app, y la proyección de ventas/recaudo se recalcula con el catálogo de modelos vigente.
+Un modelo con ventas/proyección históricas no se borra (baja lógica), igual que las
+categorías.
+
 ## Recaudo DISCRIMINADO (requisito CEO)
 
 El ingreso proyectado se separa SIEMPRE en dos:

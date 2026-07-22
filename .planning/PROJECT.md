@@ -40,7 +40,7 @@ fecha de pago a proveedores, seguimiento de IVA.
 | C4 | Ajuste de caja disponible + conciliación por cuenta (que la info cuadre) | ✅ conciliación por banco + cierre; ⚠️ falta el ajuste de caja diario editable |
 | C5 | Control del presupuesto **por categoría Y por cuenta** (como el Excel) | ⚠️ Vista Control por categoría ✅; por cuenta (conciliación) ✅; falta la vista combinada categoría×cuenta |
 | C6 | **Módulo de presupuesto inteligente**: preparar el presupuesto del mes siguiente (sugerido → acotar → aprobar) con base en ejecución + caja | ✅ (motor §1.4.1 + acotar + aprobar, GO Kimi) |
-| C7 | **Proyección de caja** + motor de ventas/recaudo discriminado (inicial vs cuota crédito) → objetivos de venta, umbral mayo-2027 | ❌ **FALTA** (el valor final). Motor: `docs/modelo/PROYECCIONES.md` (simulador 2030) |
+| C7 | **Proyección de caja** + motor de ventas/recaudo discriminado (inicial vs cuota crédito) → objetivos de venta, umbral mayo-2027. **Modelos de moto administrables** (agregar modelo nuevo con su estructura de cobro de cuotas — requisito CEO) | ❌ **FALTA** (el valor final). Motor: `docs/modelo/PROYECCIONES.md` (simulador 2030) |
 | C8 | Preservación durable del archivo original de cada carga (M-04) | ⚠️ por decidir: **GridFS en Mongo** (recomendado, sin infra nueva) vs S3 SISMO |
 | C9 | **Pagos pendientes del mes**: listar pagos programados, ver cómo calzan con presupuesto + caja, y calcular la **caja final proyectada** del mes con los movimientos planteados (eleva la hoja 'Pagos semana', integrada a los movimientos) | ❌ **FALTA** (requisito CEO 2026-07-22) |
 | C10 | **Fecha exacta de pago a proveedores** + cronograma de deudas (hoja 'Flujo pago deudas'; M6 capacidad de pago) | ❌ **FALTA** |
