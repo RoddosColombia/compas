@@ -82,6 +82,28 @@ def test_sin_historia_todo_cero():
     assert r.monto_sugerido == Decimal("0.00")
 
 
+def test_sugerido_negativo_se_pisa_a_cero():
+    # Decisión Kimi D-4: caída fuerte → sugerido daría <0; se pisa a 0, pero
+    # tendencia_mes queda NEGATIVA visible (no se clampa).
+    r = calcular_sugerido_historico(
+        ejecutados=[Decimal("0"), Decimal("50"), Decimal("100")],
+        crec_pct=Decimal("0"),
+    )
+    # prom_3m=50; tendencia=(0−100)/2=−50; crudo=50+(−50)+0=0 → borde
+    assert r.tendencia_mes == Decimal("-50.00")
+    assert r.monto_sugerido == Decimal("0.00")
+
+
+def test_sugerido_muy_negativo_clamp_a_cero_no_negativo():
+    r = calcular_sugerido_historico(
+        ejecutados=[Decimal("0"), Decimal("10"), Decimal("200")],
+        crec_pct=Decimal("0"),
+    )
+    # prom_3m=70; tendencia=(0−200)/2=−100; crudo=70−100=−30 → se pisa a 0
+    assert r.tendencia_mes == Decimal("-100.00")
+    assert r.monto_sugerido == Decimal("0.00")
+
+
 def test_mas_de_tres_meses_usa_solo_los_tres_recientes():
     # Si llegan >3 (defensa), la fórmula usa E(M-1..M-3) — los 3 más recientes.
     r = calcular_sugerido_historico(

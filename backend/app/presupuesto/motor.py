@@ -54,6 +54,11 @@ def calcular_sugerido_historico(
     # n=3 → (E(M-1) − E(M-3))/2 (fórmula oficial); n=2 → /1; n=1 → 0.
     tendencia = (usados[0] - usados[-1]) / Decimal(n - 1) if n >= 2 else Decimal("0")
     sugerido = prom_3m + tendencia + prom_3m * crec_pct
+    # Clamp a 0 (decisión Kimi D-4): un presupuesto sugerido negativo leería como bug
+    # a los directivos. La tendencia decreciente queda visible en `tendencia_mes`
+    # SIN clamp; solo el monto final se piso a 0.
+    if sugerido < 0:
+        sugerido = Decimal("0")
     return ComponentesSugerido(
         prom_3m=_cop(prom_3m),
         tendencia_mes=_cop(tendencia),
