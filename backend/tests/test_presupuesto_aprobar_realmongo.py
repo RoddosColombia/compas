@@ -114,14 +114,14 @@ class TestAprobarReal:
             headers={**h, "Idempotency-Key": "ap-1"},
         )
         assert r.status_code == 200
-        assert r.json()["estado"] == "definido"
+        assert r.json()["estado"] == "en_ejecucion"  # M-1: aprobar → en_ejecucion
         # acotada conserva; sin acotar toma el sugerido (D2)
         a2 = await PresupuestoLinea.get(acotada.id)
         s2 = await PresupuestoLinea.get(sin_acotar.id)
         assert a2.monto_definido == Decimal("1200000")
         assert s2.monto_definido == Decimal("1000000")
         mc2 = await MesControl.get(mc.id)
-        assert mc2.estado is EstadoMes.DEFINIDO
+        assert mc2.estado is EstadoMes.EN_EJECUCION  # M-1
         assert mc2.definido_por is not None and mc2.definido_at is not None
         n = await db["audit_log"].count_documents({"evento": "presupuesto.definido"})
         assert n == 1
@@ -174,7 +174,7 @@ class TestAprobarReal:
             headers={**h, "Idempotency-Key": "ap-a"},
         )
         assert r.status_code == 200
-        assert (await MesControl.get(mc.id)).estado is EstadoMes.DEFINIDO
+        assert (await MesControl.get(mc.id)).estado is EstadoMes.EN_EJECUCION
         assert (await PresupuestoLinea.get(sin_acotar.id)).monto_definido == Decimal(
             "1000000"
         )
@@ -214,4 +214,4 @@ class TestAprobarReal:
             headers={**h, "Idempotency-Key": "ap-b"},
         )
         assert r.status_code == 200
-        assert (await MesControl.get(mc.id)).estado is EstadoMes.DEFINIDO
+        assert (await MesControl.get(mc.id)).estado is EstadoMes.EN_EJECUCION

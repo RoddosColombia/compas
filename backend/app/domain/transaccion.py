@@ -85,6 +85,9 @@ class Transaccion(Document):
     carga_id: PydanticObjectId | None = None
     clasificada_por: str | None = None
     clasificada_at: datetime | None = None
+    # M-4: contra-asiento del 'Ajuste de conciliación' al reabrir → apunta al ajuste
+    # original que revierte (la Transaccion es inmutable, §2.2.2: nunca se borra).
+    revierte_id: PydanticObjectId | None = None
     pago_planeado_id: PydanticObjectId | None = None
     factura_id: PydanticObjectId | None = None
     regla_id: PydanticObjectId | None = None
