@@ -15,10 +15,11 @@ MARCADO PARA AUDITORÍA KIMI (motor del sugerido + tabla de autoridad §2.4).
   ambos dejaba ventana de inconsistencia; ahora es atómico como aprobar/cerrar.
 - **aprobar_presupuesto** (§2.4 "Aprobar", solo Admin): TRANSACCIÓN MULTI-DOC
   (regla 8/F-09) que fija `monto_definido` (default = sugerido) en las ~30 líneas
-  vigentes + MesControl → `definido`, atómico, con reintento automático de
-  `with_transaction` ante TransientTransactionError. La auditoría vive en conexión
-  dedicada → se emite tras el commit; si falla, transacción compensatoria revierte
-  (saga O1). Convergencia ante caída vía Idempotency-Key (en el router)."""
+  vigentes + MesControl → `en_ejecucion` (M-1, PR #22), atómico, con reintento
+  automático de `with_transaction` ante TransientTransactionError. La auditoría
+  vive en conexión dedicada → se emite tras el commit; si falla, transacción
+  compensatoria revierte (saga O1). Convergencia ante caída vía Idempotency-Key
+  (en el router)."""
 
 from decimal import Decimal
 

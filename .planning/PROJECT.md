@@ -72,8 +72,9 @@ reapertura, Vista Control (backend+frontend). Todo con gate Kimi en los merges c
    cuando el CEO comparta el mapeo real de `Base real egresos`.
 3. **C4 — ajuste diario de caja disponible** (PLAN → gate Kimi aparte).
 4. Luego: **C5** vista combinada categoría×cuenta, y **C7** capa predictiva (el valor).
-También en vuelo: S4-00, S4-06 (TOCTOU + test step-up), tardías (F-08), CR-001
-ExtractoMensual, y el operativo hacia G3.
+~~S4-00, S4-06~~ ✅ deuda saldada (2026-07-23, PR #26 merge dea4a16, Kimi 9.5).
+También en vuelo: tardías (F-08), CR-001 ExtractoMensual, y el operativo hacia G3.
+Además la pantalla de reglas ya está viva (ReglasPage, sin gate).
 
 **Migración de datos reales:** Global66 abr–jul (ya preparado, reconciliado) — se
 carga por la app cuando C8 (preservación) esté resuelta. Data siempre persistente en Mongo.
