@@ -3,6 +3,10 @@
 > Cerebro del proyecto. Se lee al inicio de cada sesión junto con `docs/COMPAS_NORTE.md`
 > y la memoria. Ante cualquier duda de alcance, NORTE.md + este doc mandan.
 > Fijado con el CEO: 2026-07-22.
+>
+> **EL ENTREGABLE es el cockpit del Blueprint UX (`docs/Compas_Blueprint_UX.docx`) con el
+> motor de proyección 2030 de fondo — ver §6.** Toda la documentación de desarrollo se
+> orienta hacia eso. Las capacidades (§3) son el fondo/actuals que lo alimentan.
 
 ## 1. Qué es COMPAS (norte)
 
@@ -96,7 +100,7 @@ perforación de caja mínima. Ocho vistas en tres grupos:
 | Principal | **Proyecciones** (el corazón) | Curva de caja acumulada a **dic-2030**, umbral $55M + mes crítico; motor de ingresos por modelo (cuota inicial + recaudo semanal); palancas editables; flujo neto por trimestre; cierre por periodo | **C7** |
 | Planeación | **Escenarios** | Conservador/Base/Agresivo superpuestos + tarjetas comparativas (usa mora/recuperación) | **nuevo** |
 | Planeación | **Presupuesto** | Presupuesto vs real por categoría (barras) + control por categoría (semáforo) | C5/C6/Control |
-| Planeación | **IVA** | Generado vs descontable + liquidación + saldo a pagar (⚠ ver reconciliación) | C11 |
+| Planeación | **IVA** | Generado vs descontable + liquidación + saldo a pagar, **por CUATRIMESTRE** (el Blueprint dice "bimestre" por error; RODDOS es cuatrimestral — CEO 2026-07-23) | C11 |
 | Operación | **Dashboards** | Salud operativa: cartera por añada, mora por tramo, cobranza, colocación | **nuevo** |
 | Operación | **Reportes** | Board updates / resúmenes inversionistas, exportables a PDF | **nuevo** |
 | Operación | **Datos** | Caja inicial de hoy, captura manual de supuestos/presupuestos, importar modelo 2030 | C4/cargas |
@@ -108,11 +112,10 @@ en **Fase 2** (rolling forecast vs proyectado). O sea: lo construido NO se bota 
 de los actuals; el foco del entregable ahora es la **capa de proyección (C7 + Escenarios +
 Dashboards + Reportes)**.
 
-## 7. Reconciliación pendiente (decisiones CEO — NO resueltas por Claude)
-1. **IVA: ¿bimestre o cuatrimestre?** El Blueprint §7 dice "por bimestre"; la regla
-   innegociable (CLAUDE.md + NIT 901012622 dígito 2) dice **CUATRIMESTRAL**. **Conflicto
-   real** (error de IVA es grave). Por defecto se mantiene **cuatrimestral** (la regla manda)
-   hasta que el CEO/contador confirme el régimen vigente.
+## 7. Reconciliación (decisiones CEO — NO las resuelve Claude)
+1. **IVA: ✅ RESUELTO — CUATRIMESTRAL** (CEO 2026-07-23). El Blueprint §7 dice "bimestre"
+   por error; **RODDOS liquida IVA por CUATRIMESTRE** (NIT 901012622 dígito 2: 13-may-26,
+   10-sep-26, 14-ene-27). Al construir el módulo de IVA → cuatrimestre, nunca bimestre.
 2. **Excel 2030 canónico:** ¿`FIXED` reemplaza a `CAMBIOS CON APACHE`, o son escenarios
    distintos a reconciliar? (Blueprint §11).
 3. **Impuesto de renta:** ¿entra en Fase 1 o Fase 2? (Blueprint §5.6, validar con contabilidad).
