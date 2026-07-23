@@ -26,9 +26,13 @@ def movimiento_a_transaccion(
     mes_id: PydanticObjectId,
     carga_id: PydanticObjectId | None = None,
     ocurrencia: int = 1,
+    regla_id: PydanticObjectId | None = None,
 ) -> Transaccion:
-    """Construye una Transaccion 'Por clasificar' a partir de un movimiento parseado.
+    """Construye una Transaccion a partir de un movimiento parseado.
 
+    C3: el servicio de carga resuelve el rubro por reglas de clasificación —
+    `rubro_id` llega ya decidido y `regla_id` es el rastro forense (§1.5/F-05) de
+    la regla que clasificó; sin match, rubro='Por clasificar' y regla_id=None.
     `ocurrencia` es el ordinal de la huella dentro del archivo (Kimi A-01): lo asigna
     el servicio de carga contando repeticiones por (fecha, tipo, desc, monto)."""
     fecha = mov.fecha.isoformat()  # date → 'YYYY-MM-DD'
@@ -58,4 +62,5 @@ def movimiento_a_transaccion(
         valor_original=valor_original,
         tasa_cambio=mov.tasa_cambio,
         carga_id=carga_id,
+        regla_id=regla_id,
     )

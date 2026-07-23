@@ -44,6 +44,40 @@ async def test_mismo_nombre_distinto_grupo_ok(real_db):
     await Rubro(grupo="otros", nombre="Impuestos", orden=2).insert()  # no colisiona
 
 
+async def test_regla_patron_activo_unico_parcial(real_db):
+    # C3 (regla 7): dos reglas ACTIVAS con mismo (patron_normalizado, tipo_flujo)
+    # → DuplicateKeyError; una DESACTIVADA no cuenta (índice PARCIAL activa=true).
+    from app.domain.regla_clasificacion import ReglaClasificacion
+    from beanie import PydanticObjectId
+
+    rid = PydanticObjectId()
+    inactiva = ReglaClasificacion(
+        patron="Café",
+        rubro_id=rid,
+        tipo_flujo="egreso",
+        prioridad=1,
+        activa=False,
+        creada_por="u",
+    )
+    await inactiva.insert()
+    activa = ReglaClasificacion(
+        patron="cafe",  # mismo normalizado que 'Café'
+        rubro_id=rid,
+        tipo_flujo="egreso",
+        prioridad=2,
+        creada_por="u",
+    )
+    await activa.insert()  # la inactiva NO bloquea
+    with pytest.raises(DuplicateKeyError):
+        await ReglaClasificacion(
+            patron="CAFÉ",
+            rubro_id=rid,
+            tipo_flujo="egreso",
+            prioridad=3,
+            creada_por="u",
+        ).insert()  # segunda ACTIVA idéntica → colisión
+
+
 async def test_configuracion_clave_vigencia_unica(real_db):
     await Configuracion(
         clave="UMBRAL_DIF_BANCO_CIERRE",

@@ -10,14 +10,22 @@ from app.domain import DOMAIN_DOCUMENTS
 from app.domain.configuracion import Configuracion
 from app.domain.mes_control import MesControl
 from app.domain.rubro import Rubro
-from app.domain.seed import seed_configuracion, seed_rubros, seed_rubros_reporte
+from app.domain.seed import (
+    SEMILLA_REGLAS,
+    seed_configuracion,
+    seed_reglas_reporte,
+    seed_rubros,
+    seed_rubros_reporte,
+)
 from beanie import init_beanie
 from mongomock_motor import AsyncMongoMockClient
 
 
 @pytest.fixture
 async def db():
-    client = AsyncMongoMockClient()
+    # tz_aware=True como el Motor real (mongo.create_client): los datetime
+    # re-leídos vuelven UTC-aware (regla 2), no naive.
+    client = AsyncMongoMockClient(tz_aware=True)
     database = client["compas_test"]
     await init_beanie(database=database, document_models=DOMAIN_DOCUMENTS)
     return database
@@ -94,3 +102,40 @@ async def test_seed_configuracion_idempotente(db):
     await seed_configuracion(db)
     total = await Configuracion.find_all().count()
     assert total == 3
+
+
+# ── C3: semilla de reglas de clasificación (GO Kimi PLAN-I 9.3) ──
+
+
+def test_semilla_reglas_sin_pii_y_origen_manual():
+    # Kimi §3 (Ley 1581): SOLO patrones genéricos/comercios — NUNCA nombres de
+    # personas. Lista CONGELADA: las genéricas de ingreso (PRD M7 / MODELO §C3).
+    assert [
+        (r["patron"], r["tipo_flujo"], r["rubro_nombre"]) for r in SEMILLA_REGLAS
+    ] == [
+        ("Abono", "ingreso", "Recaudo"),
+        ("Recibido de", "ingreso", "Recaudo"),
+    ]
+    for r in SEMILLA_REGLAS:
+        assert r["origen"] == "manual"  # curaduría, no aprendizaje (Kimi §3)
+
+
+async def test_seed_reglas_idempotente_y_resuelve_rubro(db):
+    from app.domain.regla_clasificacion import ReglaClasificacion
+
+    await seed_rubros(db)  # siembra 'Recaudo' primero
+    n1, col1 = await seed_reglas_reporte(db)
+    n2, col2 = await seed_reglas_reporte(db)
+    assert n1 == 2 and col1 == []
+    assert n2 == 0 and len(col2) == 2  # 2ª corrida: no duplica
+    reglas = await ReglaClasificacion.find_all().to_list()
+    assert len(reglas) == 2
+    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo")
+    assert all(r.rubro_id == recaudo.id for r in reglas)
+    assert all(r.activa for r in reglas)
+
+
+async def test_seed_reglas_fail_loud_sin_rubro_destino(db):
+    # Kimi §3: si el rubro destino del mapeo no existe → error, no silencio.
+    with pytest.raises(LookupError):
+        await seed_reglas_reporte(db)  # sin sembrar rubros primero

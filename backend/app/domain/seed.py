@@ -77,3 +77,72 @@ async def seed_configuracion(db: Any) -> int:
         db, CONFIGURACION_COLLECTION, SEMILLA_CONFIGURACION, ["clave", "vigente_desde"]
     )
     return insertados
+
+
+# ── C3: semilla de reglas de clasificación (GO Kimi PLAN-I 9.3) ──────────────
+#
+# SOLO patrones genéricos — NUNCA nombres de personas (Ley 1581, Kimi §3): las
+# genéricas de ingreso 'Abono'/'Recibido de' → 'Recaudo' (PRD M7 / MODELO §C3),
+# prioridad alta. Los patrones de egreso (comercios del mapeo de `Base real
+# egresos`) se cargan desde la app o en una extensión de esta lista cuando el
+# CEO comparta el mapeo (dato real, vive fuera del repo). origen='manual':
+# curaduría, no aprendizaje.
+SEMILLA_REGLAS: list[dict] = [
+    {
+        "patron": "Abono",
+        "tipo_flujo": "ingreso",
+        "rubro_nombre": "Recaudo",
+        "prioridad": 1,
+        "origen": "manual",
+    },
+    {
+        "patron": "Recibido de",
+        "tipo_flujo": "ingreso",
+        "rubro_nombre": "Recaudo",
+        "prioridad": 2,
+        "origen": "manual",
+    },
+]
+
+
+async def seed_reglas_reporte(db: Any) -> tuple[int, list[dict]]:
+    """Siembra las reglas de clasificación (idempotente por
+    (patron_normalizado, tipo_flujo); reporte de colisiones B-4). FAIL-LOUD
+    (Kimi §3): si un rubro destino del mapeo no existe → LookupError, jamás una
+    regla huérfana silenciosa."""
+    from app.domain.regla_clasificacion import (
+        REGLAS_COLLECTION,
+        normalizar_texto,
+    )
+    from app.domain.rubro import RUBROS_COLLECTION
+
+    filas: list[dict] = []
+    for spec in SEMILLA_REGLAS:
+        rubro = await db[RUBROS_COLLECTION].find_one({"nombre": spec["rubro_nombre"]})
+        if rubro is None:
+            raise LookupError(
+                f"semilla de reglas: falta el rubro destino "
+                f"'{spec['rubro_nombre']}' (correr seed_rubros primero)"
+            )
+        filas.append(
+            {
+                "patron": spec["patron"],
+                "patron_normalizado": normalizar_texto(spec["patron"]),
+                "rubro_id": rubro["_id"],
+                "tipo_flujo": spec["tipo_flujo"],
+                "prioridad": spec["prioridad"],
+                "origen": spec["origen"],
+                "activa": True,
+                "creada_por": "semilla",
+                "created_at": _ahora_utc(),
+            }
+        )
+    return await _upsert_muchos(
+        db, REGLAS_COLLECTION, filas, ["patron_normalizado", "tipo_flujo"]
+    )
+
+
+def _ahora_utc():
+    from app.core.time import now_utc
+
+    return now_utc()
