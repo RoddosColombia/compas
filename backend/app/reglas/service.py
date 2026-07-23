@@ -441,4 +441,15 @@ async def aplicar_pendientes(*, usuario_id: str) -> dict:
         await tx.save()
         clasificadas += 1
 
-    return {"clasificadas": clasificadas, "sin_match": sin_match}
+    return {
+        "clasificadas": clasificadas,
+        "sin_match": sin_match,
+        # B-1 I-PR1 (simetría D2 con la carga): distinguir "no hay regla" de
+        # "hay regla pero su rubro está inactivo" (fail-loud informativo).
+        "reglas_con_rubro_inactivo": sorted(
+            r.patron
+            for reglas in por_tipo.values()
+            for r in reglas
+            if r.rubro_id not in activos
+        ),
+    }

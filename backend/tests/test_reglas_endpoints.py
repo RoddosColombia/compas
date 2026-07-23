@@ -469,6 +469,25 @@ async def test_aplicar_pendientes_sin_match_queda_por_clasificar(api):
     assert (await Transaccion.get(tx.id)).rubro_id == pc.id
 
 
+async def test_aplicar_pendientes_reporta_reglas_con_rubro_inactivo(api):
+    # B-1 I-PR1 (simetría D2): el operador debe poder distinguir "no hay regla"
+    # de "hay regla pero su rubro está inactivo" — la respuesta lo reporta, como
+    # ya lo hace la carga.
+    ac, _ = api
+    h = await _token(ac)
+    await _crear(ac, h, patron="cafeteria")
+    caf = await _rubro("Cafetería")
+    caf.activo = False
+    await caf.save()
+    tx = await _tx_por_clasificar("2026-03-10", "CAFETERIA LA 14")
+    r = await ac.post(f"{BASE}/aplicar-pendientes", headers=h)
+    assert r.status_code == 200
+    assert r.json()["clasificadas"] == 0 and r.json()["sin_match"] == 1
+    assert r.json()["reglas_con_rubro_inactivo"] == ["cafeteria"]
+    pc = await _rubro("Por clasificar")
+    assert (await Transaccion.get(tx.id)).rubro_id == pc.id  # D2: no adivina
+
+
 # ────────────────────────────── RBAC exacto ──────────────────────────────
 
 
