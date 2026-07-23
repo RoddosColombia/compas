@@ -81,3 +81,40 @@ Además la pantalla de reglas ya está viva (ReglasPage, sin gate).
 
 **Migración de datos reales:** Global66 abr–jul (ya preparado, reconciliado) — se
 carga por la app cuando C8 (preservación) esté resuelta. Data siempre persistente en Mongo.
+
+## 6. Entregable objetivo — Blueprint UX (el cockpit) · CEO 2026-07-23
+
+El **entregable** del producto es el cockpit de proyección/planeación definido en
+**`docs/Compas_Blueprint_UX.docx`** + el **mockup navegable de referencia del CEO** — con
+el **motor de proyección de fondo** (`docs/modelo/PROYECCIONES.md`, simulador 2030). El
+Blueprint MANDA sobre la UX. Barra lateral fija, fondo blanco RODDOS, rojo solo para
+perforación de caja mínima. Ocho vistas en tres grupos:
+
+| Grupo | Vista | Contenido clave | Capacidad |
+|---|---|---|---|
+| Principal | **Inicio** | KPIs (caja, runway, motos activas, cartera, mora), mini-curva, próximos hitos | C7 + resumen |
+| Principal | **Proyecciones** (el corazón) | Curva de caja acumulada a **dic-2030**, umbral $55M + mes crítico; motor de ingresos por modelo (cuota inicial + recaudo semanal); palancas editables; flujo neto por trimestre; cierre por periodo | **C7** |
+| Planeación | **Escenarios** | Conservador/Base/Agresivo superpuestos + tarjetas comparativas (usa mora/recuperación) | **nuevo** |
+| Planeación | **Presupuesto** | Presupuesto vs real por categoría (barras) + control por categoría (semáforo) | C5/C6/Control |
+| Planeación | **IVA** | Generado vs descontable + liquidación + saldo a pagar (⚠ ver reconciliación) | C11 |
+| Operación | **Dashboards** | Salud operativa: cartera por añada, mora por tramo, cobranza, colocación | **nuevo** |
+| Operación | **Reportes** | Board updates / resúmenes inversionistas, exportables a PDF | **nuevo** |
+| Operación | **Datos** | Caja inicial de hoy, captura manual de supuestos/presupuestos, importar modelo 2030 | C4/cargas |
+
+**Reframe de fase (Blueprint §1):** Fase 1 = cockpit de proyección con **captura MANUAL**
+de supuestos + presupuestos (sin históricos ni integración). Los **actuals** (movimientos
+de banco, ya construidos: C1–C4/cargas/ciclo/cierre) son el **fondo** y se vuelven vivos
+en **Fase 2** (rolling forecast vs proyectado). O sea: lo construido NO se bota — es la base
+de los actuals; el foco del entregable ahora es la **capa de proyección (C7 + Escenarios +
+Dashboards + Reportes)**.
+
+## 7. Reconciliación pendiente (decisiones CEO — NO resueltas por Claude)
+1. **IVA: ¿bimestre o cuatrimestre?** El Blueprint §7 dice "por bimestre"; la regla
+   innegociable (CLAUDE.md + NIT 901012622 dígito 2) dice **CUATRIMESTRAL**. **Conflicto
+   real** (error de IVA es grave). Por defecto se mantiene **cuatrimestral** (la regla manda)
+   hasta que el CEO/contador confirme el régimen vigente.
+2. **Excel 2030 canónico:** ¿`FIXED` reemplaza a `CAMBIOS CON APACHE`, o son escenarios
+   distintos a reconciliar? (Blueprint §11).
+3. **Impuesto de renta:** ¿entra en Fase 1 o Fase 2? (Blueprint §5.6, validar con contabilidad).
+4. **Prioridad:** dado el reframe, ¿el próximo foco es **C7 (Proyecciones)** en vez de seguir
+   con los actuals/pagos? (a confirmar por el CEO).
