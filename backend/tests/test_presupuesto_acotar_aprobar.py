@@ -13,7 +13,6 @@ transacción."""
 from decimal import Decimal
 
 import httpx
-import pytest
 import pytest_asyncio
 from app.audit.service import configure_audit, reset_audit
 from app.auth import passwords, repository
@@ -24,7 +23,6 @@ from app.domain import DOMAIN_DOCUMENTS
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import Rubro
-from app.presupuesto import service
 from beanie import init_beanie
 from mongomock_motor import AsyncMongoMockClient
 
@@ -97,48 +95,7 @@ async def _linea(
     return ln
 
 
-# ── ACOTAR ────────────────────────────────────────────────────────────────
-
-
-async def test_acotar_fija_monto_y_transiciona_a_propuesto(api):
-    h = await _token(api, "dir@roddos.com")  # Directivo acota (§2.4)
-    mc = await _mes("2026-07-01", EstadoMes.SUGERIDO)
-    rubro = await _rubro("Arriendos", 4)
-    await _linea(mc.id, rubro.id, sugerido="1000000")
-    r = await api.patch(
-        f"/api/v1/meses/2026-07/presupuesto/{rubro.id}",
-        json={"monto_definido": "1200000", "comentario": "renegociado"},
-        headers=h,
-    )
-    assert r.status_code == 200
-    assert r.json()["monto_definido"] == "1200000.00"
-    # M-1: el mes pasó a 'propuesto'
-    mc2 = await MesControl.find_one(MesControl.mes == "2026-07-01")
-    assert mc2.estado is EstadoMes.PROPUESTO
-    # ajuste con comentario persistido
-    ln = await PresupuestoLinea.find_one(PresupuestoLinea.rubro_id == rubro.id)
-    assert len(ln.ajustes) == 1
-    assert ln.ajustes[0].comentario == "renegociado"
-    assert ln.ajustes[0].valor_anterior is None
-    assert ln.ajustes[0].valor_nuevo == Decimal("1200000")
-
-
-async def test_acotar_segunda_vez_conserva_propuesto_y_valor_anterior(api):
-    h = await _token(api)
-    mc = await _mes("2026-07-01", EstadoMes.PROPUESTO)
-    rubro = await _rubro("Arriendos", 4)
-    await _linea(mc.id, rubro.id, sugerido="1000000", definido="1200000")
-    r = await api.patch(
-        f"/api/v1/meses/2026-07/presupuesto/{rubro.id}",
-        json={"monto_definido": "1500000"},
-        headers=h,
-    )
-    assert r.status_code == 200
-    ln = await PresupuestoLinea.find_one(PresupuestoLinea.rubro_id == rubro.id)
-    assert ln.monto_definido == Decimal("1500000")
-    assert ln.ajustes[-1].valor_anterior == Decimal("1200000")
-    mc2 = await MesControl.find_one(MesControl.mes == "2026-07-01")
-    assert mc2.estado is EstadoMes.PROPUESTO  # sin cambio
+# ── ACOTAR (solo guardas; happy path + convergencia en real-mongo, S4-00) ──
 
 
 async def test_acotar_consulta_403(api):
@@ -205,29 +162,9 @@ async def test_acotar_monto_negativo_422(api):
     assert r.status_code == 422
 
 
-async def test_acotar_compensa_si_falla_auditoria(api, monkeypatch):
-    # M-2 (saga O1): si el emit falla, se revierte ajuste + monto + estado del mes.
-    mc = await _mes("2026-07-01", EstadoMes.SUGERIDO)
-    rubro = await _rubro("Arriendos", 4)
-    await _linea(mc.id, rubro.id, sugerido="1000000")
-
-    async def _boom(*a, **k):
-        raise RuntimeError("audit caído")
-
-    monkeypatch.setattr("app.presupuesto.service.emit_audit", _boom)
-    with pytest.raises(RuntimeError):
-        await service.acotar_linea(
-            mes="2026-07-01",
-            rubro_id=str(rubro.id),
-            monto_definido=Decimal("1200000"),
-            comentario="x",
-            usuario_id="u1",
-        )
-    ln = await PresupuestoLinea.find_one(PresupuestoLinea.rubro_id == rubro.id)
-    assert ln.monto_definido is None  # revertido
-    assert len(ln.ajustes) == 0  # ajuste retirado
-    mc2 = await MesControl.find_one(MesControl.mes == "2026-07-01")
-    assert mc2.estado is EstadoMes.SUGERIDO  # estado revertido
+# La compensación O1 del acotar (emit falla → revierte) migró a
+# test_presupuesto_acotar_realmongo.py: S4-00 volvió transaccional el acotar y
+# mongomock no soporta sesiones.
 
 
 # ── APROBAR (solo guardas; happy path + convergencia en real-mongo) ─────────

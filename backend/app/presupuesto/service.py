@@ -10,7 +10,9 @@ MARCADO PARA AUDITORÍA KIMI (motor del sugerido + tabla de autoridad §2.4).
 - **acotar_linea** (§2.4 "Proponer/acotar"): fija `monto_definido` + registra un
   `Ajuste` con comentario. Transiciona el mes `sugerido → propuesto` (M-1). Saga
   fail-closed O1 (M-2): si el emit de auditoría falla, compensa (revierte ajuste +
-  monto + estado). No es transacción Mongo (afecta pocos docs secuenciales).
+  monto + estado). S4-00 (Kimi, higiene): línea + mes se escriben en TRANSACCIÓN
+  MULTI-DOC — antes eran dos `save` secuenciales y una caída de proceso entre
+  ambos dejaba ventana de inconsistencia; ahora es atómico como aprobar/cerrar.
 - **aprobar_presupuesto** (§2.4 "Aprobar", solo Admin): TRANSACCIÓN MULTI-DOC
   (regla 8/F-09) que fija `monto_definido` (default = sugerido) en las ~30 líneas
   vigentes + MesControl → `definido`, atómico, con reintento automático de
@@ -160,7 +162,8 @@ async def acotar_linea(
 ) -> PresupuestoLinea:
     """§2.4 Proponer/acotar. Fija `monto_definido` en la línea vigente NO aprobada
     y registra un `Ajuste` append-only. M-1: transiciona el mes `sugerido→propuesto`.
-    M-2: saga fail-closed O1 — si el emit de auditoría falla, compensa todo."""
+    M-2: saga fail-closed O1 — si el emit de auditoría falla, compensa todo.
+    S4-00: línea + mes en transacción multi-doc (regla 8)."""
     mc = await MesControl.find_one(MesControl.mes == mes)
     if mc is None:
         raise AcotarError(f"el mes {mes[:7]} no existe", 404)
@@ -198,13 +201,19 @@ async def acotar_linea(
         )
     )
     ln.monto_definido = monto_definido
-    await ln.save()
+    cambio_mes = mc.estado is EstadoMes.SUGERIDO  # M-1
+    client = PresupuestoLinea.get_pymongo_collection().database.client
 
-    cambio_mes = False
-    if mc.estado is EstadoMes.SUGERIDO:  # M-1
-        mc.estado = EstadoMes.PROPUESTO
-        await mc.save()
-        cambio_mes = True
+    # S4-00 (Kimi, higiene): línea + mes ATÓMICOS — una caída de proceso entre los
+    # dos save ya no deja el ajuste sin la transición de estado (o viceversa).
+    async def _acotar(session):
+        await ln.save(session=session)
+        if cambio_mes:
+            mc.estado = EstadoMes.PROPUESTO
+            await mc.save(session=session)
+
+    async with await client.start_session() as session:
+        await session.with_transaction(_acotar)
 
     try:
         await emit_audit(
@@ -223,13 +232,18 @@ async def acotar_linea(
             },
         )
     except Exception:
-        # M-2 (saga O1): sin auditoría no hay decisión financiera → compensar.
-        ln.ajustes = ln.ajustes[:prev_ajustes]
-        ln.monto_definido = prev_monto
-        await ln.save()
-        if cambio_mes:
-            mc.estado = prev_estado
-            await mc.save()
+        # M-2 (saga O1): sin auditoría no hay decisión financiera → compensar
+        # (también atómico, como la reversión de aprobar).
+        async def _revertir(session):
+            ln.ajustes = ln.ajustes[:prev_ajustes]
+            ln.monto_definido = prev_monto
+            await ln.save(session=session)
+            if cambio_mes:
+                mc.estado = prev_estado
+                await mc.save(session=session)
+
+        async with await client.start_session() as session:
+            await session.with_transaction(_revertir)
         raise
     return ln
 

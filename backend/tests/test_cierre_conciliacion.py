@@ -253,3 +253,17 @@ async def test_reabrir_no_admin_403(api):
     await _mes("2026-07-01", EstadoMes.CERRADO)
     r = await api.post("/api/v1/meses/2026-07/reabrir", headers=h)
     assert r.status_code == 403
+
+
+async def test_reabrir_admin_sin_step_up_403(api):
+    # S4-06/B-3 (Kimi I-PR1 cierre): POST /reabrir exige step-up MFA — un admin
+    # SIN 2º factor reciente es rechazado. Este test BLINDA el `require_step_up`
+    # del router contra una refactorización que lo quite sin que CI lo note.
+    h = await _token(api, "admin@roddos.com")  # login sin MFA → sin mfa_at
+    await _mes("2026-07-01", EstadoMes.CERRADO)
+    r = await api.post("/api/v1/meses/2026-07/reabrir", headers=h)
+    assert r.status_code == 403
+    assert "Step-up" in r.json()["detail"]
+    # y el mes NO se tocó
+    mc = await MesControl.find_one(MesControl.mes == "2026-07-01")
+    assert mc.estado is EstadoMes.CERRADO
