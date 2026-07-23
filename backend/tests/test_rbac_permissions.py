@@ -24,6 +24,8 @@ CANONICA: dict[str, set[Role]] = {
     "rubros:gestionar": {Role.financiero, Role.admin},
     # CR-S5 (C3 auto-clasificación): gestión de reglas de clasificación
     "reglas:gestionar": {Role.financiero, Role.admin},
+    # CR-S6 (C4 ajuste diario de caja): reporte de saldos por banco
+    "caja:reportar": {Role.financiero, Role.admin},
     # §2.4 — autoridad del ciclo (manda sobre §4.1)
     "ciclo:abrir": {Role.financiero, Role.directivo, Role.admin},
     "ciclo:proponer": {Role.financiero, Role.directivo, Role.admin},
