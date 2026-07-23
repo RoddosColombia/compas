@@ -174,7 +174,14 @@ tests/test_caja_saldos_realmongo.py ssssssssssss       [12 real-mongo → CI del
 ```
 
 ### pytest suite completa (real-mongo saltados local; corren en CI)
-<!-- PYTEST_SUITE -->
+```
+425 passed, 58 skipped, 2896 warnings in 405.35s
+SKIPPED [12] tests/test_caja_saldos_realmongo.py: requiere Mongo real
+  → corre en el job backend-real-mongo del PR (upsert, D4, auditoría por banco,
+    O1, B-1 concurrencia, D6)
+```
+Antes de C4: 411 passed. Ahora 425 = +14 tests mongomock de C4 (guardas + D2/D3 +
+catálogo/permisos). Los 58 skipped incluyen los 12 real-mongo nuevos de C4.
 
 ### ruff
 ```
