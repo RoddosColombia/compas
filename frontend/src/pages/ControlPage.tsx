@@ -8,9 +8,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { GRUPO_LABEL, type Semaforo, vistaControl } from "@/lib/control";
+import {
+  BANCO_LABEL,
+  type ControlPorCuenta,
+  GRUPO_LABEL,
+  type Semaforo,
+  vistaControl,
+  vistaControlPorCuenta,
+} from "@/lib/control";
 import { listarMeses } from "@/lib/meses";
 import { formatCOP } from "@/lib/money";
+
+type Vista = "categoria" | "cuenta";
 
 const SEMAFORO_ESTILO: Record<Semaforo, string> = {
   verde: "bg-brand-soft/20 text-brand",
@@ -39,17 +48,42 @@ export default function ControlPage() {
 
   const [mesSel, setMesSel] = useState<string | null>(null);
   const mes = mesSel ?? disponibles[0] ?? null;
+  const [vista, setVista] = useState<Vista>("categoria");
 
   const control = useQuery({
     queryKey: ["mes", mes, "control"],
     queryFn: () => vistaControl(mes as string),
-    enabled: mes !== null,
+    enabled: mes !== null && vista === "categoria",
+  });
+
+  const porCuenta = useQuery({
+    queryKey: ["mes", mes, "control-por-cuenta"],
+    queryFn: () => vistaControlPorCuenta(mes as string),
+    enabled: mes !== null && vista === "cuenta",
   });
 
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Vista Control</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-semibold">Vista Control</h2>
+          <div className="flex rounded-md border border-slate-300 text-sm">
+            <button
+              type="button"
+              onClick={() => setVista("categoria")}
+              className={`rounded-l-md px-3 py-1 ${vista === "categoria" ? "bg-brand text-white" : "text-slate-600"}`}
+            >
+              Por categoría
+            </button>
+            <button
+              type="button"
+              onClick={() => setVista("cuenta")}
+              className={`rounded-r-md px-3 py-1 ${vista === "cuenta" ? "bg-brand text-white" : "text-slate-600"}`}
+            >
+              Por cuenta
+            </button>
+          </div>
+        </div>
         {disponibles.length > 0 && (
           <label className="flex items-center gap-2 text-sm">
             <span className="text-slate-500">Mes</span>
@@ -68,6 +102,14 @@ export default function ControlPage() {
         )}
       </header>
 
+      {vista === "cuenta" && (
+        <MatrizPorCuenta
+          cargando={porCuenta.isLoading}
+          error={porCuenta.isError}
+          data={porCuenta.data}
+        />
+      )}
+
       {meses.isLoading && <p className="text-sm text-slate-500">Cargando…</p>}
       {meses.data && disponibles.length === 0 && (
         <p className="text-sm text-slate-500">
@@ -76,16 +118,16 @@ export default function ControlPage() {
         </p>
       )}
 
-      {control.isLoading && (
+      {vista === "categoria" && control.isLoading && (
         <p className="text-sm text-slate-500">Cargando control…</p>
       )}
-      {control.isError && (
+      {vista === "categoria" && control.isError && (
         <p className="text-sm text-alert">
           No se pudo cargar la Vista Control.
         </p>
       )}
 
-      {control.data && (
+      {vista === "categoria" && control.data && (
         <>
           <div className="flex flex-wrap gap-4">
             <TarjetaResumen
@@ -177,6 +219,130 @@ function TarjetaResumen({
       <p className="text-xs text-slate-500">{titulo}</p>
       <p className={`mt-1 font-mono text-lg font-semibold ${color}`}>{valor}</p>
     </div>
+  );
+}
+
+function MatrizPorCuenta({
+  cargando,
+  error,
+  data,
+}: {
+  cargando: boolean;
+  error: boolean;
+  data: ControlPorCuenta | undefined;
+}) {
+  if (cargando)
+    return <p className="text-sm text-slate-500">Cargando por cuenta…</p>;
+  if (error)
+    return (
+      <p className="text-sm text-alert">
+        No se pudo cargar la vista por cuenta.
+      </p>
+    );
+  if (!data) return null;
+  if (data.bancos.length === 0)
+    return (
+      <p className="text-sm text-slate-500">
+        Aún no hay egresos con banco en este mes.
+      </p>
+    );
+
+  const bancos = data.bancos;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-left text-slate-500">
+            <th className="py-2 pr-4">Rubro</th>
+            {bancos.map((b) => (
+              <th key={b} className="py-2 pr-4 text-right">
+                {BANCO_LABEL[b] ?? b}
+              </th>
+            ))}
+            <th className="py-2 pr-4 text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.grupos.map((g) => (
+            <MatrizGrupo key={g.grupo} grupo={g} bancos={bancos} />
+          ))}
+          <tr className="border-t-2 border-slate-300 font-semibold">
+            <td className="py-2 pr-4">Total</td>
+            {bancos.map((b) => (
+              <td key={b} className="py-2 pr-4 text-right font-mono">
+                {formatCOP(data.total.por_banco[b])}
+              </td>
+            ))}
+            <td className="py-2 pr-4 text-right font-mono">
+              {formatCOP(data.total.total)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {data.sin_presupuesto.length > 0 && (
+        <div className="mt-4 rounded-md bg-warn/10 px-3 py-2 text-sm text-slate-700">
+          <span className="font-medium text-warn">Sin presupuesto:</span>{" "}
+          {data.sin_presupuesto
+            .map(
+              (s) =>
+                `${s.rubro} (${bancos
+                  .filter((b) => s.por_banco[b] && s.por_banco[b] !== "0.00")
+                  .map(
+                    (b) =>
+                      `${BANCO_LABEL[b] ?? b} ${formatCOP(s.por_banco[b])}`,
+                  )
+                  .join(", ")})`,
+            )
+            .join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MatrizGrupo({
+  grupo,
+  bancos,
+}: {
+  grupo: import("@/lib/control").ControlCuentaGrupo;
+  bancos: string[];
+}) {
+  return (
+    <>
+      <tr className="bg-slate-50">
+        <td
+          colSpan={bancos.length + 2}
+          className="py-1.5 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+        >
+          {GRUPO_LABEL[grupo.grupo] ?? grupo.grupo}
+        </td>
+      </tr>
+      {grupo.lineas.map((l) => (
+        <tr key={l.rubro_id} className="border-b border-slate-100">
+          <td className="py-2 pr-4">{l.rubro}</td>
+          {bancos.map((b) => (
+            <td key={b} className="py-2 pr-4 text-right font-mono">
+              {formatCOP(l.por_banco[b])}
+            </td>
+          ))}
+          <td className="py-2 pr-4 text-right font-mono font-medium">
+            {formatCOP(l.total)}
+          </td>
+        </tr>
+      ))}
+      <tr className="border-b border-slate-200 text-slate-500">
+        <td className="py-1.5 pr-4 text-right text-xs italic">Subtotal</td>
+        {bancos.map((b) => (
+          <td key={b} className="py-1.5 pr-4 text-right font-mono text-xs">
+            {formatCOP(grupo.subtotal.por_banco[b])}
+          </td>
+        ))}
+        <td className="py-1.5 pr-4 text-right font-mono text-xs">
+          {formatCOP(grupo.subtotal.total)}
+        </td>
+      </tr>
+    </>
   );
 }
 

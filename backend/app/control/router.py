@@ -29,3 +29,15 @@ async def vista_control(
         return await service.control(_mes_key(mes))
     except service.ControlError as e:
         raise HTTPException(e.status, e.detalle) from e
+
+
+@router.get("/{mes}/control/por-cuenta")
+async def vista_control_por_cuenta(
+    mes: str,
+    user: User = Depends(require_permission("dashboard:leer")),
+):
+    """C5 — matriz categoría × cuenta (ejecutado por rubro y banco)."""
+    try:
+        return await service.control_por_cuenta(_mes_key(mes))
+    except service.ControlError as e:
+        raise HTTPException(e.status, e.detalle) from e
