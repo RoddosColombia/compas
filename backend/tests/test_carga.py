@@ -306,18 +306,25 @@ class TestServicioCarga:
         assert tx.rubro_id == pc.id
 
     async def test_carga_recorrida_identica(self, entorno, tmp_path):
-        # Precedencia determinista: re-cargar el mismo contenido (otro archivo)
-        # deja los duplicados fuera y NO cambia la asignación del original.
+        # Precedencia determinista: el solape re-cargado (archivo distinto — F-02
+        # rechaza el MISMO archivo por hash) queda como duplicado y NO cambia la
+        # asignación del original; la fila nueva se clasifica igual.
         caf = await Rubro(grupo="operacion", nombre="Cafetería", orden=1).insert()
         regla = await self._regla("cafeteria", caf)
         await self._procesar(tmp_path, [("15-03-2026", "CAFETERIA X", -1000)], "a.xlsx")
         carga2 = await self._procesar(
-            tmp_path, [("15-03-2026", "CAFETERIA X", -1000)], "b.xlsx"
+            tmp_path,
+            [
+                ("15-03-2026", "CAFETERIA X", -1000),  # solape → duplicado
+                ("16-03-2026", "CAFETERIA Y", -2000),  # nueva → misma regla
+            ],
+            "b.xlsx",
         )
-        assert carga2.duplicadas == 1 and carga2.nuevas == 0
+        assert carga2.duplicadas == 1 and carga2.nuevas == 1
+        assert carga2.clasificadas == 1  # contadores SOLO sobre las nuevas
         txs = await Transaccion.find_all().to_list()
-        assert len(txs) == 1
-        assert txs[0].rubro_id == caf.id and txs[0].regla_id == regla.id
+        assert len(txs) == 2
+        assert all(t.rubro_id == caf.id and t.regla_id == regla.id for t in txs)
 
     async def test_carga_ingreso_clasifica_a_recaudo(self, entorno, tmp_path):
         # D1-ii: partición por tipo — la regla de ingreso ('Abono'→Recaudo) solo
