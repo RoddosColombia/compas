@@ -9,6 +9,7 @@ import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui/button";
+import CajaPage from "@/pages/CajaPage";
 import CargasPage from "@/pages/CargasPage";
 import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
@@ -55,6 +56,14 @@ function Layout({ children }: { children: ReactNode }) {
               className="text-sm text-slate-600 hover:text-slate-900"
             >
               Control
+            </Link>
+          )}
+          {puede("caja:reportar") && (
+            <Link
+              to="/caja"
+              className="text-sm text-slate-600 hover:text-slate-900"
+            >
+              Caja
             </Link>
           )}
           {puede("cargas:gestionar") && (
@@ -131,6 +140,16 @@ export default function App() {
                 <Protegida>
                   <Layout>
                     <ControlPage />
+                  </Layout>
+                </Protegida>
+              }
+            />
+            <Route
+              path="/caja"
+              element={
+                <Protegida>
+                  <Layout>
+                    <CajaPage />
                   </Layout>
                 </Protegida>
               }
