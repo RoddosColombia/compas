@@ -70,6 +70,126 @@ async def _egresos_por_rubro(mes_id: PydanticObjectId) -> dict[str, Decimal]:
     return out
 
 
+async def _egresos_por_rubro_banco(
+    mes_id: PydanticObjectId,
+) -> dict[tuple[str, str], Decimal]:
+    """Σ egresos por (rubro, banco) del mes (C5). Iteración en Python (no aggregation
+    compuesta) — mismo universo que `_egresos_por_rubro`, split por banco: la suma
+    sobre bancos de un rubro == su `ejecutado` en la Vista Control (reconcilia)."""
+    out: dict[tuple[str, str], Decimal] = {}
+    async for t in Transaccion.find(Transaccion.mes_id == mes_id):
+        if t.tipo_flujo is not TipoFlujo.EGRESO:
+            continue
+        key = (str(t.rubro_id), t.banco.value)
+        out[key] = out.get(key, Decimal("0")) + t.valor
+    return out
+
+
+async def control_por_cuenta(mes: str) -> dict:
+    """C5 — vista combinada categoría × cuenta (read-only). Matriz rubro×banco del
+    ejecutado, agrupada en los 5 grupos, con subtotales por grupo y totales por banco.
+    Reconcilia con la Vista Control: Σ_banco(por_banco[rubro]) == ejecutado[rubro]."""
+    mc = await MesControl.find_one(MesControl.mes == mes)
+    if mc is None:
+        raise ControlError(f"el mes {mes[:7]} no existe", 404)
+    if mc.estado not in _ABIERTO:
+        raise ControlError(
+            f"la Vista Control aplica a meses en ejecución o cerrados "
+            f"(está en '{mc.estado.value}')",
+            409,
+        )
+
+    lineas = await PresupuestoLinea.find(
+        PresupuestoLinea.mes_id == mc.id,
+        PresupuestoLinea.vigente == True,  # noqa: E712
+    ).to_list()
+    rubros = {r.id: r for r in await Rubro.find_all().to_list()}
+    egresos = await _egresos_por_rubro_banco(mc.id)
+
+    # bancos presentes (columnas), orden estable.
+    bancos = sorted({banco for (_rid, banco) in egresos})
+
+    por_grupo: dict[str, list[dict]] = {}
+    con_linea: set[str] = set()
+    for ln in lineas:
+        r = rubros.get(ln.rubro_id)
+        if r is None:
+            continue
+        con_linea.add(str(r.id))
+        rid = str(r.id)
+        por_banco = {b: egresos.get((rid, b), Decimal("0")) for b in bancos}
+        total = sum(por_banco.values(), Decimal("0"))
+        por_grupo.setdefault(r.grupo.value, []).append(
+            {
+                "rubro_id": rid,
+                "rubro": r.nombre,
+                "orden": r.orden,
+                "por_banco": por_banco,
+                "total": total,
+            }
+        )
+
+    grupos_out = []
+    tot_col = {b: Decimal("0") for b in bancos}
+    tot_gen = Decimal("0")
+    for g in _GRUPOS_ORDEN:
+        filas = sorted(por_grupo.get(g.value, []), key=lambda f: f["orden"])
+        if not filas:
+            continue
+        sub = {b: sum((f["por_banco"][b] for f in filas), Decimal("0")) for b in bancos}
+        sub_total = sum(sub.values(), Decimal("0"))
+        for b in bancos:
+            tot_col[b] += sub[b]
+        tot_gen += sub_total
+        grupos_out.append(
+            {
+                "grupo": g.value,
+                "lineas": [
+                    {
+                        "rubro_id": f["rubro_id"],
+                        "rubro": f["rubro"],
+                        "por_banco": {b: money_str(f["por_banco"][b]) for b in bancos},
+                        "total": money_str(f["total"]),
+                    }
+                    for f in filas
+                ],
+                "subtotal": {
+                    "por_banco": {b: money_str(sub[b]) for b in bancos},
+                    "total": money_str(sub_total),
+                },
+            }
+        )
+
+    # egresos en rubros sin línea vigente (informativo, mismo criterio B-3 de control).
+    sin_presupuesto: dict[str, dict] = {}
+    for (rid, banco), total in egresos.items():
+        r = rubros.get(PydanticObjectId(rid))
+        if r is None or r.es_sistema or rid in con_linea:
+            continue
+        entrada = sin_presupuesto.setdefault(
+            rid, {"rubro": r.nombre, "por_banco": {b: Decimal("0") for b in bancos}}
+        )
+        entrada["por_banco"][banco] = total
+
+    return {
+        "mes": mes[:7],
+        "estado": mc.estado.value,
+        "bancos": bancos,
+        "grupos": grupos_out,
+        "total": {
+            "por_banco": {b: money_str(tot_col[b]) for b in bancos},
+            "total": money_str(tot_gen),
+        },
+        "sin_presupuesto": [
+            {
+                "rubro": v["rubro"],
+                "por_banco": {b: money_str(v["por_banco"][b]) for b in bancos},
+            }
+            for v in sin_presupuesto.values()
+        ],
+    }
+
+
 async def control(mes: str) -> dict:
     mc = await MesControl.find_one(MesControl.mes == mes)
     if mc is None:

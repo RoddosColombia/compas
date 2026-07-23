@@ -57,3 +57,41 @@ export async function vistaControl(mes: string): Promise<VistaControl> {
   // `mes` en formato YYYY-MM (la ruta lo normaliza al día 1).
   return apiJson(`/meses/${mes}/control`);
 }
+
+// ── C5: vista combinada categoría × cuenta ──────────────────────────────────
+
+export interface ControlCuentaLinea {
+  rubro_id: string;
+  rubro: string;
+  por_banco: Record<string, string>; // banco → ejecutado (string, regla 1)
+  total: string;
+}
+
+export interface ControlCuentaGrupo {
+  grupo: string;
+  lineas: ControlCuentaLinea[];
+  subtotal: { por_banco: Record<string, string>; total: string };
+}
+
+export interface ControlPorCuenta {
+  mes: string;
+  estado: string;
+  bancos: string[]; // columnas presentes
+  grupos: ControlCuentaGrupo[];
+  total: { por_banco: Record<string, string>; total: string };
+  sin_presupuesto: { rubro: string; por_banco: Record<string, string> }[];
+}
+
+export async function vistaControlPorCuenta(
+  mes: string,
+): Promise<ControlPorCuenta> {
+  return apiJson(`/meses/${mes}/control/por-cuenta`);
+}
+
+// Etiquetas de presentación de los bancos.
+export const BANCO_LABEL: Record<string, string> = {
+  bancolombia: "Bancolombia",
+  bbva: "BBVA",
+  global66: "Global66",
+  manual: "Manual",
+};
