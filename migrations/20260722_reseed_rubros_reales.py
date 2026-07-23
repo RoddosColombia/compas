@@ -10,12 +10,17 @@ doc preexistente, con el doc existente vs lo que la semilla habría puesto. El
 operador verifica los coincidentes (D3: las categorías viejas que no estén en la
 taxonomía real quedan activas; el CEO las depura desde la app).
 
-Uso:  python migrations/20260722_reseed_rubros_reales.py "<MONGODB_URI>" [db=compas]
+B-1 I-PR1 (eco H-03 Sprint 0): la URI se lee de la VARIABLE DE ENTORNO
+`MONGODB_URI` — nunca por argv (quedaría visible en `ps` y en el historial del
+shell). PATRÓN para toda migración futura.
+
+Uso:  MONGODB_URI="<uri>" python migrations/20260722_reseed_rubros_reales.py [db=compas]
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 sys.path.insert(0, "backend")
@@ -48,12 +53,15 @@ async def _run(uri: str, db_name: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
+    # B-1 I-PR1: URI SOLO por entorno (eco H-03 — argv queda en ps/historial).
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
         sys.exit(
-            'Uso: python migrations/20260722_reseed_rubros_reales.py "<MONGODB_URI>" [db]'
+            "Falta MONGODB_URI en el entorno.\n"
+            'Uso: MONGODB_URI="<uri>" python '
+            "migrations/20260722_reseed_rubros_reales.py [db=compas]"
         )
-    uri = sys.argv[1]
-    db_name = sys.argv[2] if len(sys.argv) > 2 else "compas"
+    db_name = sys.argv[1] if len(sys.argv) > 1 else "compas"
     asyncio.run(_run(uri, db_name))
 
 
