@@ -28,6 +28,8 @@ PERMISSIONS: dict[str, frozenset[Role]] = {
     "reglas:gestionar": frozenset({Role.financiero, Role.admin}),
     # ── CR-S6 (C4 ajuste diario de caja, GO Kimi PLAN-I 9.3) ──
     "caja:reportar": frozenset({Role.financiero, Role.admin}),
+    # ── CR-S7 (C9 pagos de la semana, GO CEO 2026-07-23) ──
+    "pagos:gestionar": frozenset({Role.financiero, Role.admin}),
     # ── Spec §2.4 (autoridad del ciclo mensual — manda sobre §4.1) ──
     "ciclo:abrir": frozenset({Role.financiero, Role.directivo, Role.admin}),
     "ciclo:proponer": frozenset({Role.financiero, Role.directivo, Role.admin}),

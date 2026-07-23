@@ -11,7 +11,10 @@ PLAN-I 9.2; `rubro.desactivado` ya venía en v1.0, por eso CR-S4 es +2)
 auto-clasificación, GO Kimi PLAN-I 9.3; la aprobación de aprendidas emite
 `regla.editada` {activa: false→true, via: 'aprobacion'} — sin evento extra)
 + `saldo_banco.reportado` (CR-S6 — C4 ajuste diario de caja, GO Kimi PLAN-I 9.3;
-un evento POR BANCO tocado, metadata con valores y fechas anterior→nuevo) = 37.
+un evento POR BANCO tocado, metadata con valores y fechas anterior→nuevo)
++ `pago_planeado.creado`/`editado`/`cancelado` (CR-S7 — C9 pagos de la semana, GO
+CEO 2026-07-23 con Kimi retroactivo; `marcar-pagado` reusa `pago_planeado.editado`
+{estado: pendiente→pagado} — sin evento extra) = 40.
 NO se inventan eventos sin CR. El nombre del miembro usa `_`; el valor usa
 `<dominio>.<acción>`."""
 
@@ -69,9 +72,14 @@ class AuditEvento(StrEnum):
     regla_editada = "regla.editada"
     regla_desactivada = "regla.desactivada"
 
-    # ── CR-S6 (1) → total 37 (C4 ajuste diario de caja) ──
+    # ── CR-S6 (1) (C4 ajuste diario de caja) ──
     saldo_banco_reportado = "saldo_banco.reportado"
 
+    # ── CR-S7 (3) → total 40 (C9 pagos de la semana) ──
+    pago_planeado_creado = "pago_planeado.creado"
+    pago_planeado_editado = "pago_planeado.editado"
+    pago_planeado_cancelado = "pago_planeado.cancelado"
 
-# Conjunto de los 37 valores canónicos (para validación/tests de completitud).
+
+# Conjunto de los 40 valores canónicos (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)
