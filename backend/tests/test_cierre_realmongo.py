@@ -259,3 +259,55 @@ class TestCierreReal:
         # converge
         assert (await self._confirmar(ac, h, "ka2")).status_code == 200
         assert (await MesControl.get(jun.id)).estado is EstadoMes.CERRADO
+
+    async def test_toctou_estado_cambiado_aborta_cierre(self, entorno, monkeypatch):
+        # S4-06/B-2 (Kimi I-PR1 cierre): las guardas de estado se evalúan fuera de
+        # la transacción — si OTRO proceso cierra el mes ENTRE el check y la
+        # transacción, el re-read DENTRO de la sesión debe abortar (409), nunca
+        # doble-cerrar (doble ajuste / re-ancla inconsistente).
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+
+        orig = service._conciliar
+
+        async def tramposo(mc, rubro_id):
+            r = await orig(mc, rubro_id)
+            # "otro proceso" completa un cierre justo después de las guardas
+            await db["meses_control"].update_one(
+                {"mes": "2026-06-01"}, {"$set": {"estado": "cerrado"}}
+            )
+            return r
+
+        monkeypatch.setattr(service, "_conciliar", tramposo)
+        r = await self._confirmar(ac, h, "toc-1")
+        assert r.status_code == 409
+        monkeypatch.undo()
+        # NO hubo doble cierre: sin ajuste en jul y ancla intacta (el estado
+        # 'cerrado' lo puso el proceso concurrente simulado, no este intento).
+        assert await Transaccion.find(Transaccion.mes_id == jul.id).count() == 0
+        assert (await MesControl.get(jul.id)).saldo_inicial_caja == Decimal("0")
+        assert await db["audit_log"].count_documents({"evento": "mes.cerrado"}) == 0
+
+    async def test_toctou_siguiente_cerrado_aborta_cierre(self, entorno, monkeypatch):
+        # S4-06/B-2 simétrico: si M+1 queda CERRADO entre el check y la transacción,
+        # el cierre aborta (el ajuste se imputaría a un mes inmutable — regla 4).
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+
+        orig = service._conciliar
+
+        async def tramposo(mc, rubro_id):
+            r = await orig(mc, rubro_id)
+            await db["meses_control"].update_one(
+                {"mes": "2026-07-01"}, {"$set": {"estado": "cerrado"}}
+            )
+            return r
+
+        monkeypatch.setattr(service, "_conciliar", tramposo)
+        r = await self._confirmar(ac, h, "toc-2")
+        assert r.status_code == 409
+        monkeypatch.undo()
+        assert (await MesControl.get(jun.id)).estado is EstadoMes.EN_EJECUCION
+        assert await Transaccion.find(Transaccion.mes_id == jul.id).count() == 0

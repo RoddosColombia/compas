@@ -197,6 +197,25 @@ async def confirmar_cierre(*, mes: str, usuario_id: str) -> dict:
     creado = {"ajuste_id": None}
 
     async def _cerrar(session):
+        # S4-06/B-2 (Kimi, TOCTOU): las guardas de arriba corren FUERA de la
+        # transacción — releer el estado DENTRO de la sesión y abortar si otro
+        # proceso lo cambió (doble cierre / ajuste a mes inmutable).
+        mc_fresco = await MesControl.find_one(MesControl.mes == mc.mes, session=session)
+        sig_fresco = await MesControl.find_one(
+            MesControl.mes == siguiente.mes, session=session
+        )
+        if mc_fresco is None or mc_fresco.estado is not EstadoMes.EN_EJECUCION:
+            raise CierreError(
+                f"el estado del mes {mes[:7]} cambió durante el cierre "
+                "(concurrencia); reintentar",
+                409,
+            )
+        if sig_fresco is None or sig_fresco.estado is EstadoMes.CERRADO:
+            raise CierreError(
+                f"el mes {siguiente.mes[:7]} cambió de estado durante el cierre "
+                "(concurrencia); reintentar",
+                409,
+            )
         siguiente.saldo_inicial_caja = r_m  # M-2: re-anclar a R_M
         await siguiente.save(session=session)
         aj_id = None
@@ -292,6 +311,25 @@ async def reabrir_mes(*, mes: str, usuario_id: str) -> dict:
     creado = {"contra_id": None}
 
     async def _reabrir(session):
+        # S4-06/B-2 simétrico: revalidar DENTRO de la sesión (doble reapertura /
+        # LIFO roto por concurrencia).
+        mc_fresco = await MesControl.find_one(MesControl.mes == mc.mes, session=session)
+        if mc_fresco is None or mc_fresco.estado is not EstadoMes.CERRADO:
+            raise CierreError(
+                f"el estado del mes {mes[:7]} cambió durante la reapertura "
+                "(concurrencia); reintentar",
+                409,
+            )
+        if siguiente is not None:
+            sig_fresco = await MesControl.find_one(
+                MesControl.mes == siguiente.mes, session=session
+            )
+            if sig_fresco is not None and sig_fresco.estado is EstadoMes.CERRADO:
+                raise CierreError(
+                    f"el mes {siguiente.mes[:7]} se cerró durante la reapertura "
+                    "(LIFO); reintentar",
+                    409,
+                )
         if ci and ci.ajuste_tx_id:
             orig = await Transaccion.get(PydanticObjectId(ci.ajuste_tx_id))
             if orig is not None:
