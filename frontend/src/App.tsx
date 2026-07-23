@@ -10,6 +10,7 @@ import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui/button";
 import CargasPage from "@/pages/CargasPage";
+import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
 import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
@@ -63,6 +64,14 @@ function Layout({ children }: { children: ReactNode }) {
               Cargas
             </Link>
           )}
+          {puede("dashboard:leer") && (
+            <Link
+              to="/categorias"
+              className="text-sm text-slate-600 hover:text-slate-900"
+            >
+              Categorías
+            </Link>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400 capitalize">{rol}</span>
@@ -113,6 +122,16 @@ export default function App() {
                 <Protegida>
                   <Layout>
                     <ControlPage />
+                  </Layout>
+                </Protegida>
+              }
+            />
+            <Route
+              path="/categorias"
+              element={
+                <Protegida>
+                  <Layout>
+                    <CategoriasPage />
                   </Layout>
                 </Protegida>
               }
