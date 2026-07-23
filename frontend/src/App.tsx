@@ -14,6 +14,7 @@ import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
 import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
+import ReglasPage from "@/pages/ReglasPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -70,6 +71,14 @@ function Layout({ children }: { children: ReactNode }) {
               className="text-sm text-slate-600 hover:text-slate-900"
             >
               Categorías
+            </Link>
+          )}
+          {puede("dashboard:leer") && (
+            <Link
+              to="/reglas"
+              className="text-sm text-slate-600 hover:text-slate-900"
+            >
+              Reglas
             </Link>
           )}
         </div>
@@ -132,6 +141,16 @@ export default function App() {
                 <Protegida>
                   <Layout>
                     <CategoriasPage />
+                  </Layout>
+                </Protegida>
+              }
+            />
+            <Route
+              path="/reglas"
+              element={
+                <Protegida>
+                  <Layout>
+                    <ReglasPage />
                   </Layout>
                 </Protegida>
               }
