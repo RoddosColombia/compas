@@ -249,3 +249,104 @@ class TestServicioCarga:
         carga = await self._procesar(tmp_path, [("15-03-2026", "X", -1000)])
         assert carga.archivo_s3_key.startswith("local://")
         assert await AsyncPath(carga.archivo_s3_key.removeprefix("local://")).exists()
+
+    # ── C3: auto-clasificación al cargar (GO Kimi PLAN-I 9.3, lista §5) ──
+
+    async def _regla(self, patron, rubro, prioridad=10, tipo="egreso"):
+        from app.domain.regla_clasificacion import ReglaClasificacion
+
+        r = ReglaClasificacion(
+            patron=patron,
+            rubro_id=rubro.id,
+            tipo_flujo=tipo,
+            prioridad=prioridad,
+            creada_por="u1",
+        )
+        await r.insert()
+        return r
+
+    async def test_carga_clasifica_con_match(self, entorno, tmp_path):
+        # Con match → rubro_id + regla_id escritos (rastro forense §1.5).
+        caf = await Rubro(grupo="operacion", nombre="Cafetería", orden=1).insert()
+        regla = await self._regla("cafeteria", caf)
+        carga = await self._procesar(
+            tmp_path, [("15-03-2026", "COMPRA CAFETERÍA LA 14", -50000)]
+        )
+        assert carga.clasificadas == 1 and carga.por_clasificar == 0
+        tx = await Transaccion.find_one(Transaccion.carga_id == carga.id)
+        assert tx.rubro_id == caf.id
+        assert tx.regla_id == regla.id
+
+    async def test_carga_sin_match_cae_a_por_clasificar(self, entorno, tmp_path):
+        caf = await Rubro(grupo="operacion", nombre="Cafetería", orden=1).insert()
+        await self._regla("cafeteria", caf)
+        carga = await self._procesar(
+            tmp_path, [("15-03-2026", "GASOLINA TEXACO", -80000)]
+        )
+        assert carga.clasificadas == 0 and carga.por_clasificar == 1
+        tx = await Transaccion.find_one(Transaccion.carga_id == carga.id)
+        pc = await Rubro.find_one(Rubro.nombre == "Por clasificar")
+        assert tx.rubro_id == pc.id
+        assert tx.regla_id is None
+
+    async def test_carga_d2_rubro_inactivo_salta_y_reporta(self, entorno, tmp_path):
+        # D2 (Kimi): regla activa con rubro inactivo → la fila cae a 'Por
+        # clasificar' y la carga reporta reglas_con_rubro_inactivo (fail-loud B-4).
+        caf = await Rubro(
+            grupo="operacion", nombre="Cafetería", orden=1, activo=False
+        ).insert()
+        await self._regla("cafeteria", caf)
+        carga = await self._procesar(
+            tmp_path, [("15-03-2026", "CAFETERIA LA 14", -50000)]
+        )
+        assert carga.clasificadas == 0 and carga.por_clasificar == 1
+        assert carga.reglas_con_rubro_inactivo == ["cafeteria"]
+        tx = await Transaccion.find_one(Transaccion.carga_id == carga.id)
+        pc = await Rubro.find_one(Rubro.nombre == "Por clasificar")
+        assert tx.rubro_id == pc.id
+
+    async def test_carga_recorrida_identica(self, entorno, tmp_path):
+        # Precedencia determinista: el solape re-cargado (archivo distinto — F-02
+        # rechaza el MISMO archivo por hash) queda como duplicado y NO cambia la
+        # asignación del original; la fila nueva se clasifica igual.
+        caf = await Rubro(grupo="operacion", nombre="Cafetería", orden=1).insert()
+        regla = await self._regla("cafeteria", caf)
+        await self._procesar(tmp_path, [("15-03-2026", "CAFETERIA X", -1000)], "a.xlsx")
+        carga2 = await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "CAFETERIA X", -1000),  # solape → duplicado
+                ("16-03-2026", "CAFETERIA Y", -2000),  # nueva → misma regla
+            ],
+            "b.xlsx",
+        )
+        assert carga2.duplicadas == 1 and carga2.nuevas == 1
+        assert carga2.clasificadas == 1  # contadores SOLO sobre las nuevas
+        txs = await Transaccion.find_all().to_list()
+        assert len(txs) == 2
+        assert all(t.rubro_id == caf.id and t.regla_id == regla.id for t in txs)
+
+    async def test_carga_ingreso_clasifica_a_recaudo(self, entorno, tmp_path):
+        # D1-ii: partición por tipo — la regla de ingreso ('Abono'→Recaudo) solo
+        # ve ingresos; un egreso con texto parecido no se cuela.
+        recaudo = await Rubro(
+            grupo="otros",
+            nombre="Recaudo",
+            tipo_flujo="ingreso",
+            orden=99,
+            es_sistema=True,
+        ).insert()
+        regla = await self._regla("abono", recaudo, tipo="ingreso")
+        carga = await self._procesar(
+            tmp_path,
+            [
+                ("15-03-2026", "ABONO CUOTA SEMANAL", 120000),  # ingreso → Recaudo
+                ("16-03-2026", "PAGO ABONO PROVEEDOR", -90000),  # egreso → PC
+            ],
+        )
+        assert carga.clasificadas == 1 and carga.por_clasificar == 1
+        ing = await Transaccion.find_one(Transaccion.tipo_flujo == "ingreso")
+        egr = await Transaccion.find_one(Transaccion.tipo_flujo == "egreso")
+        pc = await Rubro.find_one(Rubro.nombre == "Por clasificar")
+        assert ing.rubro_id == recaudo.id and ing.regla_id == regla.id
+        assert egr.rubro_id == pc.id and egr.regla_id is None

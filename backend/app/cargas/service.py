@@ -32,12 +32,17 @@ from beanie.operators import In
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
-from app.cargas.mapper import movimiento_a_transaccion
+from app.cargas.mapper import _TIPO_A_FLUJO, movimiento_a_transaccion
 from app.domain.bancos import Banco
 from app.domain.carga import CargaBancaria, ErrorCarga, EstadoCarga
 from app.domain.mes_control import MesControl
 from app.domain.rubro import Rubro
 from app.domain.transaccion import Transaccion
+from app.reglas.service import (
+    elegir_regla,
+    reglas_activas_por_tipo,
+    rubros_activos_ids,
+)
 
 RUBRO_POR_CLASIFICAR = "Por clasificar"
 
@@ -79,12 +84,18 @@ def _parse(archivo_path: str, banco: Banco):
     return parse_extracto(archivo_path, banco)
 
 
-def _finalizar_carga_doc(carga, resultado, errores, nuevas, duplicadas) -> None:
+def _finalizar_carga_doc(
+    carga, resultado, errores, nuevas, duplicadas, nuevos_docs=()
+) -> None:
     carga.total_filas = len(resultado.movimientos) + len(resultado.errores)
     carga.nuevas = nuevas
     carga.duplicadas = duplicadas
     carga.errores = len(errores)
     carga.errores_detalle = errores
+    # C3 (D3): agregado de clasificación sobre las NUEVAS insertadas — el rastro
+    # por documento es regla_id.
+    carga.clasificadas = sum(1 for d in nuevos_docs if d.regla_id is not None)
+    carga.por_clasificar = len(nuevos_docs) - carga.clasificadas
     carga.estado = EstadoCarga.COMPLETADA
 
 
@@ -152,6 +163,18 @@ async def procesar_carga(
             for e in resultado.errores
         ]
 
+        # C3 (GO Kimi 9.3): reglas activas particionadas por tipo (D1-ii) +
+        # rubros activos, UNA vez por carga. D2: las reglas cuyo rubro esté
+        # inactivo se saltan al clasificar y se reportan (fail-loud B-4).
+        por_tipo = await reglas_activas_por_tipo()
+        activos = await rubros_activos_ids()
+        carga.reglas_con_rubro_inactivo = sorted(
+            r.patron
+            for reglas in por_tipo.values()
+            for r in reglas
+            if r.rubro_id not in activos
+        )
+
         docs: list[Transaccion] = []
         mes_cache: dict[str, object] = {}  # M-03: 1 lookup por mes, no por fila
         conteo: dict[tuple, int] = {}  # A-01: ordinal de ocurrencia por huella
@@ -170,13 +193,19 @@ async def procesar_carga(
                 continue
             clave = _clave_ocurrencia(mov)
             conteo[clave] = conteo.get(clave, 0) + 1
+            # C3: primera regla que matchea (prioridad asc, _id) clasifica;
+            # sin match → 'Por clasificar' (regla 7: jamás se adivina).
+            regla = elegir_regla(
+                mov.descripcion, por_tipo[_TIPO_A_FLUJO[mov.tipo]], activos
+            )
             docs.append(
                 movimiento_a_transaccion(
                     mov,
-                    rubro_id=rubro.id,
+                    rubro_id=regla.rubro_id if regla is not None else rubro.id,
                     mes_id=mc.id,
                     carga_id=carga.id,
                     ocurrencia=conteo[clave],
+                    regla_id=regla.id if regla is not None else None,
                 )
             )
 
@@ -201,7 +230,12 @@ async def procesar_carga(
                 holder["nuevas"] = len(nuevos)
                 holder["duplicadas"] = len(docs) - len(nuevos)
                 _finalizar_carga_doc(
-                    carga, resultado, errores, holder["nuevas"], holder["duplicadas"]
+                    carga,
+                    resultado,
+                    errores,
+                    holder["nuevas"],
+                    holder["duplicadas"],
+                    nuevos_docs=nuevos,
                 )
                 await carga.save(session=session)
 
@@ -221,6 +255,10 @@ async def procesar_carga(
                 "nuevas": holder["nuevas"],
                 "duplicadas": holder["duplicadas"],
                 "errores": len(errores),
+                # C3 (D3): ancla agregada de la clasificación automática.
+                "clasificadas": carga.clasificadas,
+                "por_clasificar": carga.por_clasificar,
+                "reglas_con_rubro_inactivo": carga.reglas_con_rubro_inactivo,
             },
         )
         return carga

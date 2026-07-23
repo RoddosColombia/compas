@@ -10,6 +10,7 @@ from app.ciclo.router import router as ciclo_router
 from app.cierre.router import router as cierre_router
 from app.control.router import router as control_router
 from app.presupuesto.router import router as presupuesto_router
+from app.reglas.router import router as reglas_router
 from app.rubros.router import router as rubros_router
 from app.transacciones.router import router as transacciones_router
 
@@ -21,5 +22,6 @@ api_router.include_router(ciclo_router)
 api_router.include_router(cierre_router)
 api_router.include_router(control_router)
 api_router.include_router(presupuesto_router)
+api_router.include_router(reglas_router)
 api_router.include_router(rubros_router)
 api_router.include_router(transacciones_router)

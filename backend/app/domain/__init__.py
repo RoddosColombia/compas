@@ -12,6 +12,7 @@ from app.domain.configuracion import Configuracion
 from app.domain.idempotency import IdempotencyKey
 from app.domain.mes_control import MesControl
 from app.domain.presupuesto import PresupuestoLinea
+from app.domain.regla_clasificacion import ReglaClasificacion
 from app.domain.rubro import Rubro
 from app.domain.transaccion import Transaccion
 
@@ -23,6 +24,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     CargaBancaria,
     IdempotencyKey,
     PresupuestoLinea,
+    ReglaClasificacion,
 ]
 
 __all__ = [
@@ -33,5 +35,6 @@ __all__ = [
     "CargaBancaria",
     "IdempotencyKey",
     "PresupuestoLinea",
+    "ReglaClasificacion",
     "DOMAIN_DOCUMENTS",
 ]

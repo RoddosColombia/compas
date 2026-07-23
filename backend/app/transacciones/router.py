@@ -1,10 +1,13 @@
 # backend/app/transacciones/router.py
-"""POST /api/v1/transacciones — transacción manual con Idempotency-Key (§1.12).
+"""POST /api/v1/transacciones — transacción manual con Idempotency-Key (§1.12)
++ PATCH /transacciones/{id}/clasificar — reclasificación manual (C3, CR-S5).
 
 MARCADO PARA AUDITORÍA KIMI (flujo crítico).
 
 Regla 1: `valor` viaja como STRING (strict=True rechaza numbers JSON). El replay
-idempotente devuelve la respuesta original; misma key + payload distinto → 422."""
+idempotente devuelve la respuesta original; misma key + payload distinto → 422.
+La reclasificación NO lleva Idempotency-Key: es idempotente por naturaleza
+(re-aplicar el mismo rubro no cambia nada) y no crea dinero."""
 
 import hashlib
 import json
@@ -134,3 +137,31 @@ async def crear_manual(
     marca.response_body = respuesta
     await marca.save()
     return respuesta
+
+
+class ClasificarBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    rubro_id: str
+    proponer_regla: bool = False  # §1.9/D5: crea propuesta APRENDIDA inactiva
+    patron: str | None = Field(default=None, min_length=3, max_length=120)
+
+
+@router.patch("/{transaccion_id}/clasificar")
+async def clasificar(
+    transaccion_id: str,
+    body: ClasificarBody,
+    user: User = Depends(require_permission("cargas:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    try:
+        tx = await service.reclasificar_transaccion(
+            tx_id=transaccion_id,
+            rubro_id=body.rubro_id,
+            usuario_id=user.id,
+            proponer_regla=body.proponer_regla,
+            patron=body.patron,
+        )
+    except service.TransaccionManualError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _serializar(tx)

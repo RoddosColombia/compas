@@ -54,6 +54,14 @@ class CargaBancaria(Document):
     nuevas: int = 0
     duplicadas: int = 0
     errores: int = 0
+    # C3 (GO Kimi 9.3): contadores de auto-clasificación sobre las NUEVAS
+    # insertadas (D3: el rastro por doc es regla_id; el agregado vive aquí y en
+    # la metadata de carga.completada).
+    clasificadas: int = 0
+    por_clasificar: int = 0
+    # D2 (fail-loud informativo, patrón B-4): patrones de reglas ACTIVAS cuyo
+    # rubro está inactivo — se saltaron al clasificar esta carga.
+    reglas_con_rubro_inactivo: list[str] = Field(default_factory=list)
     errores_detalle: list[ErrorCarga] = Field(default_factory=list)
     estado: EstadoCarga = EstadoCarga.PROCESANDO
     motivo_fallo: str | None = None

@@ -6,7 +6,10 @@ CR-S2 / CR-S4).
 + `transaccion.creada` (CR-S2 — Kimi M-1 sprint2-cargas: rastro forense permanente
 del POST manual, la única vía de dinero sin archivo de banco)
 + `rubro.creado`/`rubro.editado` (CR-S4 — C1 categorías administrables, GO Kimi
-PLAN-I 9.2; `rubro.desactivado` ya venía en v1.0, por eso CR-S4 es +2) = 33.
+PLAN-I 9.2; `rubro.desactivado` ya venía en v1.0, por eso CR-S4 es +2)
++ `regla.creada`/`regla.editada`/`regla.desactivada` (CR-S5 — C3
+auto-clasificación, GO Kimi PLAN-I 9.3; la aprobación de aprendidas emite
+`regla.editada` {activa: false→true, via: 'aprobacion'} — sin evento extra) = 36.
 NO se inventan eventos sin CR. El nombre del miembro usa `_`; el valor usa
 `<dominio>.<acción>`."""
 
@@ -55,10 +58,15 @@ class AuditEvento(StrEnum):
     # ── CR-S2 (1) ──
     transaccion_creada = "transaccion.creada"
 
-    # ── CR-S4 (2) → total 33 (C1 categorías administrables) ──
+    # ── CR-S4 (2) — C1 categorías administrables ──
     rubro_creado = "rubro.creado"
     rubro_editado = "rubro.editado"
 
+    # ── CR-S5 (3) → total 36 (C3 auto-clasificación) ──
+    regla_creada = "regla.creada"
+    regla_editada = "regla.editada"
+    regla_desactivada = "regla.desactivada"
 
-# Conjunto de los 33 valores canónicos (para validación/tests de completitud).
+
+# Conjunto de los 36 valores canónicos (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)
