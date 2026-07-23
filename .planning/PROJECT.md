@@ -34,7 +34,7 @@ fecha de pago a proveedores, seguimiento de IVA.
 
 | # | Capacidad | Estado |
 |---|---|---|
-| C1 | **Categorías administrables** (crear/editar/desactivar desde la app) | ❌ **FALTA** (solo semilla, sin CRUD) |
+| C1 | **Categorías administrables** (crear/editar/desactivar desde la app) | ⚠️ **Backend ✅** (CRUD `/rubros` + re-seed MODELO.md, GO Kimi 9.2/9.4, merge 126ac29); falta pantalla frontend (sin gate) y correr la migración del re-seed en prod |
 | C2 | Carga diaria de movimientos (parsers Bancolombia/BBVA/Global66) + persistencia en Mongo | ✅ (Global66/BBVA/Bancolombia parseados; carga por app con preservación pendiente C8) |
 | C3 | **Auto-clasificación** de los movimientos en sus categorías al cargar (reglas administrables) | ❌ **FALTA** (hoy todo → 'Por clasificar') |
 | C4 | Ajuste de caja disponible + conciliación por cuenta (que la info cuadre) | ✅ conciliación por banco + cierre; ⚠️ falta el ajuste de caja diario editable |
@@ -66,11 +66,16 @@ apertura de mes, motor del sugerido, acotamiento+aprobación, cierre+conciliaci�
 reapertura, Vista Control (backend+frontend). Todo con gate Kimi en los merges críticos.
 
 **Gaps que el CEO señaló como el corazón operativo (a priorizar):**
-1. **C1 — categorías administrables (CRUD de rubros).**
+1. ~~C1 backend~~ ✅ (2026-07-22, GO Kimi 9.4). Colas de C1: migración re-seed en
+   prod + pantalla frontend de administración (sin gate).
 2. **C3 — auto-clasificación de movimientos al cargar** (reglas administrables;
    semilla de reglas desde el mapeo categoría→rubro de `Base real egresos`).
+   Requiere PLAN → gate Kimi (auditará coherencia tipo_tx↔tipo_rubro + guarda de
+   inactivos en reglas automáticas).
 3. **C4 — ajuste diario de caja disponible.**
 4. Luego: **C5** vista combinada categoría×cuenta, y **C7** capa predictiva (el valor).
+También en vuelo del Sprint 4: S4-00, S4-06 (TOCTOU + test step-up), tardías (F-08),
+CR-001 ExtractoMensual.
 
 **Migración de datos reales:** Global66 abr–jul (ya preparado, reconciliado) — se
 carga por la app cuando C8 (preservación) esté resuelta. Data siempre persistente en Mongo.
