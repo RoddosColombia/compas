@@ -37,7 +37,7 @@ fecha de pago a proveedores, seguimiento de IVA.
 | C1 | **Categorías administrables** (crear/editar/desactivar desde la app) | ⚠️ **Backend ✅** (CRUD `/rubros` + re-seed MODELO.md, GO Kimi 9.2/9.4, merge 126ac29); falta pantalla frontend (sin gate) y correr la migración del re-seed en prod |
 | C2 | Carga diaria de movimientos (parsers Bancolombia/BBVA/Global66) + persistencia en Mongo | ✅ (Global66/BBVA/Bancolombia parseados; carga por app con preservación pendiente C8) |
 | C3 | **Auto-clasificación** de los movimientos en sus categorías al cargar (reglas administrables) | ⚠️ **Backend ✅** (reglas Spec §1.9 + carga + reclasificación + aplicar-pendientes, GO Kimi 9.3/9.4, merge 7253bd5; semilla ingresos→Recaudo en prod); falta pantalla de reglas (sin gate) + extensión semilla de egresos (mapeo real del CEO) |
-| C4 | Ajuste de caja disponible + conciliación por cuenta (que la info cuadre) | ✅ conciliación por banco + cierre; ⚠️ falta el ajuste de caja diario editable |
+| C4 | Ajuste de caja disponible + conciliación por cuenta (que la info cuadre) | ✅ **Backend ✅** conciliación por banco + cierre + **ajuste diario `PATCH /meses/{mes}/saldos`** (CR-S6, GO Kimi PLAN 9.3, merge 670ba4e con gate-waiver CEO 2026-07-23; auditoría Kimi de código retroactiva pend.); falta pantalla frontend (sin gate) |
 | C5 | Control del presupuesto **por categoría Y por cuenta** (como el Excel) | ⚠️ Vista Control por categoría ✅; por cuenta (conciliación) ✅; falta la vista combinada categoría×cuenta |
 | C6 | **Módulo de presupuesto inteligente**: preparar el presupuesto del mes siguiente (sugerido → acotar → aprobar) con base en ejecución + caja | ✅ (motor §1.4.1 + acotar + aprobar, GO Kimi) |
 | C7 | **Proyección de caja** + motor de ventas/recaudo discriminado (inicial vs cuota crédito) → objetivos de venta, umbral mayo-2027. **Modelos de moto administrables** (agregar modelo nuevo con su estructura de cobro de cuotas — requisito CEO) | ❌ **FALTA** (el valor final). Motor: `docs/modelo/PROYECCIONES.md` (simulador 2030) |
@@ -70,8 +70,11 @@ reapertura, Vista Control (backend+frontend). Todo con gate Kimi en los merges c
 2. ~~C3 backend~~ ✅ (2026-07-22, GO 9.3/9.4, merge 7253bd5; semilla ingresos en
    prod). Colas: pantalla de reglas (sin gate) + extensión semilla de egresos
    cuando el CEO comparta el mapeo real de `Base real egresos`.
-3. **C4 — ajuste diario de caja disponible** (PLAN → gate Kimi aparte).
-4. Luego: **C5** vista combinada categoría×cuenta, y **C7** capa predictiva (el valor).
+3. ~~C4 — ajuste diario de caja disponible~~ ✅ (2026-07-23, GO PLAN Kimi 9.3,
+   merge 670ba4e; gate de código bajo waiver CEO — Kimi ausente hasta 25-jul,
+   auditoría retroactiva pendiente). Cola: pantalla frontend de caja (sin gate).
+4. **S5-01 — Pagos de la semana** (ya puede leer la caja de C4) → PLAN → GO CEO.
+5. Luego: **C5** vista combinada categoría×cuenta, y **C7** capa predictiva (el valor).
 ~~S4-00, S4-06~~ ✅ deuda saldada (2026-07-23, PR #26 merge dea4a16, Kimi 9.5).
 También en vuelo: tardías (F-08), CR-001 ExtractoMensual, y el operativo hacia G3.
 Además la pantalla de reglas ya está viva (ReglasPage, sin gate).
