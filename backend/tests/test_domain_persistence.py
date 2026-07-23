@@ -10,7 +10,7 @@ from app.domain import DOMAIN_DOCUMENTS
 from app.domain.configuracion import Configuracion
 from app.domain.mes_control import MesControl
 from app.domain.rubro import Rubro
-from app.domain.seed import seed_configuracion, seed_rubros
+from app.domain.seed import seed_configuracion, seed_rubros, seed_rubros_reporte
 from beanie import init_beanie
 from mongomock_motor import AsyncMongoMockClient
 
@@ -49,14 +49,44 @@ async def test_configuracion_decimal_round_trip(db):
 
 
 async def test_seed_rubros_idempotente(db):
+    # Re-seed C1 (GO Kimi PLAN-I 9.2): 31 reales de MODELO.md + 3 de sistema = 34.
     n1 = await seed_rubros(db)
     total1 = await Rubro.find_all().count()
     n2 = await seed_rubros(db)  # segunda corrida: no debe duplicar
     total2 = await Rubro.find_all().count()
-    assert n1 == 33 and total1 == 33
-    assert n2 == 0 and total2 == 33
+    assert n1 == 34 and total1 == 34
+    assert n2 == 0 and total2 == 34
     sistema = await Rubro.find(Rubro.es_sistema == True).count()  # noqa: E712
     assert sistema == 3
+
+
+async def test_seed_rubros_no_pisa_ediciones(db):
+    # $setOnInsert: un doc existente con la misma llave (grupo,nombre) NO se toca
+    # aunque la semilla traiga otros valores (ediciones del Admin sobreviven).
+    await Rubro(grupo="operacion", nombre="Cafetería", orden=77).insert()
+    await seed_rubros(db)
+    got = await Rubro.find_one(Rubro.nombre == "Cafetería")
+    assert got.orden == 77  # el valor editado sobrevive al re-seed
+
+
+async def test_seed_rubros_reporte_de_colisiones(db):
+    # B-4 (Kimi PLAN-I C1): el re-seed REPORTA los (grupo,nombre) donde
+    # $setOnInsert omitió por doc preexistente — un doc viejo con tipo_flujo/orden
+    # distintos del mapeo de MODELO.md ya no pasa en silencio.
+    await Rubro(
+        grupo="operacion", nombre="Cafetería", orden=77, tipo_flujo="ingreso"
+    ).insert()
+    insertados, colisiones = await seed_rubros_reporte(db)
+    assert insertados == 33  # 34 - 1 preexistente
+    assert len(colisiones) == 1
+    col = colisiones[0]
+    assert (col["grupo"], col["nombre"]) == ("operacion", "Cafetería")
+    # El reporte trae lo EXISTENTE vs lo que la semilla habría puesto (verificable).
+    assert col["existente"]["tipo_flujo"] == "ingreso"
+    assert col["semilla"]["tipo_flujo"] == "egreso"
+    # Corrida limpia posterior: 0 nuevos, todas las llaves ya existen.
+    insertados2, colisiones2 = await seed_rubros_reporte(db)
+    assert insertados2 == 0 and len(colisiones2) == 34
 
 
 async def test_seed_configuracion_idempotente(db):

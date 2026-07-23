@@ -148,6 +148,24 @@ async def test_excluye_rubros_de_sistema(api):
     assert nombres_generados == 1  # solo Arriendos, no los de sistema
 
 
+async def test_excluye_rubros_inactivos(api):
+    # B-2b (Kimi PLAN-I C1): la baja lógica NO "gotea" — un rubro desactivado no
+    # vuelve a recibir línea en generaciones futuras (aunque tenga ejecutado real).
+    h = await _token(api)
+    jun = await _mes("2026-06-01", EstadoMes.CERRADO)
+    await _mes("2026-07-01", EstadoMes.SUGERIDO)
+    activo = await _rubro("Arriendos", 4)
+    inactivo = await _rubro("Renting", 5)
+    inactivo.activo = False
+    await inactivo.save()
+    await _ejec(inactivo.id, jun, "9000000")  # con historia y todo, se omite
+    r = await api.post("/api/v1/meses/2026-07/sugerido", json={}, headers=h)
+    assert r.status_code == 201
+    rubro_ids = {x["rubro_id"] for x in r.json()["lineas"]}
+    assert str(activo.id) in rubro_ids
+    assert str(inactivo.id) not in rubro_ids
+
+
 async def test_no_regenera_409(api):
     h = await _token(api)
     await _mes("2026-07-01", EstadoMes.SUGERIDO)

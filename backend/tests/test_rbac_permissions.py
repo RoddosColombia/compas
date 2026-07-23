@@ -20,6 +20,8 @@ CANONICA: dict[str, set[Role]] = {
     "facturas_emitidas:gestionar": {Role.financiero, Role.admin},
     "evidencia:ver": {Role.financiero, Role.admin},
     "capacidad_pago:ver": {Role.financiero, Role.directivo, Role.admin},
+    # CR-S4 (C1 categorías administrables): gestión del catálogo de rubros
+    "rubros:gestionar": {Role.financiero, Role.admin},
     # §2.4 — autoridad del ciclo (manda sobre §4.1)
     "ciclo:abrir": {Role.financiero, Role.directivo, Role.admin},
     "ciclo:proponer": {Role.financiero, Role.directivo, Role.admin},

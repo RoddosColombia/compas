@@ -1,12 +1,16 @@
 # backend/app/domain/rubro.py
-"""Rubro (Spec §1.2) + semilla real del Excel congelado.
+"""Rubro (Spec §1.2) + semilla real de la taxonomía del negocio.
 
-La semilla NO es de juguete: sale de `Flujo de pagos deudas.xlsx` (hoja
-'Presupuesto', fuente de verdad del negocio, PRD M1). Son las 31 categorías reales
-de RODDOS agrupadas en los 5 grupos + 2 rubros de sistema que no viven en el Excel:
-'Ajuste de conciliación' (cierre de mes, Spec §2.2.6) y 'Recaudo' (tipo INGRESO,
-Kimi B-1/S0B-05: destino de los abonos de cuotas, PRD M7). En total 33 rubros;
-3 de sistema ('Por clasificar', 'Ajuste de conciliación', 'Recaudo'), inmutables.
+La semilla NO es de juguete: es la taxonomía REAL de `docs/modelo/MODELO.md`
+(destilada de la hoja 'Base real egresos' de `Flujo de pagos deudas.xlsx`) — re-seed
+C1, GO Kimi PLAN-I 9.2. Son las 31 categorías reales de RODDOS en los 5 grupos + 3
+rubros de sistema inmutables: 'Por clasificar' (Spec §1.2), 'Ajuste de conciliación'
+(cierre de mes, Spec §2.2.6) y 'Recaudo' (tipo INGRESO, Kimi B-1/S0B-05: destino de
+los abonos de cuotas, PRD M7). En total 34 rubros.
+
+D3 (gate C1): las categorías viejas de la semilla anterior que ya existan en la BD
+NO se tocan ($setOnInsert) ni se borran — el CEO las depura desde la app (C1). El
+re-seed reporta las colisiones (B-4, ver `seed.py::seed_rubros_reporte`).
 """
 
 from enum import StrEnum
@@ -64,34 +68,38 @@ class Rubro(Document):
 
 
 def _seed() -> list[dict]:
-    """Catálogo real en el orden de la vista Control del Excel; `orden` global 1..32."""
+    """Taxonomía real de MODELO.md ('Base real egresos'); `orden` global 1..34.
+
+    Los 3 de sistema viven en 'otros' — MISMA llave (grupo,nombre) que los docs ya
+    sembrados en prod: el $setOnInsert los reconoce y no los duplica."""
     G = RubroGrupo
     por_grupo: list[tuple[RubroGrupo, list[str]]] = [
         (G.COSTO_PRODUCTO, ["Producto", "SOAT/Matrículas", "Seguros (Hunter)"]),
         (
             G.OPERACION,
             [
-                "Arriendos",
-                "Tecnología y software",
-                "Mobiliario/planta/equipo",
-                "Servicios públicos y telecom",
-                "Mercado y aseo",
-                "Cafetería",
                 "Transporte/peajes/combustible/parqueo",
+                "Cafetería",
+                "Mercado y aseo",
+                "Tecnología y software",
+                "Gastos de representación",
                 "Papelería",
                 "Marketing y publicidad",
-                "Gastos de representación",
-                "Renting",
+                "Servicios públicos y telecom",
+                "Mobiliario/planta/equipo",
+                "Viajes corporativos",
+                "Grúas y traslados",
+                "Dotación empleados",
+                "Freelance",
             ],
         ),
         (
             G.NOMINA,
             [
-                "Sueldos empleados",
                 "Sueldos directivos",
+                "Sueldos empleados",
                 "Bonificaciones",
                 "Beneficios Heads",
-                "Planillas nuevas",
                 "Planillas anteriores",
             ],
         ),
@@ -99,25 +107,23 @@ def _seed() -> list[dict]:
             G.DEUDAS_OBLIGACIONES,
             [
                 "Préstamos",
-                "Deudas tarjetas de crédito",
-                "Garantía cupo",
-                "Deudas impuestos",
                 "Deudas proveedores anteriores",
+                "Deudas tarjetas de crédito",
             ],
         ),
         (
             G.OTROS,
             [
+                "Impuestos",
                 "Otros gastos",
-                "Gastos notariales",
                 "Gastos bancarios",
                 "Gastos financieros",
-                "Impuestos",
-                "Por clasificar",  # de sistema (Spec §1.2)
+                "Asuntos legales",
+                "Gastos notariales",
+                "Arriendos",  # MODELO.md lo ubica en OTROS (antes: operación)
             ],
         ),
     ]
-    sistema = {"Por clasificar"}
     filas: list[dict] = []
     orden = 0
     for grupo, nombres in por_grupo:
@@ -130,36 +136,29 @@ def _seed() -> list[dict]:
                     "tipo_flujo": "egreso",
                     "orden": orden,
                     "activo": True,
-                    "es_sistema": nombre in sistema,
+                    "es_sistema": False,
                 }
             )
-    # 'Ajuste de conciliación': de sistema, exigido por el cierre (Spec §2.2.6);
-    # no vive en el Excel. Grupo 'otros'.
-    orden += 1
-    filas.append(
-        {
-            "grupo": G.OTROS.value,
-            "nombre": "Ajuste de conciliación",
-            "tipo_flujo": "egreso",
-            "orden": orden,
-            "activo": True,
-            "es_sistema": True,
-        }
-    )
-    # 'Recaudo': de sistema, tipo INGRESO (Kimi B-1 / S0B-05). Destino de los
-    # abonos de cuotas (regla PRD M7 'Abono' → ingreso recaudo); sin él, la
-    # clasificación automática de ingresos no tiene rubro. Tampoco vive en el Excel.
-    orden += 1
-    filas.append(
-        {
-            "grupo": G.OTROS.value,
-            "nombre": "Recaudo",
-            "tipo_flujo": "ingreso",
-            "orden": orden,
-            "activo": True,
-            "es_sistema": True,
-        }
-    )
+    # ── Rubros de sistema (inmutables; no viven en el Excel salvo Por clasificar) ──
+    # 'Por clasificar' (Spec §1.2): destino de todo movimiento sin clasificar.
+    # 'Ajuste de conciliación' (Spec §2.2.6): exigido por el cierre de mes.
+    # 'Recaudo' (Kimi B-1/S0B-05): INGRESO, destino de los abonos de cuotas (PRD M7).
+    for nombre, tipo in [
+        ("Por clasificar", "egreso"),
+        ("Ajuste de conciliación", "egreso"),
+        ("Recaudo", "ingreso"),
+    ]:
+        orden += 1
+        filas.append(
+            {
+                "grupo": G.OTROS.value,
+                "nombre": nombre,
+                "tipo_flujo": tipo,
+                "orden": orden,
+                "activo": True,
+                "es_sistema": True,
+            }
+        )
     return filas
 
 

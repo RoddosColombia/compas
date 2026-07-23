@@ -247,3 +247,16 @@ async def test_rubro_incoherente_con_tipo_422(api):
     recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo")
     r = await _post(ac, h, _body(tipo_flujo="egreso", rubro_id=str(recaudo.id)))
     assert r.status_code == 422
+
+
+async def test_clasificar_hacia_rubro_inactivo_422(api):
+    # B-2a (Kimi PLAN-I C1): la baja lógica impide clasificaciones NUEVAS hacia el
+    # rubro inactivo — la guarda vive aquí (crear_transaccion_manual) y aplicará
+    # igual a la futura auto-clasificación (C3).
+    ac, _ = api
+    h = await _token(ac)
+    inactivo = await Rubro(
+        grupo="operacion", nombre="Renting", orden=50, activo=False
+    ).insert()
+    r = await _post(ac, h, _body(rubro_id=str(inactivo.id)))
+    assert r.status_code == 422

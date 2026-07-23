@@ -22,6 +22,8 @@ PERMISSIONS: dict[str, frozenset[Role]] = {
     "facturas_emitidas:gestionar": frozenset({Role.financiero, Role.admin}),
     "evidencia:ver": frozenset({Role.financiero, Role.admin}),
     "capacidad_pago:ver": frozenset({Role.financiero, Role.directivo, Role.admin}),
+    # ── CR-S4 (C1 categorías administrables, GO Kimi PLAN-I 9.2) ──
+    "rubros:gestionar": frozenset({Role.financiero, Role.admin}),
     # ── Spec §2.4 (autoridad del ciclo mensual — manda sobre §4.1) ──
     "ciclo:abrir": frozenset({Role.financiero, Role.directivo, Role.admin}),
     "ciclo:proponer": frozenset({Role.financiero, Role.directivo, Role.admin}),
