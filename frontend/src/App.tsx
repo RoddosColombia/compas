@@ -14,6 +14,7 @@ import CajaPage from "@/pages/CajaPage";
 import CargasPage from "@/pages/CargasPage";
 import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
+import DatosPage from "@/pages/DatosPage";
 import EnConstruccion from "@/pages/EnConstruccion";
 import InicioPage from "@/pages/InicioPage";
 import LoginPage from "@/pages/LoginPage";
@@ -47,16 +48,6 @@ function Cockpit({ children }: { children: ReactNode }) {
     </Protegida>
   );
 }
-
-// Herramientas de captura que ya existen; se agrupan bajo "Datos" mientras la
-// vista definitiva de la Fase B las absorbe.
-const ENLACES_DATOS = [
-  { label: "Caja", path: "/caja" },
-  { label: "Cargas", path: "/cargas" },
-  { label: "Categorías", path: "/categorias" },
-  { label: "Reglas", path: "/reglas" },
-  { label: "Meses", path: "/meses" },
-];
 
 export default function App() {
   return (
@@ -139,11 +130,7 @@ export default function App() {
               path="/datos"
               element={
                 <Cockpit>
-                  <EnConstruccion
-                    vista="Datos"
-                    descripcion="Caja inicial y captura de supuestos y presupuestos."
-                    enlaces={ENLACES_DATOS}
-                  />
+                  <DatosPage />
                 </Cockpit>
               }
             />
