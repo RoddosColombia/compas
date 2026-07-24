@@ -20,7 +20,14 @@ de `miercolesDelMes` del artefacto.
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
+
+_CENTAVO = Decimal("0.01")
+
+
+def _cop(v: Decimal) -> Decimal:
+    """Cuantiza a COP 2 decimales HALF_EVEN (misma política que money_str)."""
+    return v.quantize(_CENTAVO, rounding=ROUND_HALF_EVEN)
 
 # Día de la semana de cobro, convención date.weekday(): 0=lunes … 6=domingo.
 # Miércoles = 2 (la semana 1 del 'Modelo Pagos' es el miércoles 2026-03-04).
@@ -212,3 +219,40 @@ def cuotas_iniciales_mensual(
         )
         out.append(v)
     return out
+
+
+@dataclass(frozen=True)
+class AjusteMora:
+    """Ajustes de cartera sobre el ingreso bruto de un mes. CAJA VERAZ (decisión CEO
+    2026-07-23): `neto` = bruto + mora + recuperación + default. La `provision` (NIIF
+    9) se calcula para P&G / economía unitaria pero NO entra al flujo de caja."""
+
+    mora: Decimal
+    recuperacion: Decimal
+    default: Decimal
+    neto: Decimal
+    provision: Decimal
+
+
+def neto_por_mora(
+    bruto: Decimal,
+    pct_mora: Decimal,
+    pct_recuperacion: Decimal,
+    pct_default: Decimal,
+    pct_provision: Decimal = Decimal("0"),
+) -> AjusteMora:
+    """Aplica mora/recuperación/default al bruto (réplica FC filas 17-20 del artefacto,
+    MENOS la provisión, que sale del flujo por 'caja veraz'). Los porcentajes son el
+    valor del escenario por defecto; el motor los deja editar mes a mes."""
+    mora = -bruto * pct_mora
+    recuperacion = -mora * pct_recuperacion  # recupera parte de la mora
+    default = -bruto * pct_default
+    provision = -bruto * pct_provision
+    neto = bruto + mora + recuperacion + default
+    return AjusteMora(
+        mora=_cop(mora),
+        recuperacion=_cop(recuperacion),
+        default=_cop(default),
+        neto=_cop(neto),
+        provision=_cop(provision),
+    )

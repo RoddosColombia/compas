@@ -17,6 +17,7 @@ from app.proyeccion.motor import (
     cuotas_iniciales_mensual,
     dias_de_cobro_del_mes,
     indice_semana,
+    neto_por_mora,
     recaudo_credito_mensual,
     semanas_de_cobro,
 )
@@ -127,3 +128,39 @@ def test_dos_modelos_split_por_mix_base_absorbe_resto():
     )
     iniciales = cuotas_iniciales_mensual([10], [base, apache])
     assert iniciales == [Decimal("13000")]
+
+
+# ── Mora / default: CAJA VERAZ (provisión NIIF 9 NO resta caja — decisión CEO) ──
+
+
+def test_neto_por_mora_caja_veraz_excluye_provision():
+    # bruto=1000, mora 3%, recuperación 40%, default 3%, provisión 2%.
+    #   mora = -30 · recu = +12 (40% de 30) · def = -30
+    #   neto = 1000 - 30 + 12 - 30 = 952  (la provisión NO entra)
+    a = neto_por_mora(
+        bruto=Decimal("1000"),
+        pct_mora=Decimal("0.03"),
+        pct_recuperacion=Decimal("0.40"),
+        pct_default=Decimal("0.03"),
+        pct_provision=Decimal("0.02"),
+    )
+    assert a.mora == Decimal("-30")
+    assert a.recuperacion == Decimal("12.00")
+    assert a.default == Decimal("-30")
+    assert a.neto == Decimal("952.00")
+    # provisión se calcula para P&G/NIIF 9 pero NO afecta el neto de caja.
+    assert a.provision == Decimal("-20")
+    # prueba de no-regresión: si la provisión entrara al flujo, neto sería 932.
+    assert a.neto != Decimal("932.00")
+
+
+def test_neto_por_mora_sin_ajustes_es_el_bruto():
+    a = neto_por_mora(
+        bruto=Decimal("1000"),
+        pct_mora=Decimal("0"),
+        pct_recuperacion=Decimal("0"),
+        pct_default=Decimal("0"),
+        pct_provision=Decimal("0"),
+    )
+    assert a.neto == Decimal("1000.00")
+    assert a.provision == Decimal("0.00")
