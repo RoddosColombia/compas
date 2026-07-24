@@ -8,12 +8,17 @@
 import { apiJson } from "@/lib/api";
 
 export type TipoFlujo = "egreso" | "ingreso";
+export type TipoRubro = "fijo" | "variable";
 
 export interface Rubro {
   id: string;
   grupo: string;
   nombre: string;
   tipo_flujo: TipoFlujo;
+  /** Código jerárquico del plan de cuentas (p. ej. "2070"); null si no aplica. */
+  codigo: string | null;
+  /** Fijo/Variable — rigor del gasto (ARQUITECTURA_PRESUPUESTAL); null en sistema. */
+  tipo: TipoRubro | null;
   orden: number;
   activo: boolean;
   es_sistema: boolean;
@@ -23,6 +28,8 @@ export interface RubroCrearInput {
   grupo: string;
   nombre: string;
   tipo_flujo: TipoFlujo;
+  codigo?: string;
+  tipo?: TipoRubro;
 }
 
 export interface RubroEditarInput {
@@ -30,6 +37,8 @@ export interface RubroEditarInput {
   nombre?: string;
   orden?: number;
   tipo_flujo?: TipoFlujo;
+  codigo?: string;
+  tipo?: TipoRubro;
   /** Solo true (reactivar, B-3); la baja va por desactivarRubro. */
   activo?: true;
 }
@@ -65,9 +74,10 @@ export async function reactivarRubro(id: string): Promise<Rubro> {
   return editarRubro({ id, activo: true });
 }
 
-/** Agrupa en los 5 grupos (§1.2), respetando `orden` dentro de cada grupo. */
+/** Agrupa en los 6 grupos del plan de cuentas, respetando `orden` en cada uno. */
 export function agruparRubros(rubros: Rubro[]): Map<string, Rubro[]> {
   const orden = [
+    "ingresos_operativos",
     "costo_producto",
     "operacion",
     "nomina",

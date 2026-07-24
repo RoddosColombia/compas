@@ -44,13 +44,15 @@ export interface VistaControl {
   sin_presupuesto: SinPresupuesto[];
 }
 
-// Etiquetas de presentación de los 5 grupos (§1.2).
+// Etiquetas de presentación de los 6 grupos del plan de cuentas
+// (ARQUITECTURA_PRESUPUESTAL: 0000 ingresos → 5000 otros).
 export const GRUPO_LABEL: Record<string, string> = {
+  ingresos_operativos: "Ingresos operativos",
   costo_producto: "Costo de producto",
   operacion: "Operación",
   nomina: "Nómina",
   deudas_obligaciones: "Deudas y obligaciones",
-  otros: "Otros",
+  otros: "Otros y varios",
 };
 
 export async function vistaControl(mes: string): Promise<VistaControl> {
