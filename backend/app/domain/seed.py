@@ -82,8 +82,8 @@ async def seed_configuracion(db: Any) -> int:
 # ── C3: semilla de reglas de clasificación (GO Kimi PLAN-I 9.3) ──────────────
 #
 # SOLO patrones genéricos — NUNCA nombres de personas (Ley 1581, Kimi §3): las
-# genéricas de ingreso 'Abono'/'Recibido de' → 'Recaudo' (PRD M7 / MODELO §C3),
-# prioridad alta. Los patrones de egreso (comercios del mapeo de `Base real
+# genéricas de ingreso 'Abono'/'Recibido de' → 'Recaudo de cartera' (PRD M7 /
+# MODELO §C3), prioridad alta. Los patrones de egreso (comercios del mapeo de `Base real
 # egresos`) se cargan desde la app o en una extensión de esta lista cuando el
 # CEO comparta el mapeo (dato real, vive fuera del repo). origen='manual':
 # curaduría, no aprendizaje.
@@ -91,14 +91,14 @@ SEMILLA_REGLAS: list[dict] = [
     {
         "patron": "Abono",
         "tipo_flujo": "ingreso",
-        "rubro_nombre": "Recaudo",
+        "rubro_nombre": "Recaudo de cartera",
         "prioridad": 1,
         "origen": "manual",
     },
     {
         "patron": "Recibido de",
         "tipo_flujo": "ingreso",
-        "rubro_nombre": "Recaudo",
+        "rubro_nombre": "Recaudo de cartera",
         "prioridad": 2,
         "origen": "manual",
     },
