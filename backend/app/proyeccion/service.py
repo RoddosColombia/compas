@@ -81,9 +81,10 @@ def _armar_parametros(
     )
 
 
-def _serializar(r: ResultadoProyeccion, escenario: str) -> dict:
+def _serializar(r: ResultadoProyeccion, escenario: str, caja_minima) -> dict:
     return {
         "escenario": escenario,
+        "caja_minima": money_str(caja_minima),  # el umbral (para la curva del front)
         "piso_caja": money_str(r.piso_caja),
         "mes_mas_ajustado": r.mes_mas_ajustado,
         "meses_bajo_minimo": r.meses_bajo_minimo,
@@ -138,4 +139,4 @@ async def proyectar_vigente(
             f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
         )
     pm = _armar_parametros(params, modelos, escenario, mes_inicio, horizonte)
-    return _serializar(proyectar(pm), escenario)
+    return _serializar(proyectar(pm), escenario, params.caja_minima)
