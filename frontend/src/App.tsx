@@ -21,6 +21,7 @@ import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
 import ProyeccionPage from "@/pages/ProyeccionPage";
 import ReglasPage from "@/pages/ReglasPage";
+import ScenariosPage from "@/pages/ScenariosPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -78,10 +79,7 @@ export default function App() {
               path="/escenarios"
               element={
                 <Cockpit>
-                  <EnConstruccion
-                    vista="Escenarios"
-                    descripcion="Comparar pesimista, base y optimista superpuestos."
-                  />
+                  <ScenariosPage />
                 </Cockpit>
               }
             />
