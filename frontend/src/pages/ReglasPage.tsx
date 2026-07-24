@@ -12,7 +12,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
 import {
   type Regla,
   type ResultadoAplicar,
@@ -69,97 +72,100 @@ export default function ReglasPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">Reglas de clasificación</h2>
-          <p className="text-xs text-slate-400">
-            Primera regla que coincide (por prioridad) clasifica el movimiento;
-            sin coincidencia → «Por clasificar»
-          </p>
-        </div>
-        {gestiona && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={aplicar.isPending}
-            onClick={() => aplicar.mutate()}
-          >
-            {aplicar.isPending ? "Aplicando…" : "Aplicar a pendientes"}
-          </Button>
-        )}
-      </header>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        titulo="Reglas"
+        descripcion="Primera regla que coincide (por prioridad) clasifica el movimiento; sin coincidencia → «Por clasificar»."
+        acciones={
+          gestiona ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={aplicar.isPending}
+              onClick={() => aplicar.mutate()}
+            >
+              {aplicar.isPending ? "Aplicando…" : "Aplicar a pendientes"}
+            </Button>
+          ) : undefined
+        }
+      />
 
-      {mensaje && (
-        <p className="rounded-md bg-alert/10 px-3 py-2 text-sm text-alert">
-          {mensaje}
-        </p>
-      )}
+      {mensaje && <AlertBanner variant="danger">{mensaje}</AlertBanner>}
 
       {reporte && (
-        <div className="rounded-md bg-turq/10 px-3 py-2 text-sm text-slate-700">
-          <span className="font-medium text-turq">Aplicado:</span>{" "}
+        <Card className="font-sans text-sm text-ink-soft">
+          <span className="font-semibold text-cyan">Aplicado:</span>{" "}
           {reporte.clasificadas} clasificadas · {reporte.sin_match} sin
           coincidencia
           {reporte.reglas_con_rubro_inactivo.length > 0 && (
             <>
               {" "}
               ·{" "}
-              <span className="font-medium text-warn">
+              <span className="font-semibold text-amber">
                 reglas con categoría inactiva:
               </span>{" "}
               {reporte.reglas_con_rubro_inactivo.join(" · ")}
             </>
           )}
-        </div>
+        </Card>
       )}
 
       {(reglas.isLoading || rubros.isLoading) && (
-        <p className="text-sm text-slate-500">Cargando reglas…</p>
+        <p className="font-sans text-sm text-ink-soft">Cargando reglas…</p>
       )}
       {reglas.isError && (
-        <p className="text-sm text-alert">No se pudieron cargar las reglas.</p>
+        <AlertBanner variant="danger">
+          No se pudieron cargar las reglas.
+        </AlertBanner>
       )}
 
       {reglas.data && rubros.data && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="py-2 pr-4">Patrón (contiene)</th>
-                <th className="py-2 pr-4">Categoría destino</th>
-                <th className="py-2 pr-4 text-right">Prioridad</th>
-                <th className="py-2 pr-4">Origen</th>
-                <th className="py-2 pr-4">Estado</th>
-                {gestiona && <th className="py-2 pr-4">Acciones</th>}
-              </tr>
-            </thead>
-            <tbody>
-              <BloqueTipo
-                titulo="Egresos"
-                filas={egresos}
-                rubroPorId={rubroPorId}
-                rubros={rubros.data}
-                gestiona={gestiona}
-                onEditar={(i) => editar.mutate(i)}
-                onDesactivar={(id) => desactivar.mutate(id)}
-                onReactivar={(id) => reactivar.mutate(id)}
-                onAprobar={(id) => aprobar.mutate(id)}
-              />
-              <BloqueTipo
-                titulo="Ingresos"
-                filas={ingresos}
-                rubroPorId={rubroPorId}
-                rubros={rubros.data}
-                gestiona={gestiona}
-                onEditar={(i) => editar.mutate(i)}
-                onDesactivar={(id) => desactivar.mutate(id)}
-                onReactivar={(id) => reactivar.mutate(id)}
-                onAprobar={(id) => aprobar.mutate(id)}
-              />
-            </tbody>
-          </table>
-        </div>
+        <Card className="overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full font-sans text-sm">
+              <thead>
+                <tr className="border-b border-hairline text-left text-ink-faint">
+                  <th className="px-4 py-2.5 font-semibold">
+                    Patrón (contiene)
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold">
+                    Categoría destino
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-semibold">
+                    Prioridad
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold">Origen</th>
+                  <th className="px-4 py-2.5 font-semibold">Estado</th>
+                  {gestiona && <th className="px-4 py-2.5 font-semibold" />}
+                </tr>
+              </thead>
+              <tbody>
+                <BloqueTipo
+                  titulo="Egresos"
+                  filas={egresos}
+                  rubroPorId={rubroPorId}
+                  rubros={rubros.data}
+                  gestiona={gestiona}
+                  onEditar={(i) => editar.mutate(i)}
+                  onDesactivar={(id) => desactivar.mutate(id)}
+                  onReactivar={(id) => reactivar.mutate(id)}
+                  onAprobar={(id) => aprobar.mutate(id)}
+                />
+                <BloqueTipo
+                  titulo="Ingresos"
+                  filas={ingresos}
+                  rubroPorId={rubroPorId}
+                  rubros={rubros.data}
+                  gestiona={gestiona}
+                  onEditar={(i) => editar.mutate(i)}
+                  onDesactivar={(id) => desactivar.mutate(id)}
+                  onReactivar={(id) => reactivar.mutate(id)}
+                  onAprobar={(id) => aprobar.mutate(id)}
+                />
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {gestiona && rubros.data && (
@@ -197,10 +203,10 @@ function BloqueTipo({
   const cols = resto.gestiona ? 6 : 5;
   return (
     <>
-      <tr className="bg-slate-50">
+      <tr className="bg-surface-muted">
         <td
           colSpan={cols}
-          className="py-1.5 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
         >
           {titulo}
         </td>
@@ -250,21 +256,24 @@ function FilaRegla({
     setEditando(false);
   }
 
+  const inputCls =
+    "rounded-md border border-hairline bg-surface px-2 py-1 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan";
+
   if (editando) {
     return (
-      <tr className="border-b border-slate-100 bg-turq/5">
-        <td className="py-2 pr-4">
+      <tr className="border-b border-hairline/60 bg-cyan-tint">
+        <td className="px-4 py-2">
           <input
-            className="w-full rounded-md border border-slate-300 px-2 py-1"
+            className={`w-full ${inputCls}`}
             value={patron}
             maxLength={120}
             aria-label={`Patrón de ${regla.patron}`}
             onChange={(e) => setPatron(e.target.value)}
           />
         </td>
-        <td className="py-2 pr-4">
+        <td className="px-4 py-2">
           <select
-            className="rounded-md border border-slate-300 px-2 py-1"
+            className={inputCls}
             value={rubroId}
             aria-label={`Destino de ${regla.patron}`}
             onChange={(e) => setRubroId(e.target.value)}
@@ -276,21 +285,21 @@ function FilaRegla({
             ))}
           </select>
         </td>
-        <td className="py-2 pr-4 text-right">
+        <td className="px-4 py-2 text-right">
           <input
-            className="w-16 rounded-md border border-slate-300 px-2 py-1 text-right"
+            className={`w-16 text-right ${inputCls}`}
             value={prioridad}
             inputMode="numeric"
             aria-label={`Prioridad de ${regla.patron}`}
             onChange={(e) => setPrioridad(e.target.value)}
           />
         </td>
-        <td className="py-2 pr-4 text-xs text-slate-500">{regla.origen}</td>
-        <td className="py-2 pr-4">
+        <td className="px-4 py-2 text-xs text-ink-soft">{regla.origen}</td>
+        <td className="px-4 py-2">
           <EstadoBadge regla={regla} rubroInactivo={rubroInactivo} />
         </td>
-        <td className="flex gap-2 py-2 pr-4">
-          <Button size="sm" onClick={guardar}>
+        <td className="flex gap-2 px-4 py-2">
+          <Button size="sm" variant="cyan" onClick={guardar}>
             Guardar
           </Button>
           <Button
@@ -312,29 +321,35 @@ function FilaRegla({
 
   return (
     <tr
-      className={`border-b border-slate-100 ${regla.activa ? "" : "text-slate-400"}`}
+      className={`border-b border-hairline/60 ${regla.activa ? "" : "text-ink-faint"}`}
     >
-      <td className="py-2 pr-4 font-mono text-xs">{regla.patron}</td>
-      <td className="py-2 pr-4">
+      <td className="tabular px-4 py-2 text-xs text-ink">{regla.patron}</td>
+      <td className="px-4 py-2 text-ink">
         {rubro?.nombre ?? regla.rubro_id}
         {rubroInactivo && (
           <span
-            className="ml-2 rounded-full bg-warn/20 px-2 py-0.5 text-xs font-medium text-warn"
+            className="ml-2 rounded-full bg-amber/10 px-2 py-0.5 text-xs font-medium text-amber"
             title="La regla se salta al clasificar (D2): su categoría está inactiva"
           >
             categoría inactiva
           </span>
         )}
       </td>
-      <td className="py-2 pr-4 text-right font-mono">{regla.prioridad}</td>
-      <td className="py-2 pr-4 text-xs text-slate-500">{regla.origen}</td>
-      <td className="py-2 pr-4">
+      <td className="tabular px-4 py-2 text-right text-ink-soft">
+        {regla.prioridad}
+      </td>
+      <td className="px-4 py-2 text-xs text-ink-soft">{regla.origen}</td>
+      <td className="px-4 py-2">
         <EstadoBadge regla={regla} rubroInactivo={rubroInactivo} />
       </td>
       {gestiona && (
-        <td className="flex gap-2 py-2 pr-4">
+        <td className="flex gap-2 px-4 py-2">
           {propuesta && (
-            <Button size="sm" onClick={() => onAprobar(regla.id)}>
+            <Button
+              size="sm"
+              variant="cyan"
+              onClick={() => onAprobar(regla.id)}
+            >
               Aprobar
             </Button>
           )}
@@ -351,7 +366,11 @@ function FilaRegla({
             </Button>
           ) : (
             !propuesta && (
-              <Button size="sm" onClick={() => onReactivar(regla.id)}>
+              <Button
+                size="sm"
+                variant="cyan"
+                onClick={() => onReactivar(regla.id)}
+              >
                 Reactivar
               </Button>
             )
@@ -371,27 +390,27 @@ function EstadoBadge({
 }) {
   if (regla.origen === "aprendida" && !regla.activa) {
     return (
-      <span className="rounded-full bg-warn/20 px-2 py-0.5 text-xs font-medium text-warn">
+      <span className="rounded-full bg-amber/10 px-2 py-0.5 text-xs font-medium text-amber">
         Propuesta
       </span>
     );
   }
   if (!regla.activa) {
     return (
-      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+      <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-faint">
         Inactiva
       </span>
     );
   }
   if (rubroInactivo) {
     return (
-      <span className="rounded-full bg-warn/20 px-2 py-0.5 text-xs font-medium text-warn">
+      <span className="rounded-full bg-amber/10 px-2 py-0.5 text-xs font-medium text-amber">
         Sin efecto
       </span>
     );
   }
   return (
-    <span className="rounded-full bg-brand-soft/20 px-2 py-0.5 text-xs font-medium text-brand">
+    <span className="rounded-full bg-green/10 px-2 py-0.5 text-xs font-medium text-green">
       Activa
     </span>
   );
@@ -434,64 +453,71 @@ function FormNueva({
     setPatron("");
   }
 
+  const inputCls =
+    "rounded-md border border-hairline bg-surface px-2 py-1.5 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan";
+
   return (
-    <form
-      onSubmit={enviar}
-      className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 p-4"
-    >
-      <p className="w-full text-sm font-medium">Nueva regla</p>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Tipo
-        <select
-          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={tipo}
-          onChange={(e) => {
-            setTipo(e.target.value as TipoFlujo);
-            setRubroId("");
-          }}
+    <Card>
+      <CardTitle>Nueva regla</CardTitle>
+      <form onSubmit={enviar} className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Tipo
+          <select
+            className={inputCls}
+            value={tipo}
+            onChange={(e) => {
+              setTipo(e.target.value as TipoFlujo);
+              setRubroId("");
+            }}
+          >
+            <option value="egreso">Egreso</option>
+            <option value="ingreso">Ingreso</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Si la descripción contiene…
+          <input
+            className={`w-64 ${inputCls}`}
+            value={patron}
+            minLength={3}
+            maxLength={120}
+            placeholder="mín. 3 caracteres"
+            onChange={(e) => setPatron(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Clasificar en
+          <select
+            className={inputCls}
+            value={rubroId}
+            onChange={(e) => setRubroId(e.target.value)}
+          >
+            <option value="">— categoría —</option>
+            {destinos.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Prioridad
+          <input
+            className={`w-20 text-right ${inputCls}`}
+            value={prioridad}
+            inputMode="numeric"
+            onChange={(e) => setPrioridad(e.target.value)}
+          />
+        </label>
+        <Button
+          type="submit"
+          variant="cyan"
+          size="sm"
+          disabled={creando || !valido}
         >
-          <option value="egreso">Egreso</option>
-          <option value="ingreso">Ingreso</option>
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Si la descripción contiene…
-        <input
-          className="w-64 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={patron}
-          minLength={3}
-          maxLength={120}
-          placeholder="mín. 3 caracteres"
-          onChange={(e) => setPatron(e.target.value)}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Clasificar en
-        <select
-          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={rubroId}
-          onChange={(e) => setRubroId(e.target.value)}
-        >
-          <option value="">— categoría —</option>
-          {destinos.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.nombre}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Prioridad
-        <input
-          className="w-20 rounded-md border border-slate-300 px-2 py-1.5 text-right text-sm text-slate-800"
-          value={prioridad}
-          inputMode="numeric"
-          onChange={(e) => setPrioridad(e.target.value)}
-        />
-      </label>
-      <Button type="submit" size="sm" disabled={creando || !valido}>
-        {creando ? "Creando…" : "Crear"}
-      </Button>
-    </form>
+          {creando ? "Creando…" : "Crear"}
+        </Button>
+      </form>
+    </Card>
   );
 }

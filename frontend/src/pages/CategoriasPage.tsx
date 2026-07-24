@@ -11,7 +11,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
 import { GRUPO_LABEL } from "@/lib/control";
 import {
   type Rubro,
@@ -33,6 +36,9 @@ interface EditarInput {
   codigo?: string;
   tipo?: TipoRubro;
 }
+
+const INPUT_CLASS =
+  "rounded-md border border-hairline bg-surface px-3 py-1.5 font-sans text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan";
 
 export default function CategoriasPage() {
   const { puede } = useAuth();
@@ -62,58 +68,57 @@ export default function CategoriasPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Categorías</h2>
-        <p className="text-xs text-slate-400">
-          El plan de cuentas del presupuesto — código, grupo y clase
-          (fijo/variable)
-        </p>
-      </header>
+      <PageHeader
+        titulo="Categorías"
+        descripcion="El plan de cuentas del presupuesto — código, grupo y clase (fijo/variable)"
+      />
 
-      {mensaje && (
-        <p className="rounded-md bg-alert/10 px-3 py-2 text-sm text-alert">
-          {mensaje}
-        </p>
-      )}
+      {mensaje && <AlertBanner variant="danger">{mensaje}</AlertBanner>}
 
       {rubros.isLoading && (
-        <p className="text-sm text-slate-500">Cargando categorías…</p>
+        <p className="font-sans text-sm text-ink-soft">Cargando categorías…</p>
       )}
       {rubros.isError && (
-        <p className="text-sm text-alert">
+        <AlertBanner variant="danger">
           No se pudieron cargar las categorías.
-        </p>
+        </AlertBanner>
       )}
 
       {grupos && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="py-2 pr-4">Código</th>
-                <th className="py-2 pr-4">Categoría</th>
-                <th className="py-2 pr-4">Naturaleza</th>
-                <th className="py-2 pr-4">Clase</th>
-                <th className="py-2 pr-4 text-right">Orden</th>
-                <th className="py-2 pr-4">Estado</th>
-                {gestiona && <th className="py-2 pr-4">Acciones</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {[...grupos.entries()].map(([grupo, filas]) => (
-                <GrupoBloque
-                  key={grupo}
-                  grupo={grupo}
-                  filas={filas}
-                  gestiona={gestiona}
-                  onEditar={(input) => editar.mutate(input)}
-                  onDesactivar={(id) => desactivar.mutate(id)}
-                  onReactivar={(id) => reactivar.mutate(id)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Card className="overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full font-sans text-sm">
+              <thead>
+                <tr className="border-b border-hairline text-left text-ink-faint">
+                  <th className="px-4 py-2.5 font-semibold">Código</th>
+                  <th className="px-4 py-2.5 font-semibold">Categoría</th>
+                  <th className="px-4 py-2.5 font-semibold">Naturaleza</th>
+                  <th className="px-4 py-2.5 font-semibold">Clase</th>
+                  <th className="px-4 py-2.5 text-right font-semibold">
+                    Orden
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold">Estado</th>
+                  {gestiona && (
+                    <th className="px-4 py-2.5 font-semibold">Acciones</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {[...grupos.entries()].map(([grupo, filas]) => (
+                  <GrupoBloque
+                    key={grupo}
+                    grupo={grupo}
+                    filas={filas}
+                    gestiona={gestiona}
+                    onEditar={(input) => editar.mutate(input)}
+                    onDesactivar={(id) => desactivar.mutate(id)}
+                    onReactivar={(id) => reactivar.mutate(id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {gestiona && (
@@ -144,10 +149,10 @@ function GrupoBloque({
   const cols = gestiona ? 7 : 6;
   return (
     <>
-      <tr className="bg-slate-50">
+      <tr className="bg-surface-muted">
         <td
           colSpan={cols}
-          className="py-1.5 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo] ?? grupo}
         </td>
@@ -167,11 +172,13 @@ function GrupoBloque({
 }
 
 function ClaseBadge({ tipo }: { tipo: TipoRubro | null }) {
-  if (tipo === null) return <span className="text-xs text-slate-400">—</span>;
+  if (tipo === null) return <span className="text-xs text-ink-faint">—</span>;
   return (
     <span
       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-        tipo === "fijo" ? "bg-slate-200 text-slate-700" : "bg-turq/15 text-turq"
+        tipo === "fijo"
+          ? "bg-surface-muted text-ink-soft"
+          : "bg-cyan/10 text-cyan"
       }`}
     >
       {tipo === "fijo" ? "Fijo" : "Variable"}
@@ -215,27 +222,27 @@ function FilaRubro({
 
   if (editando) {
     return (
-      <tr className="border-b border-slate-100 bg-turq/5">
-        <td className="py-2 pr-4">
+      <tr className="border-b border-hairline/60 bg-cyan/5">
+        <td className="px-4 py-2">
           <input
-            className="w-16 rounded-md border border-slate-300 px-2 py-1 font-mono"
+            className={`${INPUT_CLASS} tabular w-16`}
             value={codigo}
             maxLength={8}
             aria-label={`Código de ${rubro.nombre}`}
             onChange={(e) => setCodigo(e.target.value)}
           />
         </td>
-        <td className="py-2 pr-4">
+        <td className="px-4 py-2">
           <input
-            className="w-full rounded-md border border-slate-300 px-2 py-1"
+            className={`${INPUT_CLASS} w-full`}
             value={nombre}
             aria-label={`Nombre de ${rubro.nombre}`}
             onChange={(e) => setNombre(e.target.value)}
           />
         </td>
-        <td className="py-2 pr-4">
+        <td className="px-4 py-2">
           <select
-            className="rounded-md border border-slate-300 px-2 py-1"
+            className={INPUT_CLASS}
             value={flujo}
             aria-label={`Naturaleza de ${rubro.nombre}`}
             onChange={(e) => setFlujo(e.target.value as TipoFlujo)}
@@ -244,9 +251,9 @@ function FilaRubro({
             <option value="ingreso">Ingreso</option>
           </select>
         </td>
-        <td className="py-2 pr-4">
+        <td className="px-4 py-2">
           <select
-            className="rounded-md border border-slate-300 px-2 py-1"
+            className={INPUT_CLASS}
             value={clase}
             aria-label={`Clase de ${rubro.nombre}`}
             onChange={(e) => setClase(e.target.value as TipoRubro | "")}
@@ -256,20 +263,20 @@ function FilaRubro({
             <option value="variable">Variable</option>
           </select>
         </td>
-        <td className="py-2 pr-4 text-right">
+        <td className="px-4 py-2 text-right">
           <input
-            className="w-16 rounded-md border border-slate-300 px-2 py-1 text-right"
+            className={`${INPUT_CLASS} tabular w-16 text-right`}
             value={orden}
             inputMode="numeric"
             aria-label={`Orden de ${rubro.nombre}`}
             onChange={(e) => setOrden(e.target.value)}
           />
         </td>
-        <td className="py-2 pr-4">
+        <td className="px-4 py-2">
           <EstadoBadge rubro={rubro} />
         </td>
-        <td className="flex gap-2 py-2 pr-4">
-          <Button size="sm" onClick={guardar}>
+        <td className="flex gap-2 px-4 py-2">
+          <Button size="sm" variant="cyan" onClick={guardar}>
             Guardar
           </Button>
           <Button
@@ -293,34 +300,32 @@ function FilaRubro({
 
   return (
     <tr
-      className={`border-b border-slate-100 ${rubro.activo ? "" : "text-slate-400"}`}
+      className={`border-b border-hairline/60 ${rubro.activo ? "" : "text-ink-faint"}`}
     >
-      <td className="py-2 pr-4 font-mono text-slate-500">
-        {rubro.codigo ?? "—"}
-      </td>
-      <td className="py-2 pr-4">{rubro.nombre}</td>
-      <td className="py-2 pr-4">
+      <td className="tabular px-4 py-2 text-ink-soft">{rubro.codigo ?? "—"}</td>
+      <td className="px-4 py-2 text-ink">{rubro.nombre}</td>
+      <td className="px-4 py-2">
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
             rubro.tipo_flujo === "ingreso"
-              ? "bg-brand-soft/20 text-brand"
-              : "bg-slate-100 text-slate-600"
+              ? "bg-green/10 text-green"
+              : "bg-surface-muted text-ink-soft"
           }`}
         >
           {rubro.tipo_flujo === "ingreso" ? "Ingreso" : "Egreso"}
         </span>
       </td>
-      <td className="py-2 pr-4">
+      <td className="px-4 py-2">
         <ClaseBadge tipo={rubro.tipo} />
       </td>
-      <td className="py-2 pr-4 text-right font-mono">{rubro.orden}</td>
-      <td className="py-2 pr-4">
+      <td className="tabular px-4 py-2 text-right">{rubro.orden}</td>
+      <td className="px-4 py-2">
         <EstadoBadge rubro={rubro} />
       </td>
       {gestiona && (
-        <td className="flex gap-2 py-2 pr-4">
+        <td className="flex gap-2 px-4 py-2">
           {rubro.es_sistema ? (
-            <span className="text-xs italic text-slate-400">Inmutable</span>
+            <span className="text-xs italic text-ink-faint">Inmutable</span>
           ) : (
             <>
               <Button
@@ -339,7 +344,11 @@ function FilaRubro({
                   Desactivar
                 </Button>
               ) : (
-                <Button size="sm" onClick={() => onReactivar(rubro.id)}>
+                <Button
+                  size="sm"
+                  variant="cyan"
+                  onClick={() => onReactivar(rubro.id)}
+                >
                   Reactivar
                 </Button>
               )}
@@ -354,17 +363,17 @@ function FilaRubro({
 function EstadoBadge({ rubro }: { rubro: Rubro }) {
   if (rubro.es_sistema) {
     return (
-      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+      <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-soft">
         Sistema
       </span>
     );
   }
   return rubro.activo ? (
-    <span className="rounded-full bg-brand-soft/20 px-2 py-0.5 text-xs font-medium text-brand">
+    <span className="rounded-full bg-green/10 px-2 py-0.5 text-xs font-medium text-green">
       Activa
     </span>
   ) : (
-    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+    <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-faint">
       Inactiva
     </span>
   );
@@ -404,70 +413,74 @@ function FormNueva({
   }
 
   return (
-    <form
-      onSubmit={enviar}
-      className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 p-4"
-    >
-      <p className="w-full text-sm font-medium">Nueva categoría</p>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Grupo
-        <select
-          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={grupo}
-          onChange={(e) => setGrupo(e.target.value)}
+    <Card>
+      <form onSubmit={enviar} className="flex flex-wrap items-end gap-3">
+        <CardTitle className="w-full">Nueva categoría</CardTitle>
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Grupo
+          <select
+            className={INPUT_CLASS}
+            value={grupo}
+            onChange={(e) => setGrupo(e.target.value)}
+          >
+            {Object.entries(GRUPO_LABEL).map(([valor, etiqueta]) => (
+              <option key={valor} value={valor}>
+                {etiqueta}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Código
+          <input
+            className={`${INPUT_CLASS} tabular w-20`}
+            value={codigo}
+            maxLength={8}
+            placeholder="2140"
+            onChange={(e) => setCodigo(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Nombre
+          <input
+            className={`${INPUT_CLASS} w-56`}
+            value={nombre}
+            maxLength={80}
+            onChange={(e) => setNombre(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Naturaleza
+          <select
+            className={INPUT_CLASS}
+            value={flujo}
+            onChange={(e) => setFlujo(e.target.value as TipoFlujo)}
+          >
+            <option value="egreso">Egreso</option>
+            <option value="ingreso">Ingreso</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          Clase
+          <select
+            className={INPUT_CLASS}
+            value={clase}
+            onChange={(e) => setClase(e.target.value as TipoRubro | "")}
+          >
+            <option value="">—</option>
+            <option value="fijo">Fijo</option>
+            <option value="variable">Variable</option>
+          </select>
+        </label>
+        <Button
+          type="submit"
+          variant="cyan"
+          size="sm"
+          disabled={creando || !nombre.trim()}
         >
-          {Object.entries(GRUPO_LABEL).map(([valor, etiqueta]) => (
-            <option key={valor} value={valor}>
-              {etiqueta}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Código
-        <input
-          className="w-20 rounded-md border border-slate-300 px-2 py-1.5 font-mono text-sm text-slate-800"
-          value={codigo}
-          maxLength={8}
-          placeholder="2140"
-          onChange={(e) => setCodigo(e.target.value)}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Nombre
-        <input
-          className="w-56 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={nombre}
-          maxLength={80}
-          onChange={(e) => setNombre(e.target.value)}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Naturaleza
-        <select
-          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={flujo}
-          onChange={(e) => setFlujo(e.target.value as TipoFlujo)}
-        >
-          <option value="egreso">Egreso</option>
-          <option value="ingreso">Ingreso</option>
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Clase
-        <select
-          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={clase}
-          onChange={(e) => setClase(e.target.value as TipoRubro | "")}
-        >
-          <option value="">—</option>
-          <option value="fijo">Fijo</option>
-          <option value="variable">Variable</option>
-        </select>
-      </label>
-      <Button type="submit" size="sm" disabled={creando || !nombre.trim()}>
-        {creando ? "Creando…" : "Crear"}
-      </Button>
-    </form>
+          {creando ? "Creando…" : "Crear"}
+        </Button>
+      </form>
+    </Card>
   );
 }

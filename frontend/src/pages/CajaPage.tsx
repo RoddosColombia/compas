@@ -10,7 +10,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useMemo, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { KpiTile } from "@/components/ui/kpi-tile";
 import {
   type Conciliacion,
   type ReporteSaldosResultado,
@@ -66,56 +70,64 @@ export default function CajaPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h2 className="text-xl font-semibold">Caja disponible</h2>
-        <p className="text-xs text-slate-400">
-          Reporta el saldo de cada banco para que la información siempre cuadre
-          {mesCorto ? ` · mes ${mesCorto}` : ""}
-        </p>
-      </header>
+      <PageHeader
+        titulo="Caja"
+        descripcion={`Reporta el saldo de cada banco para que la información siempre cuadre${
+          mesCorto ? ` · mes ${mesCorto}` : ""
+        }`}
+      />
 
-      {meses.isLoading && <p className="text-sm text-slate-500">Cargando…</p>}
+      {meses.isLoading && (
+        <p className="font-sans text-sm text-ink-soft">Cargando…</p>
+      )}
       {meses.data && !mesActivo && (
-        <p className="text-sm text-slate-500">
+        <p className="font-sans text-sm text-ink-soft">
           No hay ningún mes en ejecución. Aprueba el presupuesto de un mes para
           reportar su caja.
         </p>
       )}
 
-      {mensaje && (
-        <p className="rounded-md bg-alert/10 px-3 py-2 text-sm text-alert">
-          {mensaje}
-        </p>
-      )}
+      {mensaje && <AlertBanner variant="danger">{mensaje}</AlertBanner>}
 
       {mesActivo && (
-        <section className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="py-2 pr-4">Banco</th>
-                <th className="py-2 pr-4 text-right">Saldo reportado</th>
-                <th className="py-2 pr-4">Fecha del reporte</th>
-              </tr>
-            </thead>
-            <tbody>
-              {BANCOS.map((b) => {
-                const sb = saldoPorBanco.get(b);
-                return (
-                  <tr key={b} className="border-b border-slate-100">
-                    <td className="py-2 pr-4">{BANCO_LABEL[b] ?? b}</td>
-                    <td className="py-2 pr-4 text-right font-mono">
-                      {sb ? formatCOP(sb.saldo) : "—"}
-                    </td>
-                    <td className="py-2 pr-4 text-slate-500">
-                      {sb ? formatFecha(sb.fecha_reporte) : "sin reporte"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
+        <Card className="overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full font-sans text-sm">
+              <thead>
+                <tr className="border-b border-hairline text-left text-ink-faint">
+                  <th className="px-4 py-2.5 font-semibold">Banco</th>
+                  <th className="px-4 py-2.5 text-right font-semibold">
+                    Saldo reportado
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold">
+                    Fecha del reporte
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {BANCOS.map((b) => {
+                  const sb = saldoPorBanco.get(b);
+                  return (
+                    <tr
+                      key={b}
+                      className="border-b border-hairline/60 last:border-0"
+                    >
+                      <td className="px-4 py-2 text-ink">
+                        {BANCO_LABEL[b] ?? b}
+                      </td>
+                      <td className="tabular px-4 py-2 text-right text-ink-soft">
+                        {sb ? formatCOP(sb.saldo) : "—"}
+                      </td>
+                      <td className="px-4 py-2 text-ink-soft">
+                        {sb ? formatFecha(sb.fecha_reporte) : "sin reporte"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {mesActivo && reporta && (
@@ -155,97 +167,112 @@ function FormReporte({
   }
 
   return (
-    <form
-      onSubmit={enviar}
-      className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 p-4"
-    >
-      <p className="w-full text-sm font-medium">Reportar saldo</p>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Banco
-        <select
-          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={banco}
-          onChange={(e) => setBanco(e.target.value)}
+    <Card>
+      <form onSubmit={enviar} className="flex flex-wrap items-end gap-3">
+        <p className="w-full font-display text-base font-semibold text-ink">
+          Reportar saldo
+        </p>
+        <label className="flex flex-col gap-1 font-sans text-xs font-medium text-ink-soft">
+          Banco
+          <select
+            className="rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            value={banco}
+            onChange={(e) => setBanco(e.target.value)}
+          >
+            {BANCOS.map((b) => (
+              <option key={b} value={b}>
+                {BANCO_LABEL[b] ?? b}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs font-medium text-ink-soft">
+          Saldo (COP)
+          <input
+            className="tabular w-40 rounded-md border border-hairline bg-surface px-3 py-1.5 text-right text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            value={saldo}
+            inputMode="decimal"
+            placeholder="0.00"
+            onChange={(e) => setSaldo(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-xs font-medium text-ink-soft">
+          Fecha del reporte
+          <input
+            type="date"
+            className="rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+          />
+        </label>
+        <Button
+          type="submit"
+          variant="cyan"
+          size="sm"
+          disabled={reportando || !valido}
         >
-          {BANCOS.map((b) => (
-            <option key={b} value={b}>
-              {BANCO_LABEL[b] ?? b}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Saldo (COP)
-        <input
-          className="w-40 rounded-md border border-slate-300 px-2 py-1.5 text-right text-sm text-slate-800"
-          value={saldo}
-          inputMode="decimal"
-          placeholder="0.00"
-          onChange={(e) => setSaldo(e.target.value)}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-500">
-        Fecha del reporte
-        <input
-          type="date"
-          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-          value={fecha}
-          onChange={(e) => setFecha(e.target.value)}
-        />
-      </label>
-      <Button type="submit" size="sm" disabled={reportando || !valido}>
-        {reportando ? "Reportando…" : "Reportar"}
-      </Button>
-    </form>
+          {reportando ? "Reportando…" : "Reportar"}
+        </Button>
+      </form>
+    </Card>
   );
 }
 
 function PanelConciliacion({ conc }: { conc: Conciliacion }) {
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-slate-200 p-4">
+    <Card className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-medium">Conciliación</p>
+        <p className="font-display text-base font-semibold text-ink">
+          Conciliación
+        </p>
         {conc.dentro_de_umbral ? (
-          <span className="rounded-full bg-brand-soft/20 px-3 py-0.5 text-xs font-medium text-brand">
+          <span className="rounded-full bg-green/10 px-3 py-0.5 font-sans text-xs font-medium text-green">
             Cuadra (dentro del umbral)
           </span>
         ) : (
-          <span className="rounded-full bg-alert/20 px-3 py-0.5 text-xs font-medium text-alert">
+          <span className="rounded-full bg-red/10 px-3 py-0.5 font-sans text-xs font-medium text-red">
             No cuadra — diferencia {formatCOP(conc.diferencia)}
           </span>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-4 text-sm">
-        <Dato
-          titulo="Reportado (bancos)"
-          valor={formatCOP(conc.consolidado_reportado)}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiTile
+          label="Reportado (bancos)"
+          value={formatCOP(conc.consolidado_reportado)}
         />
-        <Dato titulo="Caja del libro" valor={formatCOP(conc.caja_libro)} />
-        <Dato titulo="Diferencia" valor={formatCOP(conc.diferencia)} />
-        <Dato titulo="Umbral" valor={formatCOP(conc.umbral)} />
+        <KpiTile label="Caja del libro" value={formatCOP(conc.caja_libro)} />
+        <KpiTile label="Diferencia" value={formatCOP(conc.diferencia)} />
+        <KpiTile label="Umbral" value={formatCOP(conc.umbral)} />
       </div>
 
       {conc.por_banco.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full font-sans text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="py-1.5 pr-4">Banco</th>
-                <th className="py-1.5 pr-4 text-right">Reportado</th>
-                <th className="py-1.5 pr-4 text-right">Calculado</th>
+              <tr className="border-b border-hairline text-left text-ink-faint">
+                <th className="px-4 py-2 font-semibold">Banco</th>
+                <th className="px-4 py-2 text-right font-semibold">
+                  Reportado
+                </th>
+                <th className="px-4 py-2 text-right font-semibold">
+                  Calculado
+                </th>
               </tr>
             </thead>
             <tbody>
               {conc.por_banco.map((b) => (
-                <tr key={b.banco} className="border-b border-slate-100">
-                  <td className="py-1.5 pr-4">
+                <tr
+                  key={b.banco}
+                  className="border-b border-hairline/60 last:border-0"
+                >
+                  <td className="px-4 py-2 text-ink">
                     {BANCO_LABEL[b.banco] ?? b.banco}
                   </td>
-                  <td className="py-1.5 pr-4 text-right font-mono">
+                  <td className="tabular px-4 py-2 text-right text-ink-soft">
                     {formatCOP(b.reportado)}
                   </td>
-                  <td className="py-1.5 pr-4 text-right font-mono">
+                  <td className="tabular px-4 py-2 text-right text-ink-soft">
                     {formatCOP(b.calculado)}
                   </td>
                 </tr>
@@ -256,23 +283,12 @@ function PanelConciliacion({ conc }: { conc: Conciliacion }) {
       )}
 
       {conc.sin_dato.length > 0 && (
-        <p className="rounded-md bg-warn/10 px-3 py-2 text-xs text-slate-700">
-          <span className="font-medium text-warn">Sin saldo reportado:</span>{" "}
+        <AlertBanner variant="warn">
+          <span className="font-semibold">Sin saldo reportado:</span>{" "}
           {conc.sin_dato.map((b) => BANCO_LABEL[b] ?? b).join(" · ")} — tienen
           movimientos pero no se ha reportado su saldo.
-        </p>
+        </AlertBanner>
       )}
-    </section>
-  );
-}
-
-function Dato({ titulo, valor }: { titulo: string; valor: string }) {
-  return (
-    <div className="min-w-36 flex-1 rounded-md border border-slate-200 px-3 py-2">
-      <p className="text-xs text-slate-500">{titulo}</p>
-      <p className="mt-0.5 font-mono text-sm font-semibold text-slate-800">
-        {valor}
-      </p>
-    </div>
+    </Card>
   );
 }

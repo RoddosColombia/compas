@@ -9,7 +9,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   type AbrirMesInput,
   BANCOS,
@@ -21,11 +24,11 @@ import {
 import { formatCOP } from "@/lib/money";
 
 const ESTADO_ESTILO: Record<Mes["estado"], string> = {
-  sugerido: "bg-slate-100 text-slate-700",
-  propuesto: "bg-turq-soft/30 text-turq",
-  definido: "bg-brand-soft/20 text-brand",
-  en_ejecucion: "bg-brand-soft/30 text-brand",
-  cerrado: "bg-slate-800 text-white",
+  sugerido: "bg-surface-muted text-ink-soft",
+  propuesto: "bg-amber/10 text-amber",
+  definido: "bg-cyan/10 text-cyan",
+  en_ejecucion: "bg-green/10 text-green",
+  cerrado: "bg-surface-muted text-ink-faint",
 };
 
 export default function MesesPage() {
@@ -40,69 +43,84 @@ export default function MesesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Ciclo mensual</h2>
-        {gestor && <Button onClick={() => setAbierto(true)}>Abrir mes</Button>}
-      </header>
+      <PageHeader
+        titulo="Meses"
+        descripcion="Historial de meses. Abre el mes con el saldo inicial de caja y los saldos por banco al corte."
+        acciones={
+          gestor ? (
+            <Button variant="cyan" onClick={() => setAbierto(true)}>
+              Abrir mes
+            </Button>
+          ) : undefined
+        }
+      />
 
       {mensaje && (
-        <output className="block rounded-md bg-brand-soft/15 px-3 py-2 text-sm text-brand">
+        <output className="block rounded-md bg-green/10 px-3 py-2 font-sans text-sm text-green">
           {mensaje}
         </output>
       )}
 
-      {meses.isLoading && <p className="text-sm text-slate-500">Cargando…</p>}
+      {meses.isLoading && (
+        <p className="font-sans text-sm text-ink-soft">Cargando…</p>
+      )}
       {meses.isError && (
-        <p className="text-sm text-alert">No se pudo listar los meses.</p>
+        <AlertBanner variant="danger">No se pudo listar los meses.</AlertBanner>
       )}
 
       {meses.data && meses.data.items.length === 0 && (
-        <p className="text-sm text-slate-500">
+        <p className="font-sans text-sm text-ink-soft">
           Aún no hay meses abiertos. Abre el primero con el saldo inicial de
           caja y los saldos por banco al corte.
         </p>
       )}
 
       {meses.data && meses.data.items.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="py-2 pr-4">Mes</th>
-                <th className="py-2 pr-4">Estado</th>
-                <th className="py-2 pr-4 text-right">Saldo inicial caja</th>
-                <th className="py-2 pr-4">Bancos al corte</th>
-              </tr>
-            </thead>
-            <tbody>
-              {meses.data.items.map((m) => (
-                <tr
-                  key={m.id}
-                  className="border-b border-slate-100 last:border-0"
-                >
-                  <td className="py-2 pr-4 font-medium">{m.mes.slice(0, 7)}</td>
-                  <td className="py-2 pr-4">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADO_ESTILO[m.estado]}`}
-                    >
-                      {m.estado}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-4 text-right font-mono">
-                    {formatCOP(m.saldo_inicial_caja)}
-                  </td>
-                  <td className="py-2 pr-4 text-slate-500">
-                    {m.saldos_banco.length === 0
-                      ? "—"
-                      : m.saldos_banco
-                          .map((s) => `${s.banco}: ${formatCOP(s.saldo)}`)
-                          .join(" · ")}
-                  </td>
+        <Card className="overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full font-sans text-sm">
+              <thead>
+                <tr className="border-b border-hairline text-left text-ink-faint">
+                  <th className="px-4 py-2.5 font-semibold">Mes</th>
+                  <th className="px-4 py-2.5 font-semibold">Estado</th>
+                  <th className="px-4 py-2.5 text-right font-semibold">
+                    Saldo inicial caja
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold">Bancos al corte</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {meses.data.items.map((m) => (
+                  <tr
+                    key={m.id}
+                    className="border-b border-hairline/60 last:border-0"
+                  >
+                    <td className="px-4 py-2 font-medium text-ink">
+                      {m.mes.slice(0, 7)}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-sans text-xs font-medium ${ESTADO_ESTILO[m.estado]}`}
+                      >
+                        {m.estado}
+                      </span>
+                    </td>
+                    <td className="tabular px-4 py-2 text-right text-ink-soft">
+                      {formatCOP(m.saldo_inicial_caja)}
+                    </td>
+                    <td className="px-4 py-2 text-ink-soft">
+                      {m.saldos_banco.length === 0
+                        ? "—"
+                        : m.saldos_banco
+                            .map((s) => `${s.banco}: ${formatCOP(s.saldo)}`)
+                            .join(" · ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {abierto && (
@@ -175,29 +193,34 @@ function AbrirMesDialog({
 
   return (
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-        <h3 className="mb-1 text-lg font-semibold">Abrir mes</h3>
-        <p className="mb-4 text-xs text-slate-500">
+      <div className="w-full max-w-md rounded-lg border border-hairline bg-surface p-6 shadow-lg">
+        <h3 className="mb-1 font-display text-lg font-semibold text-ink">
+          Abrir mes
+        </h3>
+        <p className="mb-4 font-sans text-xs text-ink-faint">
           {pedirSaldo
             ? "Primer mes: ingresa el saldo inicial de caja y los saldos por banco al corte."
             : "El saldo inicial se arrastra automáticamente del cierre del mes anterior (F-14)."}
         </p>
-        <form onSubmit={onSubmit} className="flex flex-col gap-3 text-sm">
-          <label className="font-medium" htmlFor="mes-input">
+        <form
+          onSubmit={onSubmit}
+          className="flex flex-col gap-3 font-sans text-sm"
+        >
+          <label className="font-medium text-ink" htmlFor="mes-input">
             Mes
           </label>
           <input
             id="mes-input"
             type="month"
             required
-            className="rounded-md border border-slate-300 px-3 py-2"
+            className="rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
             value={mes}
             onChange={(e) => setMes(e.target.value)}
           />
 
           {pedirSaldo && (
             <>
-              <label className="font-medium" htmlFor="saldo-caja">
+              <label className="font-medium text-ink" htmlFor="saldo-caja">
                 Saldo inicial de caja (COP)
               </label>
               <input
@@ -205,21 +228,23 @@ function AbrirMesDialog({
                 required
                 inputMode="decimal"
                 placeholder="24000000"
-                className="rounded-md border border-slate-300 px-3 py-2"
+                className="tabular rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
                 value={saldoCaja}
                 onChange={(e) => setSaldoCaja(e.target.value)}
               />
             </>
           )}
 
-          <span className="mt-1 font-medium">Saldos por banco al corte</span>
+          <span className="mt-1 font-medium text-ink">
+            Saldos por banco al corte
+          </span>
           {BANCOS.map((b) => (
             <label key={b} className="flex items-center gap-2">
-              <span className="w-28 capitalize text-slate-600">{b}</span>
+              <span className="w-28 capitalize text-ink-soft">{b}</span>
               <input
                 inputMode="decimal"
                 placeholder="0"
-                className="flex-1 rounded-md border border-slate-300 px-3 py-2"
+                className="tabular flex-1 rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
                 value={saldos[b] ?? ""}
                 onChange={(e) =>
                   setSaldos((s) => ({ ...s, [b]: e.target.value }))
@@ -228,12 +253,12 @@ function AbrirMesDialog({
             </label>
           ))}
 
-          {error && <p className="text-alert">{error}</p>}
+          {error && <AlertBanner variant="danger">{error}</AlertBanner>}
           <div className="mt-2 flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={alCerrar}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={abrir.isPending}>
+            <Button type="submit" variant="cyan" disabled={abrir.isPending}>
               {abrir.isPending ? "Abriendo…" : "Abrir mes"}
             </Button>
           </div>
