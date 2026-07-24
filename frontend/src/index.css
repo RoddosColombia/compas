@@ -56,3 +56,20 @@ body {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
+
+/* Impresión / export a PDF (Reportes): oculta el sidebar y los controles no
+   imprimibles; el contenido fluye a página completa sobre blanco. */
+@media print {
+  aside,
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #ffffff;
+  }
+  main {
+    overflow: visible !important;
+    height: auto !important;
+  }
+}

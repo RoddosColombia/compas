@@ -21,6 +21,7 @@ import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
 import ProyeccionPage from "@/pages/ProyeccionPage";
 import ReglasPage from "@/pages/ReglasPage";
+import ReportesPage from "@/pages/ReportesPage";
 import ScenariosPage from "@/pages/ScenariosPage";
 
 const queryClient = new QueryClient({
@@ -117,10 +118,7 @@ export default function App() {
               path="/reportes"
               element={
                 <Cockpit>
-                  <EnConstruccion
-                    vista="Reportes"
-                    descripcion="Actualizaciones para el board y export a PDF."
-                  />
+                  <ReportesPage />
                 </Cockpit>
               }
             />
