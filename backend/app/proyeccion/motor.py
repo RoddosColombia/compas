@@ -50,6 +50,7 @@ class ModeloProyeccion:
     cuota_inicial: Decimal
     plazo_semanas: int
     mix: Decimal
+    costo_moto: Decimal = Decimal("0")  # costo Auteco del modelo (para el lote)
 
 
 def dias_de_cobro_del_mes(
@@ -303,3 +304,233 @@ def inventario_auteco_mensual(
             fondeo[m] = -lote(m - delay_pago) * tasa_auteco * meses_interes
 
     return [_cop(v) for v in pago_inv], [_cop(v) for v in fondeo]
+
+
+def _lote_por_mes(
+    colocacion_por_mes: list[int], modelos: list[ModeloProyeccion]
+) -> list[Decimal]:
+    """Valor facturado del lote por mes (split FRACCIONARIO en valor, como el artefacto:
+    `motos × mix × costo`, no por unidades enteras)."""
+    out: list[Decimal] = []
+    for total in colocacion_por_mes:
+        v = sum(
+            (Decimal(total) * md.mix * md.costo_moto for md in modelos), Decimal("0")
+        )
+        out.append(v)
+    return out
+
+
+def _adelanto_por_mes(
+    colocacion_por_mes: list[int], adelanto_auteco: Decimal
+) -> list[Decimal]:
+    """Adelanto Auteco por mes: 0 el primer mes; luego `-motos × adelanto/moto`."""
+    out: list[Decimal] = []
+    for m, total in enumerate(colocacion_por_mes):
+        out.append(Decimal("0") if m == 0 else -Decimal(total) * adelanto_auteco)
+    return out
+
+
+def cartera_activa_mensual(
+    colocacion_por_mes: list[int],
+    modelos: list[ModeloProyeccion],
+    mes_inicio: tuple[int, int],
+    dia_cobro: int = DIA_COBRO_DEFECTO,
+    ancla: date = ANCLA_SEMANA,
+) -> list[int]:
+    """Motos activas (pagando) al CIERRE de cada mes = activos en la última semana de
+    cobro del mes. Alimenta el GPS (costo por moto activa)."""
+    meses = _meses_del_horizonte(mes_inicio, len(colocacion_por_mes))
+    altas = _altas_por_modelo(colocacion_por_mes, modelos, meses, dia_cobro, ancla)
+    out: list[int] = []
+    for y, m in meses:
+        semanas_g = _semanas_globales_del_mes(y, m, dia_cobro, ancla)
+        w_ref = semanas_g[-1] if semanas_g else 0
+        cartera = sum(
+            _activos_en_semana(altas[i], w_ref, md.plazo_semanas)
+            for i, md in enumerate(modelos)
+        )
+        out.append(cartera)
+    return out
+
+
+# Presets de escenario (réplica de `escMora` del artefacto): mora / recuperación.
+PRESETS_ESCENARIO: dict[str, dict[str, Decimal]] = {
+    "pesimista": {"pct_mora": Decimal("0.06"), "pct_recuperacion": Decimal("0.30")},
+    "base": {"pct_mora": Decimal("0.03"), "pct_recuperacion": Decimal("0.40")},
+    "optimista": {"pct_mora": Decimal("0.015"), "pct_recuperacion": Decimal("0.60")},
+}
+
+
+@dataclass(frozen=True)
+class ParametrosMotor:
+    """Drivers del motor (réplica del objeto `p` del artefacto). Los porcentajes de
+    mora/default son del escenario ACTIVO; `overrides_*` permiten editarlos mes a mes
+    (índice de mes → pct). Todo monto es Decimal (regla 1)."""
+
+    mes_inicio: tuple[int, int]
+    horizonte_meses: int
+    modelos: list[ModeloProyeccion]
+    motos_base: int
+    crec_pct_mensual: Decimal
+    rampa: list[int] | None
+    adelanto_auteco: Decimal
+    plazo_auteco_dias: int
+    base_auteco_dias: int
+    tasa_auteco: Decimal
+    gastos_fijos: Decimal
+    gps_moto: Decimal
+    costo_moto_nueva: Decimal
+    deuda: Decimal
+    tasa_deuda: Decimal
+    mes_inicio_deuda: int
+    meses_deuda: int
+    pct_mora: Decimal
+    pct_recuperacion: Decimal
+    pct_default: Decimal
+    pct_provision: Decimal
+    overrides_mora: dict[int, Decimal] | None
+    overrides_default: dict[int, Decimal] | None
+    caja_inicial: Decimal
+    caja_minima: Decimal
+
+
+@dataclass(frozen=True)
+class MesProyeccion:
+    mes: str  # 'YYYY-MM' (día 1)
+    motos: int
+    cartera: int
+    recaudo_credito: Decimal  # Vía 1
+    cuotas_iniciales: Decimal  # Vía 2
+    ingreso_bruto: Decimal
+    neto: Decimal
+    provision: Decimal  # informativo (P&G/NIIF 9), NO en el flujo
+    gastos_fijos: Decimal
+    gps: Decimal
+    costo_nueva: Decimal
+    adelanto: Decimal
+    pago_inventario: Decimal
+    fondeo: Decimal
+    int_deuda: Decimal
+    egresos: Decimal
+    flujo: Decimal
+    caja: Decimal
+    estado: str  # 'ok' | 'critico' | 'negativo'
+
+
+@dataclass(frozen=True)
+class ResultadoProyeccion:
+    meses: list[MesProyeccion]
+    piso_caja: Decimal
+    mes_mas_ajustado: str
+    meses_bajo_minimo: int
+    caja_final: Decimal
+    capital_requerido: Decimal
+    runway_meses: Decimal | None
+
+
+def _estado_caja(caja: Decimal, caja_minima: Decimal) -> str:
+    if caja < 0:
+        return "negativo"
+    if caja < caja_minima:
+        return "critico"
+    return "ok"
+
+
+def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
+    """El corazón de COCK-01: proyecta el flujo de caja mes a mes replicando la
+    formulación del Dashboard Artefacto, con recaudo discriminado (2 vías), caja veraz
+    (provisión fuera del flujo) y horizonte configurable. Compute-only, todo Decimal."""
+    meses_ym = _meses_del_horizonte(p.mes_inicio, p.horizonte_meses)
+    colocacion = colocacion_mensual(
+        p.motos_base, p.crec_pct_mensual, p.horizonte_meses, p.rampa
+    )
+    recaudo = recaudo_credito_mensual(colocacion, p.modelos, p.mes_inicio)
+    iniciales = cuotas_iniciales_mensual(colocacion, p.modelos)
+    cartera = cartera_activa_mensual(colocacion, p.modelos, p.mes_inicio)
+    lote = _lote_por_mes(colocacion, p.modelos)
+    adelanto = _adelanto_por_mes(colocacion, p.adelanto_auteco)
+    pago_inv, fondeo = inventario_auteco_mensual(
+        lote, adelanto, p.plazo_auteco_dias, p.base_auteco_dias, p.tasa_auteco
+    )
+    ov_mora = p.overrides_mora or {}
+    ov_def = p.overrides_default or {}
+
+    filas: list[MesProyeccion] = []
+    caja = _cop(p.caja_inicial)
+    for m, (y, mo) in enumerate(meses_ym):
+        bruto = recaudo[m] + iniciales[m]
+        ajuste = neto_por_mora(
+            bruto,
+            ov_mora.get(m, p.pct_mora),
+            p.pct_recuperacion,
+            ov_def.get(m, p.pct_default),
+            p.pct_provision,
+        )
+        gastos_fijos = _cop(-p.gastos_fijos)
+        gps = _cop(-Decimal(cartera[m]) * p.gps_moto)
+        costo_nueva = _cop(-Decimal(colocacion[m]) * p.costo_moto_nueva)
+        int_deuda = (
+            _cop(-p.deuda * p.tasa_deuda)
+            if p.mes_inicio_deuda <= m < p.meses_deuda
+            else Decimal("0.00")
+        )
+        egresos = _cop(
+            gastos_fijos
+            + gps
+            + costo_nueva
+            + int_deuda
+            + adelanto[m]
+            + pago_inv[m]
+            + fondeo[m]
+        )
+        flujo = _cop(ajuste.neto + egresos)
+        # primer mes: caja fija (= caja inicial); el flujo de ese mes no la mueve.
+        if m > 0:
+            caja = _cop(caja + flujo)
+        filas.append(
+            MesProyeccion(
+                mes=f"{y:04d}-{mo:02d}",
+                motos=colocacion[m],
+                cartera=cartera[m],
+                recaudo_credito=_cop(recaudo[m]),
+                cuotas_iniciales=_cop(iniciales[m]),
+                ingreso_bruto=_cop(bruto),
+                neto=ajuste.neto,
+                provision=ajuste.provision,
+                gastos_fijos=gastos_fijos,
+                gps=gps,
+                costo_nueva=costo_nueva,
+                adelanto=_cop(adelanto[m]),
+                pago_inventario=pago_inv[m],
+                fondeo=fondeo[m],
+                int_deuda=int_deuda,
+                egresos=egresos,
+                flujo=flujo,
+                caja=caja,
+                estado=_estado_caja(caja, p.caja_minima),
+            )
+        )
+
+    cajas = [f.caja for f in filas]
+    piso = min(cajas)
+    idx_piso = cajas.index(piso)
+    bajo_min = sum(1 for c in cajas if c < p.caja_minima)
+    caja_final = cajas[-1]
+    capital_req = _cop(max(Decimal("0"), p.caja_minima - piso))
+    # runway = meses de caja al ritmo de quema promedio (si hay quema neta).
+    flujos = [f.flujo for f in filas]
+    prom_flujo = sum(flujos, Decimal("0")) / Decimal(len(flujos))
+    runway = (
+        _cop(caja_final / -prom_flujo)
+        if prom_flujo < 0 and caja_final > 0
+        else None
+    )
+    return ResultadoProyeccion(
+        meses=filas,
+        piso_caja=piso,
+        mes_mas_ajustado=filas[idx_piso].mes,
+        meses_bajo_minimo=bajo_min,
+        caja_final=caja_final,
+        capital_requerido=capital_req,
+        runway_meses=runway,
+    )

@@ -12,13 +12,16 @@ from datetime import date
 from decimal import Decimal
 
 from app.proyeccion.motor import (
+    PRESETS_ESCENARIO,
     ModeloProyeccion,
+    ParametrosMotor,
     colocacion_mensual,
     cuotas_iniciales_mensual,
     dias_de_cobro_del_mes,
     indice_semana,
     inventario_auteco_mensual,
     neto_por_mora,
+    proyectar,
     recaudo_credito_mensual,
     semanas_de_cobro,
 )
@@ -195,3 +198,93 @@ def test_inventario_auteco_saldo_rodante_y_fondeo():
         Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"),
         Decimal("-90.00"), Decimal("-200.00"), Decimal("-200.00"), Decimal("-200.00"),
     ]
+
+
+# ── proyectar(): ensamblaje del flujo + caja acumulada + KPIs ──
+
+
+def _params_simple(**over):
+    base = dict(
+        mes_inicio=(2026, 7),
+        horizonte_meses=4,
+        modelos=[
+            ModeloProyeccion(
+                "Raider",
+                cuota_semanal=Decimal("100"),
+                cuota_inicial=Decimal("1000"),
+                plazo_semanas=6,
+                mix=Decimal("1"),
+                costo_moto=Decimal("5000"),
+            )
+        ],
+        motos_base=2,
+        crec_pct_mensual=Decimal("0"),
+        rampa=None,
+        adelanto_auteco=Decimal("100"),
+        plazo_auteco_dias=60,
+        base_auteco_dias=30,
+        tasa_auteco=Decimal("0"),
+        gastos_fijos=Decimal("1000"),
+        gps_moto=Decimal("0"),
+        costo_moto_nueva=Decimal("0"),
+        deuda=Decimal("0"),
+        tasa_deuda=Decimal("0"),
+        mes_inicio_deuda=0,
+        meses_deuda=0,
+        pct_mora=Decimal("0"),
+        pct_recuperacion=Decimal("0"),
+        pct_default=Decimal("0"),
+        pct_provision=Decimal("0"),
+        overrides_mora=None,
+        overrides_default=None,
+        caja_inicial=Decimal("50000"),
+        caja_minima=Decimal("10000"),
+    )
+    base.update(over)
+    return ParametrosMotor(**base)
+
+
+def test_proyectar_ingreso_discriminado_y_etiquetas():
+    r = proyectar(_params_simple())
+    assert [m.mes for m in r.meses] == ["2026-07", "2026-08", "2026-09", "2026-10"]
+    for m in r.meses:
+        # las 2 vías se muestran SEPARADAS y suman el bruto (requisito CEO)
+        assert m.ingreso_bruto == m.recaudo_credito + m.cuotas_iniciales
+        assert m.cuotas_iniciales == Decimal("2000.00")  # 2 motos × 1000
+
+
+def test_proyectar_caja_acumulada_primer_mes_fijo():
+    r = proyectar(_params_simple())
+    # el primer mes la caja es fija (= caja inicial); el flujo de ese mes no la mueve
+    assert r.meses[0].caja == Decimal("50000.00")
+    # desde el 2º mes: caja[m] = caja[m-1] + flujo[m]
+    for i in range(1, len(r.meses)):
+        assert r.meses[i].caja == r.meses[i - 1].caja + r.meses[i].flujo
+
+
+def test_proyectar_kpis_piso_y_mes_mas_ajustado():
+    r = proyectar(_params_simple())
+    cajas = [m.caja for m in r.meses]
+    assert r.piso_caja == min(cajas)
+    idx = cajas.index(min(cajas))
+    assert r.mes_mas_ajustado == r.meses[idx].mes
+    assert r.meses_bajo_minimo == sum(1 for c in cajas if c < Decimal("10000"))
+    assert r.caja_final == r.meses[-1].caja
+
+
+def test_proyectar_flujo_es_neto_menos_egresos():
+    r = proyectar(_params_simple())
+    for m in r.meses:
+        # flujo = neto + egresos (egresos vienen como valores negativos)
+        assert m.flujo == m.neto + m.egresos
+
+
+def test_presets_escenario_y_efecto_en_caja():
+    # el escenario pesimista (más mora, menos recuperación) deja MENOS caja final.
+    assert PRESETS_ESCENARIO["base"]["pct_mora"] == Decimal("0.03")
+    assert PRESETS_ESCENARIO["pesimista"]["pct_mora"] == Decimal("0.06")
+    pes = PRESETS_ESCENARIO["pesimista"]
+    opt = PRESETS_ESCENARIO["optimista"]
+    r_pes = proyectar(_params_simple(**pes, pct_default=Decimal("0.03")))
+    r_opt = proyectar(_params_simple(**opt, pct_default=Decimal("0.03")))
+    assert r_pes.caja_final < r_opt.caja_final
