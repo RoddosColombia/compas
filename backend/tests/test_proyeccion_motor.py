@@ -1,0 +1,129 @@
+# backend/tests/test_proyeccion_motor.py
+"""Motor de proyección C7 (COCK-01) — NÚCLEO compute-only, réplica de las funciones
+`simular()` / `calcularCredito()` del Dashboard Artefacto (la formulación limpia del
+SIMULADOR 2030). Test de paridad celda-a-celda + reglas de CLAUDE.md (Decimal, TZ).
+
+Verdad de base: la semana 1 del 'Modelo Pagos' es el miércoles 2026-03-04; desde ahí
+el cobro es semanal (miércoles). Meses conocidos: jul-2026 = 5 miércoles (1,8,15,22,29);
+jun-2026 = 4; ago-2026 = 4.
+"""
+
+from datetime import date
+from decimal import Decimal
+
+from app.proyeccion.motor import (
+    ModeloProyeccion,
+    colocacion_mensual,
+    cuotas_iniciales_mensual,
+    dias_de_cobro_del_mes,
+    indice_semana,
+    recaudo_credito_mensual,
+    semanas_de_cobro,
+)
+
+
+def test_julio_2026_tiene_cinco_miercoles():
+    dias = dias_de_cobro_del_mes(2026, 7)
+    assert dias == [
+        date(2026, 7, 1),
+        date(2026, 7, 8),
+        date(2026, 7, 15),
+        date(2026, 7, 22),
+        date(2026, 7, 29),
+    ]
+    assert semanas_de_cobro(2026, 7) == 5
+
+
+def test_junio_y_agosto_2026_tienen_cuatro_miercoles():
+    assert semanas_de_cobro(2026, 6) == 4  # 3,10,17,24
+    assert semanas_de_cobro(2026, 8) == 4  # 5,12,19,26
+
+
+def test_marzo_2026_arranca_el_4():
+    # La semana 1 del Modelo Pagos es el miércoles 2026-03-04.
+    assert dias_de_cobro_del_mes(2026, 3)[0] == date(2026, 3, 4)
+
+
+# ── Colocación mensual: crecimiento ENCADENADO con redondeo (C10=ROUND(C9×(1+g))) ──
+
+
+def test_colocacion_encadenada_suma_uno_por_mes_al_uno_por_ciento():
+    # 50 @ 1% mensual encadenado → 50,51,52,53,54 (NO 50×1.01^k).
+    serie = colocacion_mensual(
+        motos_base=50, crec_pct_mensual=Decimal("0.01"), horizonte_meses=5
+    )
+    assert serie == [50, 51, 52, 53, 54]
+
+
+def test_colocacion_respeta_rampa_de_meses_reales_y_reinicia_en_base():
+    # Meses reales (rampa) mandan; el primer mes post-rampa arranca en la base.
+    serie = colocacion_mensual(
+        motos_base=50,
+        crec_pct_mensual=Decimal("0.01"),
+        horizonte_meses=5,
+        rampa=[20, 48],
+    )
+    assert serie == [20, 48, 50, 51, 52]
+
+
+def test_colocacion_crecimiento_cero_es_constante():
+    serie = colocacion_mensual(
+        motos_base=30, crec_pct_mensual=Decimal("0"), horizonte_meses=4
+    )
+    assert serie == [30, 30, 30, 30]
+
+
+# ── Índice de semana global (ancla = miércoles 2026-03-04 = semana 1) ──
+
+
+def test_indice_semana_ancla_y_julio():
+    assert indice_semana(date(2026, 3, 4)) == 1
+    assert indice_semana(date(2026, 3, 11)) == 2
+    # 2026-07-01 está a 119 días del ancla → semana 18.
+    assert indice_semana(date(2026, 7, 1)) == 18
+
+
+# ── Recaudo por 2 vías: cuota-a-cuota (Vía 1) + cuotas iniciales (Vía 2) ──
+
+
+def _modelo_unico(cuota_semanal, cuota_inicial, plazo):
+    return ModeloProyeccion(
+        nombre="Test",
+        cuota_semanal=Decimal(cuota_semanal),
+        cuota_inicial=Decimal(cuota_inicial),
+        plazo_semanas=plazo,
+        mix=Decimal("1"),
+    )
+
+
+def test_recaudo_credito_cuota_a_cuota_cruza_meses():
+    # 1 moto colocada en jul-2026 (semana 18 = jul 1), cuota 100, plazo 6 semanas.
+    # Paga semanas 18-23: jul 1,8,15,22,29 (5) + ago 5 (1) → jul=500, ago=100.
+    modelos = [_modelo_unico(100, 0, 6)]
+    recaudo = recaudo_credito_mensual(
+        colocacion_por_mes=[1, 0, 0, 0],
+        modelos=modelos,
+        mes_inicio=(2026, 7),
+    )
+    assert recaudo == [Decimal("500"), Decimal("100"), Decimal("0"), Decimal("0")]
+
+
+def test_cuotas_iniciales_por_colocacion():
+    # Vía 2: colocación × cuota inicial, por mes. 2 motos × 1000 = 2000 el primer mes.
+    modelos = [_modelo_unico(100, 1000, 6)]
+    iniciales = cuotas_iniciales_mensual(colocacion_por_mes=[2, 3], modelos=modelos)
+    assert iniciales == [Decimal("2000"), Decimal("3000")]
+
+
+def test_dos_modelos_split_por_mix_base_absorbe_resto():
+    # models[0] es la base (absorbe el resto); models[1] = round(total×mix).
+    # total=10, mix Apache=0.30 → apache=3, raider(base)=7.
+    # iniciales = 7×1000 + 3×2000 = 13000.
+    base = ModeloProyeccion(
+        "Raider", Decimal("100"), Decimal("1000"), 78, Decimal("0.70")
+    )
+    apache = ModeloProyeccion(
+        "Apache", Decimal("120"), Decimal("2000"), 78, Decimal("0.30")
+    )
+    iniciales = cuotas_iniciales_mensual([10], [base, apache])
+    assert iniciales == [Decimal("13000")]
