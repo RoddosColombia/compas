@@ -15,6 +15,9 @@ un evento POR BANCO tocado, metadata con valores y fechas anterior→nuevo)
 + `pago_planeado.creado`/`editado`/`cancelado` (CR-S7 — C9 pagos de la semana, GO
 CEO 2026-07-23 con Kimi retroactivo; `marcar-pagado` reusa `pago_planeado.editado`
 {estado: pendiente→pagado} — sin evento extra) = 40.
++ `modelo_moto.creado`/`editado`/`desactivado` + `parametros_proyeccion.actualizado`
+(CR-COCK — COCK-01/02 motor de proyección C7, GO CEO 2026-07-23 con Kimi retroactivo;
+la reactivación de un modelo reusa `modelo_moto.editado` {activo: false→true}) = 44.
 NO se inventan eventos sin CR. El nombre del miembro usa `_`; el valor usa
 `<dominio>.<acción>`."""
 
@@ -75,10 +78,16 @@ class AuditEvento(StrEnum):
     # ── CR-S6 (1) (C4 ajuste diario de caja) ──
     saldo_banco_reportado = "saldo_banco.reportado"
 
-    # ── CR-S7 (3) → total 40 (C9 pagos de la semana) ──
+    # ── CR-S7 (3) (C9 pagos de la semana) ──
     pago_planeado_creado = "pago_planeado.creado"
     pago_planeado_editado = "pago_planeado.editado"
     pago_planeado_cancelado = "pago_planeado.cancelado"
+
+    # ── CR-COCK (4) → total 44 (C7 motor de proyección) ──
+    modelo_moto_creado = "modelo_moto.creado"
+    modelo_moto_editado = "modelo_moto.editado"
+    modelo_moto_desactivado = "modelo_moto.desactivado"
+    parametros_proyeccion_actualizado = "parametros_proyeccion.actualizado"
 
 
 # Conjunto de los 40 valores canónicos (para validación/tests de completitud).

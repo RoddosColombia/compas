@@ -8,14 +8,16 @@ administrables — `rubro.desactivado` ya venía en v1.0) +
 regla.creada/regla.editada/regla.desactivada (CR-S5, C3 auto-clasificación,
 GO Kimi PLAN-I 9.3) + saldo_banco.reportado (CR-S6, C4 ajuste diario de caja,
 GO Kimi PLAN-I 9.3) + pago_planeado.creado/editado/cancelado (CR-S7, C9 pagos
-de la semana, GO CEO 2026-07-23) = 40. No se inventan eventos sin CR."""
+de la semana, GO CEO 2026-07-23) + modelo_moto.creado/editado/desactivado +
+parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
+2026-07-23) = 44. No se inventan eventos sin CR."""
 
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_40_eventos():
-    assert len(AuditEvento) == 40
-    assert len(CATALOGO_EVENTOS) == 40
+def test_catalogo_tiene_exactamente_44_eventos():
+    assert len(AuditEvento) == 44
+    assert len(CATALOGO_EVENTOS) == 44
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():
@@ -45,6 +47,10 @@ def test_eventos_clave_presentes():
         "pago_planeado.creado",  # CR-S7 (C9): alta de pago programado
         "pago_planeado.editado",  # CR-S7 (C9): edición/marcar-pagado
         "pago_planeado.cancelado",  # CR-S7 (C9): baja lógica del pago
+        "modelo_moto.creado",  # CR-COCK (C7): alta de modelo de moto
+        "modelo_moto.editado",  # CR-COCK (C7): edición/reactivación
+        "modelo_moto.desactivado",  # CR-COCK (C7): baja lógica del modelo
+        "parametros_proyeccion.actualizado",  # CR-COCK (C7): drivers del motor
     ):
         assert esperado in CATALOGO_EVENTOS
 

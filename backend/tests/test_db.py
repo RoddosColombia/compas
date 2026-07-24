@@ -19,7 +19,8 @@ async def test_init_beanie_registra_los_documents_de_dominio():
     from app.domain import DOMAIN_DOCUMENTS, Transaccion
 
     assert mongo.DOCUMENT_MODELS == DOMAIN_DOCUMENTS
-    assert len(DOMAIN_DOCUMENTS) == 9  # +PagoPlaneado (C9, CR-S7)
+    # 9 previos + ModeloMoto + ParametrosProyeccion (COCK-02, CR-COCK).
+    assert len(DOMAIN_DOCUMENTS) == 11
     assert Transaccion in mongo.DOCUMENT_MODELS
     assert AuditLog not in mongo.DOCUMENT_MODELS
     client = AsyncMongoMockClient()
