@@ -10,6 +10,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { CashCurve } from "@/components/charts/CashCurve";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -21,7 +22,6 @@ import {
   ESTADO_LABEL,
   type Escenario,
   type EstadoMes,
-  type MesProyeccion,
   type Proyeccion,
   obtenerProyeccion,
 } from "@/lib/proyeccion";
@@ -147,7 +147,15 @@ function ProyeccionContenido({ data }: { data: Proyeccion }) {
       </div>
 
       {/* Hero: la curva */}
-      <CurvaCaja meses={data.meses} umbral={data.caja_minima} />
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <CardTitle>Caja proyectada vs. umbral</CardTitle>
+          <p className="font-sans text-xs text-ink-faint">
+            umbral {formatCOP(data.caja_minima)} · {data.meses.length} meses
+          </p>
+        </div>
+        <CashCurve meses={data.meses} umbral={data.caja_minima} />
+      </Card>
 
       {/* Tabla de cierre */}
       <Card className="overflow-hidden p-0">
@@ -210,95 +218,5 @@ function ProyeccionContenido({ data }: { data: Proyeccion }) {
         </div>
       </Card>
     </>
-  );
-}
-
-// Curva de caja proyectada vs. umbral — SVG inline (sin dependencia de gráficos).
-// .toNumber() aquí es SOLO geometría de presentación (como formatCOP), no cálculo.
-function CurvaCaja({
-  meses,
-  umbral,
-}: {
-  meses: MesProyeccion[];
-  umbral: string;
-}) {
-  const W = 900;
-  const H = 240;
-  const P = 10; // padding vertical
-  if (meses.length < 2) return null;
-
-  const cajas = meses.map((m) => parseMonto(m.caja).toNumber());
-  const u = parseMonto(umbral).toNumber();
-  const min = Math.min(...cajas, u, 0);
-  const max = Math.max(...cajas, u);
-  const span = max - min || 1;
-  const x = (i: number) => (i / (meses.length - 1)) * W;
-  const y = (v: number) => P + (1 - (v - min) / span) * (H - 2 * P);
-
-  const linea = cajas.map((v, i) => `${x(i)},${y(v)}`).join(" ");
-  const area = `0,${y(min)} ${linea} ${W},${y(min)}`;
-  const yUmbral = y(u);
-  const yCero = y(0);
-
-  return (
-    <Card>
-      <div className="mb-3 flex items-center justify-between">
-        <CardTitle>Caja proyectada vs. umbral</CardTitle>
-        <p className="font-sans text-xs text-ink-faint">
-          umbral {formatCOP(umbral)} · {meses.length} meses
-        </p>
-      </div>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="h-60 w-full"
-        preserveAspectRatio="none"
-        role="img"
-        aria-label="Curva de caja proyectada contra el umbral de caja mínima"
-      >
-        <title>Caja proyectada vs. umbral</title>
-        <polygon points={area} className="fill-cyan/10" />
-        {/* línea de cero (si el rango la cruza) */}
-        {min < 0 && (
-          <line
-            x1={0}
-            x2={W}
-            y1={yCero}
-            y2={yCero}
-            className="stroke-hairline"
-            strokeWidth={1}
-          />
-        )}
-        {/* umbral (caja mínima) — rojo de sistema, discontinuo */}
-        <line
-          x1={0}
-          x2={W}
-          y1={yUmbral}
-          y2={yUmbral}
-          className="stroke-red"
-          strokeWidth={1.5}
-          strokeDasharray="6 4"
-        />
-        {/* curva de caja — Cyber Cyan */}
-        <polyline
-          points={linea}
-          fill="none"
-          className="stroke-cyan"
-          strokeWidth={2.5}
-          vectorEffect="non-scaling-stroke"
-        />
-        {/* marcadores de meses bajo el mínimo (perforación) */}
-        {cajas.map((v, i) =>
-          v < u ? (
-            <circle
-              key={meses[i].mes}
-              cx={x(i)}
-              cy={y(v)}
-              r={3}
-              className="fill-red"
-            />
-          ) : null,
-        )}
-      </svg>
-    </Card>
   );
 }

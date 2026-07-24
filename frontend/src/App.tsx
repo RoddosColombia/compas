@@ -15,6 +15,7 @@ import CargasPage from "@/pages/CargasPage";
 import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
 import EnConstruccion from "@/pages/EnConstruccion";
+import InicioPage from "@/pages/InicioPage";
 import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
 import ProyeccionPage from "@/pages/ProyeccionPage";
@@ -70,10 +71,7 @@ export default function App() {
               path="/inicio"
               element={
                 <Cockpit>
-                  <EnConstruccion
-                    vista="Inicio"
-                    descripcion="Pulso ejecutivo: caja, runway y alertas del mes."
-                  />
+                  <InicioPage />
                 </Cockpit>
               }
             />
