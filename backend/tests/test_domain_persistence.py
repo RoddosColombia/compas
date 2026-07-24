@@ -57,15 +57,16 @@ async def test_configuracion_decimal_round_trip(db):
 
 
 async def test_seed_rubros_idempotente(db):
-    # Re-seed C1 (GO Kimi PLAN-I 9.2): 31 reales de MODELO.md + 3 de sistema = 34.
+    # Plan de cuentas ARQUITECTURA_PRESUPUESTAL: 41 del plan + 'Ajuste de
+    # conciliación' (sistema) = 42.
     n1 = await seed_rubros(db)
     total1 = await Rubro.find_all().count()
     n2 = await seed_rubros(db)  # segunda corrida: no debe duplicar
     total2 = await Rubro.find_all().count()
-    assert n1 == 34 and total1 == 34
-    assert n2 == 0 and total2 == 34
+    assert n1 == 42 and total1 == 42
+    assert n2 == 0 and total2 == 42
     sistema = await Rubro.find(Rubro.es_sistema == True).count()  # noqa: E712
-    assert sistema == 3
+    assert sistema == 3  # Recaudo de cartera, Por clasificar, Ajuste de conciliación
 
 
 async def test_seed_rubros_no_pisa_ediciones(db):
@@ -85,7 +86,7 @@ async def test_seed_rubros_reporte_de_colisiones(db):
         grupo="operacion", nombre="Cafetería", orden=77, tipo_flujo="ingreso"
     ).insert()
     insertados, colisiones = await seed_rubros_reporte(db)
-    assert insertados == 33  # 34 - 1 preexistente
+    assert insertados == 41  # 42 - 1 preexistente
     assert len(colisiones) == 1
     col = colisiones[0]
     assert (col["grupo"], col["nombre"]) == ("operacion", "Cafetería")
@@ -94,7 +95,7 @@ async def test_seed_rubros_reporte_de_colisiones(db):
     assert col["semilla"]["tipo_flujo"] == "egreso"
     # Corrida limpia posterior: 0 nuevos, todas las llaves ya existen.
     insertados2, colisiones2 = await seed_rubros_reporte(db)
-    assert insertados2 == 0 and len(colisiones2) == 34
+    assert insertados2 == 0 and len(colisiones2) == 42
 
 
 async def test_seed_configuracion_idempotente(db):
@@ -113,8 +114,8 @@ def test_semilla_reglas_sin_pii_y_origen_manual():
     assert [
         (r["patron"], r["tipo_flujo"], r["rubro_nombre"]) for r in SEMILLA_REGLAS
     ] == [
-        ("Abono", "ingreso", "Recaudo"),
-        ("Recibido de", "ingreso", "Recaudo"),
+        ("Abono", "ingreso", "Recaudo de cartera"),
+        ("Recibido de", "ingreso", "Recaudo de cartera"),
     ]
     for r in SEMILLA_REGLAS:
         assert r["origen"] == "manual"  # curaduría, no aprendizaje (Kimi §3)
@@ -123,14 +124,14 @@ def test_semilla_reglas_sin_pii_y_origen_manual():
 async def test_seed_reglas_idempotente_y_resuelve_rubro(db):
     from app.domain.regla_clasificacion import ReglaClasificacion
 
-    await seed_rubros(db)  # siembra 'Recaudo' primero
+    await seed_rubros(db)  # siembra 'Recaudo de cartera' primero
     n1, col1 = await seed_reglas_reporte(db)
     n2, col2 = await seed_reglas_reporte(db)
     assert n1 == 2 and col1 == []
     assert n2 == 0 and len(col2) == 2  # 2ª corrida: no duplica
     reglas = await ReglaClasificacion.find_all().to_list()
     assert len(reglas) == 2
-    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo")
+    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo de cartera")
     assert all(r.rubro_id == recaudo.id for r in reglas)
     assert all(r.activa for r in reglas)
 
