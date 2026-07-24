@@ -15,6 +15,7 @@ import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
 import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
+import ProyeccionPage from "@/pages/ProyeccionPage";
 import ReglasPage from "@/pages/ReglasPage";
 
 const queryClient = new QueryClient({
@@ -48,6 +49,14 @@ function Layout({ children }: { children: ReactNode }) {
               className="text-sm text-slate-600 hover:text-slate-900"
             >
               Meses
+            </Link>
+          )}
+          {puede("dashboard:leer") && (
+            <Link
+              to="/proyeccion"
+              className="text-sm font-medium text-brand hover:text-brand/80"
+            >
+              Proyecciones
             </Link>
           )}
           {puede("dashboard:leer") && (
@@ -130,6 +139,16 @@ export default function App() {
                 <Protegida>
                   <Layout>
                     <CargasPage />
+                  </Layout>
+                </Protegida>
+              }
+            />
+            <Route
+              path="/proyeccion"
+              element={
+                <Protegida>
+                  <Layout>
+                    <ProyeccionPage />
                   </Layout>
                 </Protegida>
               }

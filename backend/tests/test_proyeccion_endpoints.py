@@ -131,6 +131,8 @@ async def test_flujo_completo_ingreso_discriminado_y_kpis(api):
     data = r.json()
     assert len(data["meses"]) == 12
     assert data["escenario"] == "base"
+    # el umbral (caja mínima) viaja para la curva del front
+    assert data["caja_minima"] == "125000000.00"
     # montos como string (regla 1) + KPIs presentes
     assert isinstance(data["piso_caja"], str)
     assert "mes_mas_ajustado" in data and "capital_requerido" in data
