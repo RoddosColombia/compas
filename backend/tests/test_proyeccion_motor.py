@@ -17,6 +17,7 @@ from app.proyeccion.motor import (
     cuotas_iniciales_mensual,
     dias_de_cobro_del_mes,
     indice_semana,
+    inventario_auteco_mensual,
     neto_por_mora,
     recaudo_credito_mensual,
     semanas_de_cobro,
@@ -164,3 +165,33 @@ def test_neto_por_mora_sin_ajustes_es_el_bruto():
     )
     assert a.neto == Decimal("1000.00")
     assert a.provision == Decimal("0.00")
+
+
+# ── Inventario Auteco: saldo rodante (fila 29) + fondeo (fila 30) ──
+# Anti-doble-conteo: cada lote se paga UNA vez, desfasado delayPago meses.
+
+
+def test_inventario_auteco_saldo_rodante_y_fondeo():
+    # lote constante 10.000/mes, adelanto 0 el mes 0 y -1.000 en adelante.
+    # plazo 150d → delayPago=5; base 90d → delayBase=3; mesesInterés=2; tasa 1%.
+    lote = [Decimal("10000")] * 8
+    adelanto = [Decimal("0")] + [Decimal("-1000")] * 7
+    pago_inv, fondeo = inventario_auteco_mensual(
+        lote_por_mes=lote,
+        adelanto_por_mes=adelanto,
+        plazo_auteco_dias=150,
+        base_auteco_dias=90,
+        tasa_auteco=Decimal("0.01"),
+    )
+    # m<5: sin pago. m=5: -(lote[0]) - Σ adelanto[0..5] = -10000 -(-5000) = -5000.
+    # m=6: max(-5000,0) - lote[1] - adelanto[6] = 0 -10000 +1000 = -9000. m=7 igual.
+    assert pago_inv == [
+        Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"),
+        Decimal("0.00"), Decimal("-5000.00"), Decimal("-9000.00"), Decimal("-9000.00"),
+    ]
+    # fondeo: m=4 (=delayBase+1): -(lote[1]+adelanto[1])×1% = -(9000)×0.01 = -90.
+    # m>=5: -(lote[m-5])×1%×2 = -10000×0.02 = -200.
+    assert fondeo == [
+        Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"),
+        Decimal("-90.00"), Decimal("-200.00"), Decimal("-200.00"), Decimal("-200.00"),
+    ]

@@ -256,3 +256,50 @@ def neto_por_mora(
         neto=_cop(neto),
         provision=_cop(provision),
     )
+
+
+def inventario_auteco_mensual(
+    lote_por_mes: list[Decimal],
+    adelanto_por_mes: list[Decimal],
+    plazo_auteco_dias: int,
+    base_auteco_dias: int,
+    tasa_auteco: Decimal,
+) -> tuple[list[Decimal], list[Decimal]]:
+    """Pago de inventario Auteco (fila 29, saldo rodante) y fondeo (fila 30).
+
+    ANTI-DOBLE-CONTEO (el fix del artefacto): el lote se paga UNA sola vez, desfasado
+    `delayPago = INT(plazo/30)` meses. La recurrencia arranca del saldo del mes previo
+    pisado a 0 (`max(pago[m-1], 0)`), neteando el lote que vence y su adelanto.
+    Fondeo = costo de mantener el lote entre `delayBase` y `delayPago` (mesesInterés).
+    Series de egreso (valores negativos = salida de caja)."""
+    n = len(lote_por_mes)
+    delay_pago = plazo_auteco_dias // 30
+    delay_base = base_auteco_dias // 30
+    meses_interes = max(0, delay_pago - delay_base)
+
+    def lote(i: int) -> Decimal:
+        return lote_por_mes[i] if 0 <= i < n else Decimal("0")
+
+    def adel(i: int) -> Decimal:
+        return adelanto_por_mes[i] if 0 <= i < n else Decimal("0")
+
+    pago_inv: list[Decimal] = [Decimal("0")] * n
+    for m in range(n):
+        if m < delay_pago:
+            pago_inv[m] = Decimal("0")
+        elif m == delay_pago:
+            sum_ade = sum((adel(k) for k in range(delay_pago + 1)), Decimal("0"))
+            pago_inv[m] = -lote(0) - sum_ade
+        else:
+            prev = pago_inv[m - 1] if pago_inv[m - 1] > 0 else Decimal("0")
+            pago_inv[m] = prev - lote(m - delay_pago) - adel(m)
+
+    fondeo: list[Decimal] = [Decimal("0")] * n
+    for m in range(n):
+        if m < delay_pago:
+            if m == delay_base + 1:
+                fondeo[m] = -(lote(m - delay_base) + adel(m - delay_base)) * tasa_auteco
+        else:
+            fondeo[m] = -lote(m - delay_pago) * tasa_auteco * meses_interes
+
+    return [_cop(v) for v in pago_inv], [_cop(v) for v in fondeo]
