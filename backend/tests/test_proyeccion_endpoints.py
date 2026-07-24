@@ -176,9 +176,7 @@ async def test_modelo_baja_logica_y_reactivar(api):
     r = await api.post(f"/api/v1/modelos-moto/{mid}/desactivar", headers=h)
     assert r.status_code == 200 and r.json()["activo"] is False
     # reactivar via PATCH activo:true (B-3)
-    r = await api.patch(
-        f"/api/v1/modelos-moto/{mid}", json={"activo": True}, headers=h
-    )
+    r = await api.patch(f"/api/v1/modelos-moto/{mid}", json={"activo": True}, headers=h)
     assert r.status_code == 200 and r.json()["activo"] is True
     # PATCH activo:false → 422 (la baja va por /desactivar)
     r = await api.patch(

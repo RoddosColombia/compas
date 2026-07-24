@@ -60,9 +60,7 @@ class ParametrosProyeccion(Document):
         name = PARAMETROS_PROYECCION_COLLECTION
         # Historial temporal: una fila por vigencia (como Configuracion).
         indexes = [
-            IndexModel(
-                [("vigente_desde", 1)], name="vigencia_unica", unique=True
-            )
+            IndexModel([("vigente_desde", 1)], name="vigencia_unica", unique=True)
         ]
 
     @field_validator("vigente_desde")

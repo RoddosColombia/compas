@@ -189,14 +189,26 @@ def test_inventario_auteco_saldo_rodante_y_fondeo():
     # m<5: sin pago. m=5: -(lote[0]) - Σ adelanto[0..5] = -10000 -(-5000) = -5000.
     # m=6: max(-5000,0) - lote[1] - adelanto[6] = 0 -10000 +1000 = -9000. m=7 igual.
     assert pago_inv == [
-        Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"),
-        Decimal("0.00"), Decimal("-5000.00"), Decimal("-9000.00"), Decimal("-9000.00"),
+        Decimal("0.00"),
+        Decimal("0.00"),
+        Decimal("0.00"),
+        Decimal("0.00"),
+        Decimal("0.00"),
+        Decimal("-5000.00"),
+        Decimal("-9000.00"),
+        Decimal("-9000.00"),
     ]
     # fondeo: m=4 (=delayBase+1): -(lote[1]+adelanto[1])×1% = -(9000)×0.01 = -90.
     # m>=5: -(lote[m-5])×1%×2 = -10000×0.02 = -200.
     assert fondeo == [
-        Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"),
-        Decimal("-90.00"), Decimal("-200.00"), Decimal("-200.00"), Decimal("-200.00"),
+        Decimal("0.00"),
+        Decimal("0.00"),
+        Decimal("0.00"),
+        Decimal("0.00"),
+        Decimal("-90.00"),
+        Decimal("-200.00"),
+        Decimal("-200.00"),
+        Decimal("-200.00"),
     ]
 
 

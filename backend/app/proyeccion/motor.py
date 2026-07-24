@@ -29,6 +29,7 @@ def _cop(v: Decimal) -> Decimal:
     """Cuantiza a COP 2 decimales HALF_EVEN (misma política que money_str)."""
     return v.quantize(_CENTAVO, rounding=ROUND_HALF_EVEN)
 
+
 # Día de la semana de cobro, convención date.weekday(): 0=lunes … 6=domingo.
 # Miércoles = 2 (la semana 1 del 'Modelo Pagos' es el miércoles 2026-03-04).
 DIA_COBRO_DEFECTO = 2
@@ -521,9 +522,7 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
     flujos = [f.flujo for f in filas]
     prom_flujo = sum(flujos, Decimal("0")) / Decimal(len(flujos))
     runway = (
-        _cop(caja_final / -prom_flujo)
-        if prom_flujo < 0 and caja_final > 0
-        else None
+        _cop(caja_final / -prom_flujo) if prom_flujo < 0 and caja_final > 0 else None
     )
     return ResultadoProyeccion(
         meses=filas,
