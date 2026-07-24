@@ -149,8 +149,52 @@ async def test_get_lista_ordenada(api):
         "Arriendos",
         "Cafetería",
     ]
-    campos = {"id", "grupo", "nombre", "tipo_flujo", "orden", "activo", "es_sistema"}
+    campos = {
+        "id",
+        "grupo",
+        "nombre",
+        "tipo_flujo",
+        "codigo",
+        "tipo",
+        "orden",
+        "activo",
+        "es_sistema",
+    }
     assert campos <= set(d[0].keys())
+
+
+async def test_post_crea_con_codigo_y_tipo(api):
+    # ARQUITECTURA_PRESUPUESTAL: código jerárquico + Fijo/Variable en el alta.
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(
+        "/api/v1/rubros",
+        json={
+            "grupo": "operacion",
+            "nombre": "Freelance",
+            "tipo_flujo": "egreso",
+            "codigo": "2140",
+            "tipo": "variable",
+        },
+        headers=h,
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["codigo"] == "2140"
+    assert body["tipo"] == "variable"
+
+
+async def test_patch_edita_tipo_fijo_variable(api):
+    ac, _ = api
+    h = await _token(ac)
+    arr = await _rubro("Arriendos")
+    r = await ac.patch(
+        f"/api/v1/rubros/{arr.id}",
+        json={"codigo": "2010", "tipo": "fijo"},
+        headers=h,
+    )
+    assert r.status_code == 200
+    assert r.json()["tipo"] == "fijo" and r.json()["codigo"] == "2010"
 
 
 async def test_get_filtra_por_grupo_y_activo(api):

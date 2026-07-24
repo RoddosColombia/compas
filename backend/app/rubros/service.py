@@ -34,7 +34,7 @@ from pymongo.errors import DuplicateKeyError
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
 from app.domain.presupuesto import PresupuestoLinea
-from app.domain.rubro import Rubro, RubroGrupo, TipoFlujo
+from app.domain.rubro import Rubro, RubroGrupo, TipoFlujo, TipoRubro
 from app.domain.transaccion import Transaccion
 
 
@@ -88,8 +88,11 @@ async def crear_rubro(
     nombre: str,
     tipo_flujo: TipoFlujo,
     usuario_id: str,
+    codigo: str | None = None,
+    tipo: TipoRubro | None = None,
 ) -> Rubro:
-    """POST: crea con `orden` = máx(grupo)+1 y emite `rubro.creado` (fail-closed)."""
+    """POST: crea con `orden` = máx(grupo)+1 y emite `rubro.creado` (fail-closed).
+    `codigo` (jerárquico) y `tipo` (Fijo/Variable) son opcionales (ARQUITECTURA)."""
     if await Rubro.find_one(Rubro.grupo == grupo, Rubro.nombre == nombre) is not None:
         raise RubrosError(
             f"ya existe un rubro '{nombre}' en el grupo '{grupo.value}'", 409
@@ -99,6 +102,8 @@ async def crear_rubro(
         grupo=grupo,
         nombre=nombre,
         tipo_flujo=tipo_flujo,
+        codigo=codigo,
+        tipo=tipo,
         orden=(ultimo.orden if ultimo is not None else 0) + 1,
     )
     try:
@@ -119,6 +124,8 @@ async def crear_rubro(
                 "grupo": grupo.value,
                 "nombre": nombre,
                 "tipo_flujo": tipo_flujo.value,
+                "codigo": codigo,
+                "tipo": tipo.value if tipo is not None else None,
                 "orden": rubro.orden,
             },
         )
@@ -137,9 +144,12 @@ async def editar_rubro(
     orden: int | None = None,
     tipo_flujo: TipoFlujo | None = None,
     activo: bool | None = None,
+    codigo: str | None = None,
+    tipo: TipoRubro | None = None,
 ) -> Rubro:
-    """PATCH: edita nombre/orden/tipo_flujo y reactiva (B-3). Emite `rubro.editado`
-    con {campo: {anterior, nuevo}} (fail-closed B-5)."""
+    """PATCH: edita nombre/orden/tipo_flujo/codigo/tipo y reactiva (B-3). Emite
+    `rubro.editado` con {campo: {anterior, nuevo}} (fail-closed B-5). `codigo` y
+    `tipo` (Fijo/Variable) no afectan el cómputo → editables siempre."""
     rubro = await _obtener(rubro_id)
     if rubro.es_sistema:
         raise RubrosError(
@@ -148,6 +158,19 @@ async def editar_rubro(
 
     cambios: dict[str, dict] = {}
     previos: dict[str, object] = {}
+
+    if codigo is not None and codigo != rubro.codigo:
+        previos["codigo"] = rubro.codigo
+        cambios["codigo"] = {"anterior": rubro.codigo, "nuevo": codigo}
+        rubro.codigo = codigo
+
+    if tipo is not None and tipo is not rubro.tipo:
+        previos["tipo"] = rubro.tipo
+        cambios["tipo"] = {
+            "anterior": rubro.tipo.value if rubro.tipo is not None else None,
+            "nuevo": tipo.value,
+        }
+        rubro.tipo = tipo
 
     if activo is not None:
         if activo is False:

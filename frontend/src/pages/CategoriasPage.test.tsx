@@ -17,6 +17,8 @@ const RUBROS: Rubro[] = [
     grupo: "operacion",
     nombre: "Cafetería",
     tipo_flujo: "egreso",
+    codigo: "2060",
+    tipo: "variable",
     orden: 2,
     activo: true,
     es_sistema: false,
@@ -26,16 +28,20 @@ const RUBROS: Rubro[] = [
     grupo: "operacion",
     nombre: "Freelance",
     tipo_flujo: "egreso",
+    codigo: "2140",
+    tipo: "variable",
     orden: 1,
     activo: false,
     es_sistema: false,
   },
   {
     id: "r3",
-    grupo: "otros",
-    nombre: "Recaudo",
+    grupo: "ingresos_operativos",
+    nombre: "Recaudo de cartera",
     tipo_flujo: "ingreso",
-    orden: 34,
+    codigo: "0110",
+    tipo: "variable",
+    orden: 1,
     activo: true,
     es_sistema: true,
   },
@@ -61,10 +67,10 @@ function renderPage() {
   );
 }
 
-describe("agruparRubros (§1.2)", () => {
-  it("agrupa en el orden canónico de los 5 grupos y ordena por `orden`", () => {
+describe("agruparRubros (plan de cuentas)", () => {
+  it("agrupa en el orden canónico (ingresos primero) y ordena por `orden`", () => {
     const grupos = agruparRubros(RUBROS);
-    expect([...grupos.keys()]).toEqual(["operacion", "otros"]);
+    expect([...grupos.keys()]).toEqual(["ingresos_operativos", "operacion"]);
     expect(grupos.get("operacion")?.map((r) => r.nombre)).toEqual([
       "Freelance",
       "Cafetería",
@@ -100,7 +106,7 @@ describe("CategoriasPage", () => {
     expect(screen.queryByRole("button", { name: "Desactivar" })).toBeNull();
     expect(screen.queryByText("Nueva categoría")).toBeNull();
     // La data sigue visible (GET es dashboard:leer).
-    expect(screen.getByText("Recaudo")).toBeInTheDocument();
+    expect(screen.getByText("Recaudo de cartera")).toBeInTheDocument();
   });
 
   it("muestra estados: Activa / Inactiva / Sistema", async () => {
