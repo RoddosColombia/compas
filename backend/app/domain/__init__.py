@@ -11,7 +11,9 @@ from app.domain.carga import CargaBancaria
 from app.domain.configuracion import Configuracion
 from app.domain.idempotency import IdempotencyKey
 from app.domain.mes_control import MesControl
+from app.domain.modelo_moto import ModeloMoto
 from app.domain.pago_planeado import PagoPlaneado
+from app.domain.parametros_proyeccion import ParametrosProyeccion
 from app.domain.presupuesto import PresupuestoLinea
 from app.domain.regla_clasificacion import ReglaClasificacion
 from app.domain.rubro import Rubro
@@ -27,6 +29,8 @@ DOMAIN_DOCUMENTS: list[type] = [
     PresupuestoLinea,
     ReglaClasificacion,
     PagoPlaneado,
+    ModeloMoto,
+    ParametrosProyeccion,
 ]
 
 __all__ = [
@@ -39,5 +43,7 @@ __all__ = [
     "PresupuestoLinea",
     "ReglaClasificacion",
     "PagoPlaneado",
+    "ModeloMoto",
+    "ParametrosProyeccion",
     "DOMAIN_DOCUMENTS",
 ]
