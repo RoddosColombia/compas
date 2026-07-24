@@ -14,6 +14,7 @@ import CajaPage from "@/pages/CajaPage";
 import CargasPage from "@/pages/CargasPage";
 import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
+import DashboardsPage from "@/pages/DashboardsPage";
 import DatosPage from "@/pages/DatosPage";
 import EnConstruccion from "@/pages/EnConstruccion";
 import InicioPage from "@/pages/InicioPage";
@@ -107,10 +108,7 @@ export default function App() {
               path="/dashboards"
               element={
                 <Cockpit>
-                  <EnConstruccion
-                    vista="Dashboards"
-                    descripcion="Cartera, mora, cobranza y colocación."
-                  />
+                  <DashboardsPage />
                 </Cockpit>
               }
             />
