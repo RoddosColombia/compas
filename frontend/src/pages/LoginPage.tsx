@@ -19,7 +19,7 @@ export default function LoginPage() {
 
   async function alEntrar() {
     await refrescarCapacidades();
-    nav("/cargas", { replace: true });
+    nav("/inicio", { replace: true });
   }
 
   async function onSubmit(e: FormEvent) {

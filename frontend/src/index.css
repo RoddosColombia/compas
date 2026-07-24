@@ -1,16 +1,42 @@
 @import "tailwindcss";
 
-/* ── Identidad RODDOS — TEMA CLARO (decisión CEO 2026-07-21) ──
-   Fondo blanco; verde y turquesa como acentos; rojo/ámbar para semáforos.
-   Tokens expuestos como variables Tailwind 4 (@theme) para usarlos como
-   clases utilitarias (bg-brand, text-brand-turq, …) en toda la app. */
+/* ── Identidad RODDOS — cockpit del Blueprint UX (decisión CEO) ──
+   Fondo blanco; Cyber Cyan = acción/navegación; Growth Green = positivo;
+   rojo = COLOR DE SISTEMA (solo perforación de caja / negativos), nunca decorativo.
+   Tipografía: Montserrat (titulares + cifras, tabular-nums) sobre Raleway (cuerpo/UI).
+   Tokens expuestos como variables Tailwind 4 (@theme) → clases utilitarias
+   (bg-cyan, text-green, font-display, border-hairline, …). */
 @theme {
+  /* Marca */
+  --color-cyan: #0fa9b8; /* Cyber Cyan — acción primaria + nav activa */
+  --color-cyan-soft: #76e5ec;
+  --color-cyan-tint: #ecfbfc; /* fondo tenue del ítem activo */
+  --color-green: #12a312; /* Growth Green — positivo/éxito */
+  --color-green-soft: #1dc91d;
+
+  /* Sistema (semáforo) */
+  --color-red: #e0524d; /* perforación de caja / negativo — reservado */
+  --color-amber: #e8a83a; /* advertencia */
+
+  /* Neutrales sobre blanco */
+  --color-ink: #0f172a; /* texto principal (slate-900) */
+  --color-ink-soft: #64748b; /* texto secundario (slate-500) */
+  --color-ink-faint: #94a3b8; /* etiquetas/captions (slate-400) */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc; /* fondos tenues (slate-50) */
+  --color-hairline: #e2e8f0; /* bordes de 1px (slate-200) */
+
+  /* Compat: alias del token histórico `brand` (verde) para no romper vistas previas */
   --color-brand: #12a312;
   --color-brand-soft: #1dc91d;
   --color-turq: #0fa9b8;
   --color-turq-soft: #76e5ec;
   --color-alert: #e0524d;
   --color-warn: #e8a83a;
+
+  /* Tipografía */
+  --font-sans: "Raleway", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Montserrat", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -18,6 +44,15 @@
 }
 
 body {
-  background: #ffffff;
-  color: #0f172a; /* slate-900 */
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Cifras siempre alineadas en tablas y KPIs. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
