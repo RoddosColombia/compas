@@ -1,13 +1,17 @@
 // frontend/src/pages/ControlPage.tsx
 //
-// Vista Control (Sprint 4, cara del demo G3): presupuesto definido vs ejecutado
-// vs disponible por rubro y grupo, con semáforo (verde/amarillo/rojo). Selector de
-// mes (solo meses en ejecución o cerrados). Montos con formatCOP (regla 1); el
-// cálculo y el semáforo vienen del backend — el front solo presenta (Spec §17).
+// Presupuesto (vista Control): presupuesto definido vs ejecutado vs disponible por
+// rubro y grupo, con semáforo (verde/ámbar/rojo). Selector de mes (solo meses en
+// ejecución o cerrados) y vista por categoría / por cuenta. Montos con formatCOP
+// (regla 1); el cálculo y el semáforo vienen del backend — el front solo presenta.
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import { PageHeader } from "@/components/layout/PageHeader";
+import { AlertBanner } from "@/components/ui/alert-banner";
+import { Card } from "@/components/ui/card";
+import { KpiTile } from "@/components/ui/kpi-tile";
 import {
   BANCO_LABEL,
   type ControlPorCuenta,
@@ -18,13 +22,14 @@ import {
 } from "@/lib/control";
 import { listarMeses } from "@/lib/meses";
 import { formatCOP } from "@/lib/money";
+import { cn } from "@/lib/utils";
 
 type Vista = "categoria" | "cuenta";
 
 const SEMAFORO_ESTILO: Record<Semaforo, string> = {
-  verde: "bg-brand-soft/20 text-brand",
-  amarillo: "bg-warn/20 text-warn",
-  rojo: "bg-alert/20 text-alert",
+  verde: "bg-green/10 text-green",
+  amarillo: "bg-amber/10 text-amber",
+  rojo: "bg-red/10 text-red",
 };
 
 const SEMAFORO_LABEL: Record<Semaforo, string> = {
@@ -62,45 +67,60 @@ export default function ControlPage() {
     enabled: mes !== null && vista === "cuenta",
   });
 
+  const acciones = (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="inline-flex rounded-lg border border-hairline p-0.5 font-sans text-sm">
+        <button
+          type="button"
+          onClick={() => setVista("categoria")}
+          className={cn(
+            "rounded-md px-3 py-1 font-medium transition-colors",
+            vista === "categoria"
+              ? "bg-cyan text-white"
+              : "text-ink-soft hover:text-ink",
+          )}
+        >
+          Por categoría
+        </button>
+        <button
+          type="button"
+          onClick={() => setVista("cuenta")}
+          className={cn(
+            "rounded-md px-3 py-1 font-medium transition-colors",
+            vista === "cuenta"
+              ? "bg-cyan text-white"
+              : "text-ink-soft hover:text-ink",
+          )}
+        >
+          Por cuenta
+        </button>
+      </div>
+      {disponibles.length > 0 && (
+        <label className="flex items-center gap-2 font-sans text-sm">
+          <span className="text-ink-soft">Mes</span>
+          <select
+            className="rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            value={mes ?? ""}
+            onChange={(e) => setMesSel(e.target.value)}
+          >
+            {disponibles.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  );
+
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold">Vista Control</h2>
-          <div className="flex rounded-md border border-slate-300 text-sm">
-            <button
-              type="button"
-              onClick={() => setVista("categoria")}
-              className={`rounded-l-md px-3 py-1 ${vista === "categoria" ? "bg-brand text-white" : "text-slate-600"}`}
-            >
-              Por categoría
-            </button>
-            <button
-              type="button"
-              onClick={() => setVista("cuenta")}
-              className={`rounded-r-md px-3 py-1 ${vista === "cuenta" ? "bg-brand text-white" : "text-slate-600"}`}
-            >
-              Por cuenta
-            </button>
-          </div>
-        </div>
-        {disponibles.length > 0 && (
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-slate-500">Mes</span>
-            <select
-              className="rounded-md border border-slate-300 px-3 py-1.5"
-              value={mes ?? ""}
-              onChange={(e) => setMesSel(e.target.value)}
-            >
-              {disponibles.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </header>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        titulo="Presupuesto"
+        descripcion="Presupuesto definido vs ejecutado por rubro, con semáforo."
+        acciones={acciones}
+      />
 
       {vista === "cuenta" && (
         <MatrizPorCuenta
@@ -110,114 +130,101 @@ export default function ControlPage() {
         />
       )}
 
-      {meses.isLoading && <p className="text-sm text-slate-500">Cargando…</p>}
+      {meses.isLoading && (
+        <p className="font-sans text-sm text-ink-soft">Cargando…</p>
+      )}
       {meses.data && disponibles.length === 0 && (
-        <p className="text-sm text-slate-500">
+        <p className="font-sans text-sm text-ink-soft">
           No hay meses en ejecución o cerrados. Aprueba el presupuesto de un mes
           para ver su control.
         </p>
       )}
 
       {vista === "categoria" && control.isLoading && (
-        <p className="text-sm text-slate-500">Cargando control…</p>
+        <p className="font-sans text-sm text-ink-soft">Cargando control…</p>
       )}
       {vista === "categoria" && control.isError && (
-        <p className="text-sm text-alert">
+        <AlertBanner variant="danger">
           No se pudo cargar la Vista Control.
-        </p>
+        </AlertBanner>
       )}
 
       {vista === "categoria" && control.data && (
         <>
-          <div className="flex flex-wrap gap-4">
-            <TarjetaResumen
-              titulo="Caja disponible"
-              valor={formatCOP(control.data.caja_disponible)}
-              acento="turq"
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KpiTile
+              label="Caja disponible"
+              value={formatCOP(control.data.caja_disponible)}
             />
-            <TarjetaResumen
-              titulo="Presupuesto definido"
-              valor={formatCOP(control.data.total.definido)}
+            <KpiTile
+              label="Presupuesto definido"
+              value={formatCOP(control.data.total.definido)}
             />
-            <TarjetaResumen
-              titulo="Ejecutado"
-              valor={formatCOP(control.data.total.ejecutado)}
+            <KpiTile
+              label="Ejecutado"
+              value={formatCOP(control.data.total.ejecutado)}
             />
-            <TarjetaResumen
-              titulo="Disponible"
-              valor={formatCOP(control.data.total.disponible)}
-              acento="brand"
+            <KpiTile
+              label="Disponible"
+              value={formatCOP(control.data.total.disponible)}
             />
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="py-2 pr-4">Rubro</th>
-                  <th className="py-2 pr-4 text-right">Definido</th>
-                  <th className="py-2 pr-4 text-right">Ejecutado</th>
-                  <th className="py-2 pr-4 text-right">Disponible</th>
-                  <th className="py-2 pr-4 text-right">% ejec.</th>
-                  <th className="py-2 pr-4">Semáforo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {control.data.grupos.map((g) => (
-                  <GrupoBloque key={g.grupo} grupo={g} />
-                ))}
-                <tr className="border-t-2 border-slate-300 font-semibold">
-                  <td className="py-2 pr-4">Total</td>
-                  <td className="py-2 pr-4 text-right font-mono">
-                    {formatCOP(control.data.total.definido)}
-                  </td>
-                  <td className="py-2 pr-4 text-right font-mono">
-                    {formatCOP(control.data.total.ejecutado)}
-                  </td>
-                  <td className="py-2 pr-4 text-right font-mono">
-                    {formatCOP(control.data.total.disponible)}
-                  </td>
-                  <td className="py-2 pr-4" />
-                  <td className="py-2 pr-4" />
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <Card className="overflow-hidden p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full font-sans text-sm">
+                <thead>
+                  <tr className="border-b border-hairline text-left text-ink-faint">
+                    <th className="px-4 py-2.5 font-semibold">Rubro</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">
+                      Definido
+                    </th>
+                    <th className="px-4 py-2.5 text-right font-semibold">
+                      Ejecutado
+                    </th>
+                    <th className="px-4 py-2.5 text-right font-semibold">
+                      Disponible
+                    </th>
+                    <th className="px-4 py-2.5 text-right font-semibold">
+                      % ejec.
+                    </th>
+                    <th className="px-4 py-2.5 font-semibold">Semáforo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {control.data.grupos.map((g) => (
+                    <GrupoBloque key={g.grupo} grupo={g} />
+                  ))}
+                  <tr className="border-t-2 border-hairline font-semibold text-ink">
+                    <td className="px-4 py-2.5">Total</td>
+                    <td className="tabular px-4 py-2.5 text-right">
+                      {formatCOP(control.data.total.definido)}
+                    </td>
+                    <td className="tabular px-4 py-2.5 text-right">
+                      {formatCOP(control.data.total.ejecutado)}
+                    </td>
+                    <td className="tabular px-4 py-2.5 text-right">
+                      {formatCOP(control.data.total.disponible)}
+                    </td>
+                    <td className="px-4 py-2.5" />
+                    <td className="px-4 py-2.5" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
           {control.data.sin_presupuesto.length > 0 && (
-            <div className="rounded-md bg-warn/10 px-3 py-2 text-sm text-slate-700">
-              <span className="font-medium text-warn">Sin presupuesto:</span>{" "}
-              gastos en rubros sin línea definida este mes —{" "}
+            <AlertBanner variant="warn">
+              <span className="font-semibold">Sin presupuesto:</span> gastos en
+              rubros sin línea definida este mes —{" "}
               {control.data.sin_presupuesto
                 .map((s) => `${s.rubro} (${formatCOP(s.ejecutado)})`)
                 .join(" · ")}
-            </div>
+            </AlertBanner>
           )}
         </>
       )}
-    </div>
-  );
-}
-
-function TarjetaResumen({
-  titulo,
-  valor,
-  acento,
-}: {
-  titulo: string;
-  valor: string;
-  acento?: "brand" | "turq";
-}) {
-  const color =
-    acento === "brand"
-      ? "text-brand"
-      : acento === "turq"
-        ? "text-turq"
-        : "text-slate-800";
-  return (
-    <div className="min-w-40 flex-1 rounded-lg border border-slate-200 px-4 py-3">
-      <p className="text-xs text-slate-500">{titulo}</p>
-      <p className={`mt-1 font-mono text-lg font-semibold ${color}`}>{valor}</p>
     </div>
   );
 }
@@ -232,57 +239,63 @@ function MatrizPorCuenta({
   data: ControlPorCuenta | undefined;
 }) {
   if (cargando)
-    return <p className="text-sm text-slate-500">Cargando por cuenta…</p>;
+    return (
+      <p className="font-sans text-sm text-ink-soft">Cargando por cuenta…</p>
+    );
   if (error)
     return (
-      <p className="text-sm text-alert">
+      <AlertBanner variant="danger">
         No se pudo cargar la vista por cuenta.
-      </p>
+      </AlertBanner>
     );
   if (!data) return null;
   if (data.bancos.length === 0)
     return (
-      <p className="text-sm text-slate-500">
+      <p className="font-sans text-sm text-ink-soft">
         Aún no hay egresos con banco en este mes.
       </p>
     );
 
   const bancos = data.bancos;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-left text-slate-500">
-            <th className="py-2 pr-4">Rubro</th>
-            {bancos.map((b) => (
-              <th key={b} className="py-2 pr-4 text-right">
-                {BANCO_LABEL[b] ?? b}
-              </th>
-            ))}
-            <th className="py-2 pr-4 text-right">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.grupos.map((g) => (
-            <MatrizGrupo key={g.grupo} grupo={g} bancos={bancos} />
-          ))}
-          <tr className="border-t-2 border-slate-300 font-semibold">
-            <td className="py-2 pr-4">Total</td>
-            {bancos.map((b) => (
-              <td key={b} className="py-2 pr-4 text-right font-mono">
-                {formatCOP(data.total.por_banco[b])}
-              </td>
-            ))}
-            <td className="py-2 pr-4 text-right font-mono">
-              {formatCOP(data.total.total)}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <>
+      <Card className="overflow-hidden p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full font-sans text-sm">
+            <thead>
+              <tr className="border-b border-hairline text-left text-ink-faint">
+                <th className="px-4 py-2.5 font-semibold">Rubro</th>
+                {bancos.map((b) => (
+                  <th key={b} className="px-4 py-2.5 text-right font-semibold">
+                    {BANCO_LABEL[b] ?? b}
+                  </th>
+                ))}
+                <th className="px-4 py-2.5 text-right font-semibold">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.grupos.map((g) => (
+                <MatrizGrupo key={g.grupo} grupo={g} bancos={bancos} />
+              ))}
+              <tr className="border-t-2 border-hairline font-semibold text-ink">
+                <td className="px-4 py-2.5">Total</td>
+                {bancos.map((b) => (
+                  <td key={b} className="tabular px-4 py-2.5 text-right">
+                    {formatCOP(data.total.por_banco[b])}
+                  </td>
+                ))}
+                <td className="tabular px-4 py-2.5 text-right">
+                  {formatCOP(data.total.total)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {data.sin_presupuesto.length > 0 && (
-        <div className="mt-4 rounded-md bg-warn/10 px-3 py-2 text-sm text-slate-700">
-          <span className="font-medium text-warn">Sin presupuesto:</span>{" "}
+        <AlertBanner variant="warn">
+          <span className="font-semibold">Sin presupuesto:</span>{" "}
           {data.sin_presupuesto
             .map(
               (s) =>
@@ -295,9 +308,9 @@ function MatrizPorCuenta({
                   .join(", ")})`,
             )
             .join(" · ")}
-        </div>
+        </AlertBanner>
       )}
-    </div>
+    </>
   );
 }
 
@@ -310,35 +323,35 @@ function MatrizGrupo({
 }) {
   return (
     <>
-      <tr className="bg-slate-50">
+      <tr className="bg-surface-muted">
         <td
           colSpan={bancos.length + 2}
-          className="py-1.5 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo.grupo] ?? grupo.grupo}
         </td>
       </tr>
       {grupo.lineas.map((l) => (
-        <tr key={l.rubro_id} className="border-b border-slate-100">
-          <td className="py-2 pr-4">{l.rubro}</td>
+        <tr key={l.rubro_id} className="border-b border-hairline/60">
+          <td className="px-4 py-2 text-ink">{l.rubro}</td>
           {bancos.map((b) => (
-            <td key={b} className="py-2 pr-4 text-right font-mono">
+            <td key={b} className="tabular px-4 py-2 text-right text-ink-soft">
               {formatCOP(l.por_banco[b])}
             </td>
           ))}
-          <td className="py-2 pr-4 text-right font-mono font-medium">
+          <td className="tabular px-4 py-2 text-right font-medium text-ink">
             {formatCOP(l.total)}
           </td>
         </tr>
       ))}
-      <tr className="border-b border-slate-200 text-slate-500">
-        <td className="py-1.5 pr-4 text-right text-xs italic">Subtotal</td>
+      <tr className="border-b border-hairline text-ink-faint">
+        <td className="px-4 py-1.5 text-right text-xs italic">Subtotal</td>
         {bancos.map((b) => (
-          <td key={b} className="py-1.5 pr-4 text-right font-mono text-xs">
+          <td key={b} className="tabular px-4 py-1.5 text-right text-xs">
             {formatCOP(grupo.subtotal.por_banco[b])}
           </td>
         ))}
-        <td className="py-1.5 pr-4 text-right font-mono text-xs">
+        <td className="tabular px-4 py-1.5 text-right text-xs">
           {formatCOP(grupo.subtotal.total)}
         </td>
       </tr>
@@ -353,52 +366,52 @@ function GrupoBloque({
 }) {
   return (
     <>
-      <tr className="bg-slate-50">
+      <tr className="bg-surface-muted">
         <td
           colSpan={6}
-          className="py-1.5 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo.grupo] ?? grupo.grupo}
         </td>
       </tr>
       {grupo.lineas.map((l) => (
-        <tr key={l.rubro_id} className="border-b border-slate-100">
-          <td className="py-2 pr-4">{l.rubro}</td>
-          <td className="py-2 pr-4 text-right font-mono">
+        <tr key={l.rubro_id} className="border-b border-hairline/60">
+          <td className="px-4 py-2 text-ink">{l.rubro}</td>
+          <td className="tabular px-4 py-2 text-right text-ink-soft">
             {formatCOP(l.definido)}
           </td>
-          <td className="py-2 pr-4 text-right font-mono">
+          <td className="tabular px-4 py-2 text-right text-ink-soft">
             {formatCOP(l.ejecutado)}
           </td>
-          <td className="py-2 pr-4 text-right font-mono">
+          <td className="tabular px-4 py-2 text-right text-ink-soft">
             {formatCOP(l.disponible)}
           </td>
-          <td className="py-2 pr-4 text-right font-mono text-slate-600">
+          <td className="tabular px-4 py-2 text-right text-ink-soft">
             {l.pct_ejecutado === null ? "—" : `${l.pct_ejecutado}%`}
           </td>
-          <td className="py-2 pr-4">
+          <td className="px-4 py-2">
             <span
               title={SEMAFORO_LABEL[l.semaforo]}
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${SEMAFORO_ESTILO[l.semaforo]}`}
+              className={`rounded-full px-2 py-0.5 font-sans text-xs font-medium ${SEMAFORO_ESTILO[l.semaforo]}`}
             >
               {SEMAFORO_LABEL[l.semaforo]}
             </span>
           </td>
         </tr>
       ))}
-      <tr className="border-b border-slate-200 text-slate-500">
-        <td className="py-1.5 pr-4 text-right text-xs italic">Subtotal</td>
-        <td className="py-1.5 pr-4 text-right font-mono text-xs">
+      <tr className="border-b border-hairline text-ink-faint">
+        <td className="px-4 py-1.5 text-right text-xs italic">Subtotal</td>
+        <td className="tabular px-4 py-1.5 text-right text-xs">
           {formatCOP(grupo.subtotal.definido)}
         </td>
-        <td className="py-1.5 pr-4 text-right font-mono text-xs">
+        <td className="tabular px-4 py-1.5 text-right text-xs">
           {formatCOP(grupo.subtotal.ejecutado)}
         </td>
-        <td className="py-1.5 pr-4 text-right font-mono text-xs">
+        <td className="tabular px-4 py-1.5 text-right text-xs">
           {formatCOP(grupo.subtotal.disponible)}
         </td>
-        <td className="py-1.5 pr-4" />
-        <td className="py-1.5 pr-4" />
+        <td className="px-4 py-1.5" />
+        <td className="px-4 py-1.5" />
       </tr>
     </>
   );
