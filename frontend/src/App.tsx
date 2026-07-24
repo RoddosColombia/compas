@@ -1,18 +1,20 @@
-// frontend/src/App.tsx — shell de la app: providers + router + layout.
+// frontend/src/App.tsx — shell de la app: providers + router + cockpit.
 //
-// El navbar se deriva de las capacidades del rol (GET /auth/capabilities) —
-// regla 9: prohibido mapear rol→ítems en el frontend.
+// El cockpit (AppShell) monta el sidebar del Blueprint, cuyo árbol se deriva de
+// las capacidades del rol (regla 9: prohibido mapear rol→ítems disperso; la
+// fuente única es src/lib/navegacion.ts).
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "@/auth/AuthContext";
-import { Button } from "@/components/ui/button";
+import { AppShell } from "@/components/layout/AppShell";
 import CajaPage from "@/pages/CajaPage";
 import CargasPage from "@/pages/CargasPage";
 import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
+import EnConstruccion from "@/pages/EnConstruccion";
 import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
 import ProyeccionPage from "@/pages/ProyeccionPage";
@@ -26,7 +28,7 @@ function Protegida({ children }: { children: ReactNode }) {
   const { cargando, despertando, autenticado } = useAuth();
   if (cargando) {
     return (
-      <p className="p-8 text-sm text-slate-500">
+      <p className="p-8 font-sans text-sm text-ink-soft">
         {despertando
           ? "Despertando el servidor… (la primera carga tras un rato puede tardar ~1 min)"
           : "Cargando sesión…"}
@@ -36,85 +38,24 @@ function Protegida({ children }: { children: ReactNode }) {
   return autenticado ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
-function Layout({ children }: { children: ReactNode }) {
-  const { rol, puede, cerrarSesion } = useAuth();
+/** Ruta del cockpit: protegida + montada dentro del AppShell. */
+function Cockpit({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto min-h-screen max-w-5xl p-6">
-      <nav className="mb-8 flex items-center justify-between border-b border-slate-200 pb-4">
-        <div className="flex items-center gap-6">
-          <h1 className="text-lg font-bold tracking-tight">COMPAS</h1>
-          {puede("dashboard:leer") && (
-            <Link
-              to="/meses"
-              className="text-sm text-slate-600 hover:text-slate-900"
-            >
-              Meses
-            </Link>
-          )}
-          {puede("dashboard:leer") && (
-            <Link
-              to="/proyeccion"
-              className="text-sm font-medium text-brand hover:text-brand/80"
-            >
-              Proyecciones
-            </Link>
-          )}
-          {puede("dashboard:leer") && (
-            <Link
-              to="/control"
-              className="text-sm text-slate-600 hover:text-slate-900"
-            >
-              Control
-            </Link>
-          )}
-          {puede("caja:reportar") && (
-            <Link
-              to="/caja"
-              className="text-sm text-slate-600 hover:text-slate-900"
-            >
-              Caja
-            </Link>
-          )}
-          {puede("cargas:gestionar") && (
-            <Link
-              to="/cargas"
-              className="text-sm text-slate-600 hover:text-slate-900"
-            >
-              Cargas
-            </Link>
-          )}
-          {puede("dashboard:leer") && (
-            <Link
-              to="/categorias"
-              className="text-sm text-slate-600 hover:text-slate-900"
-            >
-              Categorías
-            </Link>
-          )}
-          {puede("dashboard:leer") && (
-            <Link
-              to="/reglas"
-              className="text-sm text-slate-600 hover:text-slate-900"
-            >
-              Reglas
-            </Link>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400 capitalize">{rol}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void cerrarSesion()}
-          >
-            Salir
-          </Button>
-        </div>
-      </nav>
-      {children}
-    </div>
+    <Protegida>
+      <AppShell>{children}</AppShell>
+    </Protegida>
   );
 }
+
+// Herramientas de captura que ya existen; se agrupan bajo "Datos" mientras la
+// vista definitiva de la Fase B las absorbe.
+const ENLACES_DATOS = [
+  { label: "Caja", path: "/caja" },
+  { label: "Cargas", path: "/cargas" },
+  { label: "Categorías", path: "/categorias" },
+  { label: "Reglas", path: "/reglas" },
+  { label: "Meses", path: "/meses" },
+];
 
 export default function App() {
   return (
@@ -123,77 +64,135 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+
+            {/* ── Las 8 vistas del Blueprint ── */}
             <Route
-              path="/meses"
+              path="/inicio"
               element={
-                <Protegida>
-                  <Layout>
-                    <MesesPage />
-                  </Layout>
-                </Protegida>
-              }
-            />
-            <Route
-              path="/cargas"
-              element={
-                <Protegida>
-                  <Layout>
-                    <CargasPage />
-                  </Layout>
-                </Protegida>
+                <Cockpit>
+                  <EnConstruccion
+                    vista="Inicio"
+                    descripcion="Pulso ejecutivo: caja, runway y alertas del mes."
+                  />
+                </Cockpit>
               }
             />
             <Route
               path="/proyeccion"
               element={
-                <Protegida>
-                  <Layout>
-                    <ProyeccionPage />
-                  </Layout>
-                </Protegida>
+                <Cockpit>
+                  <ProyeccionPage />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/escenarios"
+              element={
+                <Cockpit>
+                  <EnConstruccion
+                    vista="Escenarios"
+                    descripcion="Comparar pesimista, base y optimista superpuestos."
+                  />
+                </Cockpit>
               }
             />
             <Route
               path="/control"
               element={
-                <Protegida>
-                  <Layout>
-                    <ControlPage />
-                  </Layout>
-                </Protegida>
+                <Cockpit>
+                  <ControlPage />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/iva"
+              element={
+                <Cockpit>
+                  <EnConstruccion
+                    vista="IVA"
+                    descripcion="Generado, descontable y liquidación cuatrimestral."
+                  />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/dashboards"
+              element={
+                <Cockpit>
+                  <EnConstruccion
+                    vista="Dashboards"
+                    descripcion="Cartera, mora, cobranza y colocación."
+                  />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/reportes"
+              element={
+                <Cockpit>
+                  <EnConstruccion
+                    vista="Reportes"
+                    descripcion="Actualizaciones para el board y export a PDF."
+                  />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/datos"
+              element={
+                <Cockpit>
+                  <EnConstruccion
+                    vista="Datos"
+                    descripcion="Caja inicial y captura de supuestos y presupuestos."
+                    enlaces={ENLACES_DATOS}
+                  />
+                </Cockpit>
+              }
+            />
+
+            {/* ── Herramientas de captura existentes (se reubican en Fase B) ── */}
+            <Route
+              path="/meses"
+              element={
+                <Cockpit>
+                  <MesesPage />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/cargas"
+              element={
+                <Cockpit>
+                  <CargasPage />
+                </Cockpit>
               }
             />
             <Route
               path="/caja"
               element={
-                <Protegida>
-                  <Layout>
-                    <CajaPage />
-                  </Layout>
-                </Protegida>
+                <Cockpit>
+                  <CajaPage />
+                </Cockpit>
               }
             />
             <Route
               path="/categorias"
               element={
-                <Protegida>
-                  <Layout>
-                    <CategoriasPage />
-                  </Layout>
-                </Protegida>
+                <Cockpit>
+                  <CategoriasPage />
+                </Cockpit>
               }
             />
             <Route
               path="/reglas"
               element={
-                <Protegida>
-                  <Layout>
-                    <ReglasPage />
-                  </Layout>
-                </Protegida>
+                <Cockpit>
+                  <ReglasPage />
+                </Cockpit>
               }
             />
-            <Route path="*" element={<Navigate to="/meses" replace />} />
+
+            <Route path="*" element={<Navigate to="/inicio" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

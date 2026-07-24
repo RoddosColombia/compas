@@ -6,13 +6,18 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-sans text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-slate-900 text-white hover:bg-slate-800",
-        outline: "border border-slate-300 bg-transparent hover:bg-slate-100",
-        ghost: "hover:bg-slate-100",
+        // cyan = acción primaria del cockpit (Cyber Cyan)
+        cyan: "bg-cyan text-white hover:bg-cyan/90",
+        // green = confirmar/positivo (Growth Green)
+        green: "bg-green text-white hover:bg-green/90",
+        default: "bg-ink text-white hover:bg-ink/90",
+        outline:
+          "border border-hairline bg-transparent text-ink hover:bg-surface-muted",
+        ghost: "text-ink hover:bg-surface-muted",
       },
       size: {
         default: "h-9 px-4 py-2",
