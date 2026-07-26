@@ -1,6 +1,6 @@
-// Dashboards — panel operativo. Muestra las series que el motor YA proyecta
-// (cobranza, cartera activa, cuotas iniciales, ingreso bruto) y avisa honestamente
-// que cartera por añada / mora por tramo / colocación requieren backend adicional.
+// Dashboards — panel operativo. Muestra las series del motor (cobranza, cartera,
+// ingreso), la colocación y cartera por añada (DASH-01) y la mora por tramo derivada
+// del LoanTape real de SISMO-V3 (aging).
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
@@ -77,6 +77,42 @@ const OPER = {
   ],
 };
 
+const AGING = {
+  fecha_corte: "2026-07-22",
+  tramos: [
+    {
+      tramo: "al_dia",
+      etiqueta: "Al día",
+      n_creditos: 80,
+      saldo_en_mora: "0.00",
+    },
+    {
+      tramo: "1_30",
+      etiqueta: "1-30 días",
+      n_creditos: 10,
+      saldo_en_mora: "1500000.00",
+    },
+    {
+      tramo: "31_60",
+      etiqueta: "31-60 días",
+      n_creditos: 5,
+      saldo_en_mora: "900000.00",
+    },
+    {
+      tramo: "61_90",
+      etiqueta: "61-90 días",
+      n_creditos: 2,
+      saldo_en_mora: "400000.00",
+    },
+    {
+      tramo: "90_mas",
+      etiqueta: "90+ días",
+      n_creditos: 3,
+      saldo_en_mora: "1200000.00",
+    },
+  ],
+};
+
 vi.mock("@/lib/proyeccion", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/proyeccion")>();
   return {
@@ -85,6 +121,15 @@ vi.mock("@/lib/proyeccion", async (importOriginal) => {
     obtenerOperacion: () => Promise.resolve(OPER),
   };
 });
+
+vi.mock("@/lib/loantape", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/loantape")>();
+  return { ...real, obtenerAging: () => Promise.resolve(AGING) };
+});
+
+vi.mock("@/auth/AuthContext", () => ({
+  useAuth: () => ({ puede: () => false }),
+}));
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -112,9 +157,14 @@ describe("DashboardsPage", () => {
     expect(screen.getAllByText("previa").length).toBeGreaterThan(0);
   });
 
-  it("avisa honestamente que la mora por tramo (aging) aún no se proyecta", async () => {
+  it("muestra la mora por tramo del LoanTape real (aging)", async () => {
     renderPage();
-    await screen.findByText("Cobranza proyectada");
-    expect(screen.getByText(/por tramo/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Mora por tramo" }),
+    ).toBeInTheDocument();
+    // los tramos del aging aparecen con su etiqueta y monto
+    expect(await screen.findByText("90+ días")).toBeInTheDocument();
+    expect(screen.getByText(/1\.200\.000,00/)).toBeInTheDocument();
+    expect(screen.getByText(/corte 2026-07-22/)).toBeInTheDocument();
   });
 });

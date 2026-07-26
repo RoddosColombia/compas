@@ -15,9 +15,9 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_46_eventos():
-    assert len(AuditEvento) == 46
-    assert len(CATALOGO_EVENTOS) == 46
+def test_catalogo_tiene_exactamente_47_eventos():
+    assert len(AuditEvento) == 47
+    assert len(CATALOGO_EVENTOS) == 47
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():
@@ -54,6 +54,7 @@ def test_eventos_clave_presentes():
         "cartera_previa.cargada",  # CR Fidelidad (PR-1): seed serie cartera previa
         "factura.creada",  # v1.0 / CR Fidelidad (PR-2a): carga de factura para IVA
         "factura.anulada",  # CR Fidelidad (PR-2a): baja lógica de factura cargada
+        "loantape.cargado",  # aging SISMO-V3: carga del LoanTape semanal
     ):
         assert esperado in CATALOGO_EVENTOS
 

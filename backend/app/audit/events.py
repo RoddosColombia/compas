@@ -94,6 +94,9 @@ class AuditEvento(StrEnum):
     # (par de `factura.creada`, ya en v1.0). `factura_emitida.anulada` es SOLO para la
     # emisión de ventas; esta cubre compras+ventas cargadas al liquidador (45 -> 46).
     factura_anulada = "factura.anulada"
+    # Aging SISMO-V3: carga del LoanTape semanal (snapshot por crédito) para mora por
+    # tramo + proyección crédito a crédito (46 -> 47).
+    loantape_cargado = "loantape.cargado"
 
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).

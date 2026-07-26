@@ -56,11 +56,111 @@ def test_aging_vacio_da_todos_los_tramos_en_cero():
     )
 
 
+def _raw(**kw) -> dict:
+    base = {
+        "credito_id": "CR-1",
+        "fecha_corte": "2026-07-22",
+        "modelo": "Raider",
+        "fecha_desembolso": "2026-01-14",
+        "monto_financiado": "6435000.00",
+        "plazo_semanas": "78",
+        "cuota_semanal": "164900.00",
+        "cuotas_pagadas": "20",
+        "cuotas_vencidas": "2",
+        "dias_mora": "14",
+        "saldo_en_mora": "329800.00",
+        "saldo_pendiente": "9564200.00",
+        "fecha_ultimo_pago": "2026-07-01",
+        "estado": "en_mora",
+        "cliente_id": "CLI-1",
+    }
+    base.update(kw)
+    return base
+
+
+def test_parse_fila_coacciona_tipos_y_rechaza_ambiguo():
+    from decimal import Decimal
+
+    from app.loantape.service import LoanTapeError, parse_fila_loantape
+
+    f = parse_fila_loantape(_raw())
+    assert f["monto_financiado"] == Decimal("6435000.00")
+    assert f["plazo_semanas"] == 78
+    assert f["dias_mora"] == 14
+    # monto no numérico → error reportado, NO adivinado (regla 7)
+    try:
+        parse_fila_loantape(_raw(saldo_en_mora="N/D"))
+        raise AssertionError("debió fallar")
+    except LoanTapeError:
+        pass
+    # REQ faltante → error
+    try:
+        parse_fila_loantape(_raw(credito_id=""))
+        raise AssertionError("debió fallar")
+    except LoanTapeError:
+        pass
+
+
 @pytest_asyncio.fixture
 async def db():
     c = AsyncMongoMockClient(tz_aware=True)
     await init_beanie(database=c["compas_test"], document_models=DOMAIN_DOCUMENTS)
+    from app.audit.service import configure_audit, reset_audit
+
+    configure_audit(c, "compas_test")
     yield c
+    reset_audit()
+
+
+async def test_cargar_loantape_upsert_por_corte_e_idempotente(db):
+    from app.loantape import service
+
+    n = await service.cargar_loantape(
+        [_raw(credito_id="A"), _raw(credito_id="B")], usuario_id="u1"
+    )
+    assert n == 2
+    # recargar el MISMO corte con un valor corregido pisa, no duplica
+    await service.cargar_loantape(
+        [_raw(credito_id="A", dias_mora="40", saldo_en_mora="500000.00")],
+        usuario_id="u1",
+    )
+    from app.domain.loantape import LoanTapeCredito
+
+    total = await LoanTapeCredito.find_all().count()
+    assert total == 2  # A (pisado) + B
+    doc = await db["compas_test"]["audit_log"].find_one(
+        {"evento": "loantape.cargado"}
+    )
+    assert doc is not None
+
+
+async def test_obtener_aging_usa_el_ultimo_corte(db):
+    from decimal import Decimal
+
+    from app.loantape import service
+
+    # corte viejo: todos al día
+    await service.cargar_loantape(
+        [_raw(credito_id="A", fecha_corte="2026-07-15", dias_mora="0",
+              saldo_en_mora="0.00")],
+        usuario_id="u1",
+    )
+    # corte nuevo: A cae en mora 40 días (500k) + B a 100 días (900k)
+    await service.cargar_loantape(
+        [
+            _raw(credito_id="A", fecha_corte="2026-07-22", dias_mora="40",
+                 saldo_en_mora="500000.00"),
+            _raw(credito_id="B", fecha_corte="2026-07-22", dias_mora="100",
+                 saldo_en_mora="900000.00"),
+        ],
+        usuario_id="u1",
+    )
+    aging = await service.obtener_aging()
+    assert aging["fecha_corte"] == "2026-07-22"  # el más reciente
+    por = {a["tramo"]: a for a in aging["tramos"]}
+    assert por["31_60"]["saldo_en_mora"] == Decimal("500000.00")
+    assert por["90_mas"]["saldo_en_mora"] == Decimal("900000.00")
+    assert por["al_dia"]["n_creditos"] == 0  # el corte viejo no cuenta
 
 
 async def test_loantape_credito_persiste(db):
