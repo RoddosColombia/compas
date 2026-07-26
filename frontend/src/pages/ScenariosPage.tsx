@@ -47,8 +47,10 @@ export default function ScenariosPage() {
     })),
   });
 
-  const cargando = resultados.some((r) => r.isLoading);
-  const error = resultados.every((r) => r.isError);
+  // Robustez de estado (bug-fix): mostrar SIEMPRE algo. Error si ALGUNO falla
+  // (antes exigía que TODOS fallaran → estados mixtos quedaban en blanco).
+  const error = resultados.some((r) => r.isError);
+  const cargando = resultados.some((r) => r.isPending);
   const datos = resultados.map((r) => r.data);
   const listos = datos.every((d): d is Proyeccion => d !== undefined);
 
@@ -77,17 +79,16 @@ export default function ScenariosPage() {
         acciones={selectorHorizonte}
       />
 
-      {cargando && (
-        <p className="font-sans text-sm text-ink-soft">
-          Calculando escenarios…
-        </p>
-      )}
-      {error && (
+      {error ? (
         <AlertBanner variant="danger">
           No se pudieron calcular los escenarios. Verifica que haya modelos de
           moto y parámetros configurados en Datos.
         </AlertBanner>
-      )}
+      ) : cargando ? (
+        <p className="font-sans text-sm text-ink-soft">
+          Calculando escenarios…
+        </p>
+      ) : null}
 
       {listos && (
         <>

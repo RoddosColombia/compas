@@ -32,11 +32,13 @@ from bson import Decimal128
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
+from app.caja.diaria import serie_diaria
 from app.cierre.service import conciliacion
 from app.core.money import money_str
 from app.core.time import today_bogota
 from app.domain.bancos import Banco
 from app.domain.mes_control import EstadoMes, MesControl, SaldoBanco
+from app.domain.transaccion import Transaccion
 
 _FECHA_LEN = 10  # 'YYYY-MM-DD'
 _MAX_REINTENTOS = 3  # contención posicional↔push (carrera del banco nuevo)
@@ -119,6 +121,45 @@ async def _restaurar(col, mes: str, banco: Banco, previo: SaldoBanco | None) -> 
                 }
             },
         )
+
+
+async def caja_diaria(
+    *, desde: str, hasta: str, caja_inicial: Decimal
+) -> dict:
+    """Evolución DIARIA de la caja en [desde, hasta] (YYYY-MM-DD). Lee las
+    transacciones reales (todos los bancos), corre el saldo desde `caja_inicial`.
+    No depende del motor ni del ciclo presupuestal — sirve para administrar el flujo
+    de caja con la data ya cargada. Devuelve montos como string (regla 1)."""
+    movs: list[dict] = []
+    async for t in Transaccion.find(
+        Transaccion.fecha >= desde, Transaccion.fecha <= hasta
+    ):
+        movs.append(
+            {"fecha": t.fecha, "tipo_flujo": t.tipo_flujo, "valor": t.valor}
+        )
+    serie = serie_diaria(movs, caja_inicial)
+    total_ing = sum((d["ingresos"] for d in serie), Decimal("0"))
+    total_egr = sum((d["egresos"] for d in serie), Decimal("0"))
+    return {
+        "desde": desde,
+        "hasta": hasta,
+        "caja_inicial": money_str(caja_inicial),
+        "total_ingresos": money_str(total_ing),
+        "total_egresos": money_str(total_egr),
+        "flujo_neto": money_str(total_ing - total_egr),
+        "caja_final": money_str(caja_inicial + total_ing - total_egr),
+        "dias": [
+            {
+                "fecha": d["fecha"],
+                "ingresos": money_str(d["ingresos"]),
+                "egresos": money_str(d["egresos"]),
+                "flujo": money_str(d["flujo"]),
+                "caja": money_str(d["caja"]),
+                "n": d["n"],
+            }
+            for d in serie
+        ],
+    }
 
 
 async def reportar_saldos(

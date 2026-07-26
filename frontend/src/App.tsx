@@ -16,6 +16,7 @@ import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
 import DashboardsPage from "@/pages/DashboardsPage";
 import DatosPage from "@/pages/DatosPage";
+import FlujoDiarioPage from "@/pages/FlujoDiarioPage";
 import InicioPage from "@/pages/InicioPage";
 import IvaPage from "@/pages/IvaPage";
 import LoginPage from "@/pages/LoginPage";
@@ -98,6 +99,14 @@ export default function App() {
               element={
                 <Cockpit>
                   <IvaPage />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/flujo-diario"
+              element={
+                <Cockpit>
+                  <FlujoDiarioPage />
                 </Cockpit>
               }
             />

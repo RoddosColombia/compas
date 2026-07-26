@@ -9,6 +9,7 @@
 
 import {
   BarChart3,
+  CalendarDays,
   Database,
   FileText,
   Home,
@@ -65,6 +66,12 @@ export const NAVEGACION: GrupoNav[] = [
   {
     titulo: "Operación",
     items: [
+      {
+        label: "Flujo diario",
+        path: "/flujo-diario",
+        icon: CalendarDays,
+        cap: "dashboard:leer",
+      },
       {
         label: "Dashboards",
         path: "/dashboards",

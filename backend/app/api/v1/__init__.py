@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import health
 from app.auth.router import router as auth_router
+from app.caja.router import diaria_router as caja_diaria_router
 from app.caja.router import router as caja_router
 from app.cargas.router import router as cargas_router
 from app.ciclo.router import router as ciclo_router
@@ -25,6 +26,7 @@ api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth_router)
 api_router.include_router(caja_router)
+api_router.include_router(caja_diaria_router)
 api_router.include_router(cargas_router)
 api_router.include_router(ciclo_router)
 api_router.include_router(cierre_router)

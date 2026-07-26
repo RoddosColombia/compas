@@ -48,3 +48,41 @@ export async function reportarSaldos(
     body: JSON.stringify({ saldos }),
   });
 }
+
+// ── Flujo de caja DIARIO (GET /api/v1/caja/diaria) ──────────────────────────
+// Evolución día a día del dinero para administrar el flujo de caja. Lee las
+// transacciones reales (no depende del motor ni del ciclo presupuestal). Montos
+// como string (regla 1) → formatCOP; el front solo presenta.
+
+export interface DiaCaja {
+  fecha: string; // YYYY-MM-DD
+  ingresos: string;
+  egresos: string;
+  flujo: string; // ingresos - egresos del día
+  caja: string; // saldo corriendo
+  n: number; // nº de movimientos del día
+}
+
+export interface CajaDiaria {
+  desde: string;
+  hasta: string;
+  caja_inicial: string;
+  total_ingresos: string;
+  total_egresos: string;
+  flujo_neto: string;
+  caja_final: string;
+  dias: DiaCaja[];
+}
+
+export function obtenerCajaDiaria(params: {
+  desde: string;
+  hasta: string;
+  cajaInicial?: string;
+}): Promise<CajaDiaria> {
+  const q = new URLSearchParams({
+    desde: params.desde,
+    hasta: params.hasta,
+    caja_inicial: params.cajaInicial ?? "0",
+  });
+  return apiJson(`/caja/diaria?${q.toString()}`);
+}

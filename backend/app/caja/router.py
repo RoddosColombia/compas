@@ -22,7 +22,32 @@ from app.domain.bancos import Banco
 
 router = APIRouter(prefix="/meses", tags=["caja"])
 
+# Router aparte con prefijo /caja para la evolución diaria (lectura).
+diaria_router = APIRouter(prefix="/caja", tags=["caja"])
+
 _MES = re.compile(r"^\d{4}-\d{2}$")
+_FECHA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+@diaria_router.get("/diaria")
+async def caja_diaria(
+    desde: str,
+    hasta: str,
+    caja_inicial: str = "0",
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """Evolución diaria de la caja en [desde, hasta] (YYYY-MM-DD). `caja_inicial`
+    string (regla 1); 0 = saldo relativo desde el inicio del rango."""
+    for etiqueta, v in (("desde", desde), ("hasta", hasta)):
+        if not _FECHA.match(v):
+            raise HTTPException(422, f"{etiqueta} debe ser 'YYYY-MM-DD'")
+    if hasta < desde:
+        raise HTTPException(422, "hasta no puede ser anterior a desde")
+    try:
+        inicial = Decimal(caja_inicial)
+    except InvalidOperation:
+        raise HTTPException(422, "caja_inicial no es un decimal válido") from None
+    return await service.caja_diaria(desde=desde, hasta=hasta, caja_inicial=inicial)
 
 
 def _mes_key(mes: str) -> str:

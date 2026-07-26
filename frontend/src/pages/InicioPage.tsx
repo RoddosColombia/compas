@@ -95,10 +95,16 @@ function RealidadVsProyeccion() {
         </div>
         {selector}
       </div>
-      {q.isLoading && (
+      {q.isError ? (
+        <AlertBanner variant="warn">
+          No se pudo comparar realidad vs. proyección: falta configurar el motor
+          (modelos de moto y parámetros en Datos) o cerrar un mes.
+        </AlertBanner>
+      ) : q.isPending ? (
         <p className="font-sans text-sm text-ink-soft">Comparando…</p>
+      ) : (
+        q.data && <ComparacionContenido data={q.data} />
       )}
-      {q.data && <ComparacionContenido data={q.data} />}
     </Card>
   );
 }
