@@ -111,3 +111,30 @@ export async function obtenerOperacion(
   const qs = q.toString();
   return apiJson(`/proyeccion/operacion${qs ? `?${qs}` : ""}`);
 }
+
+// COCK-09: actuals (caja real de bancos) vs proyección + rolling forecast.
+export type AnclaModo = "cerrado" | "movimientos";
+
+export interface Comparacion {
+  escenario: string;
+  ancla_modo: AnclaModo;
+  ancla: { mes: string; caja_real: string } | null; // null si no hay mes ancla
+  actuals: { mes: string; caja_real: string }[]; // tramo real (histórico)
+  forecast: { mes: string; caja: string }[]; // proyección re-anclada
+}
+
+export interface ComparacionParams extends ProyeccionParams {
+  ancla?: AnclaModo;
+}
+
+export async function obtenerComparacion(
+  p: ComparacionParams = {},
+): Promise<Comparacion> {
+  const q = new URLSearchParams();
+  if (p.escenario) q.set("escenario", p.escenario);
+  if (p.ancla) q.set("ancla", p.ancla);
+  if (p.horizonteMeses) q.set("horizonte_meses", String(p.horizonteMeses));
+  if (p.mesInicio) q.set("mes_inicio", p.mesInicio);
+  const qs = q.toString();
+  return apiJson(`/proyeccion/comparar${qs ? `?${qs}` : ""}`);
+}

@@ -68,9 +68,24 @@ const PROY: Proyeccion = {
   ],
 };
 
+const COMPARA = {
+  escenario: "base",
+  ancla_modo: "cerrado",
+  ancla: { mes: "2026-06", caja_real: "15000000.00" },
+  actuals: [{ mes: "2026-06", caja_real: "15000000.00" }],
+  forecast: [
+    { mes: "2026-06", caja: "15000000.00" },
+    { mes: "2026-07", caja: "18000000.00" },
+  ],
+};
+
 vi.mock("@/lib/proyeccion", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/proyeccion")>();
-  return { ...real, obtenerProyeccion: () => Promise.resolve(PROY) };
+  return {
+    ...real,
+    obtenerProyeccion: () => Promise.resolve(PROY),
+    obtenerComparacion: () => Promise.resolve(COMPARA),
+  };
 });
 
 function renderPage() {
@@ -103,5 +118,15 @@ describe("InicioPage", () => {
       name: /proyección completa/i,
     });
     expect(link).toHaveAttribute("href", "/proyeccion");
+  });
+
+  it("muestra realidad vs proyección con el ancla real (COCK-09)", async () => {
+    renderPage();
+    expect(
+      screen.getByRole("heading", { name: "Realidad vs. proyección" }),
+    ).toBeInTheDocument();
+    // el ancla (último real) aparece con su caja (espera a que cargue el comparar)
+    expect(await screen.findByText(/Último real/)).toBeInTheDocument();
+    expect(screen.getAllByText(/15\.000\.000,00/).length).toBeGreaterThan(0);
   });
 });
