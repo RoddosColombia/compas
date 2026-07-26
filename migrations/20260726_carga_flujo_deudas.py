@@ -44,7 +44,7 @@ from app.cargas.mapper import movimiento_a_transaccion  # noqa: E402
 from app.db import mongo  # noqa: E402
 from app.domain.bancos import Banco  # noqa: E402
 from app.domain.mes_control import MesControl  # noqa: E402
-from app.domain.rubro import Rubro, TipoFlujo  # noqa: E402
+from app.domain.rubro import Rubro, RubroGrupo, TipoFlujo  # noqa: E402
 from app.domain.transaccion import Transaccion  # noqa: E402
 
 DEFAULT_XLSX = "docs/modelo/Flujo de pagos deudas.xlsx"
@@ -75,22 +75,22 @@ def _filas(ws, cols: dict) -> list[dict]:
 
 async def _mapa_rubros() -> tuple[dict[str, PydanticObjectId], PydanticObjectId]:
     """Egreso: nombre→rubro_id (en colisión, prefiere grupo 'operacion' — caso
-    'Arriendos', decisión CEO). Ingreso: el único rubro de ingreso activo."""
+    'Arriendos', decisión CEO). Ingreso: los abonos van al recaudo OPERATIVO
+    ('Recaudo'/'Recaudo de cartera'), NUNCA a 'Aportes de capital' (que separa el
+    capital de inversionistas; esos se reclasifican aparte)."""
     egreso: dict[str, PydanticObjectId] = {}
-    ingreso: list[Rubro] = []
+    recaudo: Rubro | None = None
     async for r in Rubro.find(Rubro.activo == True):  # noqa: E712
         if r.tipo_flujo is TipoFlujo.EGRESO:
-            if r.nombre not in egreso or r.grupo == "operacion":
+            if r.nombre not in egreso or r.grupo is RubroGrupo.OPERACION:
                 egreso[r.nombre] = r.id
-        else:
-            ingreso.append(r)
-    if len(ingreso) != 1:
-        nombres = [r.nombre for r in ingreso]
+        elif r.nombre in ("Recaudo", "Recaudo de cartera"):
+            recaudo = r
+    if recaudo is None:
         raise SystemExit(
-            f"FAIL-LOUD: se esperaba 1 rubro de ingreso activo, hay {len(ingreso)}: "
-            f"{nombres}"
+            "FAIL-LOUD: no existe el rubro de ingreso 'Recaudo' (recaudo operativo)"
         )
-    return egreso, ingreso[0].id
+    return egreso, recaudo.id
 
 
 def _clave(mov) -> tuple:
