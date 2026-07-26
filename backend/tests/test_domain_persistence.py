@@ -108,32 +108,59 @@ async def test_seed_configuracion_idempotente(db):
 # ── C3: semilla de reglas de clasificación (GO Kimi PLAN-I 9.3) ──
 
 
+# Rubros de egreso a los que apuntan las reglas de comercios/conceptos genéricos
+# (todos existen en SEMILLA_RUBROS y en prod). Guarda: una regla de egreso jamás
+# apunta a un rubro fuera de esta taxonomía.
+_RUBROS_EGRESO_REGLAS = {
+    "Gastos bancarios",
+    "Impuestos",
+    "Gastos financieros",
+    "Gastos notariales",
+    "Transporte/peajes/combustible/parqueo",
+    "Tecnología y software",
+    "Cafetería",
+    "Mercado y aseo",
+    "Marketing y publicidad",
+}
+
+
 def test_semilla_reglas_sin_pii_y_origen_manual():
     # Kimi §3 (Ley 1581): SOLO patrones genéricos/comercios — NUNCA nombres de
-    # personas. Lista CONGELADA: las genéricas de ingreso (PRD M7 / MODELO §C3).
-    assert [
-        (r["patron"], r["tipo_flujo"], r["rubro_nombre"]) for r in SEMILLA_REGLAS
-    ] == [
-        ("Abono", "ingreso", "Recaudo de cartera"),
-        ("Recibido de", "ingreso", "Recaudo de cartera"),
+    # personas. Se dejan fuera socios, 'Débito' pelado y reversas/FX (revisión
+    # manual). Las genéricas de ingreso (PRD M7 / MODELO §C3) quedan CONGELADAS.
+    ingreso = [r for r in SEMILLA_REGLAS if r["tipo_flujo"] == "ingreso"]
+    assert [(r["patron"], r["rubro_nombre"]) for r in ingreso] == [
+        ("Abono", "Recaudo de cartera"),
+        ("Recibido de", "Recaudo de cartera"),
     ]
     for r in SEMILLA_REGLAS:
         assert r["origen"] == "manual"  # curaduría, no aprendizaje (Kimi §3)
+        assert r["tipo_flujo"] in ("ingreso", "egreso")
+        assert len(r["patron"]) >= 3  # PATRON_MIN — sin match-all
+    # toda regla de egreso apunta a un rubro de gasto conocido (no a un socio, no a
+    # un rubro inventado): guarda estructural contra clasificar mal dinero.
+    for r in SEMILLA_REGLAS:
+        if r["tipo_flujo"] == "egreso":
+            assert r["rubro_nombre"] in _RUBROS_EGRESO_REGLAS
 
 
 async def test_seed_reglas_idempotente_y_resuelve_rubro(db):
     from app.domain.regla_clasificacion import ReglaClasificacion
 
-    await seed_rubros(db)  # siembra 'Recaudo de cartera' primero
+    await seed_rubros(db)  # siembra la taxonomía (incl. 'Recaudo de cartera')
+    total = len(SEMILLA_REGLAS)
     n1, col1 = await seed_reglas_reporte(db)
     n2, col2 = await seed_reglas_reporte(db)
-    assert n1 == 2 and col1 == []
-    assert n2 == 0 and len(col2) == 2  # 2ª corrida: no duplica
+    assert n1 == total and col1 == []
+    assert n2 == 0 and len(col2) == total  # 2ª corrida: no duplica
     reglas = await ReglaClasificacion.find_all().to_list()
-    assert len(reglas) == 2
-    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo de cartera")
-    assert all(r.rubro_id == recaudo.id for r in reglas)
+    assert len(reglas) == total
     assert all(r.activa for r in reglas)
+    # las de ingreso resuelven a 'Recaudo de cartera'; las de egreso, a un rubro
+    # de gasto (rubro_id no nulo, resuelto sin fail-loud).
+    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo de cartera")
+    ingreso = [r for r in reglas if r.tipo_flujo.value == "ingreso"]
+    assert ingreso and all(r.rubro_id == recaudo.id for r in ingreso)
 
 
 async def test_seed_reglas_fail_loud_sin_rubro_destino(db):
