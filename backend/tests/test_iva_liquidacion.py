@@ -15,6 +15,7 @@ from app.iva.liquidacion import (
     iva_desde_total,
     liquidar,
     periodo_de,
+    plan_fondo_provision,
     programar_egresos_iva,
 )
 
@@ -155,6 +156,37 @@ def test_programar_egresos_iva_no_inventa_anios_sin_calendario():
         liquidar(liq), _CAL_DIAN, mes_inicio=(2026, 1), horizonte_meses=36
     )
     assert egresos == {}
+
+
+def test_plan_fondo_provision_reserva_durante_el_periodo_y_paga_en_dian():
+    # C1-2026 neto 400000, paga 13-may-26. mes_inicio ene-2026, horizonte 6.
+    # Se reserva 100000/mes en ene-abr (los 4 meses del período); al terminar abril el
+    # fondo tiene 400000; en may (índice 4) el pago lo vacía.
+    liq = liquidar([FacturaIva("venta", "2026-02-10", Decimal("400000"))])
+    fondo = plan_fondo_provision(
+        liq, _CAL_DIAN, mes_inicio=(2026, 1), horizonte_meses=6
+    )
+    assert len(fondo) == 6
+    def _d(*xs):
+        return [Decimal(x) for x in xs]
+
+    reservas = [f.reserva for f in fondo]
+    pagos = [f.pago for f in fondo]
+    saldos = [f.saldo for f in fondo]
+    assert reservas == _d("100000", "100000", "100000", "100000", "0", "0")
+    assert pagos == _d("0", "0", "0", "0", "400000", "0")
+    assert saldos == _d("100000", "200000", "300000", "400000", "0", "0")
+
+
+def test_plan_fondo_provision_saldo_a_favor_no_reserva():
+    # período con neto 0 (saldo a favor) → sin reserva ni pago.
+    liq = liquidar(
+        [FacturaIva("compra", "2026-02-10", Decimal("500000"), True)]
+    )
+    fondo = plan_fondo_provision(
+        liq, _CAL_DIAN, mes_inicio=(2026, 1), horizonte_meses=6
+    )
+    assert all(f.reserva == Decimal("0") and f.pago == Decimal("0") for f in fondo)
 
 
 def test_liquidar_ordena_periodos_cronologicamente():

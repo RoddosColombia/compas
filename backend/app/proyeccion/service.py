@@ -12,7 +12,7 @@ from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.modelo_moto import ModeloMoto
 from app.domain.parametros_proyeccion import ParametrosProyeccion
 from app.facturas import service as facturas_service
-from app.iva.liquidacion import liquidar, programar_egresos_iva
+from app.iva.liquidacion import liquidar, plan_fondo_provision, programar_egresos_iva
 from app.modelos_moto import service as modelos_service
 from app.parametros_proyeccion import service as parametros_service
 from app.proyeccion.motor import (
@@ -91,9 +91,24 @@ def _armar_parametros(
     )
 
 
-def _serializar(r: ResultadoProyeccion, escenario: str, caja_minima) -> dict:
+def _serializar(
+    r: ResultadoProyeccion, escenario: str, caja_minima, fondo: list
+) -> dict:
+    meses_ym = [f.mes for f in r.meses]
     return {
         "escenario": escenario,
+        # Fondo de provisión de IVA (P1.4): serie informativa mes a mes (NO es flujo del
+        # motor; el egreso real ya está en `meses[].iva` en la fecha DIAN).
+        "fondo_provision": [
+            {
+                "mes": meses_ym[f.mes_idx],
+                "reserva": money_str(f.reserva),
+                "pago": money_str(f.pago),
+                "saldo": money_str(f.saldo),
+            }
+            for f in fondo
+            if f.mes_idx < len(meses_ym)
+        ],
         "caja_minima": money_str(caja_minima),  # el umbral (para la curva del front)
         "piso_caja": money_str(r.piso_caja),
         "mes_mas_ajustado": r.mes_mas_ajustado,
@@ -144,22 +159,34 @@ async def _calendario_dian() -> dict:
     return cfg[0].valor_json if cfg and cfg[0].valor_json else {}
 
 
-async def _iva_egreso_por_mes(
+async def _iva_plan(
     mes_inicio: tuple[int, int], horizonte: int
-) -> dict[int, object]:
-    """Puente C11↔C7: liquida las facturas cargadas y programa el IVA neto de cada
-    cuatrimestre como egreso en el índice de mes de su fecha DIAN real (PR-2b)."""
+) -> tuple[dict[int, object], list]:
+    """Puente C11↔C7: liquida las facturas cargadas y devuelve (egreso_por_mes, fondo).
+    `egreso_por_mes` = IVA neto de cada período en el índice de su fecha DIAN real
+    (PR-2b, entra al motor). `fondo` = plan de provisión mes a mes (P1.4, informativo,
+    NO entra al flujo del motor). Sin facturas → ({}, [])."""
     facturas = await facturas_service.obtener_facturas_iva()
     if not facturas:
-        return {}
+        return {}, []
     periodicidad = await facturas_service.obtener_periodicidad()
-    return programar_egresos_iva(
-        liquidar(facturas, periodicidad),
-        await _calendario_dian(),
+    calendario = await _calendario_dian()
+    liquidaciones = liquidar(facturas, periodicidad)
+    egreso = programar_egresos_iva(
+        liquidaciones,
+        calendario,
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte,
         periodicidad=periodicidad,
     )
+    fondo = plan_fondo_provision(
+        liquidaciones,
+        calendario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte,
+        periodicidad=periodicidad,
+    )
+    return egreso, fondo
 
 
 async def proyectar_vigente(
@@ -181,7 +208,7 @@ async def proyectar_vigente(
             f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
         )
     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
-    iva_egreso = await _iva_egreso_por_mes(mes_inicio, horizonte)
+    iva_egreso, fondo = await _iva_plan(mes_inicio, horizonte)
     pm = _armar_parametros(
         params,
         modelos,
@@ -192,4 +219,4 @@ async def proyectar_vigente(
         activos_previos,
         iva_egreso,
     )
-    return _serializar(proyectar(pm), escenario, params.caja_minima)
+    return _serializar(proyectar(pm), escenario, params.caja_minima, fondo)

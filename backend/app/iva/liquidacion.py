@@ -97,6 +97,77 @@ class LiquidacionPeriodo:
     saldo_favor_nuevo: Decimal  # max(0, saldo_favor_previo − saldo) → sigue arrastrando
 
 
+@dataclass(frozen=True)
+class FondoMes:
+    """Un mes del plan del fondo de provisión de IVA (informativo, NO es flujo de caja
+    del motor)."""
+
+    mes_idx: int  # índice de mes relativo a mes_inicio
+    reserva: Decimal  # aporte al fondo ese mes
+    pago: Decimal  # salida del fondo ese mes (pago DIAN)
+    saldo: Decimal  # saldo acumulado del fondo al cierre del mes
+
+
+def _meses_del_periodo(
+    anio: int, periodo: int, periodicidad: Periodicidad
+) -> list[tuple[int, int]]:
+    """(anio, mes) de los meses calendario que componen el período."""
+    meses = _meses_por_periodo(periodicidad)
+    primero = (periodo - 1) * meses + 1
+    return [(anio, primero + i) for i in range(meses)]
+
+
+def plan_fondo_provision(
+    liquidaciones: list["LiquidacionPeriodo"],
+    calendario_dian: dict,
+    *,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int,
+    periodicidad: Periodicidad = Periodicidad.cuatrimestral,
+) -> list[FondoMes]:
+    """Plan de reserva de tesorería para el pago del IVA (P1.4, decisión CEO
+    2026-07-25): el `neto_a_pagar` de cada período se REPARTE en partes iguales entre
+    los meses del propio período, de modo que al llegar la fecha DIAN el fondo ya tiene
+    el monto completo y el pago lo vacía (sin golpe seco). Serie informativa alineada al
+    horizonte; NO entra al flujo del motor (el egreso real ya cae en la fecha DIAN vía
+    `programar_egresos_iva`). Neto 0 (saldo a favor) no reserva."""
+    y0, m0 = mes_inicio
+    aportes = [Decimal("0")] * horizonte_meses
+    for c in liquidaciones:
+        if c.neto_a_pagar <= 0:
+            continue
+        meses = _meses_del_periodo(c.anio, c.periodo, periodicidad)
+        cuota = c.neto_a_pagar / Decimal(len(meses))
+        for anio, mes in meses:
+            idx = (anio - y0) * 12 + (mes - m0)
+            if 0 <= idx < horizonte_meses:
+                aportes[idx] += _cop(cuota)
+
+    pagos_por_idx = programar_egresos_iva(
+        liquidaciones,
+        calendario_dian,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+        periodicidad=periodicidad,
+    )
+
+    fondo: list[FondoMes] = []
+    saldo = Decimal("0")
+    for m in range(horizonte_meses):
+        reserva = aportes[m]
+        pago = pagos_por_idx.get(m, Decimal("0"))
+        saldo = saldo + reserva - pago
+        fondo.append(
+            FondoMes(
+                mes_idx=m,
+                reserva=_cop(reserva),
+                pago=_cop(pago),
+                saldo=_cop(saldo),
+            )
+        )
+    return fondo
+
+
 def programar_egresos_iva(
     liquidaciones: list[LiquidacionPeriodo],
     calendario_dian: dict,

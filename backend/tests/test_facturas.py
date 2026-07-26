@@ -195,6 +195,22 @@ async def test_proyeccion_resta_iva_en_el_mes_dian(db):
     # 13-may-26 = índice 4 desde ene-2026; el IVA sale ahí (negativo) y solo ahí
     assert res["meses"][4]["iva"] == "-190000.00"
     assert res["meses"][3]["iva"] == "0.00"
+    # fondo de provisión: reserva 47500/mes en ene-abr (190000/4); saldo lleno en abr,
+    # el pago de may lo vacía. Serie informativa (no mueve la caja del motor).
+    fondo = res["fondo_provision"]
+    assert fondo[0] == {
+        "mes": "2026-01",
+        "reserva": "47500.00",
+        "pago": "0.00",
+        "saldo": "47500.00",
+    }
+    assert fondo[3]["saldo"] == "190000.00"
+    assert fondo[4] == {
+        "mes": "2026-05",
+        "reserva": "0.00",
+        "pago": "190000.00",
+        "saldo": "0.00",
+    }
 
 
 async def test_obtener_facturas_iva_solo_activas_para_liquidar(db):
