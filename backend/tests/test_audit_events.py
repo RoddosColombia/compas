@@ -15,9 +15,9 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_45_eventos():
-    assert len(AuditEvento) == 45
-    assert len(CATALOGO_EVENTOS) == 45
+def test_catalogo_tiene_exactamente_46_eventos():
+    assert len(AuditEvento) == 46
+    assert len(CATALOGO_EVENTOS) == 46
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():
@@ -52,6 +52,8 @@ def test_eventos_clave_presentes():
         "modelo_moto.desactivado",  # CR-COCK (C7): baja lógica del modelo
         "parametros_proyeccion.actualizado",  # CR-COCK (C7): drivers del motor
         "cartera_previa.cargada",  # CR Fidelidad (PR-1): seed serie cartera previa
+        "factura.creada",  # v1.0 / CR Fidelidad (PR-2a): carga de factura para IVA
+        "factura.anulada",  # CR Fidelidad (PR-2a): baja lógica de factura cargada
     ):
         assert esperado in CATALOGO_EVENTOS
 

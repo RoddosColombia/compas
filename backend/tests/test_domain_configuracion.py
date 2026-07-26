@@ -68,13 +68,21 @@ def test_umbral_no_admite_float():
 # ---- Semilla ----
 
 
-def test_semilla_tiene_las_tres_claves():
+def test_semilla_tiene_las_claves_esperadas():
     claves = {c["clave"] for c in SEMILLA_CONFIGURACION}
     assert claves == {
         "UMBRAL_DIF_BANCO_CIERRE",
         "CALENDARIO_DIAN",
         "DIAS_CREDITO_POR_PROVEEDOR",
+        "PERIODICIDAD_IVA",
     }
+
+
+def test_semilla_periodicidad_iva_default_cuatrimestral():
+    p = next(
+        c for c in SEMILLA_CONFIGURACION if c["clave"] == "PERIODICIDAD_IVA"
+    )
+    assert p["valor_json"] == {"periodicidad": "cuatrimestral"}
 
 
 def test_semilla_umbral_50000():

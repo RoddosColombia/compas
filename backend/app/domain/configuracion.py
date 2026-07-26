@@ -28,6 +28,9 @@ class ClaveConfig(StrEnum):
     UMBRAL_DIF_BANCO_CIERRE = "UMBRAL_DIF_BANCO_CIERRE"
     CALENDARIO_DIAN = "CALENDARIO_DIAN"
     DIAS_CREDITO_POR_PROVEEDOR = "DIAS_CREDITO_POR_PROVEEDOR"
+    # Período de liquidación del IVA (decisión CEO 2026-07-25): default cuatrimestral;
+    # la DIAN puede pasar a RODDOS a bimestral por volumen → configurable por dato.
+    PERIODICIDAD_IVA = "PERIODICIDAD_IVA"
 
 
 # Tipo esperado por clave (M-03). "decimal" | "fecha" | "json".
@@ -35,6 +38,7 @@ _TIPO_POR_CLAVE: dict[ClaveConfig, str] = {
     ClaveConfig.UMBRAL_DIF_BANCO_CIERRE: "decimal",
     ClaveConfig.CALENDARIO_DIAN: "json",
     ClaveConfig.DIAS_CREDITO_POR_PROVEEDOR: "json",
+    ClaveConfig.PERIODICIDAD_IVA: "json",
 }
 
 
@@ -121,6 +125,13 @@ SEMILLA_CONFIGURACION: list[dict] = [
         # se declara la clave con dict vacío (no se inventan valores).
         "clave": "DIAS_CREDITO_POR_PROVEEDOR",
         "valor_json": {},
+        "vigente_desde": "2026-01-01",
+    },
+    {
+        # Período del IVA: hoy CUATRIMESTRAL (realidad RODDOS). El CEO lo cambia a
+        # 'bimestral' cuando la DIAN lo exija — sin tocar código (decisión 2026-07-25).
+        "clave": "PERIODICIDAD_IVA",
+        "valor_json": {"periodicidad": "cuatrimestral"},
         "vigente_desde": "2026-01-01",
     },
 ]

@@ -502,3 +502,19 @@ def test_proyectar_enhebra_cartera_previa_en_recaudo_y_cartera():
         "5000.00"
     )
     assert r_con.meses[0].cartera == r_sin.meses[0].cartera + 40
+
+
+def test_proyectar_resta_iva_en_el_mes_dian():
+    # PR-2b (fix del motor): el IVA neto sale de la caja SOLO en el mes DIAN (índice 2),
+    # como un egreso más. El caller pasa el neto POSITIVO; el motor lo niega.
+    r_sin = proyectar(_params_simple())
+    r_con = proyectar(_params_simple(iva_egreso_por_mes={2: Decimal("30000")}))
+    # sin IVA: la línea es 0.00 en todos los meses (default None → paridad golden)
+    assert all(m.iva == Decimal("0.00") for m in r_sin.meses)
+    # con IVA: el mes 2 baja 30000 en iva/egresos/flujo; los demás intactos
+    assert r_con.meses[2].iva == Decimal("-30000.00")
+    assert r_con.meses[2].egresos == r_sin.meses[2].egresos - Decimal("30000.00")
+    assert r_con.meses[2].flujo == r_sin.meses[2].flujo - Decimal("30000.00")
+    assert r_con.meses[1].iva == Decimal("0.00")
+    # la caja arrastra el golpe desde el mes DIAN en adelante
+    assert r_con.meses[3].caja == r_sin.meses[3].caja - Decimal("30000.00")

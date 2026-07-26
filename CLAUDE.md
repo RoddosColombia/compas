@@ -16,7 +16,7 @@ Los documentos en `/docs` son el contrato. Ante cualquier duda, leerlos ANTES de
 - `docs/COMPAS_NORTE.md` — **el norte del producto (qué ES y qué NO); prevalece sobre todo lo demás en alcance**
 - `.planning/PROJECT.md` — **ancla del producto: modelo de datos (entradas diarias = movimientos + caja; el resto se deriva), capacidades centrales con estado real, arquitectura. Leer al iniciar cada sesión**
 - `docs/modelo/MODELO.md` — **el Excel `Flujo de pagos deudas.xlsx` destilado a contrato: las 10 hojas → capacidades, taxonomía real de categorías, drivers de proyección. Cada capacidad debe reproducir su hoja. Código de referencia: `docs/modelo/referencia/`**
-- `docs/Compas_Blueprint_UX.docx` — **el ENTREGABLE de la UX (cockpit de 8 vistas; Proyecciones = el corazón) + `docs/modelo/PROYECCIONES.md` (el motor de fondo). Manda sobre la interfaz. Reframe: Fase 1 = proyección con captura manual; actuals (bancos) = Fase 2. OJO: el Blueprint dice IVA "bimestre" por error — RODDOS es CUATRIMESTRAL (CEO 2026-07-23). Reconciliaciones en `.planning/PROJECT.md §7`**
+- `docs/Compas_Blueprint_UX.docx` — **el ENTREGABLE de la UX (cockpit de 8 vistas; Proyecciones = el corazón) + `docs/modelo/PROYECCIONES.md` (el motor de fondo). Manda sobre la interfaz. Reframe: Fase 1 = proyección con captura manual; actuals (bancos) = Fase 2. OJO: el Blueprint dice IVA "bimestre" por error — RODDOS es CUATRIMESTRAL hoy (CEO 2026-07-23). **Actualización CEO 2026-07-25: el período del IVA es CONFIGURABLE (clave `PERIODICIDAD_IVA`, default cuatrimestral; la DIAN puede pasar a RODDOS a bimestral por volumen de facturas — se cambia por dato, sin tocar código).** Reconciliaciones en `.planning/PROJECT.md §7`**
 - `docs/COMPAS_Discovery_PRD_v1_1_2.docx` — qué se construye (módulos M1–M13)
 - `docs/COMPAS_Spec_Tecnica_v1_1_2.docx` — data dictionary, reglas de integridad, API, DoD de 12 puntos
 - `docs/COMPAS_STACK_v1_1_2.docx` — stack, infraestructura, seguridad
@@ -55,7 +55,7 @@ migrations/→ scripts idempotentes fechados (20260901_seed_rubros.py)
 - Demo de cada sprint con datos reales de RODDOS, nunca datos de juguete.
 
 ## Contexto de negocio mínimo
-RODDOS vende motos a cuotas semanales (Raider, Sport, Apache). 5 grupos de rubros: Costo de producto, Operación, Nómina, Deudas y obligaciones, Otros. Bancos: Bancolombia, BBVA, Global66 (los parsers se portan de SISMO v2). Carga diaria 8:30. IVA cuatrimestral (NIT 901012622-1, dígito 2: 13-may-26, 10-sep-26, 14-ene-27). Usuario inicial: andres@roddos.com (superadmin); segunda cuenta: Iván.
+RODDOS vende motos a cuotas semanales (Raider, Sport, Apache). 5 grupos de rubros: Costo de producto, Operación, Nómina, Deudas y obligaciones, Otros. Bancos: Bancolombia, BBVA, Global66 (los parsers se portan de SISMO v2). Carga diaria 8:30. IVA de período CONFIGURABLE (default cuatrimestral; NIT 901012622-1, dígito 2: 13-may-26, 10-sep-26, 14-ene-27) — bimestral habilitable cuando la DIAN lo exija (CEO 2026-07-25). Usuario inicial: andres@roddos.com (superadmin); segunda cuenta: Iván.
 
 ## Qué NO hacer
 - No microservicios, no GraphQL, no Docker (Render hace el build), no localStorage para tokens (access en memoria, refresh en cookie HttpOnly).

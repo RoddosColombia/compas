@@ -102,7 +102,7 @@ async def test_seed_configuracion_idempotente(db):
     await seed_configuracion(db)
     await seed_configuracion(db)
     total = await Configuracion.find_all().count()
-    assert total == 3
+    assert total == 4  # + PERIODICIDAD_IVA (CR IVA período configurable)
 
 
 # ── C3: semilla de reglas de clasificación (GO Kimi PLAN-I 9.3) ──

@@ -32,6 +32,8 @@ PERMISSIONS: dict[str, frozenset[Role]] = {
     "pagos:gestionar": frozenset({Role.financiero, Role.admin}),
     # ── CR-COCK (C7 motor de proyección: modelos de moto + parámetros) ──
     "proyeccion:gestionar": frozenset({Role.financiero, Role.admin}),
+    # ── CR "Fidelidad de caja" (C11 IVA: carga de facturas + liquidación) ──
+    "iva:gestionar": frozenset({Role.financiero, Role.admin}),
     # ── Spec §2.4 (autoridad del ciclo mensual — manda sobre §4.1) ──
     "ciclo:abrir": frozenset({Role.financiero, Role.directivo, Role.admin}),
     "ciclo:proponer": frozenset({Role.financiero, Role.directivo, Role.admin}),

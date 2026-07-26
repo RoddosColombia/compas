@@ -90,6 +90,10 @@ class AuditEvento(StrEnum):
     parametros_proyeccion_actualizado = "parametros_proyeccion.actualizado"
     # CR "Fidelidad de caja" (PR-1): seed de la serie de cartera previa (44 -> 45).
     cartera_previa_cargada = "cartera_previa.cargada"
+    # CR "Fidelidad de caja" (PR-2a, C11): baja lógica de una factura cargada para IVA
+    # (par de `factura.creada`, ya en v1.0). `factura_emitida.anulada` es SOLO para la
+    # emisión de ventas; esta cubre compras+ventas cargadas al liquidador (45 -> 46).
+    factura_anulada = "factura.anulada"
 
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).

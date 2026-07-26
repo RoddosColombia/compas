@@ -511,6 +511,10 @@ class ParametrosMotor:
     iniciales_override: dict[int, Decimal] | None = None
     adelanto_override: dict[int, Decimal] | None = None
     lote_override: dict[int, Decimal] | None = None
+    # IVA neto a pagar por mes (índice → neto POSITIVO): el motor lo resta de la caja en
+    # el mes de la fecha DIAN real (CR "Fidelidad de caja" PR-2b). Default None = sin
+    # egreso de IVA (paridad golden-master: el artefacto no modela IVA en el flujo).
+    iva_egreso_por_mes: dict[int, Decimal] | None = None
 
 
 @dataclass(frozen=True)
@@ -530,6 +534,7 @@ class MesProyeccion:
     pago_inventario: Decimal
     fondeo: Decimal
     int_deuda: Decimal
+    iva: Decimal  # egreso de IVA neto en el mes DIAN (≤ 0); 0.00 fuera de ese mes
     egresos: Decimal
     flujo: Decimal
     caja: Decimal
@@ -601,6 +606,7 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
     )
     ov_mora = p.overrides_mora or {}
     ov_def = p.overrides_default or {}
+    iva_por_mes = p.iva_egreso_por_mes or {}
 
     filas: list[MesProyeccion] = []
     caja = _cop(p.caja_inicial)
@@ -621,6 +627,7 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
             if p.mes_inicio_deuda <= m < p.meses_deuda
             else Decimal("0.00")
         )
+        iva = _cop(-iva_por_mes.get(m, Decimal("0")))
         egresos = _cop(
             gastos_fijos
             + gps
@@ -629,6 +636,7 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
             + adelanto[m]
             + pago_inv[m]
             + fondeo[m]
+            + iva
         )
         flujo = _cop(ajuste.neto + egresos)
         # primer mes: caja fija (= caja inicial); el flujo de ese mes no la mueve.
@@ -651,6 +659,7 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
                 pago_inventario=pago_inv[m],
                 fondeo=fondeo[m],
                 int_deuda=int_deuda,
+                iva=iva,
                 egresos=egresos,
                 flujo=flujo,
                 caja=caja,
