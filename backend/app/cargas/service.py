@@ -74,7 +74,15 @@ def _hash_archivo(archivo_path: str) -> str:
 
 def _clave_ocurrencia(mov) -> tuple:
     """Identidad de la huella para contar ocurrencias dentro del archivo (A-01).
-    (banco es fijo por carga; discrimina por fecha/tipo/desc/monto)."""
+
+    - Global66 trae un `ID transaccion` nativo que identifica la OPERACIÓN lógica,
+      no la línea de ledger: un pago PSE y su reversa comparten ese ID como dos
+      movimientos opuestos (caso real del extracto mar–jul). La clave agrupa por
+      `(banco, referencia)` → el ordinal les asigna 1 y 2 y sus id_banco quedan
+      distintos (ambos son caja: salió y volvió), sin colapsar en el índice único.
+    - Bancolombia/BBVA no traen ID → se discrimina por fecha/tipo/desc/monto."""
+    if mov.referencia:
+        return (mov.banco.value, mov.referencia)
     return (mov.fecha.isoformat(), mov.tipo.value, mov.descripcion, f"{mov.monto:.2f}")
 
 

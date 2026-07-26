@@ -107,7 +107,31 @@ class TestDerivarIdBanco:
             tipo_flujo=TipoFlujo.EGRESO,
             referencia="TXN-002",
         )
-        assert idb == "TXN-002"
+        # El ID nativo identifica la OPERACIÓN lógica, no la línea de ledger: se
+        # conserva pero con el ordinal de ocurrencia (A-01) para poder distinguir
+        # las dos líneas de una misma operación (cargo + reversa).
+        assert idb == "TXN-002|1"
+
+    def test_global66_reversa_no_colapsa_con_su_cargo(self):
+        # Caso REAL (extracto mar–jul): Global66 asigna el MISMO `ID transaccion` al
+        # pago PSE y a su reversa —dos líneas de ledger, signos opuestos, fechas
+        # distintas—. Ambos son caja real (salió el 14, volvió el 16) → deben quedar
+        # con id_banco DISTINTO; el índice único (banco,id_banco) no debe colapsarlos.
+        base = dict(
+            banco=Banco.GLOBAL66,
+            descripcion="Pago PSE en SOI ACH (seguridad social)",
+            valor=Decimal("28373400"),
+            referencia="36666302",
+        )
+        cargo = derivar_id_banco(
+            **base, fecha="2026-07-14", tipo_flujo=TipoFlujo.EGRESO, ocurrencia=1
+        )
+        reversa = derivar_id_banco(
+            **base, fecha="2026-07-16", tipo_flujo=TipoFlujo.INGRESO, ocurrencia=2
+        )
+        assert cargo != reversa
+        assert cargo == "36666302|1"
+        assert reversa == "36666302|2"
 
     def test_bancolombia_es_huella_determinista(self):
         args = dict(
@@ -202,7 +226,8 @@ class TestMapper:
         t = movimiento_a_transaccion(mov, rubro_id=_RUBRO, mes_id=_MES)
         assert t.moneda_original == "COP"
         assert t.tasa_cambio == Decimal("1")
-        assert t.id_banco == "TXN-77"
+        # ID nativo + ordinal de ocurrencia (por defecto 1) — ver derivar_id_banco.
+        assert t.id_banco == "TXN-77|1"
 
     def test_bancolombia_id_banco_es_huella(self):
         t = movimiento_a_transaccion(_mov(), rubro_id=_RUBRO, mes_id=_MES)

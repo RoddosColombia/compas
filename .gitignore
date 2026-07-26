@@ -34,6 +34,16 @@ Thumbs.db
 
 # ── Fixtures bancarios (solo anonimizados; reales viven en S3) ──
 # Los .xlsx/.csv de extractos reales NO entran al repo (Spec §1.6.1).
+# Fuentes reales/plantillas usadas para validar layouts (S1-01) y destilar el
+# modelo — data bancaria/financiera real, jamás al repo (regla 12). Los .md/.jsx
+# de docs/modelo/ SÍ se versionan (contrato); solo se ignoran los binarios de datos.
+docs/modelo/*.xlsx
+docs/modelo/*.xlsm
+docs/modelo/*.csv
+# Originales de extractos preservados por la carga (regla dura M-04): son copias
+# de archivos bancarios REALES → jamás al repo (regla 12). S3 los reemplaza en go-live.
+/data/
+backend/data/
 
 # ── Auditoría Kimi: PDFs generados (regenerables desde SOLICITUD/EVIDENCIA + tracker) ──
 # Cada ronda vive en planning/phases/<fase>/auditorias/<RONDA>/PAQUETE.pdf.

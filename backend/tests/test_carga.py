@@ -65,6 +65,53 @@ class TestModeloCarga:
             _carga(inventado="x")
 
 
+# ── Clave de ocurrencia (pura, A-01 + Global66) ──────────────────────────
+
+
+class TestClaveOcurrencia:
+    def _mov(self, **over):
+        from datetime import date
+
+        from app.parsers.bank_parsers import MovimientoBancario, TipoMovimiento
+
+        base = dict(
+            fecha=date(2026, 7, 14),
+            descripcion="Pago PSE",
+            monto=Decimal("28373400"),
+            tipo=TipoMovimiento.DEBITO,
+            banco=Banco.GLOBAL66,
+            moneda_original="COP",
+            tasa_cambio=Decimal("1"),
+            referencia="36666302",
+        )
+        base.update(over)
+        return MovimientoBancario(**base)
+
+    def test_global66_agrupa_por_referencia_no_por_contenido(self):
+        # Cargo y su reversa: MISMA referencia, signo/fecha distintos. La clave debe
+        # agruparlos (misma operación lógica) → el servicio les da ordinal 1 y 2, así
+        # que sus id_banco quedan distintos (ver test_transaccion) y ambos persisten.
+        from app.cargas.service import _clave_ocurrencia
+        from app.parsers.bank_parsers import TipoMovimiento
+
+        cargo = self._mov(tipo=TipoMovimiento.DEBITO)
+        reversa = self._mov(
+            tipo=TipoMovimiento.CREDITO, fecha=__import__("datetime").date(2026, 7, 16)
+        )
+        assert _clave_ocurrencia(cargo) == _clave_ocurrencia(reversa)
+
+    def test_bancolombia_sin_referencia_agrupa_por_contenido(self):
+        # Sin referencia nativa (Bancolombia/BBVA): la clave es el contenido; dos
+        # movimientos de distinto valor NO comparten clave (huella A-01 intacta).
+        from app.cargas.service import _clave_ocurrencia
+
+        a = self._mov(banco=Banco.BANCOLOMBIA, referencia=None)
+        b = self._mov(
+            banco=Banco.BANCOLOMBIA, referencia=None, monto=Decimal("99999")
+        )
+        assert _clave_ocurrencia(a) != _clave_ocurrencia(b)
+
+
 # ── Helper de fixture xlsx (BBVA, fechas explícitas) ─────────────────────
 
 

@@ -46,7 +46,12 @@ def derivar_id_banco(
 ) -> str:
     """Clave de deduplicación estable (regla 5).
 
-    - Global66 trae una referencia de transacción nativa → se usa tal cual (única).
+    - Global66 trae una referencia de transacción nativa que identifica la OPERACIÓN
+      lógica, NO la línea de ledger: un pago y su reversa comparten ese ID como dos
+      movimientos opuestos (caso real del extracto mar–jul 2026). Por eso se conserva
+      el ID nativo pero con el **ordinal de ocurrencia** (`…|1`, `…|2`) — igual que
+      Bancolombia/BBVA — para que el cargo (`ref|1`) y su reversa (`ref|2`) no
+      colapsen en el índice único `(banco, id_banco)`. Ambos son caja real.
     - Bancolombia/BBVA no traen ID → huella determinista del contenido
       (banco|fecha|tipo|descripcion|valor), precedente de SISMO v2 (MD5, no
       criptográfico, solo fingerprint), con el **ordinal de ocurrencia dentro del
@@ -56,7 +61,7 @@ def derivar_id_banco(
       mismo ordinal → la dedup sigue detectándolo. MD5(32)+'|'+ordinal cabe en 40.
     """
     if banco is Banco.GLOBAL66 and referencia:
-        return referencia
+        return f"{referencia}|{ocurrencia}"
     clave = f"{banco.value}|{fecha}|{tipo_flujo.value}|{descripcion}|{valor:.2f}"
     huella = hashlib.md5(clave.encode("utf-8"), usedforsecurity=False).hexdigest()
     return f"{huella}|{ocurrencia}"
