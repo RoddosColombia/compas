@@ -25,6 +25,7 @@ function mes(m: string, caja: string): MesProyeccion {
     pago_inventario: "0",
     fondeo: "0",
     int_deuda: "0",
+    iva: "0",
     egresos: "0",
     flujo: "0",
     caja,

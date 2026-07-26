@@ -25,15 +25,25 @@ export interface MesProyeccion {
   pago_inventario: string;
   fondeo: string;
   int_deuda: string;
+  iva: string; // egreso de IVA neto en el mes DIAN (≤ 0); 0.00 fuera de ese mes
   egresos: string;
   flujo: string;
   caja: string;
   estado: EstadoMes;
 }
 
+// Fondo de provisión de IVA (P1.4): serie informativa mes a mes (NO es flujo del motor).
+export interface FondoMes {
+  mes: string; // 'YYYY-MM'
+  reserva: string; // aporte al fondo ese mes
+  pago: string; // salida del fondo (pago DIAN) ese mes
+  saldo: string; // saldo acumulado del fondo
+}
+
 export interface Proyeccion {
   escenario: string;
   caja_minima: string; // el umbral (para la curva)
+  fondo_provision: FondoMes[];
   piso_caja: string;
   mes_mas_ajustado: string;
   meses_bajo_minimo: number;

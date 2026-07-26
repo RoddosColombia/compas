@@ -16,8 +16,8 @@ import CategoriasPage from "@/pages/CategoriasPage";
 import ControlPage from "@/pages/ControlPage";
 import DashboardsPage from "@/pages/DashboardsPage";
 import DatosPage from "@/pages/DatosPage";
-import EnConstruccion from "@/pages/EnConstruccion";
 import InicioPage from "@/pages/InicioPage";
+import IvaPage from "@/pages/IvaPage";
 import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
 import ProyeccionPage from "@/pages/ProyeccionPage";
@@ -97,10 +97,7 @@ export default function App() {
               path="/iva"
               element={
                 <Cockpit>
-                  <EnConstruccion
-                    vista="IVA"
-                    descripcion="Generado, descontable y liquidación cuatrimestral."
-                  />
+                  <IvaPage />
                 </Cockpit>
               }
             />

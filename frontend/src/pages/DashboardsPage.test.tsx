@@ -31,6 +31,7 @@ function m(
     pago_inventario: "0",
     fondeo: "0",
     int_deuda: "0",
+    iva: "0",
     egresos: "0",
     flujo: "0",
     caja: "0",
@@ -41,6 +42,7 @@ function m(
 const PROY: Proyeccion = {
   escenario: "base",
   caja_minima: "125000000.00",
+  fondo_provision: [],
   piso_caja: "40000000.00",
   mes_mas_ajustado: "2026-09",
   meses_bajo_minimo: 0,

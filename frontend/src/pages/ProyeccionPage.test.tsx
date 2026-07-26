@@ -15,6 +15,7 @@ import ProyeccionPage from "@/pages/ProyeccionPage";
 const PROY: Proyeccion = {
   escenario: "base",
   caja_minima: "125000000.00",
+  fondo_provision: [],
   piso_caja: "40000000.00",
   mes_mas_ajustado: "2026-09",
   meses_bajo_minimo: 2,
@@ -38,6 +39,7 @@ const PROY: Proyeccion = {
       pago_inventario: "0.00",
       fondeo: "0.00",
       int_deuda: "-300000.00",
+      iva: "0.00",
       egresos: "-132300000.00",
       flujo: "-98300000.00",
       caja: "40000000.00",
@@ -59,6 +61,7 @@ const PROY: Proyeccion = {
       pago_inventario: "0.00",
       fondeo: "0.00",
       int_deuda: "-300000.00",
+      iva: "0.00",
       egresos: "-133400000.00",
       flujo: "-88400000.00",
       caja: "200000000.00",
