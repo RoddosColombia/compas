@@ -128,13 +128,25 @@ def _semanas_globales_del_mes(
     return [indice_semana(d, ancla) for d in dias]
 
 
-def _split_por_mix(total: int, modelos: list[ModeloProyeccion]) -> list[int]:
+def _split_por_mix(
+    total: int,
+    modelos: list[ModeloProyeccion],
+    override: dict[int, int] | None = None,
+) -> list[int]:
     """Reparte `total` motos entre modelos por `mix`. El modelo 0 (base) absorbe el
-    resto; los demás = round(total × mix). Suma exactamente `total`."""
+    resto; los demás = round(total × mix). Suma exactamente `total`. `override`
+    (índice de modelo → nº) fija el conteo de un modelo ese mes (p. ej. el Apache real
+    de un mes de rampa) en vez de derivarlo del mix."""
+    override = override or {}
     counts = [0] * len(modelos)
     resto = total
     for i in range(1, len(modelos)):
-        c = int((Decimal(total) * modelos[i].mix).quantize(Decimal(1), ROUND_HALF_UP))
+        if i in override:
+            c = override[i]
+        else:
+            c = int(
+                (Decimal(total) * modelos[i].mix).quantize(Decimal(1), ROUND_HALF_UP)
+            )
         counts[i] = c
         resto -= c
     counts[0] = resto
@@ -164,14 +176,25 @@ def _altas_por_modelo(
     meses: list[tuple[int, int]],
     dia_cobro: int,
     ancla: date,
+    apache_por_mes: dict[int, int] | None = None,
+    en_cartera_meses: set[int] | None = None,
 ) -> list[dict[int, int]]:
-    """altas[i][w] = motos del modelo i colocadas en la semana global w."""
+    """altas[i][w] = motos del modelo i colocadas en la semana global w.
+
+    `en_cartera_meses` (índices de mes): esas motos YA viven en la cartera previa —
+    NO crean cohortes nuevas (réplica del `continue` del artefacto); su recaudo/cartera
+    llegan por la serie previa. `apache_por_mes` fija el conteo del modelo 1 ese mes."""
+    apache_por_mes = apache_por_mes or {}
+    en_cartera_meses = en_cartera_meses or set()
     altas: list[dict[int, int]] = [dict() for _ in modelos]
     for mi, (y, m) in enumerate(meses):
+        if mi in en_cartera_meses:
+            continue
         total = colocacion_por_mes[mi]
         if total <= 0:
             continue
-        counts = _split_por_mix(total, modelos)
+        override = {1: apache_por_mes[mi]} if mi in apache_por_mes else None
+        counts = _split_por_mix(total, modelos, override)
         semanas_g = _semanas_globales_del_mes(y, m, dia_cobro, ancla)
         for i_modelo, nm in enumerate(counts):
             _distribuir(nm, semanas_g, altas[i_modelo])
@@ -190,6 +213,8 @@ def recaudo_credito_mensual(
     dia_cobro: int = DIA_COBRO_DEFECTO,
     ancla: date = ANCLA_SEMANA,
     recaudo_previo_por_semana: dict[int, Decimal] | None = None,
+    apache_por_mes: dict[int, int] | None = None,
+    en_cartera_meses: set[int] | None = None,
 ) -> list[Decimal]:
     """Vía 1 — recaudo de crédito por mes (motor cuota-a-cuota). Cada moto colocada
     abre una ventana de `plazo_semanas` cuotas semanales; el recaudo del mes = Σ de las
@@ -198,9 +223,18 @@ def recaudo_credito_mensual(
     `recaudo_previo_por_semana` (semana global → monto) suma el recaudo REAL de la
     cartera preexistente (111 créditos vivos del LoanTape, con moras reales). Es un
     TERCER sumando del recaudo de crédito, NO una tercera vía — réplica de
-    `recaudoPrevio(w)` del artefacto (línea 451). Serie finita (se agota ~ene-2028)."""
+    `recaudoPrevio(w)` del artefacto (línea 451). Serie finita (se agota ~ene-2028).
+    `en_cartera_meses`/`apache_por_mes`: ver `_altas_por_modelo`."""
     meses = _meses_del_horizonte(mes_inicio, len(colocacion_por_mes))
-    altas = _altas_por_modelo(colocacion_por_mes, modelos, meses, dia_cobro, ancla)
+    altas = _altas_por_modelo(
+        colocacion_por_mes,
+        modelos,
+        meses,
+        dia_cobro,
+        ancla,
+        apache_por_mes,
+        en_cartera_meses,
+    )
     previa = recaudo_previo_por_semana or {}
     recaudo: list[Decimal] = []
     for y, m in meses:
@@ -216,18 +250,36 @@ def recaudo_credito_mensual(
 
 
 def cuotas_iniciales_mensual(
-    colocacion_por_mes: list[int], modelos: list[ModeloProyeccion]
+    colocacion_por_mes: list[int],
+    modelos: list[ModeloProyeccion],
+    apache_por_mes: dict[int, int] | None = None,
+    iniciales_override: dict[int, Decimal] | None = None,
+    meses_rampa: set[int] | None = None,
 ) -> list[Decimal]:
-    """Vía 2 — cuotas iniciales por mes = Σ_modelo (colocación_modelo × cuota_inicial).
-    Se muestra SIEMPRE separada del recaudo de crédito (requisito CEO)."""
+    """Vía 2 — cuotas iniciales por mes. Se muestra SIEMPRE separada del recaudo de
+    crédito (requisito CEO). Réplica del artefacto (líneas 460-463):
+      - `iniciales_override[m]` (dato real de Facturación) tiene precedencia; si no,
+      - meses de RAMPA → split ENTERO (`Σ counts×cuota_inicial`, con apache override);
+      - meses PROYECTADOS → split FRACCIONARIO (`Σ total×mix×cuota_inicial`)."""
+    apache_por_mes = apache_por_mes or {}
+    iniciales_override = iniciales_override or {}
+    meses_rampa = meses_rampa or set()
     out: list[Decimal] = []
-    for total in colocacion_por_mes:
-        counts = _split_por_mix(total, modelos)
-        v = sum(
-            (n * md.cuota_inicial for n, md in zip(counts, modelos, strict=True)),
-            Decimal(0),
-        )
-        out.append(v)
+    for mi, total in enumerate(colocacion_por_mes):
+        if mi in iniciales_override:
+            out.append(iniciales_override[mi])
+        elif mi in meses_rampa:
+            override = {1: apache_por_mes[mi]} if mi in apache_por_mes else None
+            counts = _split_por_mix(total, modelos, override)
+            pares = zip(counts, modelos, strict=True)
+            out.append(sum((n * md.cuota_inicial for n, md in pares), Decimal(0)))
+        else:
+            out.append(
+                sum(
+                    (Decimal(total) * md.mix * md.cuota_inicial for md in modelos),
+                    Decimal(0),
+                )
+            )
     return out
 
 
@@ -316,26 +368,55 @@ def inventario_auteco_mensual(
 
 
 def _lote_por_mes(
-    colocacion_por_mes: list[int], modelos: list[ModeloProyeccion]
+    colocacion_por_mes: list[int],
+    modelos: list[ModeloProyeccion],
+    apache_por_mes: dict[int, int] | None = None,
+    lote_override: dict[int, Decimal] | None = None,
+    meses_rampa: set[int] | None = None,
 ) -> list[Decimal]:
-    """Valor facturado del lote por mes (split FRACCIONARIO en valor, como el artefacto:
-    `motos × mix × costo`, no por unidades enteras)."""
+    """Valor facturado del lote por mes (INVENTARIO f16). Réplica del artefacto:
+    - `lote_override[m]` (Facturación real) tiene precedencia; si no,
+    - meses de RAMPA → split ENTERO (`Σ counts×costo`, con apache override);
+    - meses PROYECTADOS → split FRACCIONARIO (`Σ total×mix×costo`)."""
+    apache_por_mes = apache_por_mes or {}
+    lote_override = lote_override or {}
+    meses_rampa = meses_rampa or set()
     out: list[Decimal] = []
-    for total in colocacion_por_mes:
-        v = sum(
-            (Decimal(total) * md.mix * md.costo_moto for md in modelos), Decimal("0")
-        )
-        out.append(v)
+    for mi, total in enumerate(colocacion_por_mes):
+        if mi in lote_override:
+            out.append(lote_override[mi])
+        elif mi in meses_rampa:
+            override = {1: apache_por_mes[mi]} if mi in apache_por_mes else None
+            counts = _split_por_mix(total, modelos, override)
+            pares = zip(counts, modelos, strict=True)
+            out.append(sum((n * md.costo_moto for n, md in pares), Decimal(0)))
+        else:
+            out.append(
+                sum(
+                    (Decimal(total) * md.mix * md.costo_moto for md in modelos),
+                    Decimal("0"),
+                )
+            )
     return out
 
 
 def _adelanto_por_mes(
-    colocacion_por_mes: list[int], adelanto_auteco: Decimal
+    colocacion_por_mes: list[int],
+    adelanto_auteco: Decimal,
+    adelanto_override: dict[int, Decimal] | None = None,
 ) -> list[Decimal]:
-    """Adelanto Auteco por mes: 0 el primer mes; luego `-motos × adelanto/moto`."""
+    """Adelanto Auteco por mes (FC fila 28): 0 el primer mes; `adelanto_override[m]`
+    (Facturación real, p. ej. JUN −80,81M) tiene precedencia; si no, `-motos ×
+    adelanto/moto` proyectado."""
+    adelanto_override = adelanto_override or {}
     out: list[Decimal] = []
     for m, total in enumerate(colocacion_por_mes):
-        out.append(Decimal("0") if m == 0 else -Decimal(total) * adelanto_auteco)
+        if m == 0:
+            out.append(Decimal("0"))
+        elif m in adelanto_override:
+            out.append(adelanto_override[m])
+        else:
+            out.append(-Decimal(total) * adelanto_auteco)
     return out
 
 
@@ -346,15 +427,25 @@ def cartera_activa_mensual(
     dia_cobro: int = DIA_COBRO_DEFECTO,
     ancla: date = ANCLA_SEMANA,
     activos_previos_por_semana: dict[int, int] | None = None,
+    apache_por_mes: dict[int, int] | None = None,
+    en_cartera_meses: set[int] | None = None,
 ) -> list[int]:
     """Motos activas (pagando) al CIERRE de cada mes = activos en la última semana de
     cobro del mes. Alimenta el GPS (costo por moto activa).
 
     `activos_previos_por_semana` (semana global → nº) suma los créditos preexistentes
     vivos en la semana de referencia — réplica de `activosPrevios(w)` del artefacto
-    (línea 473)."""
+    (línea 473). `en_cartera_meses`/`apache_por_mes`: ver `_altas_por_modelo`."""
     meses = _meses_del_horizonte(mes_inicio, len(colocacion_por_mes))
-    altas = _altas_por_modelo(colocacion_por_mes, modelos, meses, dia_cobro, ancla)
+    altas = _altas_por_modelo(
+        colocacion_por_mes,
+        modelos,
+        meses,
+        dia_cobro,
+        ancla,
+        apache_por_mes,
+        en_cartera_meses,
+    )
     previa = activos_previos_por_semana or {}
     out: list[int] = []
     for y, m in meses:
@@ -411,6 +502,15 @@ class ParametrosMotor:
     # semana global → recaudo / nº activos. Default None = sin cartera previa.
     recaudo_previo_por_semana: dict[int, Decimal] | None = None
     activos_previos_por_semana: dict[int, int] | None = None
+    # Rampa de datos reales de los primeros meses (escenario del artefacto). Todos
+    # opcionales; None = proyección paramétrica limpia. Ver `_altas_por_modelo`,
+    # `cuotas_iniciales_mensual`, `_lote_por_mes`, `_adelanto_por_mes`.
+    apache_por_mes: dict[int, int] | None = None
+    en_cartera_meses: set[int] | None = None
+    meses_rampa: set[int] | None = None
+    iniciales_override: dict[int, Decimal] | None = None
+    adelanto_override: dict[int, Decimal] | None = None
+    lote_override: dict[int, Decimal] | None = None
 
 
 @dataclass(frozen=True)
@@ -468,16 +568,34 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
         p.modelos,
         p.mes_inicio,
         recaudo_previo_por_semana=p.recaudo_previo_por_semana,
+        apache_por_mes=p.apache_por_mes,
+        en_cartera_meses=p.en_cartera_meses,
     )
-    iniciales = cuotas_iniciales_mensual(colocacion, p.modelos)
+    iniciales = cuotas_iniciales_mensual(
+        colocacion,
+        p.modelos,
+        apache_por_mes=p.apache_por_mes,
+        iniciales_override=p.iniciales_override,
+        meses_rampa=p.meses_rampa,
+    )
     cartera = cartera_activa_mensual(
         colocacion,
         p.modelos,
         p.mes_inicio,
         activos_previos_por_semana=p.activos_previos_por_semana,
+        apache_por_mes=p.apache_por_mes,
+        en_cartera_meses=p.en_cartera_meses,
     )
-    lote = _lote_por_mes(colocacion, p.modelos)
-    adelanto = _adelanto_por_mes(colocacion, p.adelanto_auteco)
+    lote = _lote_por_mes(
+        colocacion,
+        p.modelos,
+        apache_por_mes=p.apache_por_mes,
+        lote_override=p.lote_override,
+        meses_rampa=p.meses_rampa,
+    )
+    adelanto = _adelanto_por_mes(
+        colocacion, p.adelanto_auteco, adelanto_override=p.adelanto_override
+    )
     pago_inv, fondeo = inventario_auteco_mensual(
         lote, adelanto, p.plazo_auteco_dias, p.base_auteco_dias, p.tasa_auteco
     )

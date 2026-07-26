@@ -15,6 +15,8 @@ from app.proyeccion.motor import (
     PRESETS_ESCENARIO,
     ModeloProyeccion,
     ParametrosMotor,
+    _adelanto_por_mes,
+    _lote_por_mes,
     cartera_activa_mensual,
     colocacion_mensual,
     cuotas_iniciales_mensual,
@@ -292,6 +294,23 @@ def test_proyectar_flujo_es_neto_menos_egresos():
         assert m.flujo == m.neto + m.egresos
 
 
+def test_proyectar_enhebra_overrides_de_escenario():
+    # el escenario del artefacto: mes 0 en_cartera (sin cohorte nueva) + iniciales
+    # override; adelanto override en el mes 1. proyectar() debe pasarlos al motor.
+    r = proyectar(
+        _params_simple(
+            en_cartera_meses={0},
+            iniciales_override={0: Decimal("26110000")},
+            adelanto_override={1: Decimal("-999")},
+        )
+    )
+    assert r.meses[0].cuotas_iniciales == Decimal("26110000.00")  # override
+    assert r.meses[0].recaudo_credito == Decimal(
+        "0.00"
+    )  # en_cartera: sin cohorte nueva
+    assert r.meses[1].adelanto == Decimal("-999.00")  # override
+
+
 def test_presets_escenario_y_efecto_en_caja():
     # el escenario pesimista (más mora, menos recuperación) deja MENOS caja final.
     assert PRESETS_ESCENARIO["base"]["pct_mora"] == Decimal("0.03")
@@ -304,7 +323,7 @@ def test_presets_escenario_y_efecto_en_caja():
 
 
 # ── Cartera previa: recaudo + activos de los 111 créditos preexistentes ──
-# (PR-1 "Fidelidad de caja": réplica de recaudoPrevio(w)/activosPrevios(w) del artefacto,
+# (PR-1 "Fidelidad": réplica de recaudoPrevio(w)/activosPrevios(w) del artefacto,
 # líneas 451/473 — un TERCER sumando del recaudo de crédito, NO una tercera vía.)
 
 
@@ -339,8 +358,8 @@ def test_recaudo_credito_sin_previa_no_cambia():
 
 def test_cartera_activa_suma_activos_previos_en_semana_de_referencia():
     # cartera al cierre = activos nuevos en la última semana de cobro + activos previos.
-    # 1 moto jul (semana 18, plazo 6): activa en w_ref jul=22 (16<18<=22) → 1; ago w_ref=26
-    # (20<18<=26 es falso) → 0. previa: w22=30, w26=25.
+    # 1 moto jul (semana 18, plazo 6): activa en w_ref jul=22 (16<18<=22) → 1; ago
+    # w_ref=26 (20<18<=26 es falso) → 0. previa: w22=30, w26=25.
     modelos = [_modelo_unico(100, 0, 6)]
     activos_previos = {22: 30, 26: 25}
     cartera = cartera_activa_mensual(
@@ -351,6 +370,120 @@ def test_cartera_activa_suma_activos_previos_en_semana_de_referencia():
     )
     assert cartera[0] == 31  # 1 nueva + 30 previa
     assert cartera[1] == 25  # 0 nuevas + 25 previa
+
+
+def test_recaudo_omite_cohortes_en_cartera():
+    # motos marcadas en_cartera (ya viven en la previa) NO crean cohortes nuevas:
+    # su recaudo llega por la serie previa, no por aquí (réplica del `continue` del
+    # artefacto). Sin previa y con la única colocación en_cartera → recaudo 0.
+    modelos = [_modelo_unico(100, 0, 6)]
+    recaudo = recaudo_credito_mensual(
+        colocacion_por_mes=[2, 0, 0, 0],
+        modelos=modelos,
+        mes_inicio=(2026, 7),
+        en_cartera_meses={0},
+    )
+    assert recaudo == [Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")]
+
+
+def test_cartera_omite_cohortes_en_cartera():
+    modelos = [_modelo_unico(100, 0, 6)]
+    cartera = cartera_activa_mensual(
+        colocacion_por_mes=[2, 0, 0, 0],
+        modelos=modelos,
+        mes_inicio=(2026, 7),
+        en_cartera_meses={0},
+    )
+    assert cartera[0] == 0  # las 2 motos en_cartera no cuentan como cohorte nueva
+
+
+def test_iniciales_rampa_con_apache_override_es_entero():
+    # mes de RAMPA: split ENTERO con el apache override. total=48, apache=17 →
+    # raider(base)=31; iniciales = 31×1000 + 17×2000 = 65000.
+    raider = ModeloProyeccion(
+        "Raider", Decimal("100"), Decimal("1000"), 78, Decimal("0.70")
+    )
+    apache = ModeloProyeccion(
+        "Apache", Decimal("120"), Decimal("2000"), 78, Decimal("0.30")
+    )
+    iniciales = cuotas_iniciales_mensual(
+        [48], [raider, apache], apache_por_mes={0: 17}, meses_rampa={0}
+    )
+    assert iniciales == [Decimal("65000")]
+
+
+def test_iniciales_no_rampa_es_fraccionario():
+    # mes NO-rampa (default): split FRACCIONARIO (réplica del artefacto, no entero).
+    # 51 motos: 51×0.70×1000 + 51×0.30×2000 = 35700 + 30600 = 66300.
+    raider = ModeloProyeccion(
+        "Raider", Decimal("100"), Decimal("1000"), 78, Decimal("0.70")
+    )
+    apache = ModeloProyeccion(
+        "Apache", Decimal("120"), Decimal("2000"), 78, Decimal("0.30")
+    )
+    iniciales = cuotas_iniciales_mensual([51], [raider, apache])
+    assert iniciales[0] == Decimal("66300.00")
+
+
+def test_iniciales_override_tiene_precedencia():
+    raider = ModeloProyeccion(
+        "Raider", Decimal("100"), Decimal("1000"), 78, Decimal("0.70")
+    )
+    apache = ModeloProyeccion(
+        "Apache", Decimal("120"), Decimal("2000"), 78, Decimal("0.30")
+    )
+    iniciales = cuotas_iniciales_mensual(
+        [48], [raider, apache], iniciales_override={0: Decimal("80810000")}
+    )
+    assert iniciales == [Decimal("80810000")]
+
+
+def test_adelanto_primer_mes_cero_override_y_proyectado():
+    # m0=0 (MAY); JUN override −80.81M; JUL proyectado −50×970000.
+    adelanto = _adelanto_por_mes(
+        [20, 48, 50],
+        Decimal("970000"),
+        adelanto_override={1: Decimal("-80810000")},
+    )
+    assert adelanto == [
+        Decimal("0"),
+        Decimal("-80810000"),
+        Decimal("-48500000"),
+    ]
+
+
+def test_lote_override_rampa_entero_y_no_rampa_fraccionario():
+    raider = ModeloProyeccion(
+        "Raider",
+        Decimal("5638974"),
+        Decimal("0"),
+        78,
+        Decimal("0.70"),
+        costo_moto=Decimal("5638974"),
+    )
+    apache = ModeloProyeccion(
+        "Apache",
+        Decimal("6818517"),
+        Decimal("0"),
+        78,
+        Decimal("0.30"),
+        costo_moto=Decimal("6818517"),
+    )
+    # m0 override; m1 rampa entero (48, apache 17): 31×5638974 + 17×6818517 = 290722983;
+    # m2 no-rampa fraccionario: 50×0.7×5638974 + 50×0.3×6818517.
+    lote = _lote_por_mes(
+        [20, 48, 50],
+        [raider, apache],
+        apache_por_mes={1: 17},
+        lote_override={0: Decimal("109816454")},
+        meses_rampa={0, 1},
+    )
+    assert lote[0] == Decimal("109816454")
+    assert lote[1] == Decimal("290722983")
+    frac = Decimal("50") * Decimal("0.70") * Decimal("5638974") + Decimal(
+        "50"
+    ) * Decimal("0.30") * Decimal("6818517")
+    assert lote[2] == frac
 
 
 def test_proyectar_enhebra_cartera_previa_en_recaudo_y_cartera():
@@ -365,8 +498,7 @@ def test_proyectar_enhebra_cartera_previa_en_recaudo_y_cartera():
             activos_previos_por_semana=previa_activos,
         )
     )
-    assert (
-        r_con.meses[0].recaudo_credito
-        == r_sin.meses[0].recaudo_credito + Decimal("5000.00")
+    assert r_con.meses[0].recaudo_credito == r_sin.meses[0].recaudo_credito + Decimal(
+        "5000.00"
     )
     assert r_con.meses[0].cartera == r_sin.meses[0].cartera + 40
