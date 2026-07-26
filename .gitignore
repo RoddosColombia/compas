@@ -44,6 +44,9 @@ docs/modelo/*.csv
 # de archivos bancarios REALES → jamás al repo (regla 12). S3 los reemplaza en go-live.
 /data/
 backend/data/
+# Capturas de la revisión de UI (pueden mostrar data real) — solo el README se versiona.
+revision-ui/*
+!revision-ui/README.md
 
 # ── Auditoría Kimi: PDFs generados (regenerables desde SOLICITUD/EVIDENCIA + tracker) ──
 # Cada ronda vive en planning/phases/<fase>/auditorias/<RONDA>/PAQUETE.pdf.
