@@ -48,3 +48,22 @@ async def proyectar(
         )
     except service.ProyeccionError as e:
         raise HTTPException(e.status, e.detalle) from e
+
+
+@router.get("/operacion")
+async def operacion(
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """DASH-01 — agregación operativa (Dashboards): colocación mensual + cartera activa
+    desglosada por añada (cohorte)."""
+    try:
+        return await service.operacion_vigente(
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e

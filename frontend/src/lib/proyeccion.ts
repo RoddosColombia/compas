@@ -81,3 +81,33 @@ export async function obtenerProyeccion(
   const qs = q.toString();
   return apiJson(`/proyeccion${qs ? `?${qs}` : ""}`);
 }
+
+// DASH-01: agregación operativa (Dashboards). Cartera activa desglosada por AÑADA
+// (cohorte de colocación; 'previa' = los 111 créditos preexistentes) + colocación.
+export interface AnadaCartera {
+  anada: string; // 'YYYY-MM' | 'previa'
+  activos: number;
+}
+
+export interface MesOperacion {
+  mes: string; // 'YYYY-MM'
+  colocacion: number;
+  cartera: number;
+  por_anada: AnadaCartera[];
+}
+
+export interface Operacion {
+  escenario: string;
+  meses: MesOperacion[];
+}
+
+export async function obtenerOperacion(
+  p: ProyeccionParams = {},
+): Promise<Operacion> {
+  const q = new URLSearchParams();
+  if (p.escenario) q.set("escenario", p.escenario);
+  if (p.horizonteMeses) q.set("horizonte_meses", String(p.horizonteMeses));
+  if (p.mesInicio) q.set("mes_inicio", p.mesInicio);
+  const qs = q.toString();
+  return apiJson(`/proyeccion/operacion${qs ? `?${qs}` : ""}`);
+}

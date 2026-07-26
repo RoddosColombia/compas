@@ -20,6 +20,10 @@ from app.proyeccion.motor import (
     ModeloProyeccion,
     ParametrosMotor,
     ResultadoProyeccion,
+    _meses_del_horizonte,
+    cartera_activa_mensual,
+    cartera_por_anada_mensual,
+    colocacion_mensual,
     proyectar,
 )
 
@@ -220,3 +224,65 @@ async def proyectar_vigente(
         iva_egreso,
     )
     return _serializar(proyectar(pm), escenario, params.caja_minima, fondo)
+
+
+async def _cargar_config_vigente():
+    """Carga params + modelos activos (fail-closed 409). Compartido por las vistas que
+    parten del motor vigente."""
+    params = await parametros_service.obtener_vigente()
+    if params is None:
+        raise ProyeccionError(
+            "no hay parámetros de proyección configurados (cárguelos primero)", 409
+        )
+    modelos = await modelos_service.listar_modelos(activo=True)
+    if not modelos:
+        raise ProyeccionError("no hay modelos de moto activos", 409)
+    return params, modelos
+
+
+async def operacion_vigente(
+    *, escenario: str, mes_inicio: tuple[int, int], horizonte_meses: int | None
+) -> dict:
+    """DASH-01 — agregación OPERATIVA (Dashboards): colocación mensual y cartera activa
+    DESGLOSADA por AÑADA (cohorte de colocación), computadas por el motor sobre los
+    parámetros/modelos vigentes. Determinista (no proyecta mora por tramo: eso exige
+    aging real o supuestos aparte). Fail-closed igual que `/proyeccion`."""
+    params, modelos = await _cargar_config_vigente()
+    horizonte = horizonte_meses or params.horizonte_meses
+    if horizonte < 1 or horizonte > HORIZONTE_MAX:
+        raise ProyeccionError(
+            f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
+        )
+    modelos_m = [_modelo_a_motor(m) for m in modelos]
+    _, activos_previos = await cartera_previa_service.obtener_series()
+
+    colocacion = colocacion_mensual(
+        params.motos_base, params.crec_pct_mensual, horizonte, None
+    )
+    cartera = cartera_activa_mensual(
+        colocacion, modelos_m, mes_inicio, activos_previos_por_semana=activos_previos
+    )
+    por_anada = cartera_por_anada_mensual(
+        colocacion, modelos_m, mes_inicio, activos_previos_por_semana=activos_previos
+    )
+    ym = _meses_del_horizonte(mes_inicio, horizonte)
+    etiquetas = [f"{y:04d}-{m:02d}" for (y, m) in ym]
+
+    def _label(anada: int) -> str:
+        return "previa" if anada < 0 else etiquetas[anada]
+
+    return {
+        "escenario": escenario,
+        "meses": [
+            {
+                "mes": etiquetas[i],
+                "colocacion": colocacion[i],
+                "cartera": cartera[i],
+                "por_anada": [
+                    {"anada": _label(a), "activos": n}
+                    for a, n in sorted(por_anada[i].items())
+                ],
+            }
+            for i in range(horizonte)
+        ],
+    }

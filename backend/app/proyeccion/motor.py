@@ -459,6 +459,57 @@ def cartera_activa_mensual(
     return out
 
 
+def cartera_por_anada_mensual(
+    colocacion_por_mes: list[int],
+    modelos: list[ModeloProyeccion],
+    mes_inicio: tuple[int, int],
+    dia_cobro: int = DIA_COBRO_DEFECTO,
+    ancla: date = ANCLA_SEMANA,
+    activos_previos_por_semana: dict[int, int] | None = None,
+    apache_por_mes: dict[int, int] | None = None,
+    en_cartera_meses: set[int] | None = None,
+) -> list[dict[int, int]]:
+    """DASH-01: la cartera activa de cada mes DESGLOSADA por AÑADA (mes de colocación).
+
+    Devuelve, por cada mes del horizonte, un dict {índice_de_añada → nº activos}, donde
+    la añada es el índice del mes en que se colocó la moto. La cartera preexistente (111
+    créditos del LoanTape) entra como añada `-1` (no tiene mes de colocación en el
+    horizonte). INVARIANTE: la suma del desglose iguala `cartera_activa_mensual` (misma
+    definición de 'activo en la semana de referencia', atribuida a su cohorte)."""
+    meses = _meses_del_horizonte(mes_inicio, len(colocacion_por_mes))
+    altas = _altas_por_modelo(
+        colocacion_por_mes,
+        modelos,
+        meses,
+        dia_cobro,
+        ancla,
+        apache_por_mes,
+        en_cartera_meses,
+    )
+    # semana global de colocación → índice de añada (mes en que cae esa semana).
+    semana_a_anada: dict[int, int] = {}
+    for ci, (y, m) in enumerate(meses):
+        for w in _semanas_globales_del_mes(y, m, dia_cobro, ancla):
+            semana_a_anada[w] = ci
+    previa = activos_previos_por_semana or {}
+    out: list[dict[int, int]] = []
+    for y, m in meses:
+        semanas_g = _semanas_globales_del_mes(y, m, dia_cobro, ancla)
+        w_ref = semanas_g[-1] if semanas_g else 0
+        desglose: dict[int, int] = {}
+        for i, md in enumerate(modelos):
+            for wk, n in altas[i].items():
+                if w_ref - md.plazo_semanas < wk <= w_ref:
+                    anada = semana_a_anada.get(wk)
+                    if anada is not None and n:
+                        desglose[anada] = desglose.get(anada, 0) + n
+        n_previa = previa.get(w_ref, 0)
+        if n_previa:
+            desglose[-1] = desglose.get(-1, 0) + n_previa
+        out.append(desglose)
+    return out
+
+
 # Presets de escenario (réplica de `escMora` del artefacto): mora / recuperación.
 PRESETS_ESCENARIO: dict[str, dict[str, Decimal]] = {
     "pesimista": {"pct_mora": Decimal("0.06"), "pct_recuperacion": Decimal("0.30")},

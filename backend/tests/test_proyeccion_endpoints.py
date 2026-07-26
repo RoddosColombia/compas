@@ -146,6 +146,31 @@ async def test_flujo_completo_ingreso_discriminado_y_kpis(api):
 
 
 @pytest.mark.asyncio
+async def test_operacion_cartera_por_anada_y_colocacion(api):
+    # DASH-01: /proyeccion/operacion desglosa la cartera por AÑADA y expone colocación.
+    await _setup_config(api)
+    h = await _token(api, "consulta@roddos.com")  # dashboard:leer basta
+    r = await api.get("/api/v1/proyeccion/operacion?horizonte_meses=12", headers=h)
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["meses"]) == 12
+    m0 = data["meses"][0]
+    assert m0["colocacion"] == 50  # motos_base
+    # la suma del desglose por añada iguala la cartera activa del mes (invariante)
+    suma = sum(a["activos"] for a in m0["por_anada"])
+    assert suma == m0["cartera"]
+    # el primer mes solo tiene la añada de su propio mes
+    assert [a["anada"] for a in m0["por_anada"]] == [m0["mes"]]
+
+
+@pytest.mark.asyncio
+async def test_operacion_sin_config_es_409(api):
+    h = await _token(api, "fin@roddos.com")
+    r = await api.get("/api/v1/proyeccion/operacion", headers=h)
+    assert r.status_code == 409  # fail-closed igual que /proyeccion
+
+
+@pytest.mark.asyncio
 async def test_escenario_pesimista_menos_caja_que_optimista(api):
     await _setup_config(api)
     h = await _token(api, "fin@roddos.com")

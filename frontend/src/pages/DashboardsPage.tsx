@@ -1,11 +1,11 @@
 // frontend/src/pages/DashboardsPage.tsx
 //
-// Dashboards — panel operativo del cockpit. Muestra las series que el motor (C7)
-// YA proyecta: cobranza (recaudo de crédito), cartera activa, cuotas iniciales e
-// ingreso bruto por mes. NO inventa cifras: cartera por añada, mora por tramo y
-// colocación mensual requieren un motor de agregación adicional (CR pendiente) y
-// se marcan como tal. Montos con formatCOP (regla 1); .toNumber() SOLO para el
-// ancho de las barras (presentación), nunca cálculo.
+// Dashboards — panel operativo del cockpit. Muestra las series del motor (C7):
+// cobranza (recaudo de crédito), cuotas iniciales, ingreso bruto, cartera activa,
+// COLOCACIÓN mensual y cartera por AÑADA (cohorte, DASH-01). NO inventa cifras: la
+// mora por TRAMO (aging) aún no se proyecta (requiere aging real del loan-tape o un
+// modelo de roll-rates aparte) y se marca como tal. Montos con formatCOP (regla 1);
+// .toNumber() SOLO para el ancho de las barras (presentación), nunca cálculo.
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -15,7 +15,12 @@ import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card, CardTitle } from "@/components/ui/card";
 import { KpiTile } from "@/components/ui/kpi-tile";
 import { formatCOP, parseMonto } from "@/lib/money";
-import { type MesProyeccion, obtenerProyeccion } from "@/lib/proyeccion";
+import {
+  type MesOperacion,
+  type MesProyeccion,
+  obtenerOperacion,
+  obtenerProyeccion,
+} from "@/lib/proyeccion";
 
 const HORIZONTES = [12, 24, 36, 60];
 
@@ -31,6 +36,11 @@ export default function DashboardsPage() {
     queryKey: ["proyeccion", "base", horizonte],
     queryFn: () =>
       obtenerProyeccion({ escenario: "base", horizonteMeses: horizonte }),
+  });
+  const op = useQuery({
+    queryKey: ["operacion", "base", horizonte],
+    queryFn: () =>
+      obtenerOperacion({ escenario: "base", horizonteMeses: horizonte }),
   });
 
   const selectorHorizonte = (
@@ -103,15 +113,97 @@ export default function DashboardsPage() {
             </div>
           </Card>
 
+          {op.data && op.data.meses.length > 0 && (
+            <>
+              <Card>
+                <CardTitle>Colocación mensual</CardTitle>
+                <p className="mt-0.5 font-sans text-xs text-ink-faint">
+                  motos colocadas por mes (nuevas ventas a crédito)
+                </p>
+                <div className="mt-4">
+                  <BarrasMotos meses={op.data.meses} />
+                </div>
+              </Card>
+
+              <CarteraPorAnada meses={op.data.meses} />
+            </>
+          )}
+
           <AlertBanner variant="warn">
-            Cartera <span className="font-semibold">por añada</span>, mora{" "}
-            <span className="font-semibold">por tramo</span> y colocación
-            mensual requieren un motor de agregación adicional (CR pendiente).
-            Este panel muestra las series que el motor ya proyecta.
+            Mora <span className="font-semibold">por tramo</span> (aging)
+            requiere aging real del loan-tape o un modelo de roll-rates aparte;
+            aún no se proyecta para no inventar cifras.
           </AlertBanner>
         </>
       )}
     </div>
+  );
+}
+
+// Barras de colocación (conteo de motos). Ancho = geometría de presentación.
+function BarrasMotos({ meses }: { meses: MesOperacion[] }) {
+  const max = Math.max(...meses.map((m) => m.colocacion), 1);
+  return (
+    <div className="flex flex-col gap-1.5">
+      {meses.map((m) => {
+        const pct = Math.max(2, (m.colocacion / max) * 100);
+        return (
+          <div key={m.mes} className="flex items-center gap-3">
+            <span className="tabular w-16 shrink-0 font-sans text-xs text-ink-soft">
+              {m.mes}
+            </span>
+            <div className="h-4 flex-1 overflow-hidden rounded bg-surface-muted">
+              <div
+                className="h-full rounded bg-green"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className="tabular w-12 shrink-0 text-right font-sans text-xs text-ink">
+              {m.colocacion}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Cartera activa del ÚLTIMO mes desglosada por añada (cohorte de colocación).
+function CarteraPorAnada({ meses }: { meses: MesOperacion[] }) {
+  const ultimo = meses[meses.length - 1];
+  const max = Math.max(...ultimo.por_anada.map((a) => a.activos), 1);
+  return (
+    <Card>
+      <CardTitle>Cartera por añada</CardTitle>
+      <p className="mt-0.5 font-sans text-xs text-ink-faint">
+        cartera activa en {ultimo.mes} ({ultimo.cartera} motos) por cohorte de
+        colocación · <span className="font-semibold">previa</span> = los 111
+        créditos preexistentes
+      </p>
+      <div className="mt-4 flex flex-col gap-1.5">
+        {ultimo.por_anada.map((a) => {
+          const pct = Math.max(2, (a.activos / max) * 100);
+          return (
+            <div key={a.anada} className="flex items-center gap-3">
+              <span className="tabular w-20 shrink-0 font-sans text-xs text-ink-soft">
+                {a.anada}
+              </span>
+              <div className="h-4 flex-1 overflow-hidden rounded bg-surface-muted">
+                <div
+                  className={`h-full rounded ${
+                    a.anada === "previa" ? "bg-amber" : "bg-cyan"
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="tabular w-12 shrink-0 text-right font-sans text-xs text-ink">
+                {a.activos}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

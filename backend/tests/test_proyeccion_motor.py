@@ -18,6 +18,7 @@ from app.proyeccion.motor import (
     _adelanto_por_mes,
     _lote_por_mes,
     cartera_activa_mensual,
+    cartera_por_anada_mensual,
     colocacion_mensual,
     cuotas_iniciales_mensual,
     dias_de_cobro_del_mes,
@@ -502,6 +503,50 @@ def test_proyectar_enhebra_cartera_previa_en_recaudo_y_cartera():
         "5000.00"
     )
     assert r_con.meses[0].cartera == r_sin.meses[0].cartera + 40
+
+
+def test_cartera_por_anada_suma_igual_a_cartera_activa():
+    # DASH-01: la cartera desglosada por AÑADA (mes de colocación) debe sumar EXACTO a
+    # la cartera activa total del mes (invariante que ata la agregación al motor).
+    modelos = [
+        ModeloProyeccion(
+            "Raider",
+            cuota_semanal=Decimal("100"),
+            cuota_inicial=Decimal("0"),
+            plazo_semanas=6,
+            mix=Decimal("1"),
+            costo_moto=Decimal("0"),
+        )
+    ]
+    colocacion = [4, 3, 5, 2]
+    mes_inicio = (2026, 7)
+    por_anada = cartera_por_anada_mensual(colocacion, modelos, mes_inicio)
+    total = cartera_activa_mensual(colocacion, modelos, mes_inicio)
+    assert len(por_anada) == len(total)
+    for m, (desglose, tot) in enumerate(zip(por_anada, total, strict=True)):
+        assert sum(desglose.values()) == tot, f"mes {m}"
+    # el primer mes solo puede tener añada 0 (no hay cohortes anteriores)
+    assert set(por_anada[0]) <= {0}
+
+
+def test_cartera_por_anada_incluye_la_previa_como_anada_propia():
+    # la cartera preexistente (111 créditos) entra como añada -1 (no tiene mes de
+    # colocación en el horizonte): réplica de activosPrevios del artefacto.
+    modelos = [
+        ModeloProyeccion(
+            "Raider",
+            cuota_semanal=Decimal("100"),
+            cuota_inicial=Decimal("0"),
+            plazo_semanas=6,
+            mix=Decimal("1"),
+            costo_moto=Decimal("0"),
+        )
+    ]
+    # jul-2026 cobra semanas 18-22; pongo 7 previos activos en w22 (última del mes).
+    por_anada = cartera_por_anada_mensual(
+        [0], modelos, (2026, 7), activos_previos_por_semana={22: 7}
+    )
+    assert por_anada[0].get(-1) == 7  # añada -1 = cartera previa
 
 
 def test_proyectar_resta_iva_en_el_mes_dian():

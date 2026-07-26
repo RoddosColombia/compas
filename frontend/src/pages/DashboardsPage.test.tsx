@@ -55,9 +55,35 @@ const PROY: Proyeccion = {
   ],
 };
 
+const OPER = {
+  escenario: "base",
+  meses: [
+    {
+      mes: "2026-07",
+      colocacion: 50,
+      cartera: 120,
+      por_anada: [{ anada: "2026-07", activos: 120 }],
+    },
+    {
+      mes: "2026-08",
+      colocacion: 51,
+      cartera: 160,
+      por_anada: [
+        { anada: "previa", activos: 40 },
+        { anada: "2026-07", activos: 60 },
+        { anada: "2026-08", activos: 60 },
+      ],
+    },
+  ],
+};
+
 vi.mock("@/lib/proyeccion", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/proyeccion")>();
-  return { ...real, obtenerProyeccion: () => Promise.resolve(PROY) };
+  return {
+    ...real,
+    obtenerProyeccion: () => Promise.resolve(PROY),
+    obtenerOperacion: () => Promise.resolve(OPER),
+  };
 });
 
 function renderPage() {
@@ -76,10 +102,19 @@ describe("DashboardsPage", () => {
     expect(screen.getByText("Cartera activa al cierre")).toBeInTheDocument();
   });
 
-  it("avisa honestamente qué análisis requieren backend adicional", async () => {
+  it("muestra colocación y cartera por añada (DASH-01)", async () => {
+    renderPage();
+    expect(await screen.findByText("Colocación mensual")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Cartera por añada" }),
+    ).toBeInTheDocument();
+    // el último mes desglosa la añada 'previa' (créditos preexistentes)
+    expect(screen.getAllByText("previa").length).toBeGreaterThan(0);
+  });
+
+  it("avisa honestamente que la mora por tramo (aging) aún no se proyecta", async () => {
     renderPage();
     await screen.findByText("Cobranza proyectada");
-    expect(screen.getByText(/por añada/i)).toBeInTheDocument();
     expect(screen.getByText(/por tramo/i)).toBeInTheDocument();
   });
 });
