@@ -67,3 +67,24 @@ async def operacion(
         )
     except service.ProyeccionError as e:
         raise HTTPException(e.status, e.detalle) from e
+
+
+@router.get("/comparar")
+async def comparar(
+    escenario: str = Query(default="base"),
+    ancla: str = Query(default="cerrado"),  # 'cerrado' | 'movimientos'
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """COCK-09 — actuals (caja real de bancos) vs proyección + rolling forecast (la
+    proyección se re-ancla a la caja real del último mes cerrado o con movimientos)."""
+    try:
+        return await service.comparar_vigente(
+            escenario=escenario,
+            ancla_modo=ancla,
+            horizonte_meses=horizonte_meses,
+            mes_inicio_defecto=_parse_mes_inicio(mes_inicio),
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e

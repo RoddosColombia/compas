@@ -7,10 +7,13 @@ Carga los parámetros VIGENTES + el catálogo de modelos ACTIVOS, arma un
 estado: es una lectura pura sobre la configuración vigente."""
 
 from app.cartera_previa import service as cartera_previa_service
+from app.cierre.service import _caja_libro, _rubro_ajuste
 from app.core.money import money_str
 from app.domain.configuracion import ClaveConfig, Configuracion
+from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.modelo_moto import ModeloMoto
 from app.domain.parametros_proyeccion import ParametrosProyeccion
+from app.domain.transaccion import Transaccion
 from app.facturas import service as facturas_service
 from app.iva.liquidacion import liquidar, plan_fondo_provision, programar_egresos_iva
 from app.modelos_moto import service as modelos_service
@@ -57,6 +60,7 @@ def _armar_parametros(
     recaudo_previo: dict[int, object] | None = None,
     activos_previos: dict[int, int] | None = None,
     iva_egreso_por_mes: dict[int, object] | None = None,
+    caja_inicial_override: object | None = None,
 ) -> ParametrosMotor:
     pct_mora, pct_recuperacion = params.pct_mora, params.pct_recuperacion
     # el escenario (preset) sobrescribe mora/recuperación; el resto queda de params.
@@ -87,7 +91,11 @@ def _armar_parametros(
         pct_provision=params.pct_provision,
         overrides_mora=None,
         overrides_default=None,
-        caja_inicial=params.caja_inicial,
+        caja_inicial=(
+            params.caja_inicial
+            if caja_inicial_override is None
+            else caja_inicial_override
+        ),
         caja_minima=params.caja_minima,
         recaudo_previo_por_semana=recaudo_previo,
         activos_previos_por_semana=activos_previos,
@@ -194,18 +202,16 @@ async def _iva_plan(
 
 
 async def proyectar_vigente(
-    *, escenario: str, mes_inicio: tuple[int, int], horizonte_meses: int | None
+    *,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+    caja_inicial_override: object | None = None,
 ) -> dict:
     """Proyección con los parámetros/modelos vigentes. Falla-cerrado si falta config
-    (no se inventan cifras): 409 si no hay parámetros o no hay modelos activos."""
-    params = await parametros_service.obtener_vigente()
-    if params is None:
-        raise ProyeccionError(
-            "no hay parámetros de proyección configurados (cárguelos primero)", 409
-        )
-    modelos = await modelos_service.listar_modelos(activo=True)
-    if not modelos:
-        raise ProyeccionError("no hay modelos de moto activos", 409)
+    (no se inventan cifras): 409 si no hay parámetros o no hay modelos activos.
+    `caja_inicial_override` re-ancla la caja inicial (rolling forecast, COCK-09)."""
+    params, modelos = await _cargar_config_vigente()
     horizonte = horizonte_meses or params.horizonte_meses
     if horizonte < 1 or horizonte > HORIZONTE_MAX:
         raise ProyeccionError(
@@ -222,6 +228,7 @@ async def proyectar_vigente(
         recaudo_previo,
         activos_previos,
         iva_egreso,
+        caja_inicial_override,
     )
     return _serializar(proyectar(pm), escenario, params.caja_minima, fondo)
 
@@ -284,5 +291,86 @@ async def operacion_vigente(
                 ],
             }
             for i in range(horizonte)
+        ],
+    }
+
+
+ANCLA_MODOS = ("cerrado", "movimientos")
+
+
+async def _actuals_por_mes(rubro_ajuste_id) -> list[tuple[MesControl, object]]:
+    """Caja REAL de libro por mes (COCK-09), en orden cronológico. Cada MesControl con
+    su `_caja_libro` (saldo_inicial + Σ movimientos, excluyendo el ajuste)."""
+    meses = await MesControl.find_all().sort(+MesControl.mes).to_list()
+    out: list[tuple[MesControl, object]] = []
+    for mc in meses:
+        caja = await _caja_libro(mc.id, rubro_ajuste_id, mc.saldo_inicial_caja)
+        out.append((mc, caja))
+    return out
+
+
+async def _elegir_ancla(
+    actuals: list[tuple[MesControl, object]], modo: str
+) -> tuple[MesControl, object] | None:
+    """Último mes que sirve de ancla del rolling forecast: CERRADO (histórico firme) o
+    con MOVIMIENTOS (al día, aún sin conciliar). None si no hay ninguno."""
+    if modo == "cerrado":
+        cerrados = [t for t in actuals if t[0].estado is EstadoMes.CERRADO]
+        return cerrados[-1] if cerrados else None
+    # 'movimientos': el último mes con al menos una transacción
+    for mc, caja in reversed(actuals):
+        if await Transaccion.find(Transaccion.mes_id == mc.id).count() > 0:
+            return (mc, caja)
+    return None
+
+
+async def comparar_vigente(
+    *,
+    escenario: str,
+    ancla_modo: str,
+    horizonte_meses: int | None,
+    mes_inicio_defecto: tuple[int, int],
+) -> dict:
+    """COCK-09 — actuals (caja real de los bancos ya cargados) vs proyección + rolling
+    forecast: la proyección se RE-ANCLA a la caja real del mes ancla (configurable:
+    último cerrado / último con movimientos) y arranca desde ahí. Sin ancla → proyección
+    normal desde el mes por defecto. Montos como string (regla 1)."""
+    if ancla_modo not in ANCLA_MODOS:
+        raise ProyeccionError(f"ancla_modo debe ser uno de {ANCLA_MODOS}", 422)
+    rubro_aj = await _rubro_ajuste()
+    actuals = await _actuals_por_mes(rubro_aj.id)
+    ancla = await _elegir_ancla(actuals, ancla_modo)
+
+    if ancla is None:
+        forecast = await proyectar_vigente(
+            escenario=escenario,
+            mes_inicio=mes_inicio_defecto,
+            horizonte_meses=horizonte_meses,
+        )
+        ancla_out = None
+        actuals_out = actuals  # todos los reales que haya (puede ser [])
+    else:
+        mc_a, caja_a = ancla
+        y, m = int(mc_a.mes[:4]), int(mc_a.mes[5:7])
+        forecast = await proyectar_vigente(
+            escenario=escenario,
+            mes_inicio=(y, m),
+            horizonte_meses=horizonte_meses,
+            caja_inicial_override=caja_a,
+        )
+        ancla_out = {"mes": mc_a.mes[:7], "caja_real": money_str(caja_a)}
+        # actuals hasta el ancla inclusive (el tramo real de la curva)
+        actuals_out = [t for t in actuals if t[0].mes <= mc_a.mes]
+
+    return {
+        "escenario": escenario,
+        "ancla_modo": ancla_modo,
+        "ancla": ancla_out,
+        "actuals": [
+            {"mes": mc.mes[:7], "caja_real": money_str(caja)}
+            for mc, caja in actuals_out
+        ],
+        "forecast": [
+            {"mes": f["mes"], "caja": f["caja"]} for f in forecast["meses"]
         ],
     }

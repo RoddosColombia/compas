@@ -170,6 +170,66 @@ async def test_operacion_sin_config_es_409(api):
     assert r.status_code == 409  # fail-closed igual que /proyeccion
 
 
+async def _seed_mes_cerrado_con_ingreso():
+    # COCK-09: un mes CERRADO con caja real = saldo_inicial + un ingreso.
+    from decimal import Decimal
+
+    from app.domain.bancos import Banco
+    from app.domain.mes_control import MesControl
+    from app.domain.rubro import Rubro, TipoFlujo
+    from app.domain.transaccion import Transaccion
+
+    ajuste = await Rubro(
+        grupo="otros", nombre="Ajuste de conciliación", orden=98, es_sistema=True
+    ).insert()
+    porclas = await Rubro(
+        grupo="otros", nombre="Por clasificar", orden=97, es_sistema=True
+    ).insert()
+    mc = await MesControl(
+        mes="2026-06-01",
+        estado="cerrado",
+        saldo_inicial_caja=Decimal("10000000"),
+    ).insert()
+    await Transaccion(
+        fecha="2026-06-15",
+        descripcion="ABONO",
+        valor=Decimal("5000000"),
+        tipo_flujo=TipoFlujo.INGRESO,
+        rubro_id=porclas.id,
+        mes_id=mc.id,
+        banco=Banco.MANUAL,
+        id_banco="MAN-COCK09TEST00000000000000001",
+    ).insert()
+    return ajuste, mc
+
+
+@pytest.mark.asyncio
+async def test_comparar_actuals_vs_forecast_rolling(api):
+    # DASH/COCK-09: la caja real del mes cerrado ancla el rolling forecast.
+    await _setup_config(api)
+    await _seed_mes_cerrado_con_ingreso()
+    h = await _token(api, "consulta@roddos.com")  # dashboard:leer basta
+    r = await api.get("/api/v1/proyeccion/comparar?ancla=cerrado", headers=h)
+    assert r.status_code == 200
+    data = r.json()
+    # ancla = jun-2026, caja real = 10M + 5M = 15M
+    assert data["ancla"]["mes"] == "2026-06"
+    assert data["ancla"]["caja_real"] == "15000000.00"
+    # el tramo real incluye jun-2026
+    assert any(a["mes"] == "2026-06" for a in data["actuals"])
+    # el rolling forecast arranca en el mes ancla con la caja real (mes 0 = caja fija)
+    assert data["forecast"][0]["mes"] == "2026-06"
+    assert data["forecast"][0]["caja"] == "15000000.00"
+
+
+@pytest.mark.asyncio
+async def test_comparar_ancla_modo_invalido_es_422(api):
+    await _setup_config(api)
+    h = await _token(api, "fin@roddos.com")
+    r = await api.get("/api/v1/proyeccion/comparar?ancla=xyz", headers=h)
+    assert r.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_escenario_pesimista_menos_caja_que_optimista(api):
     await _setup_config(api)
