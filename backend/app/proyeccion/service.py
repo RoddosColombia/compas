@@ -6,6 +6,7 @@ Carga los parámetros VIGENTES + el catálogo de modelos ACTIVOS, arma un
 `motor.proyectar()`. Serializa a JSON con montos como string (regla 1). No escribe
 estado: es una lectura pura sobre la configuración vigente."""
 
+from app.cartera_previa import service as cartera_previa_service
 from app.core.money import money_str
 from app.domain.modelo_moto import ModeloMoto
 from app.domain.parametros_proyeccion import ParametrosProyeccion
@@ -46,6 +47,8 @@ def _armar_parametros(
     escenario: str,
     mes_inicio: tuple[int, int],
     horizonte_meses: int,
+    recaudo_previo: dict[int, object] | None = None,
+    activos_previos: dict[int, int] | None = None,
 ) -> ParametrosMotor:
     pct_mora, pct_recuperacion = params.pct_mora, params.pct_recuperacion
     # el escenario (preset) sobrescribe mora/recuperación; el resto queda de params.
@@ -78,6 +81,8 @@ def _armar_parametros(
         overrides_default=None,
         caja_inicial=params.caja_inicial,
         caja_minima=params.caja_minima,
+        recaudo_previo_por_semana=recaudo_previo,
+        activos_previos_por_semana=activos_previos,
     )
 
 
@@ -138,5 +143,14 @@ async def proyectar_vigente(
         raise ProyeccionError(
             f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
         )
-    pm = _armar_parametros(params, modelos, escenario, mes_inicio, horizonte)
+    recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
+    pm = _armar_parametros(
+        params,
+        modelos,
+        escenario,
+        mes_inicio,
+        horizonte,
+        recaudo_previo,
+        activos_previos,
+    )
     return _serializar(proyectar(pm), escenario, params.caja_minima)

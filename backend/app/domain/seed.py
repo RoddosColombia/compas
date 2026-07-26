@@ -11,6 +11,8 @@ from typing import Any
 
 from bson import Decimal128
 
+from app.domain.cartera_previa import CARTERA_PREVIA_COLLECTION
+from app.domain.cartera_previa_semilla import SEMILLA_CARTERA_PREVIA
 from app.domain.configuracion import (
     CONFIGURACION_COLLECTION,
     SEMILLA_CONFIGURACION,
@@ -68,6 +70,23 @@ async def seed_rubros_reporte(db: Any) -> tuple[int, list[dict]]:
     Lo usa la migración del re-seed C1."""
     return await _upsert_muchos(
         db, RUBROS_COLLECTION, SEMILLA_RUBROS, ["grupo", "nombre"]
+    )
+
+
+async def seed_cartera_previa(db: Any) -> int:
+    """Siembra la serie semanal de la cartera previa (97 semanas; idempotente por
+    `semana_global`). CR "Fidelidad de caja" PR-1 — el motor la suma al recaudo de
+    crédito y a la cartera. Segunda corrida NO pisa correcciones del CEO."""
+    insertados, _ = await _upsert_muchos(
+        db, CARTERA_PREVIA_COLLECTION, SEMILLA_CARTERA_PREVIA, ["semana_global"]
+    )
+    return insertados
+
+
+async def seed_cartera_previa_reporte(db: Any) -> tuple[int, list[dict]]:
+    """Como `seed_cartera_previa` pero con el reporte de colisiones (B-4)."""
+    return await _upsert_muchos(
+        db, CARTERA_PREVIA_COLLECTION, SEMILLA_CARTERA_PREVIA, ["semana_global"]
     )
 
 

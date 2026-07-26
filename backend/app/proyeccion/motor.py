@@ -189,12 +189,19 @@ def recaudo_credito_mensual(
     mes_inicio: tuple[int, int],
     dia_cobro: int = DIA_COBRO_DEFECTO,
     ancla: date = ANCLA_SEMANA,
+    recaudo_previo_por_semana: dict[int, Decimal] | None = None,
 ) -> list[Decimal]:
     """Vía 1 — recaudo de crédito por mes (motor cuota-a-cuota). Cada moto colocada
     abre una ventana de `plazo_semanas` cuotas semanales; el recaudo del mes = Σ de las
-    cuotas activas de todas las ventas vivas en las semanas de cobro reales del mes."""
+    cuotas activas de todas las ventas vivas en las semanas de cobro reales del mes.
+
+    `recaudo_previo_por_semana` (semana global → monto) suma el recaudo REAL de la
+    cartera preexistente (111 créditos vivos del LoanTape, con moras reales). Es un
+    TERCER sumando del recaudo de crédito, NO una tercera vía — réplica de
+    `recaudoPrevio(w)` del artefacto (línea 451). Serie finita (se agota ~ene-2028)."""
     meses = _meses_del_horizonte(mes_inicio, len(colocacion_por_mes))
     altas = _altas_por_modelo(colocacion_por_mes, modelos, meses, dia_cobro, ancla)
+    previa = recaudo_previo_por_semana or {}
     recaudo: list[Decimal] = []
     for y, m in meses:
         semanas_g = _semanas_globales_del_mes(y, m, dia_cobro, ancla)
@@ -203,6 +210,7 @@ def recaudo_credito_mensual(
             for i_modelo, md in enumerate(modelos):
                 act = _activos_en_semana(altas[i_modelo], w, md.plazo_semanas)
                 total_mes += Decimal(act) * md.cuota_semanal
+            total_mes += previa.get(w, Decimal(0))
         recaudo.append(total_mes)
     return recaudo
 
@@ -337,11 +345,17 @@ def cartera_activa_mensual(
     mes_inicio: tuple[int, int],
     dia_cobro: int = DIA_COBRO_DEFECTO,
     ancla: date = ANCLA_SEMANA,
+    activos_previos_por_semana: dict[int, int] | None = None,
 ) -> list[int]:
     """Motos activas (pagando) al CIERRE de cada mes = activos en la última semana de
-    cobro del mes. Alimenta el GPS (costo por moto activa)."""
+    cobro del mes. Alimenta el GPS (costo por moto activa).
+
+    `activos_previos_por_semana` (semana global → nº) suma los créditos preexistentes
+    vivos en la semana de referencia — réplica de `activosPrevios(w)` del artefacto
+    (línea 473)."""
     meses = _meses_del_horizonte(mes_inicio, len(colocacion_por_mes))
     altas = _altas_por_modelo(colocacion_por_mes, modelos, meses, dia_cobro, ancla)
+    previa = activos_previos_por_semana or {}
     out: list[int] = []
     for y, m in meses:
         semanas_g = _semanas_globales_del_mes(y, m, dia_cobro, ancla)
@@ -349,7 +363,7 @@ def cartera_activa_mensual(
         cartera = sum(
             _activos_en_semana(altas[i], w_ref, md.plazo_semanas)
             for i, md in enumerate(modelos)
-        )
+        ) + previa.get(w_ref, 0)
         out.append(cartera)
     return out
 
@@ -393,6 +407,10 @@ class ParametrosMotor:
     overrides_default: dict[int, Decimal] | None
     caja_inicial: Decimal
     caja_minima: Decimal
+    # Cartera previa (111 créditos preexistentes): serie semanal REAL del LoanTape.
+    # semana global → recaudo / nº activos. Default None = sin cartera previa.
+    recaudo_previo_por_semana: dict[int, Decimal] | None = None
+    activos_previos_por_semana: dict[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -445,9 +463,19 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
     colocacion = colocacion_mensual(
         p.motos_base, p.crec_pct_mensual, p.horizonte_meses, p.rampa
     )
-    recaudo = recaudo_credito_mensual(colocacion, p.modelos, p.mes_inicio)
+    recaudo = recaudo_credito_mensual(
+        colocacion,
+        p.modelos,
+        p.mes_inicio,
+        recaudo_previo_por_semana=p.recaudo_previo_por_semana,
+    )
     iniciales = cuotas_iniciales_mensual(colocacion, p.modelos)
-    cartera = cartera_activa_mensual(colocacion, p.modelos, p.mes_inicio)
+    cartera = cartera_activa_mensual(
+        colocacion,
+        p.modelos,
+        p.mes_inicio,
+        activos_previos_por_semana=p.activos_previos_por_semana,
+    )
     lote = _lote_por_mes(colocacion, p.modelos)
     adelanto = _adelanto_por_mes(colocacion, p.adelanto_auteco)
     pago_inv, fondeo = inventario_auteco_mensual(

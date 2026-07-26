@@ -15,6 +15,7 @@ from app.proyeccion.motor import (
     PRESETS_ESCENARIO,
     ModeloProyeccion,
     ParametrosMotor,
+    cartera_activa_mensual,
     colocacion_mensual,
     cuotas_iniciales_mensual,
     dias_de_cobro_del_mes,
@@ -300,3 +301,72 @@ def test_presets_escenario_y_efecto_en_caja():
     r_pes = proyectar(_params_simple(**pes, pct_default=Decimal("0.03")))
     r_opt = proyectar(_params_simple(**opt, pct_default=Decimal("0.03")))
     assert r_pes.caja_final < r_opt.caja_final
+
+
+# ── Cartera previa: recaudo + activos de los 111 créditos preexistentes ──
+# (PR-1 "Fidelidad de caja": réplica de recaudoPrevio(w)/activosPrevios(w) del artefacto,
+# líneas 451/473 — un TERCER sumando del recaudo de crédito, NO una tercera vía.)
+
+
+def test_recaudo_credito_suma_cartera_previa_por_semana():
+    # 1 moto nueva colocada jul-2026 (semana 18), cuota 100, plazo 6 → jul=500, ago=100.
+    # jul cobra semanas 18-22; ago cobra 23-26 (ago 5,12,19,26).
+    # previa: w18=1000, w22=2000 (ambas en jul) → previa jul=3000; w23=5000 (ago).
+    modelos = [_modelo_unico(100, 0, 6)]
+    previa = {18: Decimal("1000"), 22: Decimal("2000"), 23: Decimal("5000")}
+    recaudo = recaudo_credito_mensual(
+        colocacion_por_mes=[1, 0, 0, 0],
+        modelos=modelos,
+        mes_inicio=(2026, 7),
+        recaudo_previo_por_semana=previa,
+    )
+    assert recaudo == [
+        Decimal("3500"),  # 500 nuevas + 3000 previa
+        Decimal("5100"),  # 100 nuevas + 5000 previa
+        Decimal("0"),
+        Decimal("0"),
+    ]
+
+
+def test_recaudo_credito_sin_previa_no_cambia():
+    # sin serie previa (default), el recaudo es el de siempre (no-regresión).
+    modelos = [_modelo_unico(100, 0, 6)]
+    recaudo = recaudo_credito_mensual(
+        colocacion_por_mes=[1, 0, 0, 0], modelos=modelos, mes_inicio=(2026, 7)
+    )
+    assert recaudo == [Decimal("500"), Decimal("100"), Decimal("0"), Decimal("0")]
+
+
+def test_cartera_activa_suma_activos_previos_en_semana_de_referencia():
+    # cartera al cierre = activos nuevos en la última semana de cobro + activos previos.
+    # 1 moto jul (semana 18, plazo 6): activa en w_ref jul=22 (16<18<=22) → 1; ago w_ref=26
+    # (20<18<=26 es falso) → 0. previa: w22=30, w26=25.
+    modelos = [_modelo_unico(100, 0, 6)]
+    activos_previos = {22: 30, 26: 25}
+    cartera = cartera_activa_mensual(
+        colocacion_por_mes=[1, 0, 0, 0],
+        modelos=modelos,
+        mes_inicio=(2026, 7),
+        activos_previos_por_semana=activos_previos,
+    )
+    assert cartera[0] == 31  # 1 nueva + 30 previa
+    assert cartera[1] == 25  # 0 nuevas + 25 previa
+
+
+def test_proyectar_enhebra_cartera_previa_en_recaudo_y_cartera():
+    # jul-2026 cobra semanas 18-22; previa de 1000/semana → +5000 al recaudo de crédito
+    # de julio; 40 activos previos en w_ref=22 → +40 a la cartera de julio.
+    previa_recaudo = {w: Decimal("1000") for w in (18, 19, 20, 21, 22)}
+    previa_activos = {22: 40}
+    r_sin = proyectar(_params_simple())
+    r_con = proyectar(
+        _params_simple(
+            recaudo_previo_por_semana=previa_recaudo,
+            activos_previos_por_semana=previa_activos,
+        )
+    )
+    assert (
+        r_con.meses[0].recaudo_credito
+        == r_sin.meses[0].recaudo_credito + Decimal("5000.00")
+    )
+    assert r_con.meses[0].cartera == r_sin.meses[0].cartera + 40

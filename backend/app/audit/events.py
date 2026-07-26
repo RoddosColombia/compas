@@ -88,7 +88,9 @@ class AuditEvento(StrEnum):
     modelo_moto_editado = "modelo_moto.editado"
     modelo_moto_desactivado = "modelo_moto.desactivado"
     parametros_proyeccion_actualizado = "parametros_proyeccion.actualizado"
+    # CR "Fidelidad de caja" (PR-1): seed de la serie de cartera previa (44 -> 45).
+    cartera_previa_cargada = "cartera_previa.cargada"
 
 
-# Conjunto de los 40 valores canónicos (para validación/tests de completitud).
+# Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)

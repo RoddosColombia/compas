@@ -8,6 +8,7 @@ el ODM general.
 """
 
 from app.domain.carga import CargaBancaria
+from app.domain.cartera_previa import CarteraPreviaRecaudo
 from app.domain.configuracion import Configuracion
 from app.domain.idempotency import IdempotencyKey
 from app.domain.mes_control import MesControl
@@ -31,6 +32,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     PagoPlaneado,
     ModeloMoto,
     ParametrosProyeccion,
+    CarteraPreviaRecaudo,
 ]
 
 __all__ = [
@@ -45,5 +47,6 @@ __all__ = [
     "PagoPlaneado",
     "ModeloMoto",
     "ParametrosProyeccion",
+    "CarteraPreviaRecaudo",
     "DOMAIN_DOCUMENTS",
 ]
