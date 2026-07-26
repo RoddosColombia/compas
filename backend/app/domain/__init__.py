@@ -12,6 +12,7 @@ from app.domain.cartera_previa import CarteraPreviaRecaudo
 from app.domain.configuracion import Configuracion
 from app.domain.factura import Factura
 from app.domain.idempotency import IdempotencyKey
+from app.domain.loantape import LoanTapeCredito
 from app.domain.mes_control import MesControl
 from app.domain.modelo_moto import ModeloMoto
 from app.domain.pago_planeado import PagoPlaneado
@@ -35,6 +36,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     ParametrosProyeccion,
     CarteraPreviaRecaudo,
     Factura,
+    LoanTapeCredito,
 ]
 
 __all__ = [
@@ -51,5 +53,6 @@ __all__ = [
     "ParametrosProyeccion",
     "CarteraPreviaRecaudo",
     "Factura",
+    "LoanTapeCredito",
     "DOMAIN_DOCUMENTS",
 ]
