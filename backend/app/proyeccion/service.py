@@ -36,6 +36,7 @@ from app.proyeccion.motor import (
     colocacion_mensual,
     proyectar,
 )
+from app.proyeccion.solvers import goal_seek, punto_de_quiebre, techo_gasto
 from app.proyeccion.valles import Valle, detectar_valles
 
 HORIZONTE_MAX = 180  # 15 años (tope de infraestructura)
@@ -401,6 +402,71 @@ async def proyectar_impactos(
         ],
         "delta_por_mes": [money_str(d) for d in ajustado.delta_por_mes],
     }
+
+
+async def resolver(
+    *,
+    objetivo: str,
+    ajustes: list[Ajuste],
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+    colchon: Decimal = Decimal("0"),
+    variable: str | None = None,
+    objetivo_caja: Decimal | None = None,
+) -> dict:
+    """D1 §5 — solvers por bisección sobre la proyección vigente + los `ajustes` en
+    pantalla. Compute-only. `objetivo` ∈ {techo_gasto, goal_seek, punto_quiebre}."""
+    params, modelos = await _cargar_config_vigente()
+    r, caja_min, _ = await _resultado_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+    )
+    if objetivo == "techo_gasto":
+        t = techo_gasto(r, caja_min, ajustes_previos=ajustes, colchon=colchon)
+        return {
+            "objetivo": "techo_gasto",
+            "techo_mensual": money_str(t.techo_mensual),
+            "valle_limitante_mes": t.valle_limitante_mes,
+            "piso_resultante": money_str(t.piso_resultante),
+            "meta": money_str(t.meta),
+            "colchon": money_str(t.colchon),
+            "hay_holgura": t.hay_holgura,
+        }
+    if objetivo == "goal_seek":
+        if variable is None or objetivo_caja is None:
+            raise ProyeccionError("goal_seek requiere variable y objetivo_caja", 422)
+        g = goal_seek(
+            r,
+            caja_min,
+            variable=variable,
+            objetivo_caja=objetivo_caja,
+            ajustes_previos=ajustes,
+        )
+        return {
+            "objetivo": "goal_seek",
+            "variable": g.variable,
+            # str() (no money_str): un % como 0.0345 no se puede cuantizar a 2 decimales
+            "valor": (str(g.valor) if g.valor is not None else None),
+            "alcanzable": g.alcanzable,
+            "piso_resultante": (
+                money_str(g.piso_resultante) if g.piso_resultante is not None else None
+            ),
+            "objetivo_caja": money_str(g.objetivo),
+            "mensaje": g.mensaje,
+        }
+    if objetivo == "punto_quiebre":
+        q = punto_de_quiebre(r, caja_min, ajustes_previos=ajustes)
+        return {
+            "objetivo": "punto_quiebre",
+            "valor": (money_str(q.valor) if q.valor is not None else None),
+            "mes": q.mes,
+            "perfora": q.perfora,
+        }
+    raise ProyeccionError(f"objetivo no soportado: {objetivo}", 422)
 
 
 async def _cargar_config_vigente():

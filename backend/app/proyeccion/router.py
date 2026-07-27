@@ -158,6 +158,54 @@ async def impactos(
         raise HTTPException(e.status, e.detalle) from e
 
 
+class ResolverBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    objetivo: Literal["techo_gasto", "goal_seek", "punto_quiebre"]
+    ajustes: list[AjusteBody] = []  # el escenario en pantalla (opcional)
+    colchon: str = "0"  # techo_gasto
+    variable: Literal["ingreso_pct", "ingreso_absoluto", "gasto_absoluto"] | None = None
+    objetivo_caja: str | None = None  # goal_seek: piso objetivo
+
+
+def _a_decimal(s: str, campo: str) -> Decimal:
+    try:
+        return Decimal(s)
+    except (InvalidOperation, ValueError) as e:
+        raise HTTPException(422, f"{campo} no es un decimal válido: {s}") from e
+
+
+@router.post("/resolver")
+async def resolver(
+    body: ResolverBody,
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _u: User = Depends(require_permission("proyeccion:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """D1 §5 — techo de gasto / goal seek / punto de quiebre. Compute-only, auditable
+    (todos los parámetros a la vista). Mismo permiso que impactos/preview."""
+    objetivo_caja = (
+        _a_decimal(body.objetivo_caja, "objetivo_caja")
+        if body.objetivo_caja is not None
+        else None
+    )
+    try:
+        return await service.resolver(
+            objetivo=body.objetivo,
+            ajustes=[_a_ajuste(a) for a in body.ajustes],
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+            colchon=_a_decimal(body.colchon, "colchon"),
+            variable=body.variable,
+            objetivo_caja=objetivo_caja,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
 @router.get("/valles")
 async def valles(
     escenario: str = Query(default="base"),

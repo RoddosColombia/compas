@@ -245,3 +245,41 @@ async def test_valles_lo_ve_consulta(api):
     h = await _token(api, "consulta@roddos.com")
     r = await api.get(f"/api/v1/proyeccion/valles?{_Q}", headers=h)
     assert r.status_code == 200  # dashboard:leer basta (es lectura)
+
+
+@pytest.mark.asyncio
+async def test_resolver_techo_gasto(api):
+    h = await _setup(api)
+    r = await api.post(
+        f"/api/v1/proyeccion/resolver?{_Q}",
+        json={"objetivo": "techo_gasto", "ajustes": [], "colchon": "0"},
+        headers=h,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["objetivo"] == "techo_gasto"
+    assert "techo_mensual" in data and "valle_limitante_mes" in data
+    assert "hay_holgura" in data
+
+
+@pytest.mark.asyncio
+async def test_resolver_goal_seek_requiere_variable(api):
+    h = await _setup(api)
+    r = await api.post(
+        f"/api/v1/proyeccion/resolver?{_Q}",
+        json={"objetivo": "goal_seek", "ajustes": []},
+        headers=h,
+    )
+    assert r.status_code == 422  # falta variable + objetivo_caja
+
+
+@pytest.mark.asyncio
+async def test_resolver_rbac(api):
+    await _setup(api)
+    h = await _token(api, "consulta@roddos.com")
+    r = await api.post(
+        "/api/v1/proyeccion/resolver",
+        json={"objetivo": "techo_gasto"},
+        headers=h,
+    )
+    assert r.status_code == 403
