@@ -1,11 +1,13 @@
-// ScenariosChart: superpone las curvas de caja de varios escenarios contra el
-// umbral. Comportamiento probado: dibuja una polilínea por serie (con ≥2 meses) y
-// nada si no hay series suficientes.
+// ScenariosChart — F1.1 §3: banda de rango (pesimista↔optimista) + línea base,
+// umbral etiquetado y etiqueta directa por trazo con el piso del escenario.
 
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { ScenariosChart } from "@/components/charts/ScenariosChart";
+import {
+  ScenariosChart,
+  type SerieEscenario,
+} from "@/components/charts/ScenariosChart";
 import type { MesProyeccion } from "@/lib/proyeccion";
 
 function mes(m: string, caja: string): MesProyeccion {
@@ -33,32 +35,64 @@ function mes(m: string, caja: string): MesProyeccion {
   };
 }
 
-const serie = (caja1: string, caja2: string) => [
-  mes("2026-07", caja1),
-  mes("2026-08", caja2),
-];
+function serie(
+  label: string,
+  tono: SerieEscenario["tono"],
+  cajas: [string, string],
+  piso: string,
+): SerieEscenario {
+  return {
+    label,
+    tono,
+    meses: [mes("2026-07", cajas[0]), mes("2026-08", cajas[1])],
+    piso,
+  };
+}
 
-describe("ScenariosChart", () => {
-  it("dibuja una polilínea por escenario", () => {
+describe("ScenariosChart (banda §3)", () => {
+  it("dibuja la banda + 3 trazos + umbral etiquetado + etiquetas con el piso", () => {
+    const { container } = render(
+      <ScenariosChart
+        umbral="100000000"
+        pesimista={serie(
+          "Pesimista",
+          "atencion",
+          ["90000000", "60000000"],
+          "-226000000",
+        )}
+        base={serie("Base", "cyan", ["120000000", "140000000"], "-63900000")}
+        optimista={serie(
+          "Optimista",
+          "positivo",
+          ["150000000", "200000000"],
+          "17000000",
+        )}
+      />,
+    );
+    expect(container.querySelectorAll("polygon")).toHaveLength(1); // la banda
+    expect(container.querySelectorAll("polyline")).toHaveLength(3);
+    expect(screen.getByText(/— Umbral \$ 100 M/)).toBeInTheDocument();
+    // las tres cifras que SON la pantalla
+    expect(screen.getByText(/Pesimista · piso -\$ 226 M/)).toBeInTheDocument();
+    expect(screen.getByText(/Base · piso -\$ 63,9 M/)).toBeInTheDocument();
+    expect(screen.getByText(/Optimista · piso \$ 17 M/)).toBeInTheDocument();
+  });
+
+  it("no dibuja nada con menos de dos meses", () => {
+    const corto = {
+      label: "x",
+      tono: "cyan" as const,
+      meses: [mes("2026-07", "1")],
+      piso: "0",
+    };
     const { container } = render(
       <ScenariosChart
         umbral="100"
-        series={[
-          { escenario: "pesimista", color: "amber", meses: serie("90", "60") },
-          { escenario: "base", color: "cyan", meses: serie("120", "140") },
-          {
-            escenario: "optimista",
-            color: "green",
-            meses: serie("150", "200"),
-          },
-        ]}
+        pesimista={corto}
+        base={corto}
+        optimista={corto}
       />,
     );
-    expect(container.querySelectorAll("polyline")).toHaveLength(3);
-  });
-
-  it("no dibuja nada sin series con suficientes meses", () => {
-    const { container } = render(<ScenariosChart umbral="100" series={[]} />);
     expect(container.querySelector("svg")).toBeNull();
   });
 });
