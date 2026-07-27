@@ -113,10 +113,8 @@ function FilaMonto({
   menorEsMejor?: boolean;
 }) {
   const delta = parseMonto(propuesto).minus(parseMonto(vigente));
-  const d = formatDelta(delta);
-  const mejora = menorEsMejor
-    ? delta.isNegative()
-    : delta.greaterThan(0) || delta.isZero();
+  // El color sigue la semántica del negocio (§0.3): capital requerido baja = bien.
+  const d = formatDelta(delta, menorEsMejor ? "baja" : "sube");
   return (
     <>
       <span className="text-ink">{label}</span>
@@ -137,7 +135,7 @@ function FilaMonto({
           <span
             className={cn(
               "tabular text-apoyo font-semibold",
-              mejora ? "text-positivo" : "text-critico",
+              d.tono === "positivo" ? "text-positivo" : "text-critico",
             )}
           >
             {d.texto}

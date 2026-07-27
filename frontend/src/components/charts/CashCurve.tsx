@@ -185,21 +185,26 @@ export function CashCurve({
           />
         ) : null,
       )}
-      {/* anotación del hecho relevante: el mínimo con mes · cifra */}
+      {/* anotación del hecho relevante: el mínimo con mes · cifra.
+          Rojo = crítico (semántica F1): SOLO si el mínimo perfora el umbral;
+          con la caja sana el punto y la cifra van en neutro (QA F1.1 §0.4). */}
       {anotada && (
         <g>
           <circle
             cx={x(iMin)}
             cy={y(cajas[iMin])}
             r={4.5}
-            className="fill-critico"
+            className={cajas[iMin] < u ? "fill-critico" : "fill-ink"}
           />
           <text
             x={x(iMin) + (anclaMin === "end" ? -10 : 10)}
             y={y(cajas[iMin]) - 10}
             textAnchor={anclaMin}
             fontSize={12.5}
-            className="tabular fill-critico font-sans font-semibold"
+            className={cn(
+              "tabular font-sans font-semibold",
+              cajas[iMin] < u ? "fill-critico" : "fill-ink",
+            )}
           >
             {formatMesCorto(meses[iMin].mes)} ·{" "}
             {formatCOPCompact(meses[iMin].caja)}

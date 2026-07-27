@@ -69,7 +69,7 @@ describe("KpiTileV2 (sistema F1)", () => {
         label="Piso de caja"
         valor="-63897875.14"
         comparacion={{
-          delta: { texto: "▼ -$ 93,9 M", direccion: "baja" },
+          delta: { texto: "▼ -$ 93,9 M", direccion: "baja", tono: "critico" },
           contra: "vs. el umbral",
         }}
       />,

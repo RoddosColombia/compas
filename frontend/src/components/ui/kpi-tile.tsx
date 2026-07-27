@@ -84,8 +84,8 @@ export function KpiTileV2(props: KpiTileV2Props) {
           <span
             className={cn(
               "font-semibold",
-              comparacion.delta.direccion === "sube" && "text-positivo",
-              comparacion.delta.direccion === "baja" && "text-critico",
+              comparacion.delta.tono === "positivo" && "text-positivo",
+              comparacion.delta.tono === "critico" && "text-critico",
             )}
           >
             {comparacion.delta.texto}
