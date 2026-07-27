@@ -22,6 +22,7 @@ import InicioPage from "@/pages/InicioPage";
 import IvaPage from "@/pages/IvaPage";
 import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
+import PresupuestoMesPage from "@/pages/PresupuestoMesPage";
 import ProyeccionPage from "@/pages/ProyeccionPage";
 import ReglasPage from "@/pages/ReglasPage";
 import ReportesPage from "@/pages/ReportesPage";
@@ -151,6 +152,14 @@ export default function App() {
               element={
                 <Cockpit>
                   <MesesPage />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/meses/:mes/presupuesto"
+              element={
+                <Cockpit>
+                  <PresupuestoMesPage />
                 </Cockpit>
               }
             />

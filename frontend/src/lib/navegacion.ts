@@ -60,6 +60,14 @@ export const NAVEGACION: GrupoNav[] = [
         icon: Layers,
         cap: "dashboard:leer",
       },
+      // Ciclo mensual (C1): abrir mes → sugerido → acotar → aprobar. NavLink
+      // marca activo también en /meses/:mes/presupuesto (match por prefijo).
+      {
+        label: "Ciclo mensual",
+        path: "/meses",
+        icon: CalendarRange,
+        cap: "dashboard:leer",
+      },
       {
         label: "Presupuesto",
         path: "/control",
@@ -118,12 +126,6 @@ export const NAVEGACION: GrupoNav[] = [
         cap: "cargas:gestionar",
       },
       { label: "Caja", path: "/caja", icon: Coins, cap: "dashboard:leer" },
-      {
-        label: "Meses",
-        path: "/meses",
-        icon: CalendarRange,
-        cap: "dashboard:leer",
-      },
       {
         label: "Categorías",
         path: "/categorias",

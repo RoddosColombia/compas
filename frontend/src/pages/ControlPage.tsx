@@ -7,6 +7,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
@@ -49,6 +50,18 @@ export default function ControlPage() {
       .map((m) => m.mes.slice(0, 7))
       .sort()
       .reverse();
+  }, [meses.data]);
+
+  // Mes más reciente con presupuesto pendiente de aprobar (para el vacío accionable).
+  const mesPendiente = useMemo(() => {
+    const items = meses.data?.items ?? [];
+    return (
+      items
+        .filter((m) => m.estado === "sugerido" || m.estado === "propuesto")
+        .map((m) => m.mes.slice(0, 7))
+        .sort()
+        .reverse()[0] ?? null
+    );
   }, [meses.data]);
 
   const [mesSel, setMesSel] = useState<string | null>(null);
@@ -135,8 +148,19 @@ export default function ControlPage() {
       )}
       {meses.data && disponibles.length === 0 && (
         <p className="font-sans text-sm text-ink-soft">
-          No hay meses en ejecución o cerrados. Aprueba el presupuesto de un mes
-          para ver su control.
+          No hay meses en ejecución o cerrados.{" "}
+          {mesPendiente ? (
+            <Link
+              to={`/meses/${mesPendiente}/presupuesto`}
+              className="font-medium text-cyan hover:underline"
+            >
+              Aprueba el presupuesto de {mesPendiente} →
+            </Link>
+          ) : (
+            <Link to="/meses" className="font-medium text-cyan hover:underline">
+              Abre un mes para empezar el ciclo →
+            </Link>
+          )}
         </p>
       )}
 
