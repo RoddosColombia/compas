@@ -13,6 +13,7 @@ import { type FormEvent, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "@/auth/AuthContext";
+import { CicloStepper } from "@/components/ciclo/CicloStepper";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,6 @@ import {
   listarPresupuesto,
 } from "@/lib/presupuesto";
 import { type Rubro, listarRubros } from "@/lib/rubros";
-import { cn } from "@/lib/utils";
 
 // Orden canónico de los grupos del plan de cuentas (mismo agrupado que Categorías).
 const ORDEN_GRUPOS = [
@@ -39,39 +39,6 @@ const ORDEN_GRUPOS = [
   "deudas_obligaciones",
   "otros",
 ];
-
-const PASOS = [
-  "Abierto",
-  "Sugerido",
-  "Propuesto",
-  "Aprobado (en ejecución)",
-  "Cerrado",
-] as const;
-
-/** Índice del paso actual en el stepper según estado del mes + si hay líneas. */
-function pasoActual(estado: string, sinLineas: boolean): number {
-  switch (estado) {
-    case "sugerido":
-      return sinLineas ? 0 : 1;
-    case "propuesto":
-      return 2;
-    case "definido":
-    case "en_ejecucion":
-      return 3;
-    case "cerrado":
-      return 4;
-    default:
-      return 0;
-  }
-}
-
-const ACCION_SIGUIENTE: Record<number, string> = {
-  0: "Siguiente paso: generar el presupuesto sugerido.",
-  1: "Siguiente paso: acotar los rubros que lo necesiten y aprobar.",
-  2: "Siguiente paso: aprobar el presupuesto para ponerlo en ejecución.",
-  3: "El mes está en ejecución: síguelo en Presupuesto (control).",
-  4: "El mes está cerrado y es inmutable.",
-};
 
 export default function PresupuestoMesPage() {
   const { mes } = useParams(); // YYYY-MM
@@ -170,8 +137,6 @@ export default function PresupuestoMesPage() {
     );
   }
 
-  const paso = pasoActual(mesCtl?.estado ?? "sugerido", sinLineas);
-
   return (
     <div className="flex flex-col gap-5 pb-24">
       <PageHeader
@@ -179,31 +144,12 @@ export default function PresupuestoMesPage() {
         descripcion="Genera el sugerido, acota los rubros y aprueba para poner el mes en ejecución."
       />
 
-      {/* Stepper del ciclo (texto, sin florituras aún) */}
-      <Card className="flex flex-col gap-2 px-4 py-3">
-        <ol className="flex flex-wrap items-center gap-1 font-sans text-sm">
-          {PASOS.map((p, i) => (
-            <li key={p} className="flex items-center gap-1">
-              {i > 0 && <span className="text-ink-faint">→</span>}
-              <span
-                aria-current={i === paso ? "step" : undefined}
-                className={cn(
-                  "rounded-full px-2.5 py-0.5",
-                  i === paso
-                    ? "bg-cyan/10 font-semibold text-cyan"
-                    : i < paso
-                      ? "text-ink-soft"
-                      : "text-ink-faint",
-                )}
-              >
-                {p}
-              </span>
-            </li>
-          ))}
-        </ol>
-        <p className="font-sans text-xs text-ink-faint">
-          {ACCION_SIGUIENTE[paso]}
-        </p>
+      {/* Stepper del ciclo (compartido con la Cabina, C2) */}
+      <Card className="px-4 py-3">
+        <CicloStepper
+          estado={mesCtl?.estado ?? "sugerido"}
+          sinLineas={sinLineas}
+        />
       </Card>
 
       {/* Estado sugerido sin líneas → CTA generar */}
@@ -465,9 +411,12 @@ function FilaLinea({
         monto.trim(),
         comentario.trim() || undefined,
       ),
-    onSuccess: () => {
+    onSuccess: (ln) => {
       setError(null);
       setComentario("");
+      // Sincronizar el draft con el monto NORMALIZADO del backend ("1200000" →
+      // "1200000.00"); si no, `cambiado` queda true y "Guardar" persiste (QA C2).
+      setMonto(ln.monto_definido ?? "");
       // Sin optimistic UI: se refresca la línea con lo que devuelva el backend.
       qc.invalidateQueries({ queryKey: ["presupuesto", mes] });
       qc.invalidateQueries({ queryKey: ["meses"] });

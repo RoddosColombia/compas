@@ -13,6 +13,8 @@ describe("App (shell con router y auth)", () => {
       await screen.findByRole("heading", { name: "COMPAS" }),
     ).toBeInTheDocument();
     expect(await screen.findByLabelText("Correo")).toBeInTheDocument();
+    // C2: la barra de estado del mes NO aparece en /login (vive en el AppShell)
+    expect(screen.queryByText(/Sin mes en ejecución/)).toBeNull();
   });
 });
 

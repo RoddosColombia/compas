@@ -40,3 +40,29 @@ export async function abrirMes(input: AbrirMesInput): Promise<Mes> {
     body: JSON.stringify(input),
   });
 }
+
+// ── Helpers del ciclo (C2) — un solo criterio en toda la app ─────────────────
+
+/** El mes OPERANDO (D3: debe haber uno solo en ejecución). */
+export function mesEnEjecucion(items: Mes[]): Mes | undefined {
+  return items.find((m) => m.estado === "en_ejecucion");
+}
+
+/** Mes más reciente pendiente de aprobar (sugerido/propuesto), como YYYY-MM. */
+export function mesPendiente(items: Mes[]): string | null {
+  return (
+    items
+      .filter((m) => m.estado === "sugerido" || m.estado === "propuesto")
+      .map((m) => m.mes.slice(0, 7))
+      .sort()
+      .reverse()[0] ?? null
+  );
+}
+
+/** ¿Existe el mes siguiente a `mes` (YYYY-MM-01) en la lista? (precondición de cierre) */
+export function mesSiguiente(mes: string): string {
+  const [y, m] = mes.split("-").map(Number);
+  const y2 = m === 12 ? y + 1 : y;
+  const m2 = m === 12 ? 1 : m + 1;
+  return `${y2}-${String(m2).padStart(2, "0")}-01`;
+}

@@ -9,7 +9,7 @@
 //   5. Totales sin float (suma de montos string con money.ts).
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -221,15 +221,26 @@ describe("PresupuestoMesPage — generar sugerido (§5.2)", () => {
 });
 
 describe("PresupuestoMesPage — acotar (§5.3)", () => {
-  it("guarda el monto como string y refresca del backend", async () => {
-    mocks.acotarLinea.mockResolvedValue(
-      linea({ rubro_id: "r1", monto_definido: "1200000" }),
-    );
+  it("guarda el monto como string, refresca del backend y 'Guardar' se oculta (QA C2)", async () => {
+    // El backend normaliza el monto ("1200000" → "1200000.00"); el draft local
+    // debe sincronizarse o el botón "Guardar" persiste tras guardar.
+    const guardada = linea({
+      id: "l1",
+      rubro_id: "r1",
+      monto_definido: "1200000.00",
+    });
+    mocks.acotarLinea.mockResolvedValue(guardada);
+    mocks.listarPresupuesto
+      .mockReset()
+      .mockResolvedValueOnce({ mes: "2026-08", lineas: LINEAS })
+      .mockResolvedValue({ mes: "2026-08", lineas: [guardada, LINEAS[1]] });
     renderPage();
     const input = await screen.findByLabelText("Definido Arriendos");
     fireEvent.change(input, { target: { value: "1200000" } });
     fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
-    expect(await screen.findByLabelText("Definido Arriendos")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Guardar" })).toBeNull(),
+    );
     expect(mocks.acotarLinea).toHaveBeenCalledWith(
       "2026-08",
       "r1",

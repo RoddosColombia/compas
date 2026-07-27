@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { QueExigeAtencion } from "@/components/control/QueExigeAtencion";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card } from "@/components/ui/card";
@@ -175,6 +176,13 @@ export default function ControlPage() {
 
       {vista === "categoria" && control.data && (
         <>
+          {/* C2: desvíos priorizados por plata, arriba del detalle */}
+          <QueExigeAtencion
+            grupos={control.data.grupos}
+            mes={mes as string}
+            conAnchors
+          />
+
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiTile
               label="Caja disponible"
@@ -399,7 +407,12 @@ function GrupoBloque({
         </td>
       </tr>
       {grupo.lineas.map((l) => (
-        <tr key={l.rubro_id} className="border-b border-hairline/60">
+        // id por fila = anchor de "Qué exige atención"; target: resalta la fila.
+        <tr
+          key={l.rubro_id}
+          id={`rubro-${l.rubro_id}`}
+          className="scroll-mt-16 border-b border-hairline/60 target:bg-amber/10"
+        >
           <td className="px-4 py-2 text-ink">{l.rubro}</td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
             {formatCOP(l.definido)}
