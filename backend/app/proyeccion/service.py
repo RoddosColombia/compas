@@ -15,6 +15,7 @@ from app.core.money import money_str
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.modelo_moto import ModeloMoto
+from app.domain.obligacion import FacturaObligacion, Obligacion
 from app.domain.parametros_proyeccion import (
     ParametrosProyeccion,
     costo_alistamiento_total,
@@ -23,6 +24,11 @@ from app.domain.transaccion import Transaccion
 from app.facturas import service as facturas_service
 from app.iva.liquidacion import liquidar, plan_fondo_provision, programar_egresos_iva
 from app.modelos_moto import service as modelos_service
+from app.obligaciones.reconciliacion import (
+    FacturaReconciliar,
+    ResultadoReconciliado,
+    reconciliar,
+)
 from app.parametros_proyeccion import service as parametros_service
 from app.proyeccion.impactos import Ajuste, aplicar_impactos
 from app.proyeccion.motor import (
@@ -117,11 +123,21 @@ def _armar_parametros(
 
 
 def _serializar(
-    r: ResultadoProyeccion, escenario: str, caja_minima, fondo: list
+    r: ResultadoProyeccion,
+    escenario: str,
+    caja_minima,
+    fondo: list,
+    rec: ResultadoReconciliado | None = None,
 ) -> dict:
     meses_ym = [f.mes for f in r.meses]
     return {
         "escenario": escenario,
+        # D2 §4: ventana donde las facturas reales netean el Auteco paramétrico + el
+        # interés de obligaciones separado por mes (None/{} si no hay facturas activas).
+        "ventana_reconciliada": (
+            list(rec.ventana) if rec is not None and rec.ventana else None
+        ),
+        "interes_obligaciones": rec.interes_por_mes if rec is not None else {},
         # Fondo de provisión de IVA (P1.4): serie informativa mes a mes (NO es flujo del
         # motor; el egreso real ya está en `meses[].iva` en la fecha DIAN).
         "fondo_provision": [
@@ -214,6 +230,34 @@ async def _iva_plan(
     return egreso, fondo
 
 
+async def _facturas_reconciliar() -> list[FacturaReconciliar]:
+    """Facturas activas + los términos de su obligación (facturación activa) aplanados
+    para la reconciliación §4. Sin facturas → []."""
+    facturas = await FacturaObligacion.find({"activo": True}).to_list()
+    if not facturas:
+        return []
+    ids = list({f.obligacion_id for f in facturas})
+    obls = {
+        o.id: o
+        for o in await Obligacion.find({"_id": {"$in": ids}}).to_list()
+    }
+    out: list[FacturaReconciliar] = []
+    for f in facturas:
+        o = obls.get(f.obligacion_id)
+        if o is None or o.naturaleza != "facturacion" or not o.activo:
+            continue
+        out.append(
+            FacturaReconciliar(
+                fecha_factura=f.fecha_factura,
+                valor=f.valor,
+                plazo_elegido_dias=f.plazo_elegido_dias,
+                plazo_base_dias=o.plazo_base_dias or 0,
+                tasa_excedente_mensual=o.tasa_excedente_mensual or Decimal("0"),
+            )
+        )
+    return out
+
+
 async def _resultado_con(
     params: ParametrosProyeccion,
     modelos: list[ModeloMoto],
@@ -222,11 +266,12 @@ async def _resultado_con(
     mes_inicio: tuple[int, int],
     horizonte_meses: int | None,
     caja_inicial_override: object | None = None,
-) -> tuple[ResultadoProyeccion, object, list]:
-    """La tubería completa (cartera previa + IVA + motor) sobre un set de parámetros
-    DADO, devolviendo el ResultadoProyeccion CRUDO (sin serializar) + el umbral + el
-    fondo de provisión. Compartida por la proyección vigente, el preview de C3 y la capa
-    de impactos de D1 (misma tubería = paridad al peso garantizada por test)."""
+) -> tuple[ResultadoProyeccion, object, list, ResultadoReconciliado | None]:
+    """La tubería completa (cartera previa + IVA + motor + reconciliación D2) sobre un
+    set de parámetros DADO. Devuelve el ResultadoProyeccion CRUDO ya RECONCILIADO (las
+    facturas reales netean el Auteco paramétrico, §4) + umbral + fondo + la meta de
+    reconciliación (ventana/interés). Sin facturas activas la reconciliación es no-op
+    (base bit a bit): preview/vigente siguen idénticos por test."""
     horizonte = horizonte_meses or params.horizonte_meses
     if horizonte < 1 or horizonte > HORIZONTE_MAX:
         raise ProyeccionError(
@@ -245,7 +290,13 @@ async def _resultado_con(
         iva_egreso,
         caja_inicial_override,
     )
-    return proyectar(pm), params.caja_minima, fondo
+    r = proyectar(pm)
+    facturas = await _facturas_reconciliar()
+    rec: ResultadoReconciliado | None = None
+    if facturas:
+        rec = reconciliar(r, facturas, params.caja_minima)
+        r = _kpis_a_resultado(rec.ajustado)
+    return r, params.caja_minima, fondo, rec
 
 
 async def _proyectar_con(
@@ -257,8 +308,9 @@ async def _proyectar_con(
     horizonte_meses: int | None,
     caja_inicial_override: object | None = None,
 ) -> dict:
-    """Serializa la proyección de `_resultado_con` (mismo shape que GET /proyeccion)."""
-    r, caja_min, fondo = await _resultado_con(
+    """Serializa la proyección de `_resultado_con` (mismo shape que GET /proyeccion),
+    marcando la ventana reconciliada y el interés de obligaciones (§4)."""
+    r, caja_min, fondo, rec = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -266,7 +318,7 @@ async def _proyectar_con(
         horizonte_meses=horizonte_meses,
         caja_inicial_override=caja_inicial_override,
     )
-    return _serializar(r, escenario, caja_min, fondo)
+    return _serializar(r, escenario, caja_min, fondo, rec)
 
 
 async def proyectar_vigente(
@@ -355,7 +407,7 @@ async def valles_vigente(
     """D1 §3 — los valles (hitos) de la proyección vigente: mínimos de caja relevantes
     con sus causas. Lectura pura sobre la config vigente."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, _ = await _resultado_con(
+    r, caja_min, _, _ = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -381,7 +433,7 @@ async def proyectar_impactos(
     ESCRIBE). Devuelve ambas series con el shape de GET /proyeccion, los valles de cada
     una y el delta de flujo por mes. Con `ajustes` vacío, ajustada == base bit a bit."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, fondo = await _resultado_con(
+    r, caja_min, fondo, _ = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -418,7 +470,7 @@ async def resolver(
     """D1 §5 — solvers por bisección sobre la proyección vigente + los `ajustes` en
     pantalla. Compute-only. `objetivo` ∈ {techo_gasto, goal_seek, punto_quiebre}."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, _ = await _resultado_con(
+    r, caja_min, _, _ = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
