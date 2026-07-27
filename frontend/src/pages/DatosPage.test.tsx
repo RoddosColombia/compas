@@ -3,7 +3,7 @@
 // controles de captura (guardar supuestos, agregar modelo); sin el permiso, no.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -106,6 +106,31 @@ describe("DatosPage", () => {
     await screen.findByText("Raider");
     expect(
       screen.queryByRole("button", { name: /guardar supuestos/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Regresión: un modelo ya creado DEBE poder editarse (antes no había botón).
+  it("ofrece editar un modelo existente y abre el editor con sus valores", async () => {
+    puedeGestionar = true;
+    renderPage();
+    await screen.findByText("Raider");
+    fireEvent.click(screen.getByRole("button", { name: /^editar$/i }));
+    expect(
+      await screen.findByText(/Editar modelo · Raider/),
+    ).toBeInTheDocument();
+    // el editor precarga el valor actual (editable, no rígido)
+    expect(screen.getByDisplayValue("164900")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /guardar cambios/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("sin el permiso no muestra el botón de editar modelo", async () => {
+    puedeGestionar = false;
+    renderPage();
+    await screen.findByText("Raider");
+    expect(
+      screen.queryByRole("button", { name: /^editar$/i }),
     ).not.toBeInTheDocument();
   });
 });

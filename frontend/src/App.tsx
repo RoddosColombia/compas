@@ -17,6 +17,7 @@ import ControlPage from "@/pages/ControlPage";
 import DashboardsPage from "@/pages/DashboardsPage";
 import DatosPage from "@/pages/DatosPage";
 import FlujoDiarioPage from "@/pages/FlujoDiarioPage";
+import GastosRecurrentesPage from "@/pages/GastosRecurrentesPage";
 import InicioPage from "@/pages/InicioPage";
 import IvaPage from "@/pages/IvaPage";
 import LoginPage from "@/pages/LoginPage";
@@ -131,6 +132,15 @@ export default function App() {
               element={
                 <Cockpit>
                   <DatosPage />
+                </Cockpit>
+              }
+            />
+
+            <Route
+              path="/gastos-recurrentes"
+              element={
+                <Cockpit>
+                  <GastosRecurrentesPage />
                 </Cockpit>
               }
             />

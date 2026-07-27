@@ -8,14 +8,20 @@
 //   Operación            → Dashboards · Reportes · Datos
 
 import {
+  Banknote,
   BarChart3,
   CalendarDays,
+  CalendarRange,
+  Coins,
   Database,
   FileText,
+  Filter,
   Home,
   Layers,
   LineChart,
   Receipt,
+  Repeat,
+  Tags,
   Wallet,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -91,6 +97,40 @@ export const NAVEGACION: GrupoNav[] = [
         icon: Database,
         cap: "cargas:gestionar",
       },
+    ],
+  },
+  {
+    // Administración presupuestal: catálogos y captura. (Nav provisional —
+    // reubicación fina del árbol pendiente de Claude Cowork; aquí solo se
+    // vuelven ALCANZABLES rutas que estaban huérfanas.)
+    titulo: "Administración",
+    items: [
+      {
+        label: "Gastos recurrentes",
+        path: "/gastos-recurrentes",
+        icon: Repeat,
+        cap: "dashboard:leer",
+      },
+      {
+        label: "Movimientos bancarios",
+        path: "/cargas",
+        icon: Banknote,
+        cap: "cargas:gestionar",
+      },
+      { label: "Caja", path: "/caja", icon: Coins, cap: "dashboard:leer" },
+      {
+        label: "Meses",
+        path: "/meses",
+        icon: CalendarRange,
+        cap: "dashboard:leer",
+      },
+      {
+        label: "Categorías",
+        path: "/categorias",
+        icon: Tags,
+        cap: "dashboard:leer",
+      },
+      { label: "Reglas", path: "/reglas", icon: Filter, cap: "dashboard:leer" },
     ],
   },
 ];

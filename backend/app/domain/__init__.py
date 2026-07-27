@@ -11,6 +11,7 @@ from app.domain.carga import CargaBancaria
 from app.domain.cartera_previa import CarteraPreviaRecaudo
 from app.domain.configuracion import Configuracion
 from app.domain.factura import Factura
+from app.domain.gasto_recurrente import GastoRecurrente
 from app.domain.idempotency import IdempotencyKey
 from app.domain.loantape import LoanTapeCredito
 from app.domain.mes_control import MesControl
@@ -37,6 +38,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     CarteraPreviaRecaudo,
     Factura,
     LoanTapeCredito,
+    GastoRecurrente,
 ]
 
 __all__ = [
@@ -54,5 +56,6 @@ __all__ = [
     "CarteraPreviaRecaudo",
     "Factura",
     "LoanTapeCredito",
+    "GastoRecurrente",
     "DOMAIN_DOCUMENTS",
 ]

@@ -20,9 +20,11 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { ApiError } from "@/lib/api";
 import {
   type ModeloCrearInput,
+  type ModeloEditarInput,
   type ModeloMoto,
   crearModelo,
   desactivarModelo,
+  editarModelo,
   listarModelos,
   reactivarModelo,
 } from "@/lib/modelosMoto";
@@ -322,6 +324,7 @@ function ModelosPanel({ puedeGestionar }: { puedeGestionar: boolean }) {
     queryFn: () => listarModelos(),
   });
   const [nuevo, setNuevo] = useState<ModeloCrearInput>(MODELO_VACIO);
+  const [editando, setEditando] = useState<ModeloMoto | null>(null);
 
   const invalidar = () => {
     qc.invalidateQueries({ queryKey: ["modelos-moto"] });
@@ -332,6 +335,13 @@ function ModelosPanel({ puedeGestionar }: { puedeGestionar: boolean }) {
     onSuccess: () => {
       invalidar();
       setNuevo(MODELO_VACIO);
+    },
+  });
+  const editar = useMutation({
+    mutationFn: editarModelo,
+    onSuccess: () => {
+      invalidar();
+      setEditando(null);
     },
   });
   const desactivar = useMutation({
@@ -386,6 +396,7 @@ function ModelosPanel({ puedeGestionar }: { puedeGestionar: boolean }) {
                   key={m.id}
                   m={m}
                   puedeGestionar={puedeGestionar}
+                  onEditar={() => setEditando(m)}
                   onDesactivar={() => desactivar.mutate(m.id)}
                   onReactivar={() => reactivar.mutate(m.id)}
                 />
@@ -472,18 +483,129 @@ function ModelosPanel({ puedeGestionar }: { puedeGestionar: boolean }) {
           </div>
         </form>
       )}
+
+      {editando && (
+        <EditarModeloDialog
+          m={editando}
+          guardando={editar.isPending}
+          error={editar.error instanceof ApiError ? editar.error.message : null}
+          onCerrar={() => setEditando(null)}
+          onGuardar={(cambios) => {
+            // Si no cambió nada, solo cerrar (el backend responde 422 "nada que editar").
+            if (Object.keys(cambios).length === 1) setEditando(null);
+            else editar.mutate(cambios);
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+const CAMPOS_MODELO: { key: keyof ModeloEditarInput; label: string }[] = [
+  { key: "nombre", label: "Nombre" },
+  { key: "cuota_semanal", label: "Cuota semanal" },
+  { key: "cuota_inicial", label: "Cuota inicial" },
+  { key: "plazo_semanas", label: "Plazo (semanas)" },
+  { key: "costo_auteco", label: "Costo Auteco" },
+  { key: "precio_venta_con_iva", label: "Precio venta (con IVA)" },
+  { key: "matricula", label: "Matrícula" },
+  { key: "participacion_mix", label: "Participación mix" },
+];
+
+function EditarModeloDialog({
+  m,
+  guardando,
+  error,
+  onCerrar,
+  onGuardar,
+}: {
+  m: ModeloMoto;
+  guardando: boolean;
+  error: string | null;
+  onCerrar: () => void;
+  onGuardar: (cambios: ModeloEditarInput) => void;
+}) {
+  // valores actuales como string (todos editables — nada rígido).
+  const [v, setV] = useState<Record<string, string>>({
+    nombre: m.nombre,
+    cuota_semanal: m.cuota_semanal,
+    cuota_inicial: m.cuota_inicial,
+    plazo_semanas: String(m.plazo_semanas),
+    costo_auteco: m.costo_auteco,
+    precio_venta_con_iva: m.precio_venta_con_iva,
+    matricula: m.matricula,
+    participacion_mix: m.participacion_mix,
+  });
+  const actual: Record<string, string> = {
+    nombre: m.nombre,
+    cuota_semanal: m.cuota_semanal,
+    cuota_inicial: m.cuota_inicial,
+    plazo_semanas: String(m.plazo_semanas),
+    costo_auteco: m.costo_auteco,
+    precio_venta_con_iva: m.precio_venta_con_iva,
+    matricula: m.matricula,
+    participacion_mix: m.participacion_mix,
+  };
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    const cambios: Record<string, unknown> = { id: m.id };
+    for (const { key } of CAMPOS_MODELO) {
+      const nuevo = (v[key] ?? "").trim();
+      if (nuevo !== actual[key]) {
+        cambios[key] = key === "plazo_semanas" ? Number(nuevo) : nuevo;
+      }
+    }
+    onGuardar(cambios as unknown as ModeloEditarInput);
+  }
+
+  return (
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-lg border border-hairline bg-surface p-6 shadow-lg">
+        <h3 className="mb-4 font-display text-lg font-semibold text-ink">
+          Editar modelo · {m.nombre}
+        </h3>
+        <form onSubmit={onSubmit}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {CAMPOS_MODELO.map((c) => (
+              <CampoInput
+                key={c.key}
+                label={c.label}
+                inputMode={c.key === "nombre" ? undefined : "decimal"}
+                value={v[c.key] ?? ""}
+                onChange={(nv) => setV((s) => ({ ...s, [c.key]: nv }))}
+              />
+            ))}
+          </div>
+          {error && (
+            <div className="mt-3">
+              <AlertBanner variant="danger">{error}</AlertBanner>
+            </div>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCerrar}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="cyan" disabled={guardando}>
+              {guardando ? "Guardando…" : "Guardar cambios"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
 function ModeloFila({
   m,
   puedeGestionar,
+  onEditar,
   onDesactivar,
   onReactivar,
 }: {
   m: ModeloMoto;
   puedeGestionar: boolean;
+  onEditar: () => void;
   onDesactivar: () => void;
   onReactivar: () => void;
 }) {
@@ -522,15 +644,22 @@ function ModeloFila({
       </td>
       {puedeGestionar && (
         <td className="px-3 py-2 text-right">
-          {m.activo ? (
-            <Button variant="ghost" size="sm" onClick={onDesactivar}>
-              Desactivar
-            </Button>
-          ) : (
-            <Button variant="ghost" size="sm" onClick={onReactivar}>
-              Reactivar
-            </Button>
-          )}
+          <div className="flex justify-end gap-1">
+            {!m.es_sistema && (
+              <Button variant="ghost" size="sm" onClick={onEditar}>
+                Editar
+              </Button>
+            )}
+            {m.activo ? (
+              <Button variant="ghost" size="sm" onClick={onDesactivar}>
+                Desactivar
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={onReactivar}>
+                Reactivar
+              </Button>
+            )}
+          </div>
         </td>
       )}
     </tr>
