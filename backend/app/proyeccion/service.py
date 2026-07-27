@@ -266,6 +266,7 @@ async def _resultado_con(
     mes_inicio: tuple[int, int],
     horizonte_meses: int | None,
     caja_inicial_override: object | None = None,
+    facturas_override: list[FacturaReconciliar] | None = None,
 ) -> tuple[ResultadoProyeccion, object, list, ResultadoReconciliado | None]:
     """La tubería completa (cartera previa + IVA + motor + reconciliación D2) sobre un
     set de parámetros DADO. Devuelve el ResultadoProyeccion CRUDO ya RECONCILIADO (las
@@ -291,7 +292,11 @@ async def _resultado_con(
         caja_inicial_override,
     )
     r = proyectar(pm)
-    facturas = await _facturas_reconciliar()
+    facturas = (
+        facturas_override
+        if facturas_override is not None
+        else await _facturas_reconciliar()
+    )
     rec: ResultadoReconciliado | None = None
     if facturas:
         rec = reconciliar(r, facturas, params.caja_minima)
@@ -519,6 +524,45 @@ async def resolver(
             "perfora": q.perfora,
         }
     raise ProyeccionError(f"objetivo no soportado: {objetivo}", 422)
+
+
+async def simular_plazo(
+    *,
+    plazo_dias: int,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+) -> dict:
+    """D2 §5 — simulador de política de plazos, compute-only: recomputa la proyección
+    como si TODAS las facturas activas tomaran `plazo_dias` (clamp a ≥ plazo_base) y
+    devuelve el piso, el valle y el costo financiero total. El front compara 90/120/150
+    lado a lado. Aplicar la política de verdad = editar las facturas (explícito)."""
+    params, modelos = await _cargar_config_vigente()
+    reales = await _facturas_reconciliar()
+    if not reales:
+        raise ProyeccionError("no hay facturas activas para simular", 409)
+    override = [
+        replace(f, plazo_elegido_dias=max(plazo_dias, f.plazo_base_dias))
+        for f in reales
+    ]
+    r, _caja, _fondo, rec = await _resultado_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+        facturas_override=override,
+    )
+    interes_total = sum(
+        (Decimal(v) for v in (rec.interes_por_mes.values() if rec else [])),
+        Decimal("0"),
+    )
+    return {
+        "plazo_dias": plazo_dias,
+        "piso_caja": money_str(r.piso_caja),
+        "valle_mes": r.mes_mas_ajustado,
+        "interes_total": money_str(interes_total),
+    }
 
 
 async def _cargar_config_vigente():
