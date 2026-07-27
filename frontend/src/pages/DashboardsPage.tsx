@@ -42,12 +42,11 @@ function conclusionCobranza(meses: MesProyeccion[]): string {
   if (primera.lessThanOrEqualTo(0)) {
     return `La cobranza proyectada llega a ${formatCOPCompact(ultima)}/mes en ${n} meses`;
   }
+  // QA F1.1 (arrastre): el multiplicador engañaba con el mes 1 parcial y usaba punto
+  // decimal ("×104.6"). Se dice "pasa de X a Y" — honesto y en formato es-CO (coma).
   const ratio = ultima.div(primera);
-  if (ratio.greaterThanOrEqualTo(2)) {
-    return `La cobranza proyectada se multiplica por ${ratio.toDecimalPlaces(1).toString()} en ${n} meses`;
-  }
   if (ratio.greaterThan("1.1")) {
-    return `La cobranza proyectada crece ${ratio.minus(1).times(100).toDecimalPlaces(0).toString()} % en ${n} meses`;
+    return `La cobranza proyectada pasa de ${formatCOPCompact(primera)} a ${formatCOPCompact(ultima)}/mes en ${n} meses`;
   }
   return `La cobranza proyectada se mantiene estable (~${formatCOPCompact(ultima)}/mes)`;
 }
