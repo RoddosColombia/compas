@@ -147,6 +147,16 @@ describe("DashboardsPage", () => {
     expect(screen.getByText("Cartera activa al cierre")).toBeInTheDocument();
   });
 
+  it("la conclusión de cobranza dice 'pasa de X a Y' (no un multiplicador con punto)", async () => {
+    renderPage();
+    // QA F1.1 arrastre: nada de "×104.6"; formato es-CO, honesto de punta a punta.
+    const concl = await screen.findByRole("heading", {
+      name: /La cobranza proyectada pasa de .* a .*\/mes en 2 meses/,
+    });
+    expect(concl).toBeInTheDocument();
+    expect(concl.textContent).not.toMatch(/multiplica|×|\d\.\d/);
+  });
+
   it("muestra colocación y cartera por añada con conclusión calculada (DASH-01/§4)", async () => {
     renderPage();
     // los títulos ahora son CONCLUSIONES escritas desde los datos

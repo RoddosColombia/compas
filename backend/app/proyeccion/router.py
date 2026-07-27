@@ -7,6 +7,8 @@ drivers es `proyeccion:gestionar`). Query: escenario (default 'base'), horizonte
 en América/Bogotá, día 1 — regla 2)."""
 
 import re
+from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
@@ -17,6 +19,7 @@ from app.auth.router import verify_origin
 from app.core.time import today_bogota
 from app.parametros_proyeccion.router import ParametrosCampos, parsear_campos
 from app.proyeccion import service
+from app.proyeccion.impactos import Ajuste
 
 router = APIRouter(prefix="/proyeccion", tags=["proyeccion"])
 
@@ -78,6 +81,141 @@ async def preview(
     try:
         return await service.proyectar_preview(
             campos=parsear_campos(body.parametros),
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
+class AjusteBody(BaseModel):
+    """Un ajuste declarativo del §2. `valor` viaja como string (regla 1): monto COP para
+    `absoluto`, fracción (0.10 = 10%) para `porcentaje`."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    nombre: str
+    naturaleza: Literal["gasto", "ingreso"]
+    modo: Literal["absoluto", "porcentaje"]
+    valor: str
+    mes_inicio: str
+    mes_fin: str | None = None
+    rubro_id: str | None = None
+
+
+class ImpactosBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    ajustes: list[AjusteBody]
+
+
+def _a_ajuste(a: AjusteBody) -> Ajuste:
+    nombre = a.nombre.strip()
+    if not 1 <= len(nombre) <= 80:
+        raise HTTPException(422, "nombre del ajuste debe tener 1..80 caracteres")
+    if not _MES.match(a.mes_inicio):
+        raise HTTPException(422, "mes_inicio debe ser 'YYYY-MM'")
+    if a.mes_fin is not None and not _MES.match(a.mes_fin):
+        raise HTTPException(422, "mes_fin debe ser 'YYYY-MM' o null")
+    try:
+        valor = Decimal(a.valor)
+    except (InvalidOperation, ValueError) as e:
+        raise HTTPException(422, f"valor no es un decimal válido: {a.valor}") from e
+    return Ajuste(
+        nombre=nombre,
+        naturaleza=a.naturaleza,
+        modo=a.modo,
+        valor=valor,
+        mes_inicio=a.mes_inicio,
+        mes_fin=a.mes_fin,
+        rubro_id=a.rubro_id,
+    )
+
+
+@router.post("/impactos")
+async def impactos(
+    body: ImpactosBody,
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _u: User = Depends(require_permission("proyeccion:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """D1 §2 — proyección BASE vs. CON AJUSTES, compute-only (SIMULAR NUNCA ESCRIBE).
+
+    RBAC = `proyeccion:gestionar` (⚠ VERIFICAR del §2 resuelto): aunque es lectura con
+    matemática encima, comparte el permiso del preview de C3 por consistencia — es la
+    misma clase de operación (proponer un cambio y ver su impacto sin persistir)."""
+    try:
+        return await service.proyectar_impactos(
+            ajustes=[_a_ajuste(a) for a in body.ajustes],
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
+class ResolverBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    objetivo: Literal["techo_gasto", "goal_seek", "punto_quiebre"]
+    ajustes: list[AjusteBody] = []  # el escenario en pantalla (opcional)
+    colchon: str = "0"  # techo_gasto
+    variable: Literal["ingreso_pct", "ingreso_absoluto", "gasto_absoluto"] | None = None
+    objetivo_caja: str | None = None  # goal_seek: piso objetivo
+
+
+def _a_decimal(s: str, campo: str) -> Decimal:
+    try:
+        return Decimal(s)
+    except (InvalidOperation, ValueError) as e:
+        raise HTTPException(422, f"{campo} no es un decimal válido: {s}") from e
+
+
+@router.post("/resolver")
+async def resolver(
+    body: ResolverBody,
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _u: User = Depends(require_permission("proyeccion:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """D1 §5 — techo de gasto / goal seek / punto de quiebre. Compute-only, auditable
+    (todos los parámetros a la vista). Mismo permiso que impactos/preview."""
+    objetivo_caja = (
+        _a_decimal(body.objetivo_caja, "objetivo_caja")
+        if body.objetivo_caja is not None
+        else None
+    )
+    try:
+        return await service.resolver(
+            objetivo=body.objetivo,
+            ajustes=[_a_ajuste(a) for a in body.ajustes],
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+            colchon=_a_decimal(body.colchon, "colchon"),
+            variable=body.variable,
+            objetivo_caja=objetivo_caja,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
+@router.get("/valles")
+async def valles(
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """D1 §3 — los valles (hitos) de la proyección vigente. Lectura pura."""
+    try:
+        return await service.valles_vigente(
             escenario=escenario,
             mes_inicio=_parse_mes_inicio(mes_inicio),
             horizonte_meses=horizonte_meses,

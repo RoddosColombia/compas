@@ -24,6 +24,7 @@ from app.facturas import service as facturas_service
 from app.iva.liquidacion import liquidar, plan_fondo_provision, programar_egresos_iva
 from app.modelos_moto import service as modelos_service
 from app.parametros_proyeccion import service as parametros_service
+from app.proyeccion.impactos import Ajuste, aplicar_impactos
 from app.proyeccion.motor import (
     PRESETS_ESCENARIO,
     ModeloProyeccion,
@@ -35,6 +36,8 @@ from app.proyeccion.motor import (
     colocacion_mensual,
     proyectar,
 )
+from app.proyeccion.solvers import goal_seek, punto_de_quiebre, techo_gasto
+from app.proyeccion.valles import Valle, detectar_valles
 
 HORIZONTE_MAX = 180  # 15 años (tope de infraestructura)
 
@@ -211,7 +214,7 @@ async def _iva_plan(
     return egreso, fondo
 
 
-async def _proyectar_con(
+async def _resultado_con(
     params: ParametrosProyeccion,
     modelos: list[ModeloMoto],
     *,
@@ -219,10 +222,11 @@ async def _proyectar_con(
     mes_inicio: tuple[int, int],
     horizonte_meses: int | None,
     caja_inicial_override: object | None = None,
-) -> dict:
+) -> tuple[ResultadoProyeccion, object, list]:
     """La tubería completa (cartera previa + IVA + motor) sobre un set de parámetros
-    DADO — compartida por la proyección vigente y el preview de C3 (misma tubería =
-    paridad al peso garantizada por test)."""
+    DADO, devolviendo el ResultadoProyeccion CRUDO (sin serializar) + el umbral + el
+    fondo de provisión. Compartida por la proyección vigente, el preview de C3 y la capa
+    de impactos de D1 (misma tubería = paridad al peso garantizada por test)."""
     horizonte = horizonte_meses or params.horizonte_meses
     if horizonte < 1 or horizonte > HORIZONTE_MAX:
         raise ProyeccionError(
@@ -241,7 +245,28 @@ async def _proyectar_con(
         iva_egreso,
         caja_inicial_override,
     )
-    return _serializar(proyectar(pm), escenario, params.caja_minima, fondo)
+    return proyectar(pm), params.caja_minima, fondo
+
+
+async def _proyectar_con(
+    params: ParametrosProyeccion,
+    modelos: list[ModeloMoto],
+    *,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+    caja_inicial_override: object | None = None,
+) -> dict:
+    """Serializa la proyección de `_resultado_con` (mismo shape que GET /proyeccion)."""
+    r, caja_min, fondo = await _resultado_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+        caja_inicial_override=caja_inicial_override,
+    )
+    return _serializar(r, escenario, caja_min, fondo)
 
 
 async def proyectar_vigente(
@@ -287,6 +312,161 @@ async def proyectar_preview(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
     )
+
+
+def _serializar_valle(v: Valle) -> dict:
+    return {
+        "mes": v.mes,
+        "caja": money_str(v.caja),
+        "distancia_al_umbral": money_str(v.distancia_al_umbral),
+        "meses_para_prepararse": v.meses_para_prepararse,
+        "causas": [
+            {
+                "concepto": c.concepto,
+                "etiqueta": c.etiqueta,
+                "monto": money_str(c.monto),
+                "promedio": money_str(c.promedio),
+                "vs_promedio": (
+                    str(c.vs_promedio) if c.vs_promedio is not None else None
+                ),
+            }
+            for c in v.causas
+        ],
+    }
+
+
+def _kpis_a_resultado(aj) -> ResultadoProyeccion:
+    """Envuelve la serie ajustada + sus KPIs en un ResultadoProyeccion para reusar
+    `_serializar` (mismo shape que la base; el front pinta base vs. ajustada igual)."""
+    return ResultadoProyeccion(
+        meses=aj.meses,
+        piso_caja=aj.kpis.piso_caja,
+        mes_mas_ajustado=aj.kpis.mes_mas_ajustado,
+        meses_bajo_minimo=aj.kpis.meses_bajo_minimo,
+        caja_final=aj.kpis.caja_final,
+        capital_requerido=aj.kpis.capital_requerido,
+        runway_meses=aj.kpis.runway_meses,
+    )
+
+
+async def valles_vigente(
+    *, escenario: str, mes_inicio: tuple[int, int], horizonte_meses: int | None
+) -> dict:
+    """D1 §3 — los valles (hitos) de la proyección vigente: mínimos de caja relevantes
+    con sus causas. Lectura pura sobre la config vigente."""
+    params, modelos = await _cargar_config_vigente()
+    r, caja_min, _ = await _resultado_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+    )
+    valles = detectar_valles(r.meses, caja_min)
+    return {
+        "escenario": escenario,
+        "caja_minima": money_str(caja_min),
+        "valles": [_serializar_valle(v) for v in valles],
+    }
+
+
+async def proyectar_impactos(
+    *,
+    ajustes: list[Ajuste],
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+) -> dict:
+    """D1 §2 — proyección BASE vs. proyección CON AJUSTES, compute-only (SIMULAR NUNCA
+    ESCRIBE). Devuelve ambas series con el shape de GET /proyeccion, los valles de cada
+    una y el delta de flujo por mes. Con `ajustes` vacío, ajustada == base bit a bit."""
+    params, modelos = await _cargar_config_vigente()
+    r, caja_min, fondo = await _resultado_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+    )
+    ajustado = aplicar_impactos(r, ajustes, caja_min)
+    r_aj = _kpis_a_resultado(ajustado)
+    return {
+        "escenario": escenario,
+        "base": _serializar(r, escenario, caja_min, fondo),
+        "ajustada": _serializar(r_aj, escenario, caja_min, fondo),
+        "valles_base": [
+            _serializar_valle(v) for v in detectar_valles(r.meses, caja_min)
+        ],
+        "valles_ajustada": [
+            _serializar_valle(v) for v in detectar_valles(ajustado.meses, caja_min)
+        ],
+        "delta_por_mes": [money_str(d) for d in ajustado.delta_por_mes],
+    }
+
+
+async def resolver(
+    *,
+    objetivo: str,
+    ajustes: list[Ajuste],
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+    colchon: Decimal = Decimal("0"),
+    variable: str | None = None,
+    objetivo_caja: Decimal | None = None,
+) -> dict:
+    """D1 §5 — solvers por bisección sobre la proyección vigente + los `ajustes` en
+    pantalla. Compute-only. `objetivo` ∈ {techo_gasto, goal_seek, punto_quiebre}."""
+    params, modelos = await _cargar_config_vigente()
+    r, caja_min, _ = await _resultado_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+    )
+    if objetivo == "techo_gasto":
+        t = techo_gasto(r, caja_min, ajustes_previos=ajustes, colchon=colchon)
+        return {
+            "objetivo": "techo_gasto",
+            "techo_mensual": money_str(t.techo_mensual),
+            "valle_limitante_mes": t.valle_limitante_mes,
+            "piso_resultante": money_str(t.piso_resultante),
+            "meta": money_str(t.meta),
+            "colchon": money_str(t.colchon),
+            "hay_holgura": t.hay_holgura,
+        }
+    if objetivo == "goal_seek":
+        if variable is None or objetivo_caja is None:
+            raise ProyeccionError("goal_seek requiere variable y objetivo_caja", 422)
+        g = goal_seek(
+            r,
+            caja_min,
+            variable=variable,
+            objetivo_caja=objetivo_caja,
+            ajustes_previos=ajustes,
+        )
+        return {
+            "objetivo": "goal_seek",
+            "variable": g.variable,
+            # str() (no money_str): un % como 0.0345 no se puede cuantizar a 2 decimales
+            "valor": (str(g.valor) if g.valor is not None else None),
+            "alcanzable": g.alcanzable,
+            "piso_resultante": (
+                money_str(g.piso_resultante) if g.piso_resultante is not None else None
+            ),
+            "objetivo_caja": money_str(g.objetivo),
+            "mensaje": g.mensaje,
+        }
+    if objetivo == "punto_quiebre":
+        q = punto_de_quiebre(r, caja_min, ajustes_previos=ajustes)
+        return {
+            "objetivo": "punto_quiebre",
+            "valor": (money_str(q.valor) if q.valor is not None else None),
+            "mes": q.mes,
+            "perfora": q.perfora,
+        }
+    raise ProyeccionError(f"objetivo no soportado: {objetivo}", 422)
 
 
 async def _cargar_config_vigente():

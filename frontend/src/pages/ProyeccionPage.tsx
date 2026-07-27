@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { CashCurve } from "@/components/charts/CashCurve";
+import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/filtro-barra";
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { ScenarioChip } from "@/components/ui/scenario-chip";
+import { obtenerValles } from "@/lib/decisiones";
 import {
   formatCOPCompact,
   formatCOPEntero,
@@ -71,6 +73,12 @@ export default function ProyeccionPage() {
     queryKey: ["proyeccion", escenario, fetchHorizonte],
     queryFn: () =>
       obtenerProyeccion({ escenario, horizonteMeses: fetchHorizonte }),
+  });
+
+  // D1 §3 — los valles (hitos) de la serie vigente, con sus causas.
+  const vallesQ = useQuery({
+    queryKey: ["valles", escenario, fetchHorizonte],
+    queryFn: () => obtenerValles({ escenario, horizonteMeses: fetchHorizonte }),
   });
 
   return (
@@ -124,6 +132,14 @@ export default function ProyeccionPage() {
           data={q.data}
           ventanaMeses={horizonte}
           escenario={escenario}
+        />
+      )}
+
+      {q.data && (
+        <VallesCard
+          valles={vallesQ.data?.valles ?? []}
+          cargando={vallesQ.isLoading}
+          titulo="Valles de caja (hitos)"
         />
       )}
     </div>

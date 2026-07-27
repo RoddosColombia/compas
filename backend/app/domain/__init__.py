@@ -10,6 +10,7 @@ el ODM general.
 from app.domain.carga import CargaBancaria
 from app.domain.cartera_previa import CarteraPreviaRecaudo
 from app.domain.configuracion import Configuracion
+from app.domain.escenario_impacto import EscenarioImpacto
 from app.domain.factura import Factura
 from app.domain.gasto_recurrente import GastoRecurrente
 from app.domain.idempotency import IdempotencyKey
@@ -39,6 +40,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     Factura,
     LoanTapeCredito,
     GastoRecurrente,
+    EscenarioImpacto,
 ]
 
 __all__ = [
@@ -57,5 +59,6 @@ __all__ = [
     "Factura",
     "LoanTapeCredito",
     "GastoRecurrente",
+    "EscenarioImpacto",
     "DOMAIN_DOCUMENTS",
 ]
