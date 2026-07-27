@@ -16,6 +16,7 @@ import {
   Database,
   FileText,
   Filter,
+  Gauge,
   Home,
   Layers,
   LineChart,
@@ -43,6 +44,13 @@ export const NAVEGACION: GrupoNav[] = [
     titulo: "Principal",
     items: [
       { label: "Inicio", path: "/inicio", icon: Home, cap: "dashboard:leer" },
+      // La Cabina (C2): el ciclo completo del mes en una sola vista.
+      {
+        label: "Mes en curso",
+        path: "/mes",
+        icon: Gauge,
+        cap: "dashboard:leer",
+      },
       {
         label: "Proyecciones",
         path: "/proyeccion",

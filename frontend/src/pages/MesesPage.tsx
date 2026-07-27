@@ -10,6 +10,7 @@ import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "@/auth/AuthContext";
+import { EstadoBadge } from "@/components/ciclo/EstadoBadge";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
@@ -23,26 +24,6 @@ import {
   listarMeses,
 } from "@/lib/meses";
 import { formatCOP } from "@/lib/money";
-
-const ESTADO_ESTILO: Record<Mes["estado"], string> = {
-  sugerido: "bg-surface-muted text-ink-soft",
-  propuesto: "bg-amber/10 text-amber",
-  definido: "bg-cyan/10 text-cyan",
-  en_ejecucion: "bg-green/10 text-green",
-  cerrado: "bg-surface-muted text-ink-faint",
-};
-
-// Tooltip por estado: qué significa y cuál es la acción que sigue (C1).
-const ESTADO_AYUDA: Record<Mes["estado"], string> = {
-  sugerido:
-    "Mes abierto. Siguiente paso: generar el presupuesto sugerido y acotarlo.",
-  propuesto:
-    "Presupuesto acotado al menos una vez. Siguiente paso: aprobarlo para ponerlo en ejecución.",
-  definido: "Presupuesto aprobado. El mes pasa a ejecución.",
-  en_ejecucion:
-    "Presupuesto en ejecución. Síguelo en Presupuesto (control) y reporta la caja diaria.",
-  cerrado: "Mes cerrado: el histórico es inmutable.",
-};
 
 export default function MesesPage() {
   const { puede } = useAuth();
@@ -115,12 +96,7 @@ export default function MesesPage() {
                       {m.mes.slice(0, 7)}
                     </td>
                     <td className="px-4 py-2">
-                      <span
-                        title={ESTADO_AYUDA[m.estado]}
-                        className={`cursor-help rounded-full px-2 py-0.5 font-sans text-xs font-medium ${ESTADO_ESTILO[m.estado]}`}
-                      >
-                        {m.estado}
-                      </span>
+                      <EstadoBadge estado={m.estado} />
                     </td>
                     <td className="tabular px-4 py-2 text-right text-ink-soft">
                       {formatCOP(m.saldo_inicial_caja)}

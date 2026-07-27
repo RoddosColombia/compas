@@ -10,6 +10,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { AppShell } from "@/components/layout/AppShell";
+import CabinaMesPage from "@/pages/CabinaMesPage";
 import CajaPage from "@/pages/CajaPage";
 import CargasPage from "@/pages/CargasPage";
 import CategoriasPage from "@/pages/CategoriasPage";
@@ -69,6 +70,14 @@ export default function App() {
               element={
                 <Cockpit>
                   <InicioPage />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/mes"
+              element={
+                <Cockpit>
+                  <CabinaMesPage />
                 </Cockpit>
               }
             />

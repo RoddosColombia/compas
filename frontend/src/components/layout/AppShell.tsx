@@ -6,6 +6,7 @@ import { Menu, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { MesStatusBar } from "@/components/layout/MesStatusBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -54,6 +55,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             COMPAS
           </span>
         </div>
+
+        {/* Barra de estado del mes (C2): visible en todas las rutas del cockpit */}
+        <MesStatusBar />
 
         <main className="flex-1 overflow-y-auto px-6 py-6 md:px-8 md:py-8">
           <div className="mx-auto max-w-6xl">{children}</div>
