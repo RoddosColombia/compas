@@ -28,22 +28,28 @@ export function PanelImpacto({
   calculando,
   error,
   hayCambios,
+  titulo = "Impacto de tus cambios",
+  etiquetaVigente = "Vigente",
+  etiquetaPropuesto = "Con tus cambios",
+  hintVacio = "Cambia un supuesto y aquí verás su efecto — piso de caja, mes crítico y capital requerido — antes de guardar nada.",
 }: {
   vigente: Proyeccion | undefined;
   propuesto: Proyeccion | undefined;
   calculando: boolean;
   error: boolean;
   hayCambios: boolean;
+  // D1: reusable como BASE → CON TUS AJUSTES (los defaults conservan C3).
+  titulo?: string;
+  etiquetaVigente?: string;
+  etiquetaPropuesto?: string;
+  hintVacio?: string;
 }) {
   return (
     <Card className="flex flex-col gap-3 p-5">
-      <CardTitle>Impacto de tus cambios</CardTitle>
+      <CardTitle>{titulo}</CardTitle>
 
       {!hayCambios && (
-        <p className="font-sans text-cuerpo text-ink-soft">
-          Cambia un supuesto y aquí verás su efecto — piso de caja, mes crítico
-          y capital requerido — antes de guardar nada.
-        </p>
+        <p className="font-sans text-cuerpo text-ink-soft">{hintVacio}</p>
       )}
 
       {hayCambios && error && (
@@ -64,10 +70,10 @@ export function PanelImpacto({
               Indicador
             </span>
             <span className="text-right text-apoyo tracking-wide text-ink-faint uppercase">
-              Vigente
+              {etiquetaVigente}
             </span>
             <span className="text-right text-apoyo tracking-wide text-ink-faint uppercase">
-              Con tus cambios
+              {etiquetaPropuesto}
             </span>
 
             <FilaMonto

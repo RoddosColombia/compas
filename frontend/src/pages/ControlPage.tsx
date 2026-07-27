@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { QueExigeAtencion } from "@/components/control/QueExigeAtencion";
+import { PanelDecisiones } from "@/components/decisiones/PanelDecisiones";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card } from "@/components/ui/card";
@@ -26,7 +27,7 @@ import {
 import { listarMeses } from "@/lib/meses";
 import { formatCOPEntero } from "@/lib/money";
 
-type Vista = "categoria" | "cuenta";
+type Vista = "categoria" | "cuenta" | "decisiones";
 
 const SEMAFORO_ESTILO: Record<Semaforo, string> = {
   verde: "bg-positivo/10 text-positivo",
@@ -97,6 +98,7 @@ export default function ControlPage() {
           opciones: [
             { valor: "categoria", label: "Por categoría" },
             { valor: "cuenta", label: "Por cuenta" },
+            { valor: "decisiones", label: "Decisiones" },
           ],
           valor: vista,
           porDefecto: "categoria",
@@ -134,10 +136,12 @@ export default function ControlPage() {
         />
       )}
 
-      {meses.isLoading && (
+      {vista === "decisiones" && <PanelDecisiones />}
+
+      {vista !== "decisiones" && meses.isLoading && (
         <p className="font-sans text-sm text-ink-soft">Cargando…</p>
       )}
-      {meses.data && disponibles.length === 0 && (
+      {vista !== "decisiones" && meses.data && disponibles.length === 0 && (
         <p className="font-sans text-sm text-ink-soft">
           No hay meses en ejecución o cerrados.{" "}
           {mesPendiente ? (
