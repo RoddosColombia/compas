@@ -39,15 +39,23 @@ import {
   obtenerProyeccion,
 } from "@/lib/proyeccion";
 
-// Horizonte por defecto F1: 18 meses — el largo plazo es una elección del
-// usuario (en Proyecciones), no el default que aplasta la escala.
-const HORIZONTE_PULSO = 18;
+// F1 + hallazgo QA del CEO: el JUICIO mira lejos, el GRÁFICO enfoca.
+// El titular y los KPIs se calculan sobre el horizonte largo (60 m, como el
+// Inicio previo) — si la perforación se corre más allá de la ventana corta,
+// Inicio NO puede decir "✓ todo bien" (norte: no ser sorprendidos). El gráfico
+// protagonista muestra la ventana de 18 m (una sola query: la ventana es el
+// slice de la larga), con nota cuando el mes crítico queda fuera de la vista.
+const HORIZONTE_JUICIO = 60;
+const VENTANA_GRAFICO = 18;
 
 export default function InicioPage() {
   const q = useQuery({
-    queryKey: ["proyeccion", "base", HORIZONTE_PULSO],
+    queryKey: ["proyeccion", "base", HORIZONTE_JUICIO],
     queryFn: () =>
-      obtenerProyeccion({ escenario: "base", horizonteMeses: HORIZONTE_PULSO }),
+      obtenerProyeccion({
+        escenario: "base",
+        horizonteMeses: HORIZONTE_JUICIO,
+      }),
   });
   const meses = useQuery({ queryKey: ["meses"], queryFn: listarMeses });
 
@@ -178,6 +186,11 @@ function Pulso({
   const vsUmbral = piso.minus(parseMonto(data.caja_minima));
   const caja = cajaHoy(mesActivo);
 
+  // Ventana del gráfico (18 m); el juicio de arriba ya miró los 60.
+  const ventana = data.meses.slice(0, VENTANA_GRAFICO);
+  const criticoFuera =
+    perforada && data.mes_mas_ajustado > ventana[ventana.length - 1].mes;
+
   return (
     <>
       <TitularJuicio data={data} />
@@ -233,12 +246,18 @@ function Pulso({
 
       <ChartCard
         conclusion={
-          perforada
-            ? `La caja toca su punto más bajo en ${formatMesCorto(data.mes_mas_ajustado)}`
-            : "La caja se sostiene sobre el umbral en todo el horizonte"
+          criticoFuera
+            ? `El punto más ajustado (${formatMesCorto(data.mes_mas_ajustado)}) está más allá de esta vista`
+            : perforada
+              ? `La caja toca su punto más bajo en ${formatMesCorto(data.mes_mas_ajustado)}`
+              : "La caja se sostiene sobre el umbral en todo el horizonte"
         }
-        subtitulo={`caja proyectada · escenario base · ${data.meses.length} meses`}
-        pie="Fuente: motor de proyección (escenario base) · se recalcula al abrir"
+        subtitulo={`caja proyectada · escenario base · ${ventana.length} de ${data.meses.length} meses`}
+        pie={
+          criticoFuera
+            ? `El mes crítico (${formatMesCorto(data.mes_mas_ajustado)}) queda fuera de la ventana de ${ventana.length} meses — ábrelo en la proyección completa. Fuente: motor de proyección (escenario base).`
+            : "Fuente: motor de proyección (escenario base) · se recalcula al abrir"
+        }
         protagonista
         acciones={
           <Link
@@ -250,7 +269,7 @@ function Pulso({
           </Link>
         }
       >
-        <CashCurve meses={data.meses} umbral={data.caja_minima} anotada />
+        <CashCurve meses={ventana} umbral={data.caja_minima} anotada />
       </ChartCard>
     </>
   );
@@ -260,12 +279,12 @@ function Pulso({
 function RealidadVsProyeccion() {
   const [ancla, setAncla] = useState<AnclaModo>("cerrado");
   const q = useQuery({
-    queryKey: ["comparar", "base", ancla, HORIZONTE_PULSO],
+    queryKey: ["comparar", "base", ancla, HORIZONTE_JUICIO],
     queryFn: () =>
       obtenerComparacion({
         escenario: "base",
         ancla,
-        horizonteMeses: HORIZONTE_PULSO,
+        horizonteMeses: HORIZONTE_JUICIO,
       }),
   });
 

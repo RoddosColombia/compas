@@ -43,7 +43,7 @@ const PROY: Proyeccion = {
   caja_minima: "125000000.00",
   fondo_provision: [],
   piso_caja: "40000000.00",
-  mes_mas_ajustado: "2026-09",
+  mes_mas_ajustado: "2026-07",
   meses_bajo_minimo: 2,
   caja_final: "200000000.00",
   capital_requerido: "85000000.00",
@@ -120,21 +120,21 @@ beforeEach(() => {
 });
 
 describe("InicioPage — piloto F1 (§7)", () => {
-  it("pide el horizonte de 18 meses (default F1)", async () => {
+  it("el JUICIO se calcula a horizonte largo (60 m), no sobre la ventana del gráfico", async () => {
     renderPage();
     await screen.findByText("Piso de caja");
     expect(mocks.obtenerProyeccion).toHaveBeenCalledWith({
       escenario: "base",
-      horizonteMeses: 18,
+      horizonteMeses: 60,
     });
   });
 
   it("muestra el titular de juicio que reconcilia el mensaje", async () => {
     renderPage();
-    // crece (caja_final 200M > primer mes 40M) PERO perfora en sep-26
+    // crece (caja_final 200M > primer mes 40M) PERO perfora en jul-26
     expect(
       await screen.findByText(
-        /La caja crece, pero perfora el mínimo en sep-26/,
+        /La caja crece, pero perfora el mínimo en jul-26/,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Capital para cubrirlo/)).toBeInTheDocument();
@@ -167,7 +167,7 @@ describe("InicioPage — piloto F1 (§7)", () => {
     renderPage();
     expect(
       await screen.findByRole("heading", {
-        name: /La caja toca su punto más bajo en sep-26/,
+        name: /La caja toca su punto más bajo en jul-26/,
       }),
     ).toBeInTheDocument();
     // umbral etiquetado sobre el trazo (no leyenda)
@@ -176,6 +176,27 @@ describe("InicioPage — piloto F1 (§7)", () => {
     expect(screen.getByText("jul-26")).toBeInTheDocument();
     // anotación del mínimo (mes · cifra)
     expect(screen.getByText(/jul-26 · \$ 40 M/)).toBeInTheDocument();
+  });
+
+  it("si el mes crítico queda fuera de la ventana de 18 m, el gráfico lo dice (no un ✓ falso)", async () => {
+    // perforación lejana: el juicio (60 m) la ve; la ventana del gráfico no.
+    mocks.obtenerProyeccion.mockResolvedValue({
+      ...PROY,
+      mes_mas_ajustado: "2028-01",
+      piso_caja: "-63900000.00",
+    });
+    renderPage();
+    // el titular sigue avisando la perforación (calculado a 60 m)
+    expect(
+      await screen.findByText(/perfora el mínimo en ene-28/),
+    ).toBeInTheDocument();
+    // y el gráfico declara que el crítico está más allá de su vista
+    expect(
+      screen.getByRole("heading", {
+        name: /El punto más ajustado \(ene-28\) está más allá de esta vista/,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/queda fuera de la ventana/)).toBeInTheDocument();
   });
 
   it("realidad vs. proyección se conserva como soporte", async () => {
