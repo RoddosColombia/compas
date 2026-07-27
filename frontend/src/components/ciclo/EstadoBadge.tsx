@@ -5,9 +5,9 @@ import type { Mes } from "@/lib/meses";
 
 const ESTILO: Record<Mes["estado"], string> = {
   sugerido: "bg-surface-muted text-ink-soft",
-  propuesto: "bg-amber/10 text-amber",
+  propuesto: "bg-atencion/10 text-atencion",
   definido: "bg-cyan/10 text-cyan",
-  en_ejecucion: "bg-green/10 text-green",
+  en_ejecucion: "bg-positivo/10 text-positivo",
   cerrado: "bg-surface-muted text-ink-faint",
 };
 
@@ -26,7 +26,7 @@ export function EstadoBadge({ estado }: { estado: Mes["estado"] }) {
   return (
     <span
       title={AYUDA[estado]}
-      className={`cursor-help rounded-full px-2 py-0.5 font-sans text-xs font-medium ${ESTILO[estado]}`}
+      className={`cursor-help rounded-full px-2 py-0.5 font-sans text-apoyo font-medium ${ESTILO[estado]}`}
     >
       {estado}
     </span>

@@ -11,7 +11,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   type Conciliacion,
   type ReporteSaldosResultado,
@@ -140,7 +140,7 @@ function FormReporte({
         <p className="w-full font-display text-base font-semibold text-ink">
           Reportar saldo
         </p>
-        <label className="flex flex-col gap-1 font-sans text-xs font-medium text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo font-medium text-ink-soft">
           Banco
           <select
             className="rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
@@ -154,7 +154,7 @@ function FormReporte({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs font-medium text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo font-medium text-ink-soft">
           Saldo (COP)
           <input
             className="tabular w-40 rounded-md border border-hairline bg-surface px-3 py-1.5 text-right text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
@@ -164,7 +164,7 @@ function FormReporte({
             onChange={(e) => setSaldo(e.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs font-medium text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo font-medium text-ink-soft">
           Fecha del reporte
           <input
             type="date"
@@ -194,24 +194,42 @@ function PanelConciliacion({ conc }: { conc: Conciliacion }) {
           Conciliación
         </p>
         {conc.dentro_de_umbral ? (
-          <span className="rounded-full bg-green/10 px-3 py-0.5 font-sans text-xs font-medium text-green">
+          <span className="rounded-full bg-positivo/10 px-3 py-0.5 font-sans text-apoyo font-medium text-positivo">
             Cuadra (dentro del umbral)
           </span>
         ) : (
-          <span className="rounded-full bg-red/10 px-3 py-0.5 font-sans text-xs font-medium text-red">
+          <span className="rounded-full bg-critico/10 px-3 py-0.5 font-sans text-apoyo font-medium text-critico">
             No cuadra — diferencia {formatCOP(conc.diferencia)}
           </span>
         )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile
+        <KpiTileV2
           label="Reportado (bancos)"
-          value={formatCOP(conc.consolidado_reportado)}
+          valor="0"
+          valorTexto={formatCOP(conc.consolidado_reportado)}
+          contexto="suma de los saldos reportados"
         />
-        <KpiTile label="Caja del libro" value={formatCOP(conc.caja_libro)} />
-        <KpiTile label="Diferencia" value={formatCOP(conc.diferencia)} />
-        <KpiTile label="Umbral" value={formatCOP(conc.umbral)} />
+        <KpiTileV2
+          label="Caja del libro"
+          valor="0"
+          valorTexto={formatCOP(conc.caja_libro)}
+          contexto="saldo inicial + movimientos"
+        />
+        <KpiTileV2
+          label="Diferencia"
+          valor="0"
+          valorTexto={formatCOP(conc.diferencia)}
+          contexto="reportado menos libro, al centavo"
+          tono={conc.dentro_de_umbral ? "positivo" : "critico"}
+        />
+        <KpiTileV2
+          label="Umbral"
+          valor="0"
+          valorTexto={formatCOP(conc.umbral)}
+          contexto="tolerancia aceptada al cierre"
+        />
       </div>
 
       {conc.por_banco.length > 0 && (

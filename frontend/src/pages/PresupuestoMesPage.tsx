@@ -368,7 +368,7 @@ function GrupoLineas({
       <tr className="bg-surface-muted">
         <td
           colSpan={4}
-          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
+          className="px-4 py-1.5 font-sans text-apoyo font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo] ?? grupo}
         </td>
@@ -446,13 +446,13 @@ function FilaLinea({
             aria-expanded={expandida}
             className="flex items-center gap-1.5 text-left hover:text-cyan"
           >
-            <span className="text-xs text-ink-faint">
+            <span className="text-apoyo text-ink-faint">
               {expandida ? "▾" : "▸"}
             </span>
             {nombre}
           </button>
           {linea.historia_incompleta && (
-            <span className="ml-2 rounded-full bg-amber/10 px-2 py-0.5 font-sans text-xs font-medium text-amber">
+            <span className="ml-2 rounded-full bg-atencion/10 px-2 py-0.5 font-sans text-apoyo font-medium text-atencion">
               historia incompleta
             </span>
           )}
@@ -494,7 +494,7 @@ function FilaLinea({
       {expandida && (
         <tr className="border-b border-hairline/60 bg-surface-muted/50">
           <td colSpan={4} className="px-4 py-2">
-            <div className="flex flex-wrap items-center gap-5 font-sans text-xs text-ink-soft">
+            <div className="flex flex-wrap items-center gap-5 font-sans text-apoyo text-ink-soft">
               <span>
                 Prom. 3m:{" "}
                 <span className="tabular font-medium text-ink">
@@ -521,7 +521,7 @@ function FilaLinea({
               </span>
             </div>
             {acotable && (
-              <label className="mt-2 flex items-center gap-2 font-sans text-xs">
+              <label className="mt-2 flex items-center gap-2 font-sans text-apoyo">
                 <span className="text-ink-soft">Comentario</span>
                 <input
                   aria-label={`Comentario ${nombre}`}
@@ -574,7 +574,7 @@ function AprobarDialog({
         <h3 className="mb-1 font-display text-lg font-semibold text-ink">
           Aprobar presupuesto
         </h3>
-        <p className="mb-4 font-sans text-xs text-ink-faint">
+        <p className="mb-4 font-sans text-apoyo text-ink-faint">
           El mes pasa a ejecución y las líneas sin monto definido toman el
           sugerido. Esta acción queda auditada.
         </p>

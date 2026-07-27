@@ -22,6 +22,10 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { Cargando } from "@/components/ui/cargando";
+import { ErrorEstado } from "@/components/ui/error-estado";
+import { EstadoVacio } from "@/components/ui/estado-vacio";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   type ConciliacionCierre,
   cierreConciliacion,
@@ -35,7 +39,7 @@ import {
   mesPendiente,
   mesSiguiente,
 } from "@/lib/meses";
-import { formatCOP, parseMonto } from "@/lib/money";
+import { formatCOP, formatCOPCompact, parseMonto } from "@/lib/money";
 import { listarPresupuesto } from "@/lib/presupuesto";
 
 export default function CabinaMesPage() {
@@ -71,11 +75,14 @@ export default function CabinaMesPage() {
   });
 
   if (meses.isLoading) {
-    return <p className="font-sans text-sm text-ink-soft">Cargando…</p>;
+    return <Cargando variante="card" />;
   }
   if (meses.isError) {
     return (
-      <AlertBanner variant="danger">No se pudo listar los meses.</AlertBanner>
+      <ErrorEstado
+        mensaje="No se pudo listar los meses del ciclo."
+        onReintentar={() => void meses.refetch()}
+      />
     );
   }
 
@@ -86,12 +93,11 @@ export default function CabinaMesPage() {
           titulo="Mes en curso"
           descripcion="La cabina del ciclo mensual."
         />
-        <p className="font-sans text-sm text-ink-soft">
-          Aún no hay meses abiertos.{" "}
-          <Link to="/meses" className="font-medium text-cyan hover:underline">
-            Abre el primero →
-          </Link>
-        </p>
+        <EstadoVacio
+          mensaje="Aún no hay meses abiertos: el ciclo arranca abriendo el primero."
+          accion={{ to: "/meses", label: "Abrir el primer mes" }}
+          quien="financiero, directivo o admin"
+        />
       </div>
     );
   }
@@ -129,7 +135,7 @@ export default function CabinaMesPage() {
           <CardTitle>Caja del día</CardTitle>
           <Link
             to="/caja"
-            className="font-sans text-xs font-medium text-cyan hover:underline"
+            className="font-sans text-apoyo font-medium text-cyan hover:underline"
           >
             Ver en Caja →
           </Link>
@@ -137,10 +143,14 @@ export default function CabinaMesPage() {
         {activo ? (
           <ReporteCajaCard mes={activo} />
         ) : (
-          <p className="font-sans text-sm text-ink-soft">
-            El reporte de caja se habilita cuando el mes esté en ejecución
-            (aprueba el presupuesto primero).
-          </p>
+          <EstadoVacio
+            mensaje="El reporte de caja se habilita cuando el mes esté en ejecución."
+            accion={{
+              to: `/meses/${mes7}/presupuesto`,
+              label: "Aprobar el presupuesto",
+            }}
+            quien="admin"
+          />
         )}
       </Card>
 
@@ -190,7 +200,7 @@ function MesesRecientes({
         <Link
           key={m.id}
           to={`/meses/${m.mes.slice(0, 7)}/presupuesto`}
-          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-sans text-xs transition-colors hover:bg-surface-muted ${
+          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-sans text-apoyo transition-colors hover:bg-surface-muted ${
             m.mes === mesCabina ? "border-cyan" : "border-hairline"
           }`}
         >
@@ -200,7 +210,7 @@ function MesesRecientes({
       ))}
       <Link
         to="/meses"
-        className="font-sans text-xs font-medium text-cyan hover:underline"
+        className="font-sans text-apoyo font-medium text-cyan hover:underline"
       >
         Historial completo y abrir mes →
       </Link>
@@ -228,7 +238,7 @@ function TarjetaPresupuesto({
         <CardTitle>Presupuesto</CardTitle>
         <Link
           to={`/meses/${mes7}/presupuesto`}
-          className="font-sans text-xs font-medium text-cyan hover:underline"
+          className="font-sans text-apoyo font-medium text-cyan hover:underline"
         >
           {editable
             ? lineas === 0
@@ -245,23 +255,24 @@ function TarjetaPresupuesto({
       )}
 
       {lineas > 0 && (
-        <div className="flex flex-wrap items-center gap-5 font-sans text-sm">
-          <span className="flex items-baseline gap-1.5">
-            <span className="text-ink-faint">Líneas</span>
-            <span className="font-semibold text-ink">{lineas}</span>
-          </span>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <KpiTileV2
+            label="Líneas de presupuesto"
+            valor="0"
+            valorTexto={String(lineas)}
+            contexto="rubros con línea vigente"
+          />
           {totalDefinido && (
-            <span className="flex items-baseline gap-1.5">
-              <span className="text-ink-faint">Total definido</span>
-              <span className="tabular font-semibold text-ink">
-                {formatCOP(totalDefinido)}
-              </span>
-            </span>
+            <KpiTileV2
+              label="Total definido"
+              valor={totalDefinido}
+              contexto="lo aprobado (o por aprobar) del mes"
+            />
           )}
-          <span className="flex items-baseline gap-1.5">
+          <div className="flex items-center gap-2 font-sans text-cuerpo">
             <span className="text-ink-faint">Estado</span>
             <EstadoBadge estado={mes.estado} />
-          </span>
+          </div>
         </div>
       )}
 
@@ -284,24 +295,31 @@ function BarraEjecucion({
   const pasado = pct.greaterThan(100);
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex justify-between font-sans text-xs text-ink-soft">
+      <div className="flex justify-between font-sans text-apoyo text-ink-soft">
         <span>
           Ejecutado{" "}
-          <span className="tabular font-medium text-ink">
-            {formatCOP(ejecutado)}
+          <span
+            className="tabular font-medium text-ink"
+            title={formatCOP(ejecutado)}
+          >
+            {formatCOPCompact(ejecutado)}
           </span>
         </span>
-        <span>
+        <span className={pasado ? "font-semibold text-critico" : undefined}>
           de{" "}
-          <span className="tabular font-medium text-ink">
-            {formatCOP(definido)}
+          <span
+            className="tabular font-medium text-ink"
+            title={formatCOP(definido)}
+          >
+            {formatCOPCompact(definido)}
           </span>{" "}
-          ({pct.toDecimalPlaces(0).toString()} %)
+          ({pct.toDecimalPlaces(0).toString()} %
+          {pasado ? " ✗ sobre lo aprobado" : ""})
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
         <div
-          className={`h-full rounded-full ${pasado ? "bg-red" : "bg-cyan"}`}
+          className={`h-full rounded-full ${pasado ? "bg-critico" : "bg-cyan"}`}
           style={{ width: `${ancho}%` }}
         />
       </div>
@@ -368,9 +386,13 @@ function TarjetaCierre({
     return (
       <Card className="flex flex-col gap-2">
         <CardTitle>Cierre</CardTitle>
-        <p className="font-sans text-sm text-ink-soft">
-          El cierre se habilita cuando el mes esté en ejecución.
-        </p>
+        <EstadoVacio
+          mensaje="El cierre se habilita cuando el mes esté en ejecución."
+          accion={{
+            to: `/meses/${mes7}/presupuesto`,
+            label: "Ir al presupuesto del mes",
+          }}
+        />
       </Card>
     );
   }
@@ -464,9 +486,9 @@ function Precondicion({ ok }: { ok: boolean | null }) {
   if (ok === null)
     return <span className="mt-0.5 shrink-0 text-ink-faint">•</span>;
   return ok ? (
-    <span className="mt-0.5 shrink-0 font-semibold text-green">✓</span>
+    <span className="mt-0.5 shrink-0 font-semibold text-positivo">✓</span>
   ) : (
-    <span className="mt-0.5 shrink-0 font-semibold text-red">✗</span>
+    <span className="mt-0.5 shrink-0 font-semibold text-critico">✗</span>
   );
 }
 
@@ -495,7 +517,7 @@ function CerrarDialog({
         <h3 className="mb-1 font-display text-lg font-semibold text-ink">
           Cerrar el mes {mes}
         </h3>
-        <p className="mb-4 font-sans text-xs text-ink-faint">
+        <p className="mb-4 font-sans text-apoyo text-ink-faint">
           El mes queda inmutable y el saldo inicial del siguiente se ancla al
           consolidado de bancos. El backend valida la conciliación antes de
           cerrar. Esta acción queda auditada.

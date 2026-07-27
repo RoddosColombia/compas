@@ -152,7 +152,7 @@ function GrupoBloque({
       <tr className="bg-surface-muted">
         <td
           colSpan={cols}
-          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
+          className="px-4 py-1.5 font-sans text-apoyo font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo] ?? grupo}
         </td>
@@ -172,10 +172,11 @@ function GrupoBloque({
 }
 
 function ClaseBadge({ tipo }: { tipo: TipoRubro | null }) {
-  if (tipo === null) return <span className="text-xs text-ink-faint">—</span>;
+  if (tipo === null)
+    return <span className="text-apoyo text-ink-faint">—</span>;
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+      className={`rounded-full px-2 py-0.5 text-apoyo font-medium ${
         tipo === "fijo"
           ? "bg-surface-muted text-ink-soft"
           : "bg-cyan/10 text-cyan"
@@ -306,9 +307,9 @@ function FilaRubro({
       <td className="px-4 py-2 text-ink">{rubro.nombre}</td>
       <td className="px-4 py-2">
         <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+          className={`rounded-full px-2 py-0.5 text-apoyo font-medium ${
             rubro.tipo_flujo === "ingreso"
-              ? "bg-green/10 text-green"
+              ? "bg-positivo/10 text-positivo"
               : "bg-surface-muted text-ink-soft"
           }`}
         >
@@ -325,7 +326,7 @@ function FilaRubro({
       {gestiona && (
         <td className="flex gap-2 px-4 py-2">
           {rubro.es_sistema ? (
-            <span className="text-xs italic text-ink-faint">Inmutable</span>
+            <span className="text-apoyo italic text-ink-faint">Inmutable</span>
           ) : (
             <>
               <Button
@@ -363,17 +364,17 @@ function FilaRubro({
 function EstadoBadge({ rubro }: { rubro: Rubro }) {
   if (rubro.es_sistema) {
     return (
-      <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-soft">
+      <span className="rounded-full bg-surface-muted px-2 py-0.5 text-apoyo font-medium text-ink-soft">
         Sistema
       </span>
     );
   }
   return rubro.activo ? (
-    <span className="rounded-full bg-green/10 px-2 py-0.5 text-xs font-medium text-green">
+    <span className="rounded-full bg-positivo/10 px-2 py-0.5 text-apoyo font-medium text-positivo">
       Activa
     </span>
   ) : (
-    <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-faint">
+    <span className="rounded-full bg-surface-muted px-2 py-0.5 text-apoyo font-medium text-ink-faint">
       Inactiva
     </span>
   );
@@ -416,7 +417,7 @@ function FormNueva({
     <Card>
       <form onSubmit={enviar} className="flex flex-wrap items-end gap-3">
         <CardTitle className="w-full">Nueva categoría</CardTitle>
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Grupo
           <select
             className={INPUT_CLASS}
@@ -430,7 +431,7 @@ function FormNueva({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Código
           <input
             className={`${INPUT_CLASS} tabular w-20`}
@@ -440,7 +441,7 @@ function FormNueva({
             onChange={(e) => setCodigo(e.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Nombre
           <input
             className={`${INPUT_CLASS} w-56`}
@@ -449,7 +450,7 @@ function FormNueva({
             onChange={(e) => setNombre(e.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Naturaleza
           <select
             className={INPUT_CLASS}
@@ -460,7 +461,7 @@ function FormNueva({
             <option value="ingreso">Ingreso</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Clase
           <select
             className={INPUT_CLASS}

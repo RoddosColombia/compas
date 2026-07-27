@@ -16,6 +16,7 @@ import { Link } from "react-router-dom";
 
 import { CashCurve } from "@/components/charts/CashCurve";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { TitularJuicio } from "@/components/proyeccion/TitularJuicio";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
@@ -86,50 +87,6 @@ export default function InicioPage() {
         />
       )}
       <RealidadVsProyeccion />
-    </div>
-  );
-}
-
-// ── Titular de juicio (§7): una frase que reconcilia el mensaje ─────────────
-
-function TitularJuicio({ data }: { data: Proyeccion }) {
-  const perforada = data.meses_bajo_minimo > 0;
-  const crece = parseMonto(data.caja_final).greaterThan(
-    parseMonto(data.meses[0].caja),
-  );
-
-  if (!perforada) {
-    return (
-      <div className="rounded-xl border border-positivo/30 bg-positivo/5 px-5 py-4">
-        <p className="font-sans text-cuerpo font-semibold text-positivo">
-          ✓ La caja se mantiene sobre el mínimo de{" "}
-          <span className="tabular">{formatCOPCompact(data.caja_minima)}</span>{" "}
-          en los {data.meses.length} meses del horizonte.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-xl border border-atencion/40 bg-atencion/5 px-5 py-4">
-      <p className="font-sans text-cuerpo font-semibold text-atencion">
-        ● La caja {crece ? "crece, pero" : "cae y"} perfora el mínimo en{" "}
-        {formatMesCorto(data.mes_mas_ajustado)} (
-        <span className="tabular" title={formatCOP(data.piso_caja)}>
-          {formatCOPCompact(data.piso_caja)}
-        </span>
-        ). Capital para cubrirlo:{" "}
-        <span className="tabular" title={formatCOP(data.capital_requerido)}>
-          {formatCOPCompact(data.capital_requerido)}
-        </span>
-        .{" "}
-        <Link
-          to="/proyeccion"
-          className="font-semibold text-cyan hover:underline"
-        >
-          Ver el mes crítico →
-        </Link>
-      </p>
     </div>
   );
 }

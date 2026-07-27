@@ -122,7 +122,7 @@ export function QueExigeAtencion({
         {!conAnchors && (
           <Link
             to="/control"
-            className="font-sans text-xs font-medium text-cyan hover:underline"
+            className="font-sans text-apoyo font-medium text-cyan hover:underline"
           >
             Ver el control completo →
           </Link>
@@ -130,7 +130,7 @@ export function QueExigeAtencion({
       </div>
 
       {visibles.length === 0 ? (
-        <p className="font-sans text-sm font-medium text-green">
+        <p className="font-sans text-sm font-medium text-positivo">
           Todos los rubros en rango ✓
         </p>
       ) : (
@@ -140,7 +140,7 @@ export function QueExigeAtencion({
               <>
                 <span
                   className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${
-                    it.tipo === "sobre" ? "bg-red" : "bg-amber"
+                    it.tipo === "sobre" ? "bg-critico" : "bg-atencion"
                   }`}
                 />
                 <span className="text-ink">{it.mensaje}</span>
@@ -167,7 +167,7 @@ export function QueExigeAtencion({
       )}
 
       {max !== undefined && items.length > max && (
-        <p className="font-sans text-xs text-ink-faint">
+        <p className="font-sans text-apoyo text-ink-faint">
           y {items.length - max} más en el control completo
         </p>
       )}

@@ -5,7 +5,12 @@
 import Decimal from "decimal.js-light";
 import { describe, expect, it } from "vitest";
 
-import { formatCOPCompact, formatDelta, formatMesCorto } from "@/lib/money";
+import {
+  formatCOPCompact,
+  formatCOPEntero,
+  formatDelta,
+  formatMesCorto,
+} from "@/lib/money";
 
 describe("formatCOPCompact — abreviación por magnitud (tabla §3)", () => {
   it("millones con 1 decimal: -$ 63,9 M", () => {
@@ -32,26 +37,46 @@ describe("formatCOPCompact — abreviación por magnitud (tabla §3)", () => {
   });
 });
 
-describe("formatDelta — signo + flecha (§3 comparación)", () => {
-  it("positivo sube con ▲", () => {
+describe("formatDelta — signo + flecha (§3) + direccionBuena (F1.1 §0.3)", () => {
+  it("positivo sube con ▲ (default: subir es bueno)", () => {
     expect(formatDelta("12900000")).toEqual({
       texto: "▲ +$ 12,9 M",
       direccion: "sube",
+      tono: "positivo",
     });
   });
 
-  it("negativo baja con ▼", () => {
+  it("negativo baja con ▼ (default: bajar es malo)", () => {
     expect(formatDelta("-93900000")).toEqual({
       texto: "▼ -$ 93,9 M",
       direccion: "baja",
+      tono: "critico",
     });
+  });
+
+  it("el tono sigue la semántica del negocio: bajar el GASTO es bueno", () => {
+    expect(formatDelta("-5000000", "baja")).toEqual({
+      texto: "▼ -$ 5 M",
+      direccion: "baja",
+      tono: "positivo",
+    });
+    expect(formatDelta("5000000", "baja").tono).toBe("critico");
   });
 
   it("cero es igual con —", () => {
     expect(formatDelta("0")).toEqual({
       texto: "— sin cambio",
       direccion: "igual",
+      tono: "igual",
     });
+  });
+});
+
+describe("formatCOPEntero — tablas de datos sin centavos (F1 §3)", () => {
+  it("completo con separador es-CO y cero decimales", () => {
+    expect(formatCOPEntero("63897875.14").replace(/\s/g, " ")).toBe(
+      "$ 63.897.875",
+    );
   });
 });
 

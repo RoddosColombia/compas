@@ -13,7 +13,8 @@ import { QueExigeAtencion } from "@/components/control/QueExigeAtencion";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { FiltroBarra } from "@/components/ui/filtro-barra";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   BANCO_LABEL,
   type ControlPorCuenta,
@@ -23,21 +24,27 @@ import {
   vistaControlPorCuenta,
 } from "@/lib/control";
 import { listarMeses } from "@/lib/meses";
-import { formatCOP } from "@/lib/money";
-import { cn } from "@/lib/utils";
+import { formatCOPEntero } from "@/lib/money";
 
 type Vista = "categoria" | "cuenta";
 
 const SEMAFORO_ESTILO: Record<Semaforo, string> = {
-  verde: "bg-green/10 text-green",
-  amarillo: "bg-amber/10 text-amber",
-  rojo: "bg-red/10 text-red",
+  verde: "bg-positivo/10 text-positivo",
+  amarillo: "bg-atencion/10 text-atencion",
+  rojo: "bg-critico/10 text-critico",
 };
 
 const SEMAFORO_LABEL: Record<Semaforo, string> = {
   verde: "En rango",
   amarillo: "Cerca del límite",
   rojo: "Sobre-ejecutado",
+};
+
+// Segundo canal del semáforo (F1 §0.2: color + símbolo, nunca color solo).
+const SEMAFORO_SIMBOLO: Record<Semaforo, string> = {
+  verde: "✓",
+  amarillo: "●",
+  rojo: "✗",
 };
 
 export default function ControlPage() {
@@ -82,50 +89,33 @@ export default function ControlPage() {
   });
 
   const acciones = (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="inline-flex rounded-lg border border-hairline p-0.5 font-sans text-sm">
-        <button
-          type="button"
-          onClick={() => setVista("categoria")}
-          className={cn(
-            "rounded-md px-3 py-1 font-medium transition-colors",
-            vista === "categoria"
-              ? "bg-cyan text-white"
-              : "text-ink-soft hover:text-ink",
-          )}
-        >
-          Por categoría
-        </button>
-        <button
-          type="button"
-          onClick={() => setVista("cuenta")}
-          className={cn(
-            "rounded-md px-3 py-1 font-medium transition-colors",
-            vista === "cuenta"
-              ? "bg-cyan text-white"
-              : "text-ink-soft hover:text-ink",
-          )}
-        >
-          Por cuenta
-        </button>
-      </div>
-      {disponibles.length > 0 && (
-        <label className="flex items-center gap-2 font-sans text-sm">
-          <span className="text-ink-soft">Mes</span>
-          <select
-            className="rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
-            value={mes ?? ""}
-            onChange={(e) => setMesSel(e.target.value)}
-          >
-            {disponibles.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-    </div>
+    <FiltroBarra
+      filtros={[
+        {
+          id: "vista",
+          label: "Vista",
+          opciones: [
+            { valor: "categoria", label: "Por categoría" },
+            { valor: "cuenta", label: "Por cuenta" },
+          ],
+          valor: vista,
+          porDefecto: "categoria",
+          onChange: (v) => setVista(v as Vista),
+        },
+        ...(disponibles.length > 0
+          ? [
+              {
+                id: "mes",
+                label: "Mes",
+                opciones: disponibles.map((m) => ({ valor: m, label: m })),
+                valor: mes ?? "",
+                porDefecto: disponibles[0],
+                onChange: (v: string) => setMesSel(v),
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 
   return (
@@ -184,21 +174,25 @@ export default function ControlPage() {
           />
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiTile
+            <KpiTileV2
               label="Caja disponible"
-              value={formatCOP(control.data.caja_disponible)}
+              valor={control.data.caja_disponible}
+              contexto="caja del libro a hoy"
             />
-            <KpiTile
+            <KpiTileV2
               label="Presupuesto definido"
-              value={formatCOP(control.data.total.definido)}
+              valor={control.data.total.definido}
+              contexto="aprobado para el mes"
             />
-            <KpiTile
+            <KpiTileV2
               label="Ejecutado"
-              value={formatCOP(control.data.total.ejecutado)}
+              valor={control.data.total.ejecutado}
+              contexto="gastado en lo corrido del mes"
             />
-            <KpiTile
+            <KpiTileV2
               label="Disponible"
-              value={formatCOP(control.data.total.disponible)}
+              valor={control.data.total.disponible}
+              contexto="lo que queda del presupuesto aprobado"
             />
           </div>
 
@@ -230,13 +224,13 @@ export default function ControlPage() {
                   <tr className="border-t-2 border-hairline font-semibold text-ink">
                     <td className="px-4 py-2.5">Total</td>
                     <td className="tabular px-4 py-2.5 text-right">
-                      {formatCOP(control.data.total.definido)}
+                      {formatCOPEntero(control.data.total.definido)}
                     </td>
                     <td className="tabular px-4 py-2.5 text-right">
-                      {formatCOP(control.data.total.ejecutado)}
+                      {formatCOPEntero(control.data.total.ejecutado)}
                     </td>
                     <td className="tabular px-4 py-2.5 text-right">
-                      {formatCOP(control.data.total.disponible)}
+                      {formatCOPEntero(control.data.total.disponible)}
                     </td>
                     <td className="px-4 py-2.5" />
                     <td className="px-4 py-2.5" />
@@ -251,7 +245,7 @@ export default function ControlPage() {
               <span className="font-semibold">Sin presupuesto:</span> gastos en
               rubros sin línea definida este mes —{" "}
               {control.data.sin_presupuesto
-                .map((s) => `${s.rubro} (${formatCOP(s.ejecutado)})`)
+                .map((s) => `${s.rubro} (${formatCOPEntero(s.ejecutado)})`)
                 .join(" · ")}
             </AlertBanner>
           )}
@@ -313,11 +307,11 @@ function MatrizPorCuenta({
                 <td className="px-4 py-2.5">Total</td>
                 {bancos.map((b) => (
                   <td key={b} className="tabular px-4 py-2.5 text-right">
-                    {formatCOP(data.total.por_banco[b])}
+                    {formatCOPEntero(data.total.por_banco[b])}
                   </td>
                 ))}
                 <td className="tabular px-4 py-2.5 text-right">
-                  {formatCOP(data.total.total)}
+                  {formatCOPEntero(data.total.total)}
                 </td>
               </tr>
             </tbody>
@@ -335,7 +329,7 @@ function MatrizPorCuenta({
                   .filter((b) => s.por_banco[b] && s.por_banco[b] !== "0.00")
                   .map(
                     (b) =>
-                      `${BANCO_LABEL[b] ?? b} ${formatCOP(s.por_banco[b])}`,
+                      `${BANCO_LABEL[b] ?? b} ${formatCOPEntero(s.por_banco[b])}`,
                   )
                   .join(", ")})`,
             )
@@ -358,7 +352,7 @@ function MatrizGrupo({
       <tr className="bg-surface-muted">
         <td
           colSpan={bancos.length + 2}
-          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
+          className="px-4 py-1.5 font-sans text-apoyo font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo.grupo] ?? grupo.grupo}
         </td>
@@ -368,23 +362,23 @@ function MatrizGrupo({
           <td className="px-4 py-2 text-ink">{l.rubro}</td>
           {bancos.map((b) => (
             <td key={b} className="tabular px-4 py-2 text-right text-ink-soft">
-              {formatCOP(l.por_banco[b])}
+              {formatCOPEntero(l.por_banco[b])}
             </td>
           ))}
           <td className="tabular px-4 py-2 text-right font-medium text-ink">
-            {formatCOP(l.total)}
+            {formatCOPEntero(l.total)}
           </td>
         </tr>
       ))}
       <tr className="border-b border-hairline text-ink-faint">
-        <td className="px-4 py-1.5 text-right text-xs italic">Subtotal</td>
+        <td className="px-4 py-1.5 text-right text-apoyo italic">Subtotal</td>
         {bancos.map((b) => (
-          <td key={b} className="tabular px-4 py-1.5 text-right text-xs">
-            {formatCOP(grupo.subtotal.por_banco[b])}
+          <td key={b} className="tabular px-4 py-1.5 text-right text-apoyo">
+            {formatCOPEntero(grupo.subtotal.por_banco[b])}
           </td>
         ))}
-        <td className="tabular px-4 py-1.5 text-right text-xs">
-          {formatCOP(grupo.subtotal.total)}
+        <td className="tabular px-4 py-1.5 text-right text-apoyo">
+          {formatCOPEntero(grupo.subtotal.total)}
         </td>
       </tr>
     </>
@@ -401,7 +395,7 @@ function GrupoBloque({
       <tr className="bg-surface-muted">
         <td
           colSpan={6}
-          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
+          className="px-4 py-1.5 font-sans text-apoyo font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo.grupo] ?? grupo.grupo}
         </td>
@@ -411,41 +405,40 @@ function GrupoBloque({
         <tr
           key={l.rubro_id}
           id={`rubro-${l.rubro_id}`}
-          className="scroll-mt-16 border-b border-hairline/60 target:bg-amber/10"
+          className="scroll-mt-16 border-b border-hairline/60 target:bg-atencion/10"
         >
           <td className="px-4 py-2 text-ink">{l.rubro}</td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
-            {formatCOP(l.definido)}
+            {formatCOPEntero(l.definido)}
           </td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
-            {formatCOP(l.ejecutado)}
+            {formatCOPEntero(l.ejecutado)}
           </td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
-            {formatCOP(l.disponible)}
+            {formatCOPEntero(l.disponible)}
           </td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
             {l.pct_ejecutado === null ? "—" : `${l.pct_ejecutado}%`}
           </td>
           <td className="px-4 py-2">
             <span
-              title={SEMAFORO_LABEL[l.semaforo]}
-              className={`rounded-full px-2 py-0.5 font-sans text-xs font-medium ${SEMAFORO_ESTILO[l.semaforo]}`}
+              className={`rounded-full px-2 py-0.5 font-sans text-apoyo font-medium whitespace-nowrap ${SEMAFORO_ESTILO[l.semaforo]}`}
             >
-              {SEMAFORO_LABEL[l.semaforo]}
+              {SEMAFORO_SIMBOLO[l.semaforo]} {SEMAFORO_LABEL[l.semaforo]}
             </span>
           </td>
         </tr>
       ))}
       <tr className="border-b border-hairline text-ink-faint">
-        <td className="px-4 py-1.5 text-right text-xs italic">Subtotal</td>
-        <td className="tabular px-4 py-1.5 text-right text-xs">
-          {formatCOP(grupo.subtotal.definido)}
+        <td className="px-4 py-1.5 text-right text-apoyo italic">Subtotal</td>
+        <td className="tabular px-4 py-1.5 text-right text-apoyo">
+          {formatCOPEntero(grupo.subtotal.definido)}
         </td>
-        <td className="tabular px-4 py-1.5 text-right text-xs">
-          {formatCOP(grupo.subtotal.ejecutado)}
+        <td className="tabular px-4 py-1.5 text-right text-apoyo">
+          {formatCOPEntero(grupo.subtotal.ejecutado)}
         </td>
-        <td className="tabular px-4 py-1.5 text-right text-xs">
-          {formatCOP(grupo.subtotal.disponible)}
+        <td className="tabular px-4 py-1.5 text-right text-apoyo">
+          {formatCOPEntero(grupo.subtotal.disponible)}
         </td>
         <td className="px-4 py-1.5" />
         <td className="px-4 py-1.5" />

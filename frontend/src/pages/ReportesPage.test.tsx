@@ -4,6 +4,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Escenario, MesProyeccion, Proyeccion } from "@/lib/proyeccion";
@@ -68,7 +69,9 @@ function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <ReportesPage />
+      <MemoryRouter>
+        <ReportesPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -77,8 +80,11 @@ describe("ReportesPage", () => {
   it("arma el resumen ejecutivo desde el motor", async () => {
     renderPage();
     expect(await screen.findByText("Resumen ejecutivo")).toBeInTheDocument();
-    // KPIs del escenario base presentes
-    expect(screen.getByText("Caja final (base)")).toBeInTheDocument();
+    // §7: titular de juicio reconciliador + cuarteto estándar de KPIs
+    expect(
+      screen.getByText(/perfora el mínimo|se mantiene sobre el mínimo/),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Piso de caja").length).toBeGreaterThan(0);
     // "Capital requerido" aparece como KPI y como columna de la tabla comparativa
     expect(screen.getAllByText("Capital requerido").length).toBeGreaterThan(0);
   });

@@ -1,6 +1,6 @@
-// Escenarios — compara pesimista/base/optimista superpuestos. Consume el motor
-// una vez por escenario. Comportamiento probado: muestra las tres tarjetas
-// comparativas con sus métricas.
+// Escenarios — F1.1 §3: banda de rango con línea base, conclusión escrita
+// desde los datos, y una KpiTileV2 por escenario (tono según piso vs. umbral,
+// capital requerido en el contexto). Juicio a horizonte largo (60 m).
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
@@ -34,11 +34,12 @@ function m(mes: string, caja: string): MesProyeccion {
   };
 }
 
-// Caja final creciente pesimista < base < optimista.
-const FINAL: Record<Escenario, string> = {
-  pesimista: "50000000.00",
-  base: "120000000.00",
-  optimista: "260000000.00",
+// Pisos con los tres tonos: pesimista NEGATIVO (critico), base perfora sin ser
+// negativo (atencion), optimista sano (positivo).
+const PISO: Record<Escenario, string> = {
+  pesimista: "-226000000.00",
+  base: "64000000.00",
+  optimista: "170000000.00",
 };
 
 function proy(e: Escenario): Proyeccion {
@@ -46,26 +47,27 @@ function proy(e: Escenario): Proyeccion {
     escenario: e,
     caja_minima: "125000000.00",
     fondo_provision: [],
-    piso_caja: "40000000.00",
-    mes_mas_ajustado: "2026-09",
+    piso_caja: PISO[e],
+    mes_mas_ajustado: "2027-05",
     meses_bajo_minimo: e === "optimista" ? 0 : 2,
-    caja_final: FINAL[e],
-    capital_requerido: e === "optimista" ? "0.00" : "85000000.00",
+    caja_final: "200000000.00",
+    capital_requerido: e === "optimista" ? "0.00" : "256000000.00",
     runway_meses: null,
-    meses: [m("2026-07", "80000000"), m("2026-08", FINAL[e])],
+    meses: [m("2026-07", "80000000"), m("2026-08", PISO[e])],
   };
 }
 
+const mocks = vi.hoisted(() => ({ obtenerProyeccion: vi.fn() }));
+
 vi.mock("@/lib/proyeccion", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/proyeccion")>();
-  return {
-    ...real,
-    obtenerProyeccion: (p: { escenario?: Escenario }) =>
-      Promise.resolve(proy(p.escenario ?? "base")),
-  };
+  return { ...real, obtenerProyeccion: mocks.obtenerProyeccion };
 });
 
 function renderPage() {
+  mocks.obtenerProyeccion.mockImplementation((p: { escenario?: Escenario }) =>
+    Promise.resolve(proy(p.escenario ?? "base")),
+  );
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -74,25 +76,43 @@ function renderPage() {
   );
 }
 
-describe("ScenariosPage", () => {
-  it("muestra las tres tarjetas comparativas", async () => {
+describe("ScenariosPage — F1.1 §3", () => {
+  it("escribe la conclusión desde los datos", async () => {
     renderPage();
-    // los títulos de tarjeta son encabezados (la leyenda son spans)
     expect(
-      await screen.findByRole("heading", { name: "Pesimista" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Base" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Optimista" }),
+      await screen.findByRole("heading", {
+        name: /En el peor caso faltan \$ 256 M; en el mejor, sobra margen/,
+      }),
     ).toBeInTheDocument();
   });
 
-  it("compara caja final por escenario", async () => {
+  it("consulta el horizonte del juicio (60 m) por escenario", async () => {
     renderPage();
-    await screen.findByRole("heading", { name: "Pesimista" });
-    // la caja final del optimista aparece formateada
-    expect(screen.getByText(/260\.000\.000/)).toBeInTheDocument();
-    // hay una métrica de capital requerido por tarjeta (3)
-    expect(screen.getAllByText("Capital requerido")).toHaveLength(3);
+    await screen.findByText("Pesimista · piso de caja");
+    for (const esc of ["pesimista", "base", "optimista"]) {
+      expect(mocks.obtenerProyeccion).toHaveBeenCalledWith({
+        escenario: esc,
+        horizonteMeses: 60,
+      });
+    }
+  });
+
+  it("una tarjeta por escenario con el capital requerido en contexto", async () => {
+    renderPage();
+    expect(
+      await screen.findByText("Pesimista · piso de caja"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Base · piso de caja")).toBeInTheDocument();
+    expect(screen.getByText("Optimista · piso de caja")).toBeInTheDocument();
+    expect(screen.getAllByText(/capital requerido: \$ 256 M/).length).toBe(2); // pesimista y base
+    expect(screen.getByText(/capital requerido: \$ 0/)).toBeInTheDocument();
+  });
+
+  it("el gráfico lleva las etiquetas directas con el piso por escenario", async () => {
+    renderPage();
+    expect(
+      await screen.findByText(/Pesimista · piso -\$ 226 M/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Optimista · piso \$ 170 M/)).toBeInTheDocument();
   });
 });

@@ -35,7 +35,7 @@ export default function EnConstruccion({
         </p>
         {enlaces && enlaces.length > 0 && (
           <div className="mt-5">
-            <p className="mb-2 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase">
+            <p className="mb-2 font-sans text-apoyo font-semibold tracking-wide text-ink-faint uppercase">
               Disponible ahora
             </p>
             <div className="flex flex-wrap gap-2">

@@ -25,9 +25,9 @@ import {
 import { formatCOP, formatFecha } from "@/lib/money";
 
 const ESTADO_ESTILO: Record<Carga["estado"], string> = {
-  completada: "bg-green/10 text-green",
-  procesando: "bg-amber/10 text-amber",
-  fallida: "bg-red/10 text-red",
+  completada: "bg-positivo/10 text-positivo",
+  procesando: "bg-atencion/10 text-atencion",
+  fallida: "bg-critico/10 text-critico",
 };
 
 export default function CargasPage() {
@@ -163,7 +163,7 @@ export default function CargasPage() {
                     <td className="px-4 py-2 text-ink">{c.archivo_nombre}</td>
                     <td className="px-4 py-2">
                       <span
-                        className={`rounded-full px-2 py-0.5 font-sans text-xs font-medium ${ESTADO_ESTILO[c.estado]}`}
+                        className={`rounded-full px-2 py-0.5 font-sans text-apoyo font-medium ${ESTADO_ESTILO[c.estado]}`}
                       >
                         {c.estado}
                       </span>
@@ -180,7 +180,7 @@ export default function CargasPage() {
                     <td className="px-4 py-2 text-right">
                       <button
                         type="button"
-                        className="font-sans text-xs text-cyan underline"
+                        className="font-sans text-apoyo text-cyan underline"
                         onClick={() =>
                           setDetalleId(detalleId === c.id ? null : c.id)
                         }

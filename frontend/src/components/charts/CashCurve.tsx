@@ -12,8 +12,12 @@ import { formatCOPCompact, formatMesCorto, parseMonto } from "@/lib/money";
 import type { MesProyeccion } from "@/lib/proyeccion";
 import { cn } from "@/lib/utils";
 
+/** Punto mínimo de la curva: cualquier serie {mes, caja} sirve (mensual del
+ * motor o DIARIA del flujo — F1.1 §8). MesProyeccion es asignable tal cual. */
+export type PuntoCaja = Pick<MesProyeccion, "mes" | "caja">;
+
 interface CashCurveProps {
-  meses: MesProyeccion[];
+  meses: PuntoCaja[];
   umbral: string;
   /** Clase de alto del SVG (ej. "h-60" hero, "h-28" mini). */
   className?: string;
@@ -150,7 +154,7 @@ export function CashCurve({
         x2={W - MR}
         y1={yUmbral}
         y2={yUmbral}
-        className={anotada ? "stroke-critico" : "stroke-red"}
+        className="stroke-critico"
         strokeWidth={1.5}
         strokeDasharray="6 4"
       />
@@ -181,25 +185,30 @@ export function CashCurve({
             cx={x(i)}
             cy={y(v)}
             r={3}
-            className={anotada ? "fill-critico" : "fill-red"}
+            className="fill-critico"
           />
         ) : null,
       )}
-      {/* anotación del hecho relevante: el mínimo con mes · cifra */}
+      {/* anotación del hecho relevante: el mínimo con mes · cifra.
+          Rojo = crítico (semántica F1): SOLO si el mínimo perfora el umbral;
+          con la caja sana el punto y la cifra van en neutro (QA F1.1 §0.4). */}
       {anotada && (
         <g>
           <circle
             cx={x(iMin)}
             cy={y(cajas[iMin])}
             r={4.5}
-            className="fill-critico"
+            className={cajas[iMin] < u ? "fill-critico" : "fill-ink"}
           />
           <text
             x={x(iMin) + (anclaMin === "end" ? -10 : 10)}
             y={y(cajas[iMin]) - 10}
             textAnchor={anclaMin}
             fontSize={12.5}
-            className="tabular fill-critico font-sans font-semibold"
+            className={cn(
+              "tabular font-sans font-semibold",
+              cajas[iMin] < u ? "fill-critico" : "fill-ink",
+            )}
           >
             {formatMesCorto(meses[iMin].mes)} ·{" "}
             {formatCOPCompact(meses[iMin].caja)}

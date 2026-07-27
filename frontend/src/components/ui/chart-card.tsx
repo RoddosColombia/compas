@@ -13,6 +13,7 @@ export function ChartCard({
   subtitulo,
   pie,
   protagonista = false,
+  lienzo = "fijo",
   acciones,
   children,
   className,
@@ -25,6 +26,9 @@ export function ChartCard({
   pie?: string;
   /** 2× el alto del resto — máximo uno por pantalla. */
   protagonista?: boolean;
+  /** "fijo" = alto de lienzo para SVGs; "auto" = listas de barras con alto
+   * máximo + scroll (F1.1 §4: 24+ filas no revientan la tarjeta). */
+  lienzo?: "fijo" | "auto";
   acciones?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -42,7 +46,19 @@ export function ChartCard({
         </div>
         {acciones}
       </div>
-      <div className={protagonista ? "h-80" : "h-40"}>{children}</div>
+      <div
+        className={cn(
+          lienzo === "fijo"
+            ? protagonista
+              ? "h-80"
+              : "h-40"
+            : protagonista
+              ? "max-h-[28rem] overflow-y-auto"
+              : "max-h-72 overflow-y-auto",
+        )}
+      >
+        {children}
+      </div>
       {pie && (
         <p className="border-t border-hairline pt-2 font-sans text-apoyo text-ink-faint">
           {pie}

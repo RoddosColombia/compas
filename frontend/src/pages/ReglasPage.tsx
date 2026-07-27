@@ -101,7 +101,7 @@ export default function ReglasPage() {
             <>
               {" "}
               ·{" "}
-              <span className="font-semibold text-amber">
+              <span className="font-semibold text-atencion">
                 reglas con categoría inactiva:
               </span>{" "}
               {reporte.reglas_con_rubro_inactivo.join(" · ")}
@@ -206,7 +206,7 @@ function BloqueTipo({
       <tr className="bg-surface-muted">
         <td
           colSpan={cols}
-          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
+          className="px-4 py-1.5 font-sans text-apoyo font-semibold tracking-wide text-ink-faint uppercase"
         >
           {titulo}
         </td>
@@ -294,7 +294,7 @@ function FilaRegla({
             onChange={(e) => setPrioridad(e.target.value)}
           />
         </td>
-        <td className="px-4 py-2 text-xs text-ink-soft">{regla.origen}</td>
+        <td className="px-4 py-2 text-apoyo text-ink-soft">{regla.origen}</td>
         <td className="px-4 py-2">
           <EstadoBadge regla={regla} rubroInactivo={rubroInactivo} />
         </td>
@@ -323,12 +323,12 @@ function FilaRegla({
     <tr
       className={`border-b border-hairline/60 ${regla.activa ? "" : "text-ink-faint"}`}
     >
-      <td className="tabular px-4 py-2 text-xs text-ink">{regla.patron}</td>
+      <td className="tabular px-4 py-2 text-apoyo text-ink">{regla.patron}</td>
       <td className="px-4 py-2 text-ink">
         {rubro?.nombre ?? regla.rubro_id}
         {rubroInactivo && (
           <span
-            className="ml-2 rounded-full bg-amber/10 px-2 py-0.5 text-xs font-medium text-amber"
+            className="ml-2 rounded-full bg-atencion/10 px-2 py-0.5 text-apoyo font-medium text-atencion"
             title="La regla se salta al clasificar (D2): su categoría está inactiva"
           >
             categoría inactiva
@@ -338,7 +338,7 @@ function FilaRegla({
       <td className="tabular px-4 py-2 text-right text-ink-soft">
         {regla.prioridad}
       </td>
-      <td className="px-4 py-2 text-xs text-ink-soft">{regla.origen}</td>
+      <td className="px-4 py-2 text-apoyo text-ink-soft">{regla.origen}</td>
       <td className="px-4 py-2">
         <EstadoBadge regla={regla} rubroInactivo={rubroInactivo} />
       </td>
@@ -390,27 +390,27 @@ function EstadoBadge({
 }) {
   if (regla.origen === "aprendida" && !regla.activa) {
     return (
-      <span className="rounded-full bg-amber/10 px-2 py-0.5 text-xs font-medium text-amber">
+      <span className="rounded-full bg-atencion/10 px-2 py-0.5 text-apoyo font-medium text-atencion">
         Propuesta
       </span>
     );
   }
   if (!regla.activa) {
     return (
-      <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-faint">
+      <span className="rounded-full bg-surface-muted px-2 py-0.5 text-apoyo font-medium text-ink-faint">
         Inactiva
       </span>
     );
   }
   if (rubroInactivo) {
     return (
-      <span className="rounded-full bg-amber/10 px-2 py-0.5 text-xs font-medium text-amber">
+      <span className="rounded-full bg-atencion/10 px-2 py-0.5 text-apoyo font-medium text-atencion">
         Sin efecto
       </span>
     );
   }
   return (
-    <span className="rounded-full bg-green/10 px-2 py-0.5 text-xs font-medium text-green">
+    <span className="rounded-full bg-positivo/10 px-2 py-0.5 text-apoyo font-medium text-positivo">
       Activa
     </span>
   );
@@ -460,7 +460,7 @@ function FormNueva({
     <Card>
       <CardTitle>Nueva regla</CardTitle>
       <form onSubmit={enviar} className="mt-3 flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Tipo
           <select
             className={inputCls}
@@ -474,7 +474,7 @@ function FormNueva({
             <option value="ingreso">Ingreso</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Si la descripción contiene…
           <input
             className={`w-64 ${inputCls}`}
@@ -485,7 +485,7 @@ function FormNueva({
             onChange={(e) => setPatron(e.target.value)}
           />
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Clasificar en
           <select
             className={inputCls}
@@ -500,7 +500,7 @@ function FormNueva({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+        <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Prioridad
           <input
             className={`w-20 text-right ${inputCls}`}

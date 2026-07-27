@@ -70,16 +70,41 @@ export function formatCOPCompact(value: string | Decimal): string {
 export interface Delta {
   texto: string;
   direccion: "sube" | "baja" | "igual";
+  /** El JUICIO del delta: el color sigue la semántica del negocio, no el
+   * signo (F1.1 §0.3 — en gastos/mora BAJAR es bueno). */
+  tono: "positivo" | "critico" | "igual";
 }
 
-/** Delta con signo y flecha para comparaciones de KPI: "▲ +$ 12,9 M". */
-export function formatDelta(value: string | Decimal): Delta {
+/** Delta con signo y flecha para comparaciones de KPI: "▲ +$ 12,9 M".
+ * `direccionBuena` declara qué dirección es buena noticia (default "sube":
+ * caja/recaudo; usar "baja" para gastos, mora, capital requerido). */
+export function formatDelta(
+  value: string | Decimal,
+  direccionBuena: "sube" | "baja" = "sube",
+): Delta {
   const dec = value instanceof Decimal ? value : new Decimal(value);
-  if (dec.isZero()) return { texto: "— sin cambio", direccion: "igual" };
+  if (dec.isZero()) {
+    return { texto: "— sin cambio", direccion: "igual", tono: "igual" };
+  }
   const compacto = formatCOPCompact(dec.abs());
-  return dec.isNegative()
-    ? { texto: `▼ -${compacto}`, direccion: "baja" }
-    : { texto: `▲ +${compacto}`, direccion: "sube" };
+  const direccion = dec.isNegative() ? "baja" : "sube";
+  return {
+    texto: direccion === "baja" ? `▼ -${compacto}` : `▲ +${compacto}`,
+    direccion,
+    tono: direccion === direccionBuena ? "positivo" : "critico",
+  };
+}
+
+/** Formatea COP COMPLETO sin centavos — tablas de datos (F1 §3). Los centavos
+ * quedan SOLO para conciliación/cierre/exportes, donde la exactitud es el punto. */
+export function formatCOPEntero(value: string | Decimal): string {
+  const dec = value instanceof Decimal ? value : new Decimal(value);
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(dec.toDecimalPlaces(0).toNumber());
 }
 
 const MESES = [

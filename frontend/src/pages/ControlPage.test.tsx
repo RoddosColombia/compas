@@ -86,19 +86,22 @@ function renderPage() {
 }
 
 describe("ControlPage — C5 por cuenta", () => {
-  it("al cambiar a 'Por cuenta' muestra la matriz rubro×banco", async () => {
+  it("al cambiar a 'Por cuenta' muestra la matriz rubro×banco (FiltroBarra §9)", async () => {
     renderPage();
-    // arranca en "Por categoría"
-    expect(
-      await screen.findByRole("button", { name: "Por cuenta" }),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Por cuenta" }));
+    // la vista vive en la FiltroBarra (select), no en botones sueltos
+    const vista = await screen.findByLabelText(/Vista/);
+    fireEvent.change(vista, { target: { value: "cuenta" } });
     // columnas por banco + celda de la matriz
     expect(await screen.findByText("Bancolombia")).toBeInTheDocument();
     expect(screen.getByText("Global66")).toBeInTheDocument();
     expect(screen.getByText("Arriendos")).toBeInTheDocument();
-    // aparece en la fila, el subtotal y el total (una sola línea)
-    expect(screen.getAllByText("$ 600.000,00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$ 300.000,00").length).toBeGreaterThan(0);
+    // tabla SIN centavos (política F1 §3)
+    expect(screen.queryByText("$ 600.000,00")).toBeNull();
+    expect(
+      screen.getAllByText((x) => x.replace(/\s/g, " ") === "$ 600.000").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText((x) => x.replace(/\s/g, " ") === "$ 300.000").length,
+    ).toBeGreaterThan(0);
   });
 });

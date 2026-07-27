@@ -50,7 +50,7 @@ export default function MesesPage() {
       />
 
       {mensaje && (
-        <output className="block rounded-md bg-green/10 px-3 py-2 font-sans text-sm text-green">
+        <output className="block rounded-md bg-positivo/10 px-3 py-2 font-sans text-sm text-positivo">
           {mensaje}
         </output>
       )}
@@ -198,7 +198,7 @@ function AbrirMesDialog({
         <h3 className="mb-1 font-display text-lg font-semibold text-ink">
           Abrir mes
         </h3>
-        <p className="mb-4 font-sans text-xs text-ink-faint">
+        <p className="mb-4 font-sans text-apoyo text-ink-faint">
           {pedirSaldo
             ? "Primer mes: ingresa el saldo inicial de caja y los saldos por banco al corte."
             : "El saldo inicial se arrastra automáticamente del cierre del mes anterior (F-14)."}

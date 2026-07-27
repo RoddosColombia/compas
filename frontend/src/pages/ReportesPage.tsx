@@ -10,11 +10,21 @@ import { useState } from "react";
 
 import { CashCurve } from "@/components/charts/CashCurve";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { AlertBanner } from "@/components/ui/alert-banner";
+import { TitularJuicio } from "@/components/proyeccion/TitularJuicio";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
-import { formatCOP, parseMonto } from "@/lib/money";
+import { Cargando } from "@/components/ui/cargando";
+import { ChartCard } from "@/components/ui/chart-card";
+import { ErrorEstado } from "@/components/ui/error-estado";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
+import {
+  formatCOP,
+  formatCOPCompact,
+  formatCOPEntero,
+  formatDelta,
+  formatMesCorto,
+  parseMonto,
+} from "@/lib/money";
 import {
   type Escenario,
   type Proyeccion,
@@ -82,13 +92,18 @@ export default function ReportesPage() {
       />
 
       {cargando && (
-        <p className="font-sans text-sm text-ink-soft">Armando el reporte…</p>
+        <>
+          <Cargando variante="kpis" />
+          <Cargando variante="card" className="h-80" />
+        </>
       )}
       {error && (
-        <AlertBanner variant="danger">
-          No se pudo armar el reporte. Verifica que haya modelos de moto y
-          parámetros configurados en Datos.
-        </AlertBanner>
+        <ErrorEstado
+          mensaje="No se pudo armar el reporte: verifica que haya modelos de moto y parámetros configurados en Supuestos."
+          onReintentar={() => {
+            for (const r of resultados) void r.refetch();
+          }}
+        />
       )}
 
       {listos && base && (
@@ -100,62 +115,78 @@ export default function ReportesPage() {
               contra el umbral de {formatCOP(base.caja_minima)}.
             </p>
 
-            {base.meses_bajo_minimo > 0 ? (
-              <div className="mt-4">
-                <AlertBanner variant="danger">
-                  En el escenario base la caja perfora el mínimo en{" "}
-                  {base.meses_bajo_minimo}{" "}
-                  {base.meses_bajo_minimo === 1 ? "mes" : "meses"}; el punto más
-                  ajustado es {base.mes_mas_ajustado} (
-                  {formatCOP(base.piso_caja)}
-                  ). Capital requerido para sostener el umbral:{" "}
-                  {formatCOP(base.capital_requerido)}.
-                </AlertBanner>
-              </div>
-            ) : (
-              <div className="mt-4">
-                <AlertBanner variant="ok">
-                  En el escenario base la caja se mantiene por encima del mínimo
-                  en todo el horizonte.
-                </AlertBanner>
-              </div>
-            )}
+            <div className="mt-4">
+              <TitularJuicio data={base} />
+            </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-              <KpiTile
-                label="Caja final (base)"
-                value={formatCOP(base.caja_final)}
-              />
-              <KpiTile
+            <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+              <KpiTileV2
                 label="Piso de caja"
-                value={formatCOP(base.piso_caja)}
-                sub={`en ${base.mes_mas_ajustado}`}
-                tono={base.meses_bajo_minimo > 0 ? "peligro" : "neutro"}
+                valor={base.piso_caja}
+                comparacion={{
+                  delta: formatDelta(
+                    parseMonto(base.piso_caja).minus(
+                      parseMonto(base.caja_minima),
+                    ),
+                  ),
+                  contra: "vs. el umbral",
+                }}
+                contexto={`en ${formatMesCorto(base.mes_mas_ajustado)}`}
+                tono={base.meses_bajo_minimo > 0 ? "critico" : "positivo"}
               />
-              <KpiTile
+              <KpiTileV2
+                label="Meses bajo el mínimo"
+                valor="0"
+                valorTexto={`${base.meses_bajo_minimo} de ${base.meses.length}`}
+                contexto={
+                  base.meses_bajo_minimo === 0
+                    ? "ninguno en el horizonte"
+                    : `el más ajustado: ${formatMesCorto(base.mes_mas_ajustado)}`
+                }
+                tono={base.meses_bajo_minimo > 0 ? "critico" : "positivo"}
+              />
+              <KpiTileV2
                 label="Capital requerido"
-                value={formatCOP(base.capital_requerido)}
+                valor={base.capital_requerido}
+                contexto={`para sostener el umbral de ${formatCOPCompact(base.caja_minima)}`}
                 tono={
                   parseMonto(base.capital_requerido).isZero()
-                    ? "neutro"
-                    : "peligro"
+                    ? "positivo"
+                    : "atencion"
                 }
               />
-              <KpiTile
-                label="Runway"
-                value={
-                  base.runway_meses === null ? "—" : `${base.runway_meses} m`
-                }
-              />
+              {base.runway_meses === null ? (
+                <KpiTileV2
+                  label="Runway"
+                  valor="0"
+                  valorTexto="Sin límite"
+                  contexto="la caja crece al ritmo actual"
+                  tono="positivo"
+                />
+              ) : (
+                <KpiTileV2
+                  label="Runway"
+                  valor="0"
+                  valorTexto={`${base.runway_meses} meses`}
+                  contexto="al ritmo promedio de quema"
+                  tono="atencion"
+                />
+              )}
             </div>
           </Card>
 
-          <Card>
-            <CardTitle>Trayectoria de caja (base)</CardTitle>
-            <div className="mt-3">
-              <CashCurve meses={base.meses} umbral={base.caja_minima} />
-            </div>
-          </Card>
+          <ChartCard
+            conclusion={
+              base.meses_bajo_minimo > 0
+                ? `La caja toca su punto más bajo en ${formatMesCorto(base.mes_mas_ajustado)}`
+                : "La caja se sostiene sobre el umbral en todo el horizonte"
+            }
+            subtitulo={`caja proyectada · escenario base · ${base.meses.length} meses`}
+            pie={`Caja final: ${formatCOP(base.caja_final)} · Fuente: motor de proyección de COMPAS`}
+            protagonista
+          >
+            <CashCurve meses={base.meses} umbral={base.caja_minima} anotada />
+          </ChartCard>
 
           <Card className="overflow-hidden p-0">
             <table className="w-full font-sans text-sm">
@@ -189,20 +220,20 @@ export default function ReportesPage() {
                         {s.label}
                       </td>
                       <td className="tabular px-4 py-2 text-right text-ink">
-                        {formatCOP(d.caja_final)}
+                        {formatCOPEntero(d.caja_final)}
                       </td>
                       <td
-                        className={`tabular px-4 py-2 text-right ${perf ? "text-red" : "text-ink-soft"}`}
+                        className={`tabular px-4 py-2 text-right ${perf ? "text-critico" : "text-ink-soft"}`}
                       >
-                        {formatCOP(d.piso_caja)}
+                        {formatCOPEntero(d.piso_caja)}
                       </td>
                       <td
-                        className={`tabular px-4 py-2 text-right ${perf ? "text-red" : "text-ink-soft"}`}
+                        className={`tabular px-4 py-2 text-right ${perf ? "text-critico" : "text-ink-soft"}`}
                       >
                         {d.meses_bajo_minimo}
                       </td>
                       <td className="tabular px-4 py-2 text-right text-ink-soft">
-                        {formatCOP(d.capital_requerido)}
+                        {formatCOPEntero(d.capital_requerido)}
                       </td>
                     </tr>
                   );

@@ -50,4 +50,40 @@ describe("CashCurve", () => {
     );
     expect(container.querySelector("svg")).toBeNull();
   });
+
+  // F1.1 §0.4 — rojo = crítico: la anotación del mínimo SOLO va en critico si
+  // perfora el umbral; con la caja sana va en neutro (hallazgo QA visual prod).
+  it("anotada: mínimo SANO (sobre el umbral) va en neutro, no en rojo", () => {
+    const meses = [
+      mes("2026-07", "600000000"),
+      mes("2026-08", "536700000"), // el mínimo, MUY por encima del umbral
+      mes("2026-09", "700000000"),
+    ];
+    const { container, getByText } = render(
+      <CashCurve meses={meses} umbral="30000000" anotada hoyMes="2026-07" />,
+    );
+    const anotacion = getByText(/ago-26 ·/);
+    expect(anotacion.getAttribute("class")).toContain("fill-ink");
+    expect(anotacion.getAttribute("class")).not.toContain("fill-critico");
+    // sin perforación no hay marcadores rojos de meses bajo el umbral
+    for (const c of container.querySelectorAll("circle")) {
+      if (c.getAttribute("r") === "4.5") {
+        expect(c.getAttribute("class")).toContain("fill-ink");
+      }
+    }
+  });
+
+  it("anotada: mínimo que PERFORA el umbral sí va en critico", () => {
+    const meses = [
+      mes("2026-07", "100000000"),
+      mes("2026-08", "-63900000"), // perfora
+      mes("2026-09", "80000000"),
+    ];
+    const { getByText } = render(
+      <CashCurve meses={meses} umbral="30000000" anotada hoyMes="2026-07" />,
+    );
+    expect(getByText(/ago-26 ·/).getAttribute("class")).toContain(
+      "fill-critico",
+    );
+  });
 });

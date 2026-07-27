@@ -48,7 +48,7 @@ export function CicloStepper({
   const paso = pasoActual(estado, sinLineas);
   return (
     <div className="flex flex-col gap-2">
-      <ol className="flex flex-wrap items-center gap-1 font-sans text-sm">
+      <ol className="flex flex-wrap items-center gap-1 font-sans text-cuerpo">
         {PASOS.map((p, i) => (
           <li key={p} className="flex items-center gap-1">
             {i > 0 && <span className="text-ink-faint">→</span>}
@@ -68,7 +68,7 @@ export function CicloStepper({
           </li>
         ))}
       </ol>
-      <p className="font-sans text-xs text-ink-faint">
+      <p className="font-sans text-apoyo text-ink-faint">
         {ACCION_SIGUIENTE[paso]}
       </p>
     </div>

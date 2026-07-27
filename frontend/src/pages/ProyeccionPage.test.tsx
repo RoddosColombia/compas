@@ -1,81 +1,75 @@
 // frontend/src/pages/ProyeccionPage.test.tsx
 //
-// COCK-03: la vista Proyecciones. Verifica que el ingreso se muestra DISCRIMINADO
-// (recaudo de crédito vs cuota inicial), los KPIs del motor (piso, capital requerido,
-// meses bajo mínimo) y el selector de escenario. Todo lo calcula el backend; el front
-// solo presenta.
+// F1.1 §2 — Proyecciones al estándar: juicio a horizonte largo (60 m) con
+// ventana de 18 m por defecto, 4 KpiTileV2 (Runway "Sin límite" cuando null),
+// ChartCard con conclusión dinámica, tabla-ventana expandible sin centavos con
+// el mes crítico resaltado/anclado, y FiltroBarra de horizonte con "Limpiar".
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { Proyeccion } from "@/lib/proyeccion";
+import type { MesProyeccion, Proyeccion } from "@/lib/proyeccion";
 import ProyeccionPage from "@/pages/ProyeccionPage";
+
+function mesProy(
+  i: number,
+  extras: Partial<MesProyeccion> = {},
+): MesProyeccion {
+  const y = 2026 + Math.floor((6 + i) / 12);
+  const m = ((6 + i) % 12) + 1;
+  return {
+    mes: `${y}-${String(m).padStart(2, "0")}`,
+    motos: 50 + i,
+    cartera: 120,
+    recaudo_credito: "30000000.00",
+    cuotas_iniciales: "5000000.00",
+    ingreso_bruto: "35000000.00",
+    neto: "34000000.00",
+    provision: "-700000.00",
+    gastos_fijos: "-125000000.00",
+    gps: "-4000000.00",
+    costo_nueva: "-3000000.00",
+    adelanto: "0.00",
+    pago_inventario: "0.00",
+    fondeo: "0.00",
+    int_deuda: "-300000.00",
+    iva: "0.00",
+    egresos: "-132300000.00",
+    flujo: "-98300000.00",
+    caja: "200000000.00",
+    estado: "ok",
+    ...extras,
+  };
+}
+
+// 60 meses (lo que trae la query de juicio); el crítico es el mes 3 (2026-10).
+const MESES = Array.from({ length: 60 }, (_, i) =>
+  i === 3 ? mesProy(i, { caja: "40000000.00", estado: "critico" }) : mesProy(i),
+);
 
 const PROY: Proyeccion = {
   escenario: "base",
   caja_minima: "125000000.00",
   fondo_provision: [],
   piso_caja: "40000000.00",
-  mes_mas_ajustado: "2026-09",
-  meses_bajo_minimo: 2,
+  mes_mas_ajustado: "2026-10",
+  meses_bajo_minimo: 1,
   caja_final: "200000000.00",
   capital_requerido: "85000000.00",
   runway_meses: null,
-  meses: [
-    {
-      mes: "2026-07",
-      motos: 50,
-      cartera: 120,
-      recaudo_credito: "30000000.00",
-      cuotas_iniciales: "5000000.00",
-      ingreso_bruto: "35000000.00",
-      neto: "34000000.00",
-      provision: "-700000.00",
-      gastos_fijos: "-125000000.00",
-      gps: "-4000000.00",
-      costo_nueva: "-3000000.00",
-      adelanto: "0.00",
-      pago_inventario: "0.00",
-      fondeo: "0.00",
-      int_deuda: "-300000.00",
-      iva: "0.00",
-      egresos: "-132300000.00",
-      flujo: "-98300000.00",
-      caja: "40000000.00",
-      estado: "critico",
-    },
-    {
-      mes: "2026-08",
-      motos: 51,
-      cartera: 160,
-      recaudo_credito: "42000000.00",
-      cuotas_iniciales: "5100000.00",
-      ingreso_bruto: "47100000.00",
-      neto: "45000000.00",
-      provision: "-900000.00",
-      gastos_fijos: "-125000000.00",
-      gps: "-5000000.00",
-      costo_nueva: "-3100000.00",
-      adelanto: "0.00",
-      pago_inventario: "0.00",
-      fondeo: "0.00",
-      int_deuda: "-300000.00",
-      iva: "0.00",
-      egresos: "-133400000.00",
-      flujo: "-88400000.00",
-      caja: "200000000.00",
-      estado: "ok",
-    },
-  ],
+  meses: MESES,
 };
+
+const mocks = vi.hoisted(() => ({ obtenerProyeccion: vi.fn() }));
 
 vi.mock("@/lib/proyeccion", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/proyeccion")>();
-  return { ...real, obtenerProyeccion: () => Promise.resolve(PROY) };
+  return { ...real, obtenerProyeccion: mocks.obtenerProyeccion };
 });
 
 function renderPage() {
+  mocks.obtenerProyeccion.mockResolvedValue(PROY);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -84,24 +78,71 @@ function renderPage() {
   );
 }
 
-describe("ProyeccionPage", () => {
-  it("muestra KPIs del motor (piso, capital requerido, meses bajo mínimo)", async () => {
+describe("ProyeccionPage — F1.1 §2", () => {
+  it("el juicio pide horizonte largo aunque la ventana sea 18 m", async () => {
     renderPage();
-    expect(await screen.findByText("Piso de caja")).toBeInTheDocument();
-    expect(screen.getByText("Capital requerido")).toBeInTheDocument();
-    expect(screen.getByText("Meses bajo el mínimo")).toBeInTheDocument();
-    // el mes más ajustado se muestra como subtítulo del piso
-    expect(screen.getByText("en 2026-09")).toBeInTheDocument();
+    await screen.findByText("Piso de caja");
+    expect(mocks.obtenerProyeccion).toHaveBeenCalledWith({
+      escenario: "base",
+      horizonteMeses: 60,
+    });
   });
 
-  it("muestra el ingreso DISCRIMINADO (recaudo crédito vs cuota inicial)", async () => {
+  it("muestra los 4 KPIs con juicio — Runway null es 'Sin límite'", async () => {
     renderPage();
-    await screen.findByText("2026-07");
-    // las dos vías tienen columnas separadas
-    expect(screen.getByText("Recaudo crédito")).toBeInTheDocument();
-    expect(screen.getByText("Cuota inicial")).toBeInTheDocument();
-    // una fila por mes
-    expect(screen.getByText("2026-08")).toBeInTheDocument();
+    expect(await screen.findByText("Piso de caja")).toBeInTheDocument();
+    expect(screen.getByText("1 de 60")).toBeInTheDocument();
+    expect(screen.getByText("Capital requerido")).toBeInTheDocument();
+    expect(screen.getByText("Sin límite")).toBeInTheDocument();
+    expect(
+      screen.getByText("la caja crece al ritmo actual"),
+    ).toBeInTheDocument();
+    // ya no hay tile de Caja final: vive en el pie del gráfico
+    expect(screen.queryByText("Caja final")).toBeNull();
+    expect(screen.getByText(/Caja final a 60 meses/)).toBeInTheDocument();
+  });
+
+  it("la conclusión del gráfico nombra el mes crítico y lo ancla en la tabla", async () => {
+    renderPage();
+    expect(
+      await screen.findByRole("heading", {
+        name: /La caja toca su punto más bajo en oct-26/,
+      }),
+    ).toBeInTheDocument();
+    const ancla = screen.getByRole("link", { name: /Ver el mes crítico/ });
+    expect(ancla).toHaveAttribute("href", "#mes-critico");
+    expect(document.getElementById("mes-critico")).not.toBeNull();
+  });
+
+  it("la tabla es ventana (18 filas), sin centavos, y se expande a los 60", async () => {
+    renderPage();
+    await screen.findByText("Piso de caja");
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(18);
+    // sin centavos en la tabla (política F1 §3)
+    expect(screen.queryByText(/\$\s?30\.000\.000,00/)).toBeNull();
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 30.000.000")
+        .length,
+    ).toBeGreaterThan(0);
+    // estado con símbolo (color nunca solo)
+    expect(screen.getAllByText(/✓ OK/).length).toBeGreaterThan(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver los 60 meses completos" }),
+    );
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(60);
+  });
+
+  it("FiltroBarra: cambiar el horizonte muestra 'Limpiar' y restaura el default", async () => {
+    renderPage();
+    await screen.findByText("Piso de caja");
+    expect(screen.queryByRole("button", { name: "Limpiar" })).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Horizonte/), {
+      target: { value: "180" },
+    });
+    const limpiar = await screen.findByRole("button", { name: "Limpiar" });
+    fireEvent.click(limpiar);
+    expect(screen.queryByRole("button", { name: "Limpiar" })).toBeNull();
+    expect(screen.getByLabelText(/Horizonte/)).toHaveValue("18");
   });
 
   it("ofrece los tres escenarios", async () => {

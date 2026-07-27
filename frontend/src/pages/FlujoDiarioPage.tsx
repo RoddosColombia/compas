@@ -9,17 +9,33 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { CashCurve } from "@/components/charts/CashCurve";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { AlertBanner } from "@/components/ui/alert-banner";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { Cargando } from "@/components/ui/cargando";
+import { ChartCard } from "@/components/ui/chart-card";
+import { ErrorEstado } from "@/components/ui/error-estado";
+import { EstadoVacio } from "@/components/ui/estado-vacio";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { type DiaCaja, obtenerCajaDiaria } from "@/lib/caja";
-import { formatCOP, formatFecha, parseMonto } from "@/lib/money";
+import {
+  formatCOP,
+  formatCOPCompact,
+  formatFecha,
+  parseMonto,
+} from "@/lib/money";
+
+const DEFAULTS = { desde: "2026-03-01", hasta: "2026-07-31", caja: "0" };
 
 export default function FlujoDiarioPage() {
-  const [desde, setDesde] = useState("2026-03-01");
-  const [hasta, setHasta] = useState("2026-07-31");
-  const [cajaInicial, setCajaInicial] = useState("0");
+  const [desde, setDesde] = useState(DEFAULTS.desde);
+  const [hasta, setHasta] = useState(DEFAULTS.hasta);
+  const [cajaInicial, setCajaInicial] = useState(DEFAULTS.caja);
+  const sucio =
+    desde !== DEFAULTS.desde ||
+    hasta !== DEFAULTS.hasta ||
+    cajaInicial !== DEFAULTS.caja;
 
   const q = useQuery({
     queryKey: ["caja-diaria", desde, hasta, cajaInicial],
@@ -27,11 +43,6 @@ export default function FlujoDiarioPage() {
   });
 
   const dias = q.data?.dias ?? [];
-  // escala para las barras del saldo (presentación; Decimal → number solo aquí)
-  const maxCaja = dias.reduce((m, d) => {
-    const v = parseMonto(d.caja).abs().toNumber();
-    return v > m ? v : m;
-  }, 1);
 
   return (
     <div className="flex flex-col gap-5">
@@ -42,92 +53,121 @@ export default function FlujoDiarioPage() {
 
       <Card>
         <div className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
             Desde
             <input
               type="date"
               value={desde}
               onChange={(e) => setDesde(e.target.value)}
-              className="rounded-md border border-line px-2 py-1 text-sm text-ink"
+              className="rounded-md border border-hairline px-2 py-1 text-cuerpo text-ink"
             />
           </label>
-          <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
             Hasta
             <input
               type="date"
               value={hasta}
               onChange={(e) => setHasta(e.target.value)}
-              className="rounded-md border border-line px-2 py-1 text-sm text-ink"
+              className="rounded-md border border-hairline px-2 py-1 text-cuerpo text-ink"
             />
           </label>
-          <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
             Saldo inicial (COP)
             <input
               type="number"
               value={cajaInicial}
               onChange={(e) => setCajaInicial(e.target.value || "0")}
-              className="w-44 rounded-md border border-line px-2 py-1 text-sm text-ink"
+              className="w-44 rounded-md border border-hairline px-2 py-1 text-cuerpo text-ink"
             />
           </label>
+          {sucio && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDesde(DEFAULTS.desde);
+                setHasta(DEFAULTS.hasta);
+                setCajaInicial(DEFAULTS.caja);
+              }}
+            >
+              Limpiar
+            </Button>
+          )}
         </div>
       </Card>
 
       {q.isLoading && (
-        <p className="font-sans text-sm text-ink-soft">
-          Cargando flujo diario…
-        </p>
+        <>
+          <Cargando variante="kpis" />
+          <Cargando variante="tabla" />
+        </>
       )}
       {q.isError && (
-        <AlertBanner variant="danger">
-          No se pudo cargar el flujo de caja diario. Revisa el rango de fechas.
-        </AlertBanner>
+        <ErrorEstado
+          mensaje="No se pudo cargar el flujo de caja diario: revisa el rango de fechas."
+          onReintentar={() => void q.refetch()}
+        />
       )}
 
       {q.data && dias.length === 0 && (
         <Card>
-          <p className="font-sans text-sm text-ink-soft">
-            No hay movimientos en este rango. Ajusta las fechas (hoy hay data
-            cargada de marzo a julio 2026).
-          </p>
+          <EstadoVacio mensaje="No hay movimientos en este rango. Ajusta las fechas: hoy hay data cargada de marzo a julio 2026." />
         </Card>
       )}
 
       {q.data && dias.length > 0 && (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <KpiTile
+            <KpiTileV2
               label="Ingresos"
-              value={formatCOP(q.data.total_ingresos)}
+              valor={q.data.total_ingresos}
+              contexto="entradas del período"
             />
-            <KpiTile label="Egresos" value={formatCOP(q.data.total_egresos)} />
-            <KpiTile
+            <KpiTileV2
+              label="Egresos"
+              valor={q.data.total_egresos}
+              contexto="salidas del período"
+            />
+            <KpiTileV2
               label="Flujo neto"
-              value={formatCOP(q.data.flujo_neto)}
-              sub={`${dias.length} días con movimiento`}
+              valor={q.data.flujo_neto}
+              contexto={`${dias.length} días con movimiento`}
             />
-            <KpiTile
+            <KpiTileV2
               label="Saldo final"
-              value={formatCOP(q.data.caja_final)}
-              sub={`inicial ${formatCOP(q.data.caja_inicial)}`}
+              valor={q.data.caja_final}
+              contexto={`arrancó en ${formatCOPCompact(q.data.caja_inicial)}`}
             />
           </div>
+
+          <ChartCard
+            conclusion={`El saldo pasó de ${formatCOPCompact(dias[0].caja)} a ${formatCOPCompact(q.data.caja_final)} en el período`}
+            subtitulo={`saldo corriendo día a día · ${dias.length} días con movimiento`}
+            pie="Fuente: transacciones reales cargadas (no depende del motor)"
+          >
+            <CashCurve
+              meses={dias.map((d) => ({ mes: d.fecha, caja: d.caja }))}
+              umbral="0"
+              className="h-full"
+            />
+          </ChartCard>
 
           <Card>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] border-collapse font-sans text-sm">
                 <thead>
-                  <tr className="border-b border-line text-left text-xs text-ink-soft">
+                  <tr className="border-b border-hairline text-left text-apoyo text-ink-soft">
                     <th className="py-2 pr-3">Día</th>
                     <th className="py-2 pr-3 text-right">Ingresos</th>
                     <th className="py-2 pr-3 text-right">Egresos</th>
                     <th className="py-2 pr-3 text-right">Flujo</th>
                     <th className="py-2 pr-3 text-right">Saldo</th>
-                    <th className="py-2 pl-3">Evolución del saldo</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dias.map((d) => (
-                    <FilaDia key={d.fecha} d={d} maxCaja={maxCaja} />
+                    <FilaDia key={d.fecha} d={d} />
                   ))}
                 </tbody>
               </table>
@@ -139,15 +179,12 @@ export default function FlujoDiarioPage() {
   );
 }
 
-function FilaDia({ d, maxCaja }: { d: DiaCaja; maxCaja: number }) {
+function FilaDia({ d }: { d: DiaCaja }) {
   const flujoNeg = parseMonto(d.flujo).isNegative();
-  const caja = parseMonto(d.caja);
-  const cajaNeg = caja.isNegative();
-  const ancho = Math.max(2, (caja.abs().toNumber() / maxCaja) * 100);
   return (
-    <tr className="border-b border-line/50">
+    <tr className="border-b border-hairline/50">
       <td className="py-1.5 pr-3 whitespace-nowrap">{formatFecha(d.fecha)}</td>
-      <td className="py-1.5 pr-3 text-right tabular-nums text-emerald-700">
+      <td className="py-1.5 pr-3 text-right tabular-nums text-positivo">
         {formatCOP(d.ingresos)}
       </td>
       <td className="py-1.5 pr-3 text-right tabular-nums text-ink-soft">
@@ -155,21 +192,13 @@ function FilaDia({ d, maxCaja }: { d: DiaCaja; maxCaja: number }) {
       </td>
       <td
         className={`py-1.5 pr-3 text-right tabular-nums ${
-          flujoNeg ? "text-rose-600" : "text-emerald-700"
+          flujoNeg ? "text-critico" : "text-positivo"
         }`}
       >
         {formatCOP(d.flujo)}
       </td>
       <td className="py-1.5 pr-3 text-right font-medium tabular-nums text-ink">
         {formatCOP(d.caja)}
-      </td>
-      <td className="py-1.5 pl-3">
-        <div className="h-2.5 w-full rounded bg-line/40">
-          <div
-            className={`h-2.5 rounded ${cajaNeg ? "bg-rose-400" : "bg-teal-500"}`}
-            style={{ width: `${ancho}%` }}
-          />
-        </div>
       </td>
     </tr>
   );

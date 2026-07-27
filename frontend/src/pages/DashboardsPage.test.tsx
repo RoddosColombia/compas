@@ -147,11 +147,18 @@ describe("DashboardsPage", () => {
     expect(screen.getByText("Cartera activa al cierre")).toBeInTheDocument();
   });
 
-  it("muestra colocación y cartera por añada (DASH-01)", async () => {
+  it("muestra colocación y cartera por añada con conclusión calculada (DASH-01/§4)", async () => {
     renderPage();
-    expect(await screen.findByText("Colocación mensual")).toBeInTheDocument();
+    // los títulos ahora son CONCLUSIONES escritas desde los datos
     expect(
-      screen.getByRole("heading", { name: "Cartera por añada" }),
+      await screen.findByRole("heading", { name: /La colocación pasa de/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /por cohorte de colocación/ }),
+    ).toBeInTheDocument();
+    // pie honesto: el desglose espejo de la colocación hasta el run-off
+    expect(
+      screen.getByText(/igualará a la colocación hasta ~dic-2027/),
     ).toBeInTheDocument();
     // el último mes desglosa la añada 'previa' (créditos preexistentes)
     expect(screen.getAllByText("previa").length).toBeGreaterThan(0);
@@ -164,7 +171,12 @@ describe("DashboardsPage", () => {
     ).toBeInTheDocument();
     // los tramos del aging aparecen con su etiqueta y monto
     expect(await screen.findByText("90+ días")).toBeInTheDocument();
-    expect(screen.getByText(/1\.200\.000,00/)).toBeInTheDocument();
+    // sin centavos en las barras (política F1 §3)
+    expect(screen.queryByText(/1\.200\.000,00/)).toBeNull();
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 1.200.000")
+        .length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText(/corte 2026-07-22/)).toBeInTheDocument();
   });
 });

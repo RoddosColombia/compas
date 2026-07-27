@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   FRECUENCIAS,
   type Frecuencia,
@@ -100,13 +100,24 @@ export default function GastosRecurrentesPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <KpiTile
+        <KpiTileV2
           label="Total mensual"
-          value={resumen ? formatCOP(resumen.total) : "—"}
-          sub="equivalente por mes"
+          valor={resumen ? resumen.total : "0"}
+          valorTexto={resumen ? undefined : "—"}
+          contexto="equivalente por mes de los gastos activos"
         />
-        <KpiTile label="Gastos activos" value={String(activos)} />
-        <KpiTile label="Gastos en la plantilla" value={String(items.length)} />
+        <KpiTileV2
+          label="Gastos activos"
+          valor="0"
+          valorTexto={String(activos)}
+          contexto="suman al total mensual"
+        />
+        <KpiTileV2
+          label="Gastos en la plantilla"
+          valor="0"
+          valorTexto={String(items.length)}
+          contexto="incluye los inactivos"
+        />
       </div>
 
       {/* Resumen por grupo */}
@@ -173,20 +184,20 @@ export default function GastosRecurrentesPage() {
                       <div className="font-medium text-ink">
                         {g.descripcion}
                         {g.hasta && (
-                          <span className="ml-2 rounded-full bg-amber/10 px-2 py-0.5 font-sans text-[10px] font-medium text-amber">
+                          <span className="ml-2 rounded-full bg-atencion/10 px-2 py-0.5 font-sans text-apoyo font-medium text-atencion">
                             hasta {g.hasta}
                           </span>
                         )}
                       </div>
                       {g.notas && (
-                        <div className="font-sans text-xs text-ink-faint">
+                        <div className="font-sans text-apoyo text-ink-faint">
                           {g.notas}
                         </div>
                       )}
                     </td>
                     <td className="px-4 py-2 text-ink-soft">
                       <div>{GRUPO_LABEL[g.rubro_grupo ?? ""] ?? "—"}</div>
-                      <div className="font-sans text-xs text-ink-faint">
+                      <div className="font-sans text-apoyo text-ink-faint">
                         {g.rubro_codigo ? `${g.rubro_codigo} · ` : ""}
                         {g.rubro_nombre ?? "sin rubro"}
                       </div>
@@ -208,7 +219,7 @@ export default function GastosRecurrentesPage() {
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
-                            className="font-sans text-xs font-semibold text-cyan hover:underline"
+                            className="font-sans text-apoyo font-semibold text-cyan hover:underline"
                             onClick={() =>
                               setDialogo({ modo: "editar", gasto: g })
                             }
@@ -217,7 +228,7 @@ export default function GastosRecurrentesPage() {
                           </button>
                           <button
                             type="button"
-                            className="font-sans text-xs font-semibold text-ink-soft hover:underline"
+                            className="font-sans text-apoyo font-semibold text-ink-soft hover:underline"
                             onClick={() =>
                               editar.mutate({ id: g.id, activo: !g.activo })
                             }
@@ -226,7 +237,7 @@ export default function GastosRecurrentesPage() {
                           </button>
                           <button
                             type="button"
-                            className="font-sans text-xs font-semibold text-red hover:underline"
+                            className="font-sans text-apoyo font-semibold text-critico hover:underline"
                             onClick={() => {
                               if (
                                 window.confirm(
