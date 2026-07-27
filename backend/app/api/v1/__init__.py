@@ -16,6 +16,7 @@ from app.facturas.router import router as facturas_router
 from app.gastos_recurrentes.router import router as gastos_recurrentes_router
 from app.loantape.router import router as loantape_router
 from app.modelos_moto.router import router as modelos_moto_router
+from app.obligaciones.router import router as obligaciones_router
 from app.pagos.router import router as pagos_router
 from app.parametros_proyeccion.router import router as parametros_proyeccion_router
 from app.presupuesto.router import router as presupuesto_router
@@ -38,6 +39,7 @@ api_router.include_router(facturas_router)
 api_router.include_router(gastos_recurrentes_router)
 api_router.include_router(loantape_router)
 api_router.include_router(modelos_moto_router)
+api_router.include_router(obligaciones_router)
 api_router.include_router(pagos_router)
 api_router.include_router(parametros_proyeccion_router)
 api_router.include_router(presupuesto_router)

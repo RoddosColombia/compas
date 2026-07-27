@@ -103,6 +103,17 @@ class AuditEvento(StrEnum):
     escenario_impacto_creado = "escenario_impacto.creado"
     escenario_impacto_editado = "escenario_impacto.editado"
     escenario_impacto_eliminado = "escenario_impacto.eliminado"
+    # CR-D2 (8) — obligaciones, facturas y metas de ingreso (D2 §2/§6, GO CEO
+    # 2026-07-27). CRUD auditado de tres entidades; simular (política §5) NO audita
+    # (50 -> 58). Bajas lógicas; reactivar reusa `.editada` {activo false->true}.
+    obligacion_creada = "obligacion.creada"
+    obligacion_editada = "obligacion.editada"
+    obligacion_eliminada = "obligacion.eliminada"
+    factura_obligacion_registrada = "factura_obligacion.registrada"
+    factura_obligacion_anulada = "factura_obligacion.anulada"
+    meta_ingreso_creada = "meta_ingreso.creada"
+    meta_ingreso_editada = "meta_ingreso.editada"
+    meta_ingreso_eliminada = "meta_ingreso.eliminada"
 
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
