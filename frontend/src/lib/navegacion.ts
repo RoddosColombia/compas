@@ -106,9 +106,9 @@ export const NAVEGACION: GrupoNav[] = [
         icon: FileText,
         cap: "dashboard:leer",
       },
-      // Datos = captura (caja inicial, supuestos, cargas) → requiere gestión.
+      // Supuestos (C3): el editor de los drivers del motor, con impacto en vivo.
       {
-        label: "Datos",
+        label: "Supuestos",
         path: "/datos",
         icon: Database,
         cap: "cargas:gestionar",

@@ -30,16 +30,16 @@ describe("Sidebar", () => {
       "IVA",
       "Dashboards",
       "Reportes",
-      "Datos",
+      "Supuestos",
     ]) {
       expect(screen.getByRole("link", { name: v })).toBeInTheDocument();
     }
   });
 
-  it("oculta Datos si falta cargas:gestionar", () => {
+  it("oculta Supuestos si falta cargas:gestionar", () => {
     renderEn("/proyeccion", (cap) => cap !== "cargas:gestionar");
     expect(
-      screen.queryByRole("link", { name: "Datos" }),
+      screen.queryByRole("link", { name: "Supuestos" }),
     ).not.toBeInTheDocument();
     // el resto sigue visible
     expect(

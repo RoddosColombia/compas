@@ -12,7 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.auth.deps import require_permission
 from app.auth.models import User
 from app.auth.router import verify_origin
-from app.domain.parametros_proyeccion import ParametrosProyeccion
+from app.domain.parametros_proyeccion import (
+    ComponenteAlistamiento,
+    ParametrosProyeccion,
+    costo_alistamiento_total,
+)
 from app.parametros_proyeccion import service
 
 router = APIRouter(prefix="/parametros-proyeccion", tags=["parametros-proyeccion"])
@@ -43,10 +47,12 @@ _INT = (
 )
 
 
-class ParametrosBody(BaseModel):
+class ParametrosCampos(BaseModel):
+    """Los campos del set de parámetros SIN la vigencia — compartido entre el PUT
+    (que versiona) y el preview de C3 (compute-only, sin persistencia)."""
+
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    vigente_desde: str
     caja_inicial: str
     caja_minima: str
     motos_base: int = Field(ge=0)
@@ -67,6 +73,65 @@ class ParametrosBody(BaseModel):
     pct_recuperacion: str
     pct_default: str
     pct_provision: str
+    # CR-002: desglose configurable del alistamiento (opcional; None = costo plano)
+    componentes_alistamiento: list["ComponenteBody"] | None = None
+
+
+class ComponenteBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    nombre: str = Field(min_length=1, max_length=80)
+    valor: str  # monto COP como string (regla 1)
+    activo: bool = True
+    orden: int = 0
+
+
+class ParametrosBody(ParametrosCampos):
+    vigente_desde: str
+    # C3: por qué el cambio — viaja a la metadata del evento de auditoría.
+    nota: str | None = Field(default=None, max_length=300)
+
+
+def parsear_campos(body: ParametrosCampos) -> dict:
+    """Strings regla 1 → Decimal/int, con 422 si algún decimal no parsea.
+    Compartido por el PUT y el preview (C3): un solo criterio de parseo.
+    CR-002: con componentes, `costo_moto_nueva` se DERIVA (Σ activos) — la
+    autoridad es server-side, lo enviado en ese campo se ignora."""
+    campos: dict = {}
+    for c in _MONEY:
+        try:
+            campos[c] = Decimal(getattr(body, c))
+        except (InvalidOperation, ValueError):
+            raise HTTPException(422, f"{c} debe ser un decimal en string") from None
+    for c in _INT:
+        campos[c] = getattr(body, c)
+    if body.componentes_alistamiento is not None:
+        comps: list[ComponenteAlistamiento] = []
+        for cb in body.componentes_alistamiento:
+            try:
+                valor = Decimal(cb.valor)
+            except (InvalidOperation, ValueError):
+                raise HTTPException(
+                    422,
+                    f"componente '{cb.nombre}': valor debe ser un decimal en string",
+                ) from None
+            if valor < 0:
+                raise HTTPException(
+                    422, f"componente '{cb.nombre}': valor no puede ser negativo"
+                )
+            comps.append(
+                ComponenteAlistamiento(
+                    nombre=cb.nombre, valor=valor, activo=cb.activo, orden=cb.orden
+                )
+            )
+        campos["componentes_alistamiento"] = comps or None
+        if comps:
+            campos["costo_moto_nueva"] = costo_alistamiento_total(
+                comps, campos["costo_moto_nueva"]
+            )
+    else:
+        campos["componentes_alistamiento"] = None
+    return campos
 
 
 def _serializar(p: ParametrosProyeccion) -> dict:
@@ -75,6 +140,19 @@ def _serializar(p: ParametrosProyeccion) -> dict:
         out[c] = str(getattr(p, c))
     for c in _INT:
         out[c] = getattr(p, c)
+    out["componentes_alistamiento"] = (
+        [
+            {
+                "nombre": c.nombre,
+                "valor": str(c.valor),
+                "activo": c.activo,
+                "orden": c.orden,
+            }
+            for c in p.componentes_alistamiento
+        ]
+        if p.componentes_alistamiento
+        else None
+    )
     out["modificado_por"] = p.modificado_por
     return out
 
@@ -93,17 +171,13 @@ async def actualizar(
     user: User = Depends(require_permission("proyeccion:gestionar")),
     _: None = Depends(verify_origin),
 ):
-    campos: dict = {}
-    for c in _MONEY:
-        try:
-            campos[c] = Decimal(getattr(body, c))
-        except (InvalidOperation, ValueError):
-            raise HTTPException(422, f"{c} debe ser un decimal en string") from None
-    for c in _INT:
-        campos[c] = getattr(body, c)
+    campos = parsear_campos(body)
     try:
         p = await service.actualizar(
-            vigente_desde=body.vigente_desde, campos=campos, usuario_id=user.id
+            vigente_desde=body.vigente_desde,
+            campos=campos,
+            usuario_id=user.id,
+            nota=body.nota,
         )
     except service.ParametrosError as e:
         raise HTTPException(e.status, e.detalle) from e

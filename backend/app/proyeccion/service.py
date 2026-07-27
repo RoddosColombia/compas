@@ -6,13 +6,19 @@ Carga los parámetros VIGENTES + el catálogo de modelos ACTIVOS, arma un
 `motor.proyectar()`. Serializa a JSON con montos como string (regla 1). No escribe
 estado: es una lectura pura sobre la configuración vigente."""
 
+from dataclasses import replace
+from decimal import Decimal
+
 from app.cartera_previa import service as cartera_previa_service
 from app.cierre.service import _caja_libro, _rubro_ajuste
 from app.core.money import money_str
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.modelo_moto import ModeloMoto
-from app.domain.parametros_proyeccion import ParametrosProyeccion
+from app.domain.parametros_proyeccion import (
+    ParametrosProyeccion,
+    costo_alistamiento_total,
+)
 from app.domain.transaccion import Transaccion
 from app.facturas import service as facturas_service
 from app.iva.liquidacion import liquidar, plan_fondo_provision, programar_egresos_iva
@@ -80,7 +86,11 @@ def _armar_parametros(
         tasa_auteco=params.tasa_auteco,
         gastos_fijos=params.gastos_fijos,
         gps_moto=params.gps_moto,
-        costo_moto_nueva=params.costo_moto_nueva,
+        # CR-002: el motor recibe UN solo Decimal = Σ de los componentes ACTIVOS
+        # (suma server-side; sin componentes manda el costo plano — compat).
+        costo_moto_nueva=costo_alistamiento_total(
+            params.componentes_alistamiento, params.costo_moto_nueva
+        ),
         deuda=params.deuda,
         tasa_deuda=params.tasa_deuda,
         mes_inicio_deuda=params.mes_inicio_deuda,
@@ -201,17 +211,18 @@ async def _iva_plan(
     return egreso, fondo
 
 
-async def proyectar_vigente(
+async def _proyectar_con(
+    params: ParametrosProyeccion,
+    modelos: list[ModeloMoto],
     *,
     escenario: str,
     mes_inicio: tuple[int, int],
     horizonte_meses: int | None,
     caja_inicial_override: object | None = None,
 ) -> dict:
-    """Proyección con los parámetros/modelos vigentes. Falla-cerrado si falta config
-    (no se inventan cifras): 409 si no hay parámetros o no hay modelos activos.
-    `caja_inicial_override` re-ancla la caja inicial (rolling forecast, COCK-09)."""
-    params, modelos = await _cargar_config_vigente()
+    """La tubería completa (cartera previa + IVA + motor) sobre un set de parámetros
+    DADO — compartida por la proyección vigente y el preview de C3 (misma tubería =
+    paridad al peso garantizada por test)."""
     horizonte = horizonte_meses or params.horizonte_meses
     if horizonte < 1 or horizonte > HORIZONTE_MAX:
         raise ProyeccionError(
@@ -231,6 +242,51 @@ async def proyectar_vigente(
         caja_inicial_override,
     )
     return _serializar(proyectar(pm), escenario, params.caja_minima, fondo)
+
+
+async def proyectar_vigente(
+    *,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+    caja_inicial_override: object | None = None,
+) -> dict:
+    """Proyección con los parámetros/modelos vigentes. Falla-cerrado si falta config
+    (no se inventan cifras): 409 si no hay parámetros o no hay modelos activos.
+    `caja_inicial_override` re-ancla la caja inicial (rolling forecast, COCK-09)."""
+    params, modelos = await _cargar_config_vigente()
+    return await _proyectar_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+        caja_inicial_override=caja_inicial_override,
+    )
+
+
+async def proyectar_preview(
+    *,
+    campos: dict,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+) -> dict:
+    """C3 §5.1 — preview COMPUTE-ONLY con un set de parámetros PROPUESTO: misma
+    tubería que la proyección vigente (paridad al peso por test), sin escribir NADA.
+    Los modelos siguen siendo los vigentes (el preview cubre los parámetros)."""
+    modelos = await modelos_service.listar_modelos(activo=True)
+    if not modelos:
+        raise ProyeccionError("no hay modelos de moto activos", 409)
+    # Documento EN MEMORIA, jamás insertado: solo transporta los campos al motor.
+    params = ParametrosProyeccion(vigente_desde="1900-01-01", **campos)
+    return await _proyectar_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+    )
 
 
 async def _cargar_config_vigente():
@@ -293,6 +349,169 @@ async def operacion_vigente(
             for i in range(horizonte)
         ],
     }
+
+
+# ── C3 §5.2 — sensibilidad del umbral (tornado) ──────────────────────────────
+# Variaciones NATURALES por variable, aplicadas al ParametrosMotor YA armado
+# (post-preset de escenario: la mora del preset sobrescribe la de params, así que
+# mutar los params crudos sería un placebo — se muta el motor directamente).
+
+SENSIBILIDAD_HORIZONTE = 60  # el umbral del norte (may-2027) siempre queda dentro
+
+_CERO = Decimal("0")
+
+
+def _variaciones(pm: ParametrosMotor) -> list[dict]:
+    """[{variable, etiqueta, variacion, mas, menos}] — mas/menos son ParametrosMotor
+    mutados con dataclasses.replace (frozen → copia inmutable, motor intacto)."""
+
+    def con(**c) -> ParametrosMotor:
+        return replace(pm, **c)
+
+    def cuotas(factor: Decimal) -> ParametrosMotor:
+        return replace(
+            pm,
+            modelos=[
+                replace(m, cuota_semanal=m.cuota_semanal * factor)
+                for m in pm.modelos
+            ],
+        )
+
+    return [
+        {
+            "variable": "motos_base",
+            "etiqueta": "Colocación base",
+            "variacion": "±10 %",
+            "mas": con(motos_base=round(pm.motos_base * 1.1)),
+            "menos": con(motos_base=round(pm.motos_base * 0.9)),
+        },
+        {
+            "variable": "crec_pct_mensual",
+            "etiqueta": "Crecimiento mensual",
+            "variacion": "±1 punto",
+            "mas": con(crec_pct_mensual=pm.crec_pct_mensual + Decimal("0.01")),
+            "menos": con(
+                crec_pct_mensual=max(
+                    _CERO, pm.crec_pct_mensual - Decimal("0.01")
+                )
+            ),
+        },
+        {
+            "variable": "cuota_semanal",
+            "etiqueta": "Cuota semanal (todos los modelos)",
+            "variacion": "±5 %",
+            "mas": cuotas(Decimal("1.05")),
+            "menos": cuotas(Decimal("0.95")),
+        },
+        {
+            "variable": "gastos_fijos",
+            "etiqueta": "Gastos fijos",
+            "variacion": "±10 %",
+            "mas": con(gastos_fijos=pm.gastos_fijos * Decimal("1.1")),
+            "menos": con(gastos_fijos=pm.gastos_fijos * Decimal("0.9")),
+        },
+        {
+            "variable": "pct_mora",
+            "etiqueta": "% de mora",
+            "variacion": "±1 punto",
+            "mas": con(pct_mora=pm.pct_mora + Decimal("0.01")),
+            "menos": con(pct_mora=max(_CERO, pm.pct_mora - Decimal("0.01"))),
+        },
+        {
+            "variable": "plazo_auteco_dias",
+            "etiqueta": "Plazo Auteco",
+            "variacion": "±30 días",
+            "mas": con(plazo_auteco_dias=pm.plazo_auteco_dias + 30),
+            "menos": con(plazo_auteco_dias=max(0, pm.plazo_auteco_dias - 30)),
+        },
+        {
+            "variable": "costo_alistamiento",
+            "etiqueta": "Costos de alistamiento",
+            "variacion": "±$ 100 mil/moto",
+            "mas": con(costo_moto_nueva=pm.costo_moto_nueva + Decimal("100000")),
+            "menos": con(
+                costo_moto_nueva=max(
+                    _CERO, pm.costo_moto_nueva - Decimal("100000")
+                )
+            ),
+        },
+    ]
+
+
+# Cache por vigencia (recalcular solo cuando cambian los supuestos). Un solo
+# proceso web (Render) → dict de módulo basta; el fingerprint incluye los modelos.
+_sensibilidad_cache: dict[tuple, dict] = {}
+
+
+def _fingerprint(params: ParametrosProyeccion, modelos: list[ModeloMoto]) -> tuple:
+    # Los VALORES, no la identidad de la fila (QA C3): el guardado hace upsert
+    # por vigente_desde — dos ediciones el mismo día comparten id/fecha/autor y
+    # un fingerprint de identidad serviría el tornado de la versión anterior.
+    campos = tuple(
+        sorted((k, str(v)) for k, v in params.model_dump(exclude={"id"}).items())
+    )
+    return (
+        campos,
+        tuple(
+            (
+                m.nombre,
+                str(m.cuota_semanal),
+                str(m.cuota_inicial),
+                m.plazo_semanas,
+                str(m.participacion_mix),
+                str(m.costo_auteco),
+            )
+            for m in modelos
+        ),
+    )
+
+
+async def sensibilidad_vigente(
+    *, escenario: str, mes_inicio: tuple[int, int]
+) -> dict:
+    """El tornado '¿qué mueve mi umbral?': 7 variables × ± → 14 corridas del motor
+    puro a 60 meses sobre el set vigente. Compute-only; cache por vigencia."""
+    params, modelos = await _cargar_config_vigente()
+    clave = (_fingerprint(params, modelos), escenario, mes_inicio)
+    if clave in _sensibilidad_cache:
+        return _sensibilidad_cache[clave]
+
+    recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
+    iva_egreso, _fondo = await _iva_plan(mes_inicio, SENSIBILIDAD_HORIZONTE)
+    pm = _armar_parametros(
+        params,
+        modelos,
+        escenario,
+        mes_inicio,
+        SENSIBILIDAD_HORIZONTE,
+        recaudo_previo,
+        activos_previos,
+        iva_egreso,
+    )
+    piso_base = proyectar(pm).piso_caja
+
+    variables = []
+    for v in _variaciones(pm):
+        variables.append(
+            {
+                "variable": v["variable"],
+                "etiqueta": v["etiqueta"],
+                "variacion": v["variacion"],
+                "piso_base": money_str(piso_base),
+                "piso_mas": money_str(proyectar(v["mas"]).piso_caja),
+                "piso_menos": money_str(proyectar(v["menos"]).piso_caja),
+            }
+        )
+
+    out = {
+        "escenario": escenario,
+        "horizonte_meses": SENSIBILIDAD_HORIZONTE,
+        "piso_base": money_str(piso_base),
+        "variables": variables,
+    }
+    _sensibilidad_cache.clear()  # una sola vigencia viva: no acumular basura
+    _sensibilidad_cache[clave] = out
+    return out
 
 
 ANCLA_MODOS = ("cerrado", "movimientos")
