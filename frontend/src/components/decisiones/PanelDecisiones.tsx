@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { pctMesTranscurrido } from "@/components/control/QueExigeAtencion";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PanelImpacto } from "@/components/supuestos/PanelImpacto";
 import { AlertBanner } from "@/components/ui/alert-banner";
@@ -17,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
-import { GRUPO_LABEL } from "@/lib/control";
+import { GRUPO_LABEL, vistaControl } from "@/lib/control";
 import {
   type Ajuste,
   type EscenarioGuardado,
@@ -28,8 +29,10 @@ import {
   proyectarImpactos,
   resolver,
 } from "@/lib/decisiones";
-import { formatMesCorto } from "@/lib/money";
+import { listarMeses } from "@/lib/meses";
+import { formatCOP, formatCOPCompact, formatMesCorto } from "@/lib/money";
 import { agruparRubros, listarRubros } from "@/lib/rubros";
+import { cruceTecho } from "@/lib/techo";
 import {
   esMontoHumanoValido,
   esPctValido,
@@ -107,6 +110,24 @@ export function PanelDecisiones({
     enabled: puedeGestionar,
   });
 
+  // Pieza 0 (§4.7): el mes en ejecución para cruzar el techo contra lo ya gastado.
+  const meses = useQuery({ queryKey: ["meses"], queryFn: listarMeses });
+  const mesEjecucion = useMemo(() => {
+    const items = meses.data?.items ?? [];
+    return (
+      items
+        .filter((m) => m.estado === "en_ejecucion")
+        .map((m) => m.mes.slice(0, 7))
+        .sort()
+        .reverse()[0] ?? null
+    );
+  }, [meses.data]);
+  const controlMes = useQuery({
+    queryKey: ["mes", mesEjecucion, "control"],
+    queryFn: () => vistaControl(mesEjecucion as string),
+    enabled: mesEjecucion !== null,
+  });
+
   const guardar = useMutation({
     mutationFn: () =>
       crearEscenario({ nombre: nombreNuevo.trim(), ajustes: validos }),
@@ -168,6 +189,9 @@ export function PanelDecisiones({
             techo.data?.objetivo === "techo_gasto" ? techo.data : undefined
           }
           cargando={techo.isFetching}
+          mesEjecucion={mesEjecucion}
+          ejecutadoMes={controlMes.data?.total.ejecutado ?? null}
+          definidoMes={controlMes.data?.total.definido ?? null}
         />
         {/* PanelImpacto + valles */}
         <PanelImpacto
@@ -462,33 +486,104 @@ function EscenarioBar({
   );
 }
 
-// ── Tarjeta de techo de gasto (§4.7) ──────────────────────────────────────────
+// ── Tarjeta de techo de gasto (§4.7) — con cruce contra el mes en ejecución ────
+const TONO_TEXTO = {
+  positivo: "text-positivo",
+  atencion: "text-atencion",
+  critico: "text-critico",
+} as const;
+
 function TechoCard({
   techo,
   cargando,
+  mesEjecucion,
+  ejecutadoMes,
+  definidoMes,
 }: {
   techo: TechoResultado | undefined;
   cargando: boolean;
+  mesEjecucion: string | null;
+  ejecutadoMes: string | null;
+  definidoMes: string | null;
 }) {
   if (cargando && !techo) return <Cargando variante="card" />;
   if (!techo) return null;
-  if (!techo.hay_holgura) {
-    return (
-      <KpiTileV2
-        label="Techo de gasto mensual sostenido"
-        valor="0"
-        valorTexto="Sin margen"
-        tono="critico"
-        contexto={`El valle de ${formatMesCorto(techo.valle_limitante_mes)} ya está en el límite: no hay espacio para sumar gasto permanente sin perforar.`}
-      />
-    );
-  }
-  return (
+
+  const headline = techo.hay_holgura ? (
     <KpiTileV2
       label="Techo de gasto mensual sostenido"
       valor={techo.techo_mensual}
       tono="atencion"
       contexto={`Lo máximo que puedes sumar CADA mes de aquí en adelante sin que ningún valle baje del umbral (no es un cupo de un solo mes). Lo limita ${formatMesCorto(techo.valle_limitante_mes)}.`}
     />
+  ) : (
+    <KpiTileV2
+      label="Techo de gasto mensual sostenido"
+      valor="0"
+      valorTexto="Sin margen"
+      tono="critico"
+      contexto={`El valle de ${formatMesCorto(techo.valle_limitante_mes)} ya está en el límite: no hay espacio para sumar gasto permanente sin perforar.`}
+    />
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      {headline}
+      <CruceMes
+        mesEjecucion={mesEjecucion}
+        ejecutadoMes={ejecutadoMes}
+        definidoMes={definidoMes}
+        techo={techo.techo_mensual}
+      />
+    </div>
+  );
+}
+
+/** El cruce del techo contra lo ya gastado del mes en curso (§4.7). Mide el gasto
+ * POR ENCIMA del presupuesto aprobado contra el techo (ambos "extra"). */
+function CruceMes({
+  mesEjecucion,
+  ejecutadoMes,
+  definidoMes,
+  techo,
+}: {
+  mesEjecucion: string | null;
+  ejecutadoMes: string | null;
+  definidoMes: string | null;
+  techo: string;
+}) {
+  if (mesEjecucion === null || ejecutadoMes === null || definidoMes === null) {
+    return (
+      <p className="px-1 font-sans text-apoyo text-ink-faint">
+        Sin mes en ejecución — el cruce con lo ya gastado se activa con el
+        ciclo.
+      </p>
+    );
+  }
+  const c = cruceTecho(
+    ejecutadoMes,
+    definidoMes,
+    techo,
+    pctMesTranscurrido(mesEjecucion),
+  );
+  return (
+    <div className="flex flex-col gap-1 rounded-md bg-surface-muted px-3 py-2 font-sans text-cuerpo">
+      <div className="flex justify-between">
+        <span className="text-ink-soft">
+          Gasto de {formatMesCorto(mesEjecucion)} sobre lo aprobado
+        </span>
+        <span className="tabular text-ink" title={formatCOP(c.sobreActual)}>
+          {formatCOPCompact(c.sobreActual)}
+          {c.pctConsumido !== null ? ` · ${c.pctConsumido}% del techo` : ""}
+        </span>
+      </div>
+      <div className={`text-apoyo ${TONO_TEXTO[c.estado]}`}>
+        {c.estado === "positivo"
+          ? "Dentro del presupuesto: el techo queda intacto."
+          : c.excede
+            ? `Al ritmo actual proyectas ${formatCOPCompact(c.ritmoSobre)} sobre lo aprobado — excede el techo en ${formatCOPCompact(c.exceso)}.`
+            : `Al ritmo actual proyectas ${formatCOPCompact(c.ritmoSobre)} sobre lo aprobado — aún dentro del techo (${formatCOPCompact(c.disponibleTecho)} disponibles).`}
+      </div>
+    </div>
   );
 }
