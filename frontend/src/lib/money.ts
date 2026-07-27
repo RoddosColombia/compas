@@ -36,6 +36,52 @@ export function formatCOP(value: string | Decimal): string {
   return copFormatter.format(dec.toNumber());
 }
 
+// ── F1: formato numérico es-CO por contexto (política §3 del sistema) ──
+// KPI/protagonista = abreviado 1 decimal; delta = signo + flecha; el valor
+// EXACTO nunca desaparece (va en title= del componente que lo muestre).
+
+const compactFormatter = (d: number) =>
+  new Intl.NumberFormat("es-CO", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: d,
+  });
+
+/**
+ * Abrevia COP para cifras protagonistas: completo → M → mil M. 1 decimal, es-CO.
+ * Umbral de "mil M" en ≥ 1e10 (no 1e9): así "$ 1.284 M" (1.284e9) y
+ * "$ 95,9 mil M" (95,9e9) salen como en la tabla del sistema de diseño —
+ * la tabla manda sobre el sketch de código del spec (contradicción resuelta
+ * a favor del ejemplo visible; pendiente "mil M" vs "MM" con el CEO).
+ */
+export function formatCOPCompact(value: string | Decimal): string {
+  const dec = value instanceof Decimal ? value : new Decimal(value);
+  const abs = dec.abs();
+  const signo = dec.isNegative() ? "-" : "";
+  // Intl SOLO presentación (como formatCOP); el redondeo fino lo hace Decimal.
+  if (abs.greaterThanOrEqualTo(1e10)) {
+    return `${signo}$ ${compactFormatter(1).format(abs.div(1e9).toDecimalPlaces(1).toNumber())} mil M`;
+  }
+  if (abs.greaterThanOrEqualTo(1e6)) {
+    return `${signo}$ ${compactFormatter(1).format(abs.div(1e6).toDecimalPlaces(1).toNumber())} M`;
+  }
+  return `${signo}$ ${compactFormatter(0).format(abs.toDecimalPlaces(0).toNumber())}`;
+}
+
+export interface Delta {
+  texto: string;
+  direccion: "sube" | "baja" | "igual";
+}
+
+/** Delta con signo y flecha para comparaciones de KPI: "▲ +$ 12,9 M". */
+export function formatDelta(value: string | Decimal): Delta {
+  const dec = value instanceof Decimal ? value : new Decimal(value);
+  if (dec.isZero()) return { texto: "— sin cambio", direccion: "igual" };
+  const compacto = formatCOPCompact(dec.abs());
+  return dec.isNegative()
+    ? { texto: `▼ -${compacto}`, direccion: "baja" }
+    : { texto: `▲ +${compacto}`, direccion: "sube" };
+}
+
 const MESES = [
   "ene",
   "feb",
@@ -55,4 +101,10 @@ const MESES = [
 export function formatFecha(iso: string): string {
   const [y, m, d] = iso.split("-");
   return `${d}-${MESES[Number(m) - 1]}-${y}`;
+}
+
+/** Formatea un mes `YYYY-MM` como `mmm-aa` (ej: may-27) — ejes y anotaciones. */
+export function formatMesCorto(mes: string): string {
+  const [y, m] = mes.split("-");
+  return `${MESES[Number(m) - 1]}-${y.slice(2)}`;
 }

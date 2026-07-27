@@ -14,14 +14,23 @@
   --color-green: #12a312; /* Growth Green — positivo/éxito */
   --color-green-soft: #1dc91d;
 
-  /* Sistema (semáforo) */
+  /* Sistema (semáforo histórico — migra a los semánticos F1 en la propagación) */
   --color-red: #e0524d; /* perforación de caja / negativo — reservado */
   --color-amber: #e8a83a; /* advertencia */
 
-  /* Neutrales sobre blanco */
-  --color-ink: #0f172a; /* texto principal (slate-900) */
-  --color-ink-soft: #64748b; /* texto secundario (slate-500) */
-  --color-ink-faint: #94a3b8; /* etiquetas/captions (slate-400) */
+  /* ── F1: semántica de estado con AA verificado sobre blanco ──
+     El color comunica estado, nunca decora — y nunca solo (símbolo/texto al lado).
+     cyan = "esto se puede hacer" (acción/marca); semánticos = "así estamos". */
+  --color-positivo: #15803d; /* 4,5:1 — bien / dentro de meta (▲ o ✓) */
+  --color-atencion: #b45309; /* 4,5:1 — exige atención / cerca del límite (● o !) */
+  --color-critico: #b91c1c; /* 5,9:1 — crítico / fuera de rango (▼ o ✗) */
+
+  /* Neutrales sobre blanco (F1: valores AA — ink-faint es el MÍNIMO para texto;
+     el slate-400 histórico queda SOLO decorativo como ink-decor, jamás texto) */
+  --color-ink: #0f172a; /* texto principal (slate-900) — 15,9:1 */
+  --color-ink-soft: #475569; /* texto secundario (slate-600) — 7,5:1 */
+  --color-ink-faint: #64748b; /* metadatos (slate-500) — 4,8:1, mínimo texto */
+  --color-ink-decor: #94a3b8; /* SOLO decorativo (iconos/separadores) — 2,8:1 */
   --color-surface: #ffffff;
   --color-surface-muted: #f8fafc; /* fondos tenues (slate-50) */
   --color-hairline: #e2e8f0; /* bordes de 1px (slate-200) */
@@ -37,6 +46,26 @@
   /* Tipografía */
   --font-sans: "Raleway", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+
+  /* ── F1: escala tipográfica por ROL (un tamaño = un uso). Mínimo 12.5px. ──
+     cifra-lg/cifra/titulo/seccion → Montserrat; cuerpo/apoyo → Raleway. */
+  --text-cifra-lg: 2rem; /* 32px — LA cifra de la pantalla (1 por pantalla máx.) */
+  --text-cifra-lg--line-height: 2.25rem;
+  --text-cifra-lg--font-weight: 700;
+  --text-cifra: 1.5rem; /* 24px — cifra de KpiTile */
+  --text-cifra--line-height: 1.75rem;
+  --text-cifra--font-weight: 700;
+  --text-titulo: 1.375rem; /* 22px — título de página */
+  --text-titulo--line-height: 1.75rem;
+  --text-titulo--font-weight: 600;
+  --text-seccion: 1rem; /* 16px — título de card/sección */
+  --text-seccion--line-height: 1.5rem;
+  --text-seccion--font-weight: 600;
+  --text-cuerpo: 0.875rem; /* 14px — texto general, tablas */
+  --text-cuerpo--line-height: 1.375rem;
+  --text-apoyo: 0.78125rem; /* 12.5px — etiquetas, metadatos, ejes (MÍNIMO) */
+  --text-apoyo--line-height: 1.125rem;
+  --text-apoyo--font-weight: 500;
 }
 
 :root {
