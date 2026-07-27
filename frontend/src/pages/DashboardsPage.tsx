@@ -11,12 +11,20 @@ import { useRef, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { Cargando } from "@/components/ui/cargando";
+import { ChartCard } from "@/components/ui/chart-card";
+import { ErrorEstado } from "@/components/ui/error-estado";
+import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { type Aging, cargarLoantape, obtenerAging } from "@/lib/loantape";
-import { formatCOP, parseMonto } from "@/lib/money";
+import {
+  formatCOPCompact,
+  formatCOPEntero,
+  formatMesCorto,
+  parseMonto,
+} from "@/lib/money";
 import {
   type MesOperacion,
   type MesProyeccion,
@@ -25,6 +33,24 @@ import {
 } from "@/lib/proyeccion";
 
 const HORIZONTES = [12, 24, 36, 60];
+
+/** Conclusión de la cobranza escrita desde los datos (§4). */
+function conclusionCobranza(meses: MesProyeccion[]): string {
+  const n = meses.length;
+  const primera = parseMonto(meses[0].recaudo_credito);
+  const ultima = parseMonto(meses[n - 1].recaudo_credito);
+  if (primera.lessThanOrEqualTo(0)) {
+    return `La cobranza proyectada llega a ${formatCOPCompact(ultima)}/mes en ${n} meses`;
+  }
+  const ratio = ultima.div(primera);
+  if (ratio.greaterThanOrEqualTo(2)) {
+    return `La cobranza proyectada se multiplica por ${ratio.toDecimalPlaces(1).toString()} en ${n} meses`;
+  }
+  if (ratio.greaterThan("1.1")) {
+    return `La cobranza proyectada crece ${ratio.minus(1).times(100).toDecimalPlaces(0).toString()} % en ${n} meses`;
+  }
+  return `La cobranza proyectada se mantiene estable (~${formatCOPCompact(ultima)}/mes)`;
+}
 
 function suma(meses: MesProyeccion[], campo: keyof MesProyeccion): string {
   return meses
@@ -71,13 +97,16 @@ export default function DashboardsPage() {
       />
 
       {q.isLoading && (
-        <p className="font-sans text-sm text-ink-soft">Cargando operación…</p>
+        <>
+          <Cargando variante="kpis" />
+          <Cargando variante="card" className="h-80" />
+        </>
       )}
       {q.isError && (
-        <AlertBanner variant="danger">
-          No se pudo cargar la operación. Verifica que haya modelos de moto y
-          parámetros configurados en Datos.
-        </AlertBanner>
+        <ErrorEstado
+          mensaje="No se pudo cargar la operación: verifica que haya modelos de moto y parámetros configurados en Supuestos."
+          onReintentar={() => void q.refetch()}
+        />
       )}
 
       {q.data && (
@@ -108,27 +137,26 @@ export default function DashboardsPage() {
             />
           </div>
 
-          <Card>
-            <CardTitle>Cobranza mensual proyectada</CardTitle>
-            <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
-              recaudo de crédito (cuota a cuota) por mes
-            </p>
-            <div className="mt-4">
-              <BarrasCobranza meses={q.data.meses} />
-            </div>
-          </Card>
+          <ChartCard
+            conclusion={conclusionCobranza(q.data.meses)}
+            subtitulo={`recaudo de crédito (cuota a cuota) por mes · escenario base · ${q.data.meses.length} meses`}
+            pie="Fuente: motor de proyección (Vía 1, cuota a cuota + cartera previa)"
+            protagonista
+            lienzo="auto"
+          >
+            <BarrasCobranza meses={q.data.meses} />
+          </ChartCard>
 
           {op.data && op.data.meses.length > 0 && (
             <>
-              <Card>
-                <CardTitle>Colocación mensual</CardTitle>
-                <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
-                  motos colocadas por mes (nuevas ventas a crédito)
-                </p>
-                <div className="mt-4">
-                  <BarrasMotos meses={op.data.meses} />
-                </div>
-              </Card>
+              <ChartCard
+                conclusion={`La colocación pasa de ${op.data.meses[0].colocacion} a ${op.data.meses[op.data.meses.length - 1].colocacion} motos/mes`}
+                subtitulo={`motos colocadas por mes (nuevas ventas a crédito) · ${op.data.meses.length} meses`}
+                pie="Fuente: motor de proyección (colocación compuesta)"
+                lienzo="auto"
+              >
+                <BarrasMotos meses={op.data.meses} />
+              </ChartCard>
 
               <CarteraPorAnada meses={op.data.meses} />
             </>
@@ -208,10 +236,14 @@ function MoraPorTramo() {
         <p className="font-sans text-sm text-ink-soft">Cargando aging…</p>
       )}
       {q.data && !q.data.fecha_corte && (
-        <AlertBanner variant="warn">
-          Aún no hay LoanTape cargado. Sube el archivo semanal de SISMO-V3
-          {gestor ? " con «Cargar LoanTape»" : ""} para ver la mora por tramo.
-        </AlertBanner>
+        <EstadoVacio
+          mensaje="Aún no hay LoanTape cargado: la mora por tramo se construye del archivo semanal de SISMO-V3."
+          quien={
+            gestor
+              ? "súbelo con «Cargar LoanTape», aquí arriba"
+              : "financiero o admin, con «Cargar LoanTape»"
+          }
+        />
       )}
       {q.data?.fecha_corte && <TramosAging aging={q.data} />}
     </Card>
@@ -249,7 +281,7 @@ function TramosAging({ aging }: { aging: Aging }) {
               {t.n_creditos}
             </span>
             <span className="tabular w-32 shrink-0 text-right font-sans text-apoyo text-ink">
-              {formatCOP(t.saldo_en_mora)}
+              {formatCOPEntero(t.saldo_en_mora)}
             </span>
           </div>
         );
@@ -291,14 +323,13 @@ function CarteraPorAnada({ meses }: { meses: MesOperacion[] }) {
   const ultimo = meses[meses.length - 1];
   const max = Math.max(...ultimo.por_anada.map((a) => a.activos), 1);
   return (
-    <Card>
-      <CardTitle>Cartera por añada</CardTitle>
-      <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
-        cartera activa en {ultimo.mes} ({ultimo.cartera} motos) por cohorte de
-        colocación · <span className="font-semibold">previa</span> = los 111
-        créditos preexistentes
-      </p>
-      <div className="mt-4 flex flex-col gap-1.5">
+    <ChartCard
+      conclusion={`${ultimo.cartera} motos pagando en ${formatMesCorto(ultimo.mes)}, por cohorte de colocación`}
+      subtitulo="«previa» = los 111 créditos preexistentes"
+      pie="Las cohortes aún no terminan su plazo: el desglose igualará a la colocación hasta ~dic-2027. Fuente: motor de proyección."
+      lienzo="auto"
+    >
+      <div className="flex flex-col gap-1.5">
         {ultimo.por_anada.map((a) => {
           const pct = Math.max(2, (a.activos / max) * 100);
           return (
@@ -321,7 +352,7 @@ function CarteraPorAnada({ meses }: { meses: MesOperacion[] }) {
           );
         })}
       </div>
-    </Card>
+    </ChartCard>
   );
 }
 
@@ -346,7 +377,7 @@ function BarrasCobranza({ meses }: { meses: MesProyeccion[] }) {
               />
             </div>
             <span className="tabular w-32 shrink-0 text-right font-sans text-apoyo text-ink">
-              {formatCOP(m.recaudo_credito)}
+              {formatCOPEntero(m.recaudo_credito)}
             </span>
           </div>
         );
