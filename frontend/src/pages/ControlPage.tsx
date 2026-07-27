@@ -13,6 +13,7 @@ import { QueExigeAtencion } from "@/components/control/QueExigeAtencion";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card } from "@/components/ui/card";
+import { FiltroBarra } from "@/components/ui/filtro-barra";
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   BANCO_LABEL,
@@ -23,8 +24,7 @@ import {
   vistaControlPorCuenta,
 } from "@/lib/control";
 import { listarMeses } from "@/lib/meses";
-import { formatCOP } from "@/lib/money";
-import { cn } from "@/lib/utils";
+import { formatCOPEntero } from "@/lib/money";
 
 type Vista = "categoria" | "cuenta";
 
@@ -38,6 +38,13 @@ const SEMAFORO_LABEL: Record<Semaforo, string> = {
   verde: "En rango",
   amarillo: "Cerca del límite",
   rojo: "Sobre-ejecutado",
+};
+
+// Segundo canal del semáforo (F1 §0.2: color + símbolo, nunca color solo).
+const SEMAFORO_SIMBOLO: Record<Semaforo, string> = {
+  verde: "✓",
+  amarillo: "●",
+  rojo: "✗",
 };
 
 export default function ControlPage() {
@@ -82,50 +89,33 @@ export default function ControlPage() {
   });
 
   const acciones = (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="inline-flex rounded-lg border border-hairline p-0.5 font-sans text-sm">
-        <button
-          type="button"
-          onClick={() => setVista("categoria")}
-          className={cn(
-            "rounded-md px-3 py-1 font-medium transition-colors",
-            vista === "categoria"
-              ? "bg-cyan text-white"
-              : "text-ink-soft hover:text-ink",
-          )}
-        >
-          Por categoría
-        </button>
-        <button
-          type="button"
-          onClick={() => setVista("cuenta")}
-          className={cn(
-            "rounded-md px-3 py-1 font-medium transition-colors",
-            vista === "cuenta"
-              ? "bg-cyan text-white"
-              : "text-ink-soft hover:text-ink",
-          )}
-        >
-          Por cuenta
-        </button>
-      </div>
-      {disponibles.length > 0 && (
-        <label className="flex items-center gap-2 font-sans text-sm">
-          <span className="text-ink-soft">Mes</span>
-          <select
-            className="rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
-            value={mes ?? ""}
-            onChange={(e) => setMesSel(e.target.value)}
-          >
-            {disponibles.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-    </div>
+    <FiltroBarra
+      filtros={[
+        {
+          id: "vista",
+          label: "Vista",
+          opciones: [
+            { valor: "categoria", label: "Por categoría" },
+            { valor: "cuenta", label: "Por cuenta" },
+          ],
+          valor: vista,
+          porDefecto: "categoria",
+          onChange: (v) => setVista(v as Vista),
+        },
+        ...(disponibles.length > 0
+          ? [
+              {
+                id: "mes",
+                label: "Mes",
+                opciones: disponibles.map((m) => ({ valor: m, label: m })),
+                valor: mes ?? "",
+                porDefecto: disponibles[0],
+                onChange: (v: string) => setMesSel(v),
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 
   return (
@@ -234,13 +224,13 @@ export default function ControlPage() {
                   <tr className="border-t-2 border-hairline font-semibold text-ink">
                     <td className="px-4 py-2.5">Total</td>
                     <td className="tabular px-4 py-2.5 text-right">
-                      {formatCOP(control.data.total.definido)}
+                      {formatCOPEntero(control.data.total.definido)}
                     </td>
                     <td className="tabular px-4 py-2.5 text-right">
-                      {formatCOP(control.data.total.ejecutado)}
+                      {formatCOPEntero(control.data.total.ejecutado)}
                     </td>
                     <td className="tabular px-4 py-2.5 text-right">
-                      {formatCOP(control.data.total.disponible)}
+                      {formatCOPEntero(control.data.total.disponible)}
                     </td>
                     <td className="px-4 py-2.5" />
                     <td className="px-4 py-2.5" />
@@ -255,7 +245,7 @@ export default function ControlPage() {
               <span className="font-semibold">Sin presupuesto:</span> gastos en
               rubros sin línea definida este mes —{" "}
               {control.data.sin_presupuesto
-                .map((s) => `${s.rubro} (${formatCOP(s.ejecutado)})`)
+                .map((s) => `${s.rubro} (${formatCOPEntero(s.ejecutado)})`)
                 .join(" · ")}
             </AlertBanner>
           )}
@@ -317,11 +307,11 @@ function MatrizPorCuenta({
                 <td className="px-4 py-2.5">Total</td>
                 {bancos.map((b) => (
                   <td key={b} className="tabular px-4 py-2.5 text-right">
-                    {formatCOP(data.total.por_banco[b])}
+                    {formatCOPEntero(data.total.por_banco[b])}
                   </td>
                 ))}
                 <td className="tabular px-4 py-2.5 text-right">
-                  {formatCOP(data.total.total)}
+                  {formatCOPEntero(data.total.total)}
                 </td>
               </tr>
             </tbody>
@@ -339,7 +329,7 @@ function MatrizPorCuenta({
                   .filter((b) => s.por_banco[b] && s.por_banco[b] !== "0.00")
                   .map(
                     (b) =>
-                      `${BANCO_LABEL[b] ?? b} ${formatCOP(s.por_banco[b])}`,
+                      `${BANCO_LABEL[b] ?? b} ${formatCOPEntero(s.por_banco[b])}`,
                   )
                   .join(", ")})`,
             )
@@ -372,11 +362,11 @@ function MatrizGrupo({
           <td className="px-4 py-2 text-ink">{l.rubro}</td>
           {bancos.map((b) => (
             <td key={b} className="tabular px-4 py-2 text-right text-ink-soft">
-              {formatCOP(l.por_banco[b])}
+              {formatCOPEntero(l.por_banco[b])}
             </td>
           ))}
           <td className="tabular px-4 py-2 text-right font-medium text-ink">
-            {formatCOP(l.total)}
+            {formatCOPEntero(l.total)}
           </td>
         </tr>
       ))}
@@ -384,11 +374,11 @@ function MatrizGrupo({
         <td className="px-4 py-1.5 text-right text-apoyo italic">Subtotal</td>
         {bancos.map((b) => (
           <td key={b} className="tabular px-4 py-1.5 text-right text-apoyo">
-            {formatCOP(grupo.subtotal.por_banco[b])}
+            {formatCOPEntero(grupo.subtotal.por_banco[b])}
           </td>
         ))}
         <td className="tabular px-4 py-1.5 text-right text-apoyo">
-          {formatCOP(grupo.subtotal.total)}
+          {formatCOPEntero(grupo.subtotal.total)}
         </td>
       </tr>
     </>
@@ -419,23 +409,22 @@ function GrupoBloque({
         >
           <td className="px-4 py-2 text-ink">{l.rubro}</td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
-            {formatCOP(l.definido)}
+            {formatCOPEntero(l.definido)}
           </td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
-            {formatCOP(l.ejecutado)}
+            {formatCOPEntero(l.ejecutado)}
           </td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
-            {formatCOP(l.disponible)}
+            {formatCOPEntero(l.disponible)}
           </td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
             {l.pct_ejecutado === null ? "—" : `${l.pct_ejecutado}%`}
           </td>
           <td className="px-4 py-2">
             <span
-              title={SEMAFORO_LABEL[l.semaforo]}
-              className={`rounded-full px-2 py-0.5 font-sans text-apoyo font-medium ${SEMAFORO_ESTILO[l.semaforo]}`}
+              className={`rounded-full px-2 py-0.5 font-sans text-apoyo font-medium whitespace-nowrap ${SEMAFORO_ESTILO[l.semaforo]}`}
             >
-              {SEMAFORO_LABEL[l.semaforo]}
+              {SEMAFORO_SIMBOLO[l.semaforo]} {SEMAFORO_LABEL[l.semaforo]}
             </span>
           </td>
         </tr>
@@ -443,13 +432,13 @@ function GrupoBloque({
       <tr className="border-b border-hairline text-ink-faint">
         <td className="px-4 py-1.5 text-right text-apoyo italic">Subtotal</td>
         <td className="tabular px-4 py-1.5 text-right text-apoyo">
-          {formatCOP(grupo.subtotal.definido)}
+          {formatCOPEntero(grupo.subtotal.definido)}
         </td>
         <td className="tabular px-4 py-1.5 text-right text-apoyo">
-          {formatCOP(grupo.subtotal.ejecutado)}
+          {formatCOPEntero(grupo.subtotal.ejecutado)}
         </td>
         <td className="tabular px-4 py-1.5 text-right text-apoyo">
-          {formatCOP(grupo.subtotal.disponible)}
+          {formatCOPEntero(grupo.subtotal.disponible)}
         </td>
         <td className="px-4 py-1.5" />
         <td className="px-4 py-1.5" />
