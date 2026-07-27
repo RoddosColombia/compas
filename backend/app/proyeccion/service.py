@@ -444,10 +444,14 @@ _sensibilidad_cache: dict[tuple, dict] = {}
 
 
 def _fingerprint(params: ParametrosProyeccion, modelos: list[ModeloMoto]) -> tuple:
+    # Los VALORES, no la identidad de la fila (QA C3): el guardado hace upsert
+    # por vigente_desde — dos ediciones el mismo día comparten id/fecha/autor y
+    # un fingerprint de identidad serviría el tornado de la versión anterior.
+    campos = tuple(
+        sorted((k, str(v)) for k, v in params.model_dump(exclude={"id"}).items())
+    )
     return (
-        str(params.id),
-        params.vigente_desde,
-        str(params.modificado_por),
+        campos,
         tuple(
             (
                 m.nombre,

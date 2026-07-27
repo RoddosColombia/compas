@@ -165,3 +165,51 @@ async def test_sensibilidad_sin_config_es_409(api):
     h = await _token(api)
     r = await api.get("/api/v1/proyeccion/sensibilidad", headers=h)
     assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_editar_dos_veces_el_mismo_dia_no_sirve_cache_viejo(api):
+    """Bug QA C3: el upsert por vigente_desde deja id/fecha/autor idénticos al
+    guardar dos veces el mismo día → el fingerprint debe cubrir los VALORES,
+    no solo la identidad de la fila."""
+    h = await _setup_config(api)
+    r1 = await api.get(
+        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
+    )
+    assert r1.status_code == 200
+    base_antes = r1.json()["piso_base"]
+
+    # segunda edición del MISMO día (misma vigente_desde → upsert, mismo id)
+    body = {
+        "vigente_desde": "2026-07-01",
+        "caja_inicial": "24000000",
+        "caja_minima": "125000000",
+        "motos_base": 50,
+        "crec_pct_mensual": "0.01",
+        "horizonte_meses": 24,
+        "adelanto_auteco": "970000",
+        "plazo_auteco_dias": 150,
+        "base_auteco_dias": 90,
+        "tasa_auteco": "0.016",
+        "gastos_fijos": "200000000",  # ← el cambio
+        "gps_moto": "33201",
+        "costo_moto_nueva": "692005",
+        "deuda": "28527080",
+        "tasa_deuda": "0.011",
+        "mes_inicio_deuda": 2,
+        "meses_deuda": 14,
+        "pct_mora": "0.03",
+        "pct_recuperacion": "0.40",
+        "pct_default": "0.03",
+        "pct_provision": "0.02",
+    }
+    r = await api.put("/api/v1/parametros-proyeccion", json=body, headers=h)
+    assert r.status_code == 200
+
+    r2 = await api.get(
+        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
+    )
+    assert r2.status_code == 200
+    base_despues = r2.json()["piso_base"]
+    # más gasto fijo → peor piso; si el cache sirviera lo viejo, serían iguales
+    assert float(base_despues) < float(base_antes)

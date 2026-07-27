@@ -69,7 +69,12 @@ async def preview(
     _: None = Depends(verify_origin),
 ):
     """C3 §5.1 — impacto de un set de parámetros PROPUESTO, compute-only: mismo shape
-    que GET /proyeccion, sin persistir nada. RBAC = el permiso que edita parámetros."""
+    que GET /proyeccion, sin persistir nada. RBAC = el permiso que edita parámetros.
+
+    Nota QA C3 (documentada, sin acción): cada preview es una proyección completa
+    (cartera previa + IVA + motor). Con el debounce de 600 ms del editor y dos
+    usuarios gestores es irrelevante; si el nº de usuarios o el horizonte crecen,
+    añadir rate-limit con el patrón existente de auth (client_ip + ventana)."""
     try:
         return await service.proyectar_preview(
             campos=parsear_campos(body.parametros),
