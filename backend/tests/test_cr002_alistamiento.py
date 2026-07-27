@@ -203,3 +203,24 @@ async def test_componente_con_valor_invalido_es_422(api):
         "/api/v1/parametros-proyeccion", json=_params_body(comps), headers=h
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_nota_del_guardado_llega_al_audit_log(api):
+    """C3 §2: la nota opcional del editor viaja a la metadata del evento
+    `parametros_proyeccion.actualizado` (sin inventar eventos nuevos)."""
+    from app.audit import service as audit_service
+
+    h = await _token(api)
+    body = _params_body()
+    body["nota"] = "bajamos el crecimiento por decisión de junta"
+    r = await api.put("/api/v1/parametros-proyeccion", json=body, headers=h)
+    assert r.status_code == 200
+    eventos = await audit_service._audit_collection.find(
+        {"evento": "parametros_proyeccion.actualizado"}
+    ).to_list(length=10)
+    assert eventos, "debe existir el evento de auditoría"
+    assert (
+        eventos[-1]["metadata"]["nota"]
+        == "bajamos el crecimiento por decisión de junta"
+    )

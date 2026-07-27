@@ -26,10 +26,25 @@ from bson.decimal128 import Decimal128
 from motor.motor_asyncio import AsyncIOMotorClient
 
 COMPONENTES = [
-    {"nombre": "Matrícula (trámite)", "valor": Decimal("227800"), "activo": True, "orden": 1},
-    {"nombre": "Instalación GPS", "valor": Decimal("83000"), "activo": True, "orden": 2},
+    {
+        "nombre": "Matrícula (trámite)",
+        "valor": Decimal("227800"),
+        "activo": True,
+        "orden": 1,
+    },
+    {
+        "nombre": "Instalación GPS",
+        "valor": Decimal("83000"),
+        "activo": True,
+        "orden": 2,
+    },
     {"nombre": "SOAT", "valor": Decimal("363300"), "activo": True, "orden": 3},
-    {"nombre": "Colchón/otros", "valor": Decimal("17905"), "activo": True, "orden": 4},
+    {
+        "nombre": "Colchón/otros",
+        "valor": Decimal("17905"),
+        "activo": True,
+        "orden": 4,
+    },
 ]
 
 SUMA = sum(c["valor"] for c in COMPONENTES)  # 692005

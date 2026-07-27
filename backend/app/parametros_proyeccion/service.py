@@ -29,10 +29,11 @@ async def obtener_vigente() -> ParametrosProyeccion | None:
 
 
 async def actualizar(
-    *, vigente_desde: str, campos: dict, usuario_id: str
+    *, vigente_desde: str, campos: dict, usuario_id: str, nota: str | None = None
 ) -> ParametrosProyeccion:
     """Upsert de la fila de `vigente_desde` con `campos` (ya validados/parseados a
-    Decimal). Emite `parametros_proyeccion.actualizado` (fail-closed)."""
+    Decimal). Emite `parametros_proyeccion.actualizado` (fail-closed); la `nota`
+    del editor (C3: por qué el cambio) viaja en la metadata del evento."""
     existente = await ParametrosProyeccion.find_one(
         ParametrosProyeccion.vigente_desde == vigente_desde
     )
@@ -57,7 +58,11 @@ async def actualizar(
             entidad="parametros_proyeccion",
             entidad_id=str(doc.id),
             actor_id=usuario_id,
-            metadata={"vigente_desde": vigente_desde, "creado": creado},
+            metadata={
+                "vigente_desde": vigente_desde,
+                "creado": creado,
+                **({"nota": nota} if nota else {}),
+            },
         )
     except Exception:
         # saga O1: sin rastro no hay cambio → compensar.

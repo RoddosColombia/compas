@@ -88,6 +88,8 @@ class ComponenteBody(BaseModel):
 
 class ParametrosBody(ParametrosCampos):
     vigente_desde: str
+    # C3: por qué el cambio — viaja a la metadata del evento de auditoría.
+    nota: str | None = Field(default=None, max_length=300)
 
 
 def parsear_campos(body: ParametrosCampos) -> dict:
@@ -172,7 +174,10 @@ async def actualizar(
     campos = parsear_campos(body)
     try:
         p = await service.actualizar(
-            vigente_desde=body.vigente_desde, campos=campos, usuario_id=user.id
+            vigente_desde=body.vigente_desde,
+            campos=campos,
+            usuario_id=user.id,
+            nota=body.nota,
         )
     except service.ParametrosError as e:
         raise HTTPException(e.status, e.detalle) from e
