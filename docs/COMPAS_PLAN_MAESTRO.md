@@ -42,7 +42,7 @@ COMPAS es un sistema **predictivo** para administrar el presupuesto mensual de R
 | CR-002 | Costos de alistamiento por componentes (Σ = 692.005 exacto); migración corrida en prod, idempotente | tracker C3-VARIABLES |
 | F1.1 — Propagación del diseño | §0 (`direccionBuena` en el delta; mínimo neutro sin perforación; el fix de cache de sensibilidad ya venía cubierto en C3 `cf5618e`) + barridos §1 (KpiTile v1 muerto, guardián `barridos.test.ts`) + Proyecciones/Escenarios/Dashboards/Control/Cabina/Reportes/IVA-Flujo diario al estándar F1; perf medida con Profiler 144,5→56,2 ms | merge `1ae570c` (9 commits, uno por pantalla); 138 tests frontend verdes |
 
-**F1.1 mergeada `1ae570c` (2026-07-27, GO CEO — push=deploy).** Único pendiente para darla por CERRADA: la **prueba de los 10 segundos aplicada por un tercero (no Andrés)** en Proyecciones y Dashboards (guion en `COMPAS_Guion_Prueba_Comprension.md`); si falla, se corrige antes de cerrar. *Nota de gobierno §9 (reconciliación 2026-07-27):* la spec `COMPAS_Sprint_F11_Propagacion_Diseno.md` que este plan citaba NO quedó en el repo — como la ejecución ya está en `main`, se deja como referencia histórica. Para **D1**, su spec `COMPAS_Sprint_D1_Decisiones_sobre_el_Motor.md` debe commitearse a `docs/` ANTES del kickoff (rule §9).
+**F1.1 CERRADA (2026-07-27).** Mergeada `1ae570c` (GO CEO — push=deploy); la **prueba de los 10 segundos por un tercero (no Andrés)** en Proyecciones y Dashboards se aplicó y **PASÓ**. Dos nits del QA visual quedan como arrastre a resolver en la rama D1: la conclusión de Dashboards usa punto decimal (es-CO = coma) y el multiplicador se distorsiona con el mes 1 parcial (cambiar a "pasa de X a Y en 24 meses"). Specs de F1.1 (`COMPAS_Sprint_F11_Propagacion_Diseno.md`) y D1 (`COMPAS_Sprint_D1_Decisiones_sobre_el_Motor.md`) ya en `docs/` (rule §9).
 
 ## 4. Fases por ejecutar (en este orden)
 
@@ -119,7 +119,8 @@ Al cierre de D2 deben pasar TODOS; cada fase marca los suyos:
 | Fase | Estado | Cierre |
 |---|---|---|
 | C1 · C2 · F1 · C3+CR-002 | ✅ En producción | 2026-07-26/27 |
-| F1.1 | ✅ En producción (`1ae570c`) — solo falta la prueba 10s de un tercero para darla por cerrada | 2026-07-27 |
+| F1.1 | ✅ Cerrada — prueba 10s de un tercero PASÓ | 2026-07-27 |
+| D1 | 🔨 En ejecución (GO CEO 2026-07-27, rama `feat/d1-decisiones`) | — |
 | D1 | 📋 Spec lista | — |
 | D2 | 📝 Definida aquí (spec detallada al terminar D1) | — |
 | F4 | 📝 Definida aquí | — |
