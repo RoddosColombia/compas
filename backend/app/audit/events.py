@@ -97,6 +97,12 @@ class AuditEvento(StrEnum):
     # Aging SISMO-V3: carga del LoanTape semanal (snapshot por crédito) para mora por
     # tramo + proyección crédito a crédito (46 -> 47).
     loantape_cargado = "loantape.cargado"
+    # CR-D1 (3) — escenarios de impacto nombrados con CRUD auditado (D1 §2, GO CEO
+    # 2026-07-27). Guardar/editar/eliminar un escenario what-if; simular NO audita
+    # (47 -> 50). Reactivar reusa `escenario_impacto.editado` {activo false->true}.
+    escenario_impacto_creado = "escenario_impacto.creado"
+    escenario_impacto_editado = "escenario_impacto.editado"
+    escenario_impacto_eliminado = "escenario_impacto.eliminado"
 
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
