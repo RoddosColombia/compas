@@ -43,10 +43,12 @@ _INT = (
 )
 
 
-class ParametrosBody(BaseModel):
+class ParametrosCampos(BaseModel):
+    """Los campos del set de parámetros SIN la vigencia — compartido entre el PUT
+    (que versiona) y el preview de C3 (compute-only, sin persistencia)."""
+
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    vigente_desde: str
     caja_inicial: str
     caja_minima: str
     motos_base: int = Field(ge=0)
@@ -67,6 +69,24 @@ class ParametrosBody(BaseModel):
     pct_recuperacion: str
     pct_default: str
     pct_provision: str
+
+
+class ParametrosBody(ParametrosCampos):
+    vigente_desde: str
+
+
+def parsear_campos(body: ParametrosCampos) -> dict:
+    """Strings regla 1 → Decimal/int, con 422 si algún decimal no parsea.
+    Compartido por el PUT y el preview (C3): un solo criterio de parseo."""
+    campos: dict = {}
+    for c in _MONEY:
+        try:
+            campos[c] = Decimal(getattr(body, c))
+        except (InvalidOperation, ValueError):
+            raise HTTPException(422, f"{c} debe ser un decimal en string") from None
+    for c in _INT:
+        campos[c] = getattr(body, c)
+    return campos
 
 
 def _serializar(p: ParametrosProyeccion) -> dict:
@@ -93,14 +113,7 @@ async def actualizar(
     user: User = Depends(require_permission("proyeccion:gestionar")),
     _: None = Depends(verify_origin),
 ):
-    campos: dict = {}
-    for c in _MONEY:
-        try:
-            campos[c] = Decimal(getattr(body, c))
-        except (InvalidOperation, ValueError):
-            raise HTTPException(422, f"{c} debe ser un decimal en string") from None
-    for c in _INT:
-        campos[c] = getattr(body, c)
+    campos = parsear_campos(body)
     try:
         p = await service.actualizar(
             vigente_desde=body.vigente_desde, campos=campos, usuario_id=user.id

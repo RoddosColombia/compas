@@ -201,17 +201,18 @@ async def _iva_plan(
     return egreso, fondo
 
 
-async def proyectar_vigente(
+async def _proyectar_con(
+    params: ParametrosProyeccion,
+    modelos: list[ModeloMoto],
     *,
     escenario: str,
     mes_inicio: tuple[int, int],
     horizonte_meses: int | None,
     caja_inicial_override: object | None = None,
 ) -> dict:
-    """Proyección con los parámetros/modelos vigentes. Falla-cerrado si falta config
-    (no se inventan cifras): 409 si no hay parámetros o no hay modelos activos.
-    `caja_inicial_override` re-ancla la caja inicial (rolling forecast, COCK-09)."""
-    params, modelos = await _cargar_config_vigente()
+    """La tubería completa (cartera previa + IVA + motor) sobre un set de parámetros
+    DADO — compartida por la proyección vigente y el preview de C3 (misma tubería =
+    paridad al peso garantizada por test)."""
     horizonte = horizonte_meses or params.horizonte_meses
     if horizonte < 1 or horizonte > HORIZONTE_MAX:
         raise ProyeccionError(
@@ -231,6 +232,51 @@ async def proyectar_vigente(
         caja_inicial_override,
     )
     return _serializar(proyectar(pm), escenario, params.caja_minima, fondo)
+
+
+async def proyectar_vigente(
+    *,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+    caja_inicial_override: object | None = None,
+) -> dict:
+    """Proyección con los parámetros/modelos vigentes. Falla-cerrado si falta config
+    (no se inventan cifras): 409 si no hay parámetros o no hay modelos activos.
+    `caja_inicial_override` re-ancla la caja inicial (rolling forecast, COCK-09)."""
+    params, modelos = await _cargar_config_vigente()
+    return await _proyectar_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+        caja_inicial_override=caja_inicial_override,
+    )
+
+
+async def proyectar_preview(
+    *,
+    campos: dict,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+) -> dict:
+    """C3 §5.1 — preview COMPUTE-ONLY con un set de parámetros PROPUESTO: misma
+    tubería que la proyección vigente (paridad al peso por test), sin escribir NADA.
+    Los modelos siguen siendo los vigentes (el preview cubre los parámetros)."""
+    modelos = await modelos_service.listar_modelos(activo=True)
+    if not modelos:
+        raise ProyeccionError("no hay modelos de moto activos", 409)
+    # Documento EN MEMORIA, jamás insertado: solo transporta los campos al motor.
+    params = ParametrosProyeccion(vigente_desde="1900-01-01", **campos)
+    return await _proyectar_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+    )
 
 
 async def _cargar_config_vigente():

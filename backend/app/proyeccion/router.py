@@ -9,10 +9,13 @@ en América/Bogotá, día 1 — regla 2)."""
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict
 
 from app.auth.deps import require_permission
 from app.auth.models import User
+from app.auth.router import verify_origin
 from app.core.time import today_bogota
+from app.parametros_proyeccion.router import ParametrosCampos, parsear_campos
 from app.proyeccion import service
 
 router = APIRouter(prefix="/proyeccion", tags=["proyeccion"])
@@ -42,6 +45,34 @@ async def proyectar(
 ):
     try:
         return await service.proyectar_vigente(
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
+class PreviewBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    parametros: ParametrosCampos
+
+
+@router.post("/preview")
+async def preview(
+    body: PreviewBody,
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _u: User = Depends(require_permission("proyeccion:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """C3 §5.1 — impacto de un set de parámetros PROPUESTO, compute-only: mismo shape
+    que GET /proyeccion, sin persistir nada. RBAC = el permiso que edita parámetros."""
+    try:
+        return await service.proyectar_preview(
+            campos=parsear_campos(body.parametros),
             escenario=escenario,
             mes_inicio=_parse_mes_inicio(mes_inicio),
             horizonte_meses=horizonte_meses,
