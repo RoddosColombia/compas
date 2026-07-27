@@ -475,20 +475,20 @@ function TechoCard({
   if (!techo.hay_holgura) {
     return (
       <KpiTileV2
-        label="Techo de gasto extra"
+        label="Techo de gasto mensual sostenido"
         valor="0"
         valorTexto="Sin margen"
         tono="critico"
-        contexto={`El valle de ${formatMesCorto(techo.valle_limitante_mes)} ya está en el límite: no hay espacio para gastar de más sin perforar.`}
+        contexto={`El valle de ${formatMesCorto(techo.valle_limitante_mes)} ya está en el límite: no hay espacio para sumar gasto permanente sin perforar.`}
       />
     );
   }
   return (
     <KpiTileV2
-      label="Techo de gasto extra (mensual)"
+      label="Techo de gasto mensual sostenido"
       valor={techo.techo_mensual}
       tono="atencion"
-      contexto={`Lo máximo que puedes sumar cada mes sin que ningún valle baje del umbral. Lo limita ${formatMesCorto(techo.valle_limitante_mes)}.`}
+      contexto={`Lo máximo que puedes sumar CADA mes de aquí en adelante sin que ningún valle baje del umbral (no es un cupo de un solo mes). Lo limita ${formatMesCorto(techo.valle_limitante_mes)}.`}
     />
   );
 }
