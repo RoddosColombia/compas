@@ -100,11 +100,14 @@ export function MesStatusBar() {
         .toString();
     }
   }
-  const ultimaFecha = activo.saldos_banco
-    .map((s) => s.fecha_reporte)
-    .sort()
-    .reverse()[0];
-  const cajaHoy = ultimaFecha === hoyLocal();
+  // ✓ solo si TODOS los bancos que alguna vez reportaron tienen fecha de HOY;
+  // con reportes mixtos se muestra "parcial (n/m)" — un solo banco al día no
+  // debe dar la caja del día por hecha (hallazgo QA C2).
+  const hoy = hoyLocal();
+  const reportados = activo.saldos_banco.length;
+  const alDia = activo.saldos_banco.filter(
+    (s) => s.fecha_reporte === hoy,
+  ).length;
 
   return (
     <Link
@@ -127,9 +130,13 @@ export function MesStatusBar() {
         </>
       )}
       <span className="hidden text-ink-faint sm:inline">·</span>
-      {cajaHoy ? (
+      {reportados > 0 && alDia === reportados ? (
         <span className="hidden font-medium text-green sm:inline">
           caja reportada hoy ✓
+        </span>
+      ) : alDia > 0 ? (
+        <span className="hidden font-medium text-amber sm:inline">
+          caja parcial hoy ({alDia}/{reportados})
         </span>
       ) : (
         <span className="hidden font-medium text-amber sm:inline">

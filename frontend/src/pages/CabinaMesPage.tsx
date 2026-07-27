@@ -42,6 +42,11 @@ export default function CabinaMesPage() {
   const meses = useQuery({ queryKey: ["meses"], queryFn: listarMeses });
   const items = meses.data?.items ?? [];
 
+  // El aviso de cierre vive AQUÍ (no en TarjetaCierre): tras cerrar, la
+  // invalidación re-renderiza la tarjeta a su rama "cerrado" y un estado local
+  // se esfumaría con ella (hallazgo QA C2).
+  const [avisoCierre, setAvisoCierre] = useState<string | null>(null);
+
   // Mes de la cabina: el que está OPERANDO; si no hay, el pendiente de aprobar
   // más reciente; si tampoco, el más reciente del historial.
   const activo = mesEnEjecucion(items);
@@ -101,6 +106,8 @@ export default function CabinaMesPage() {
         descripcion="El ciclo completo del mes en una sola vista: presupuesto, caja, desvíos y cierre."
       />
 
+      {avisoCierre && <AlertBanner variant="ok">{avisoCierre}</AlertBanner>}
+
       {/* 1 · Mes y ciclo */}
       <Card className="flex flex-col gap-3">
         <CardTitle>Mes y ciclo</CardTitle>
@@ -147,7 +154,7 @@ export default function CabinaMesPage() {
       )}
 
       {/* 5 · Cierre */}
-      <TarjetaCierre mes={mesCab} meses={items} />
+      <TarjetaCierre mes={mesCab} meses={items} onCerrado={setAvisoCierre} />
     </div>
   );
 }
@@ -304,7 +311,16 @@ function BarraEjecucion({
 
 // ── 5 · Cierre — contrato real del backend (dos pasos) ──────────────────────
 
-function TarjetaCierre({ mes, meses }: { mes: Mes; meses: Mes[] }) {
+function TarjetaCierre({
+  mes,
+  meses,
+  onCerrado,
+}: {
+  mes: Mes;
+  meses: Mes[];
+  /** el aviso de éxito lo conserva el padre (sobrevive el re-render a "cerrado") */
+  onCerrado: (msg: string) => void;
+}) {
   const { puede } = useAuth();
   const qc = useQueryClient();
   const mes7 = mes.mes.slice(0, 7);
@@ -324,12 +340,11 @@ function TarjetaCierre({ mes, meses }: { mes: Mes; meses: Mes[] }) {
   // Cierre con Idempotency-Key generada UNA vez al abrir el diálogo (patrón C1).
   const [cerrarKey, setCerrarKey] = useState<string | null>(null);
   const [cerrarError, setCerrarError] = useState<string | null>(null);
-  const [cerradoMsg, setCerradoMsg] = useState<string | null>(null);
   const cerrar = useMutation({
     mutationFn: () => confirmarCierre(mes7, cerrarKey as string),
     onSuccess: (r) => {
       setCerrarKey(null);
-      setCerradoMsg(
+      onCerrado(
         `Mes ${r.mes} cerrado. Saldo inicial del siguiente: ${formatCOP(r.saldo_inicial_siguiente)}.`,
       );
       qc.invalidateQueries({ queryKey: ["meses"] });
@@ -366,8 +381,6 @@ function TarjetaCierre({ mes, meses }: { mes: Mes; meses: Mes[] }) {
   return (
     <Card className="flex flex-col gap-3">
       <CardTitle>Cierre</CardTitle>
-
-      {cerradoMsg && <AlertBanner variant="ok">{cerradoMsg}</AlertBanner>}
 
       <ul className="flex flex-col gap-1.5 font-sans text-sm">
         <li className="flex items-start gap-2">

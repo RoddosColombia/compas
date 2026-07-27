@@ -32,21 +32,18 @@ function hoyLocal(): string {
   return local.toISOString().slice(0, 10);
 }
 
-function mes(estado: Mes["estado"], fechaReporte?: string): Mes {
+function mes(estado: Mes["estado"], ...fechasReporte: string[]): Mes {
+  const bancos = ["global66", "bancolombia", "bbva"];
   return {
     id: "m1",
     mes: "2026-08-01",
     estado,
     saldo_inicial_caja: "0.00",
-    saldos_banco: fechaReporte
-      ? [
-          {
-            banco: "global66",
-            saldo: "1000000.00",
-            fecha_reporte: fechaReporte,
-          },
-        ]
-      : [],
+    saldos_banco: fechasReporte.map((f, i) => ({
+      banco: bancos[i],
+      saldo: "1000000.00",
+      fecha_reporte: f,
+    })),
     ingresos_esperados_semana: null,
   };
 }
@@ -104,6 +101,26 @@ describe("MesStatusBar", () => {
     expect(
       await screen.findByText(/caja sin reportar hoy/),
     ).toBeInTheDocument();
+  });
+
+  it("caja PARCIAL cuando solo algunos bancos reportaron hoy (QA C2)", async () => {
+    // global66 hoy, bancolombia atrasado → no es ✓, es parcial 1/2
+    mocks.listarMeses.mockResolvedValue({
+      items: [mes("en_ejecucion", hoyLocal(), "2026-07-20")],
+    });
+    renderBar();
+    expect(
+      await screen.findByText(/caja parcial hoy \(1\/2\)/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/caja reportada hoy ✓/)).toBeNull();
+  });
+
+  it("caja ✓ exige TODOS los bancos reportados al día", async () => {
+    mocks.listarMeses.mockResolvedValue({
+      items: [mes("en_ejecucion", hoyLocal(), hoyLocal())],
+    });
+    renderBar();
+    expect(await screen.findByText(/caja reportada hoy ✓/)).toBeInTheDocument();
   });
 
   it("sin mes en ejecución: muestra el paso pendiente con link", async () => {

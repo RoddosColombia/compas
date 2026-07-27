@@ -88,6 +88,42 @@ describe("calcularAtencion", () => {
     expect(items[2].mensaje).toContain("va al 80 %");
   });
 
+  it("un ingreso 'sobre-ejecutado' NO es alarma (recaudar de más es buena noticia)", () => {
+    const grupos: ControlGrupo[] = [
+      {
+        grupo: "ingresos_operativos",
+        subtotal: { definido: "0", ejecutado: "0", disponible: "0" },
+        lineas: [
+          // hipotético recaudo por encima de lo presupuestado (la línea más
+          // grande del mes): jamás debe encabezar la lista de alarmas
+          linea({
+            rubro_id: "ri",
+            rubro: "Recaudo",
+            definido: "200000000.00",
+            ejecutado: "250000000.00",
+            disponible: "-50000000.00",
+            pct_ejecutado: "125",
+            semaforo: "rojo",
+          }),
+        ],
+      },
+      {
+        grupo: "operacion",
+        subtotal: { definido: "0", ejecutado: "0", disponible: "0" },
+        lineas: [
+          linea({
+            rubro_id: "r1",
+            rubro: "Arriendos",
+            disponible: "-100000.00",
+            pct_ejecutado: "110",
+          }),
+        ],
+      },
+    ];
+    const items = calcularAtencion(grupos, pctMesTranscurrido("2026-08", HOY));
+    expect(items.map((i) => i.rubro_id)).toEqual(["r1"]);
+  });
+
   it("la heurística de calendario NO dispara dentro del umbral (+15 pts)", () => {
     const grupos: ControlGrupo[] = [
       {

@@ -47,7 +47,14 @@ export function calcularAtencion(
   grupos: ControlGrupo[],
   pctMes: number,
 ): ItemAtencion[] {
-  const lineas: ControlLinea[] = grupos.flatMap((g) => g.lineas);
+  // Los INGRESOS quedan fuera: para un ingreso, "ejecutado > definido" es buena
+  // noticia (recaudaste de más), no una alarma. Hoy vistaControl computa el
+  // ejecutado solo de egresos (0 para ingresos), pero se excluye igual como
+  // defensa semántica. La alerta correcta para ingresos (va POR DEBAJO del
+  // ritmo del calendario) necesita el recaudo real por rubro → C2.1/C3.
+  const lineas: ControlLinea[] = grupos
+    .filter((g) => g.grupo !== "ingresos_operativos")
+    .flatMap((g) => g.lineas);
   const sobre: ItemAtencion[] = [];
   const riesgo: ItemAtencion[] = [];
 

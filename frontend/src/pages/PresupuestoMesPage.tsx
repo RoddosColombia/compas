@@ -411,9 +411,12 @@ function FilaLinea({
         monto.trim(),
         comentario.trim() || undefined,
       ),
-    onSuccess: () => {
+    onSuccess: (ln) => {
       setError(null);
       setComentario("");
+      // Sincronizar el draft con el monto NORMALIZADO del backend ("1200000" →
+      // "1200000.00"); si no, `cambiado` queda true y "Guardar" persiste (QA C2).
+      setMonto(ln.monto_definido ?? "");
       // Sin optimistic UI: se refresca la línea con lo que devuelva el backend.
       qc.invalidateQueries({ queryKey: ["presupuesto", mes] });
       qc.invalidateQueries({ queryKey: ["meses"] });
