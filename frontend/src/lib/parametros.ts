@@ -37,13 +37,29 @@ export const PARAMS_INT = [
 type MoneyKey = (typeof PARAMS_MONEY)[number];
 type IntKey = (typeof PARAMS_INT)[number];
 
-export type Parametros = { id: string; vigente_desde: string } & {
-  [K in MoneyKey]: string;
-} & { [K in IntKey]: number } & { modificado_por: string };
+// CR-002: componente del desglose de "Costos de alistamiento por moto vendida".
+export interface ComponenteAlistamiento {
+  nombre: string;
+  valor: string; // monto COP como string (regla 1)
+  activo: boolean;
+  orden: number;
+}
 
-export type ParametrosInput = { vigente_desde: string } & {
-  [K in MoneyKey]: string;
-} & { [K in IntKey]: number };
+export type CamposParametros = { [K in MoneyKey]: string } & {
+  [K in IntKey]: number;
+} & { componentes_alistamiento: ComponenteAlistamiento[] | null };
+
+export type Parametros = {
+  id: string;
+  vigente_desde: string;
+  modificado_por: string;
+} & CamposParametros;
+
+export type ParametrosInput = {
+  vigente_desde: string;
+  /** C3: por qué el cambio — viaja a la metadata del audit log (≤300). */
+  nota?: string;
+} & CamposParametros;
 
 /** Devuelve los parámetros vigentes, o `null` si aún no hay configuración (404). */
 export async function obtenerParametros(): Promise<Parametros | null> {
@@ -63,4 +79,49 @@ export async function guardarParametros(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
+}
+
+// ── C3 §5.1 — preview compute-only: el impacto ANTES de guardar ──────────────
+
+export async function previewProyeccion(
+  parametros: CamposParametros,
+  opts: {
+    escenario?: string;
+    horizonteMeses?: number;
+    mesInicio?: string;
+  } = {},
+): Promise<import("@/lib/proyeccion").Proyeccion> {
+  const q = new URLSearchParams();
+  if (opts.escenario) q.set("escenario", opts.escenario);
+  if (opts.horizonteMeses)
+    q.set("horizonte_meses", String(opts.horizonteMeses));
+  if (opts.mesInicio) q.set("mes_inicio", opts.mesInicio);
+  const qs = q.toString();
+  return apiJson(`/proyeccion/preview${qs ? `?${qs}` : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parametros }),
+  });
+}
+
+// ── C3 §5.2 — sensibilidad del umbral (tornado) ──────────────────────────────
+
+export interface VariableSensibilidad {
+  variable: string;
+  etiqueta: string;
+  variacion: string;
+  piso_base: string;
+  piso_mas: string;
+  piso_menos: string;
+}
+
+export interface Sensibilidad {
+  escenario: string;
+  horizonte_meses: number;
+  piso_base: string;
+  variables: VariableSensibilidad[];
+}
+
+export async function obtenerSensibilidad(): Promise<Sensibilidad> {
+  return apiJson("/proyeccion/sensibilidad");
 }
