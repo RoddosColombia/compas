@@ -7,6 +7,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useAuth } from "@/auth/AuthContext";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -29,6 +30,18 @@ const ESTADO_ESTILO: Record<Mes["estado"], string> = {
   definido: "bg-cyan/10 text-cyan",
   en_ejecucion: "bg-green/10 text-green",
   cerrado: "bg-surface-muted text-ink-faint",
+};
+
+// Tooltip por estado: qué significa y cuál es la acción que sigue (C1).
+const ESTADO_AYUDA: Record<Mes["estado"], string> = {
+  sugerido:
+    "Mes abierto. Siguiente paso: generar el presupuesto sugerido y acotarlo.",
+  propuesto:
+    "Presupuesto acotado al menos una vez. Siguiente paso: aprobarlo para ponerlo en ejecución.",
+  definido: "Presupuesto aprobado. El mes pasa a ejecución.",
+  en_ejecucion:
+    "Presupuesto en ejecución. Síguelo en Presupuesto (control) y reporta la caja diaria.",
+  cerrado: "Mes cerrado: el histórico es inmutable.",
 };
 
 export default function MesesPage() {
@@ -87,6 +100,9 @@ export default function MesesPage() {
                     Saldo inicial caja
                   </th>
                   <th className="px-4 py-2.5 font-semibold">Bancos al corte</th>
+                  <th className="px-4 py-2.5 font-semibold">
+                    <span className="sr-only">Acciones</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -100,7 +116,8 @@ export default function MesesPage() {
                     </td>
                     <td className="px-4 py-2">
                       <span
-                        className={`rounded-full px-2 py-0.5 font-sans text-xs font-medium ${ESTADO_ESTILO[m.estado]}`}
+                        title={ESTADO_AYUDA[m.estado]}
+                        className={`cursor-help rounded-full px-2 py-0.5 font-sans text-xs font-medium ${ESTADO_ESTILO[m.estado]}`}
                       >
                         {m.estado}
                       </span>
@@ -114,6 +131,14 @@ export default function MesesPage() {
                         : m.saldos_banco
                             .map((s) => `${s.banco}: ${formatCOP(s.saldo)}`)
                             .join(" · ")}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <Link
+                        to={`/meses/${m.mes.slice(0, 7)}/presupuesto`}
+                        className="font-medium whitespace-nowrap text-cyan hover:underline"
+                      >
+                        Gestionar presupuesto →
+                      </Link>
                     </td>
                   </tr>
                 ))}

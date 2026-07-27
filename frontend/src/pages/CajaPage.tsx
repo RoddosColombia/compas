@@ -8,6 +8,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useAuth } from "@/auth/AuthContext";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -49,6 +50,18 @@ export default function CajaPage() {
     () => (meses.data?.items ?? []).find((m) => m.estado === "en_ejecucion"),
     [meses.data],
   );
+
+  // Mes más reciente pendiente de aprobar (para el vacío accionable, C1).
+  const mesPendiente = useMemo(() => {
+    const items = meses.data?.items ?? [];
+    return (
+      items
+        .filter((m) => m.estado === "sugerido" || m.estado === "propuesto")
+        .map((m) => m.mes.slice(0, 7))
+        .sort()
+        .reverse()[0] ?? null
+    );
+  }, [meses.data]);
   const mesCorto = mesActivo?.mes.slice(0, 7) ?? null;
 
   const reportar = useMutation({
@@ -82,8 +95,19 @@ export default function CajaPage() {
       )}
       {meses.data && !mesActivo && (
         <p className="font-sans text-sm text-ink-soft">
-          No hay ningún mes en ejecución. Aprueba el presupuesto de un mes para
-          reportar su caja.
+          No hay ningún mes en ejecución.{" "}
+          {mesPendiente ? (
+            <Link
+              to={`/meses/${mesPendiente}/presupuesto`}
+              className="font-medium text-cyan hover:underline"
+            >
+              Aprueba el presupuesto de {mesPendiente} →
+            </Link>
+          ) : (
+            <Link to="/meses" className="font-medium text-cyan hover:underline">
+              Abre un mes para empezar el ciclo →
+            </Link>
+          )}
         </p>
       )}
 
