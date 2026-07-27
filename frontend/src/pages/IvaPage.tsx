@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card, CardTitle } from "@/components/ui/card";
+import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   type LiquidacionIva,
@@ -54,11 +55,10 @@ export default function IvaPage() {
 
       {liq.data && liq.data.periodos.length === 0 && (
         <Card>
-          <p className="font-sans text-sm text-ink-soft">
-            Aún no hay facturas cargadas. Cuando cargues facturas de compra y
-            venta, aquí verás la liquidación del IVA por período, el próximo
-            pago a la DIAN y el fondo de provisión.
-          </p>
+          <EstadoVacio
+            mensaje="Aún no hay facturas cargadas: con ellas verás la liquidación por período, el próximo pago a la DIAN y el fondo de provisión."
+            quien="financiero o admin — hoy entran por la API de facturas; la pantalla de captura aún no existe"
+          />
         </Card>
       )}
 

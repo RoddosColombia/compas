@@ -12,8 +12,12 @@ import { formatCOPCompact, formatMesCorto, parseMonto } from "@/lib/money";
 import type { MesProyeccion } from "@/lib/proyeccion";
 import { cn } from "@/lib/utils";
 
+/** Punto mínimo de la curva: cualquier serie {mes, caja} sirve (mensual del
+ * motor o DIARIA del flujo — F1.1 §8). MesProyeccion es asignable tal cual. */
+export type PuntoCaja = Pick<MesProyeccion, "mes" | "caja">;
+
 interface CashCurveProps {
-  meses: MesProyeccion[];
+  meses: PuntoCaja[];
   umbral: string;
   /** Clase de alto del SVG (ej. "h-60" hero, "h-28" mini). */
   className?: string;
