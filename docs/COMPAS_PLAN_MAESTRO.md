@@ -53,6 +53,8 @@ COMPAS es un sistema **predictivo** para administrar el presupuesto mensual de R
 
 ### D2 — Obligaciones genéricas + metas de ingreso
 
+**Primer ítem (arrastre de D1 — QA Cowork 2026-07-27):** completar la **tarjeta de techo de gasto** con el cruce contra el **gasto YA ejecutado del mes** (consumido / disponible / % + alerta al excederlo — la mitad operativa del §4.7 del brief, que D1 dejó documentada como diferida). Los datos ya existen en la Vista Control (`control.service`); es atarla al mes de la Cabina. Alternativamente puede salir como un **D1.1 corto** antes de D2.
+
 Generalizar la lógica Auteco existente (verificada; NO reconstruirla) como entidad **Obligación** de dos naturalezas: (a) valor fijo con cuotas (acreedor, monto, cuotas, periodicidad, tasa, inicio, gracia → calendario generado); (b) valor variable por facturación con términos (plazo base sin interés, plazo máximo, tasa del excedente — atributos, no constantes). **Registro factura a factura** (fecha, valor, plazo elegido 90–150) → fecha/mes de pago, interés causado como concepto separado, reflejo automático en flujo, proyección y techo. Meses sin factura → supuesto editable (último valor / promedio N / valor definido), marcado como proyectado. **El plazo como palanca:** simular 90/120/150 por factura o como política, viendo alivio de caja vs. costo financiero. Auteco pasa a ser un registro de esta entidad, nunca caso especial. La deuda de inversores migra a obligación tipo (a). Además: **ingreso proyectado como meta** por mes (editable, con líneas), comparado contra el real y contra el motor, con % de cumplimiento en Presupuesto.
 **Terminado cuando:** registrar una factura con plazo 150 mueve el pago de mes, muestra el interés al 1,6 % separado y ajusta el techo; la lógica existente produce los mismos resultados que antes (test de regresión de paridad); una obligación nueva aparece sola en flujo, gráfica y techo.
 
@@ -120,8 +122,7 @@ Al cierre de D2 deben pasar TODOS; cada fase marca los suyos:
 |---|---|---|
 | C1 · C2 · F1 · C3+CR-002 | ✅ En producción | 2026-07-26/27 |
 | F1.1 | ✅ Cerrada — prueba 10s de un tercero PASÓ | 2026-07-27 |
-| D1 | 🔨 En ejecución (GO CEO 2026-07-27, rama `feat/d1-decisiones`) | — |
-| D1 | 📋 Spec lista | — |
+| D1 | ✅ En producción (`95acf9c`, PR #42, GO CEO) — pasada visual pendiente en prod | 2026-07-27 |
 | D2 | 📝 Definida aquí (spec detallada al terminar D1) | — |
 | F4 | 📝 Definida aquí | — |
 | D3 | 📝 Definida aquí (espera histórico) | — |
