@@ -13,9 +13,9 @@ export interface AlertBannerProps {
 }
 
 const ESTILO: Record<AlertBannerProps["variant"], string> = {
-  ok: "border-green/30 bg-green/5 text-green",
-  warn: "border-amber/40 bg-amber/10 text-amber",
-  danger: "border-red/40 bg-red/10 text-red",
+  ok: "border-positivo/30 bg-positivo/5 text-positivo",
+  warn: "border-atencion/40 bg-atencion/10 text-atencion",
+  danger: "border-critico/40 bg-critico/10 text-critico",
 };
 
 export function AlertBanner({

@@ -76,7 +76,7 @@ export function ScenariosChart({
         x2={W}
         y1={yUmbral}
         y2={yUmbral}
-        className="stroke-red"
+        className="stroke-critico"
         strokeWidth={1.5}
         strokeDasharray="6 4"
       />

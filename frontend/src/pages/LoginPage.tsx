@@ -97,7 +97,7 @@ export default function LoginPage() {
             />
           </>
         )}
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-critico-600">{error}</p>}
         <Button type="submit" disabled={enviando}>
           {enviando ? "Entrando…" : mfaToken ? "Verificar" : "Entrar"}
         </Button>

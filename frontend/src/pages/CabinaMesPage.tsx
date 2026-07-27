@@ -129,7 +129,7 @@ export default function CabinaMesPage() {
           <CardTitle>Caja del día</CardTitle>
           <Link
             to="/caja"
-            className="font-sans text-xs font-medium text-cyan hover:underline"
+            className="font-sans text-apoyo font-medium text-cyan hover:underline"
           >
             Ver en Caja →
           </Link>
@@ -190,7 +190,7 @@ function MesesRecientes({
         <Link
           key={m.id}
           to={`/meses/${m.mes.slice(0, 7)}/presupuesto`}
-          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-sans text-xs transition-colors hover:bg-surface-muted ${
+          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-sans text-apoyo transition-colors hover:bg-surface-muted ${
             m.mes === mesCabina ? "border-cyan" : "border-hairline"
           }`}
         >
@@ -200,7 +200,7 @@ function MesesRecientes({
       ))}
       <Link
         to="/meses"
-        className="font-sans text-xs font-medium text-cyan hover:underline"
+        className="font-sans text-apoyo font-medium text-cyan hover:underline"
       >
         Historial completo y abrir mes →
       </Link>
@@ -228,7 +228,7 @@ function TarjetaPresupuesto({
         <CardTitle>Presupuesto</CardTitle>
         <Link
           to={`/meses/${mes7}/presupuesto`}
-          className="font-sans text-xs font-medium text-cyan hover:underline"
+          className="font-sans text-apoyo font-medium text-cyan hover:underline"
         >
           {editable
             ? lineas === 0
@@ -284,7 +284,7 @@ function BarraEjecucion({
   const pasado = pct.greaterThan(100);
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex justify-between font-sans text-xs text-ink-soft">
+      <div className="flex justify-between font-sans text-apoyo text-ink-soft">
         <span>
           Ejecutado{" "}
           <span className="tabular font-medium text-ink">
@@ -301,7 +301,7 @@ function BarraEjecucion({
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
         <div
-          className={`h-full rounded-full ${pasado ? "bg-red" : "bg-cyan"}`}
+          className={`h-full rounded-full ${pasado ? "bg-critico" : "bg-cyan"}`}
           style={{ width: `${ancho}%` }}
         />
       </div>
@@ -464,9 +464,9 @@ function Precondicion({ ok }: { ok: boolean | null }) {
   if (ok === null)
     return <span className="mt-0.5 shrink-0 text-ink-faint">•</span>;
   return ok ? (
-    <span className="mt-0.5 shrink-0 font-semibold text-green">✓</span>
+    <span className="mt-0.5 shrink-0 font-semibold text-positivo">✓</span>
   ) : (
-    <span className="mt-0.5 shrink-0 font-semibold text-red">✗</span>
+    <span className="mt-0.5 shrink-0 font-semibold text-critico">✗</span>
   );
 }
 
@@ -495,7 +495,7 @@ function CerrarDialog({
         <h3 className="mb-1 font-display text-lg font-semibold text-ink">
           Cerrar el mes {mes}
         </h3>
-        <p className="mb-4 font-sans text-xs text-ink-faint">
+        <p className="mb-4 font-sans text-apoyo text-ink-faint">
           El mes queda inmutable y el saldo inicial del siguiente se ancla al
           consolidado de bancos. El backend valida la conciliación antes de
           cerrar. Esta acción queda auditada.

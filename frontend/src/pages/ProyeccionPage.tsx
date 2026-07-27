@@ -14,7 +14,7 @@ import { CashCurve } from "@/components/charts/CashCurve";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card, CardTitle } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { ScenarioChip } from "@/components/ui/scenario-chip";
 import { formatCOP, parseMonto } from "@/lib/money";
 import {
@@ -30,9 +30,9 @@ const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
 const HORIZONTES = [12, 24, 36, 60, 120, 180];
 
 const ESTADO_ESTILO: Record<EstadoMes, string> = {
-  ok: "bg-green/10 text-green",
-  critico: "bg-amber/10 text-amber",
-  negativo: "bg-red/10 text-red",
+  ok: "bg-positivo/10 text-positivo",
+  critico: "bg-atencion/10 text-atencion",
+  negativo: "bg-critico/10 text-critico",
 };
 
 export default function ProyeccionPage() {
@@ -119,28 +119,37 @@ function ProyeccionContenido({ data }: { data: Proyeccion }) {
 
       {/* Franja de KPIs del motor */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <KpiTile
+        <KpiTileV2
           label="Piso de caja"
-          value={formatCOP(data.piso_caja)}
-          sub={`en ${data.mes_mas_ajustado}`}
-          tono={perforada ? "peligro" : "neutro"}
+          valor={data.piso_caja}
+          contexto={`en ${data.mes_mas_ajustado}`}
+          tono={perforada ? "critico" : "positivo"}
         />
-        <KpiTile label="Caja final" value={formatCOP(data.caja_final)} />
-        <KpiTile
+        <KpiTileV2
+          label="Caja final"
+          valor={data.caja_final}
+          contexto="al final del horizonte"
+        />
+        <KpiTileV2
           label="Capital requerido"
-          value={formatCOP(data.capital_requerido)}
-          sub="para no cruzar el umbral"
-          tono={requiereCapital ? "peligro" : "neutro"}
+          valor={data.capital_requerido}
+          contexto="para no cruzar el umbral"
+          tono={requiereCapital ? "atencion" : "positivo"}
         />
-        <KpiTile
+        <KpiTileV2
           label="Meses bajo el mínimo"
-          value={String(data.meses_bajo_minimo)}
-          tono={perforada ? "peligro" : "neutro"}
+          valor="0"
+          valorTexto={String(data.meses_bajo_minimo)}
+          contexto="en el horizonte consultado"
+          tono={perforada ? "critico" : "positivo"}
         />
-        <KpiTile
+        <KpiTileV2
           label="Runway"
-          value={data.runway_meses === null ? "—" : `${data.runway_meses} m`}
-          sub={
+          valor="0"
+          valorTexto={
+            data.runway_meses === null ? "—" : `${data.runway_meses} m`
+          }
+          contexto={
             data.runway_meses === null ? "caja no decrece" : "al ritmo actual"
           }
         />
@@ -150,7 +159,7 @@ function ProyeccionContenido({ data }: { data: Proyeccion }) {
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <CardTitle>Caja proyectada vs. umbral</CardTitle>
-          <p className="font-sans text-xs text-ink-faint">
+          <p className="font-sans text-apoyo text-ink-faint">
             umbral {formatCOP(data.caja_minima)} · {data.meses.length} meses
           </p>
         </div>
@@ -206,7 +215,7 @@ function ProyeccionContenido({ data }: { data: Proyeccion }) {
                   </td>
                   <td className="px-4 py-2">
                     <span
-                      className={`rounded-full px-2 py-0.5 font-sans text-xs font-medium ${ESTADO_ESTILO[m.estado]}`}
+                      className={`rounded-full px-2 py-0.5 font-sans text-apoyo font-medium ${ESTADO_ESTILO[m.estado]}`}
                     >
                       {ESTADO_LABEL[m.estado]}
                     </span>

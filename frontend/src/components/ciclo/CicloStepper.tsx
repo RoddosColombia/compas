@@ -68,7 +68,7 @@ export function CicloStepper({
           </li>
         ))}
       </ol>
-      <p className="font-sans text-xs text-ink-faint">
+      <p className="font-sans text-apoyo text-ink-faint">
         {ACCION_SIGUIENTE[paso]}
       </p>
     </div>

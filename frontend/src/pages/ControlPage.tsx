@@ -13,7 +13,7 @@ import { QueExigeAtencion } from "@/components/control/QueExigeAtencion";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   BANCO_LABEL,
   type ControlPorCuenta,
@@ -29,9 +29,9 @@ import { cn } from "@/lib/utils";
 type Vista = "categoria" | "cuenta";
 
 const SEMAFORO_ESTILO: Record<Semaforo, string> = {
-  verde: "bg-green/10 text-green",
-  amarillo: "bg-amber/10 text-amber",
-  rojo: "bg-red/10 text-red",
+  verde: "bg-positivo/10 text-positivo",
+  amarillo: "bg-atencion/10 text-atencion",
+  rojo: "bg-critico/10 text-critico",
 };
 
 const SEMAFORO_LABEL: Record<Semaforo, string> = {
@@ -184,21 +184,25 @@ export default function ControlPage() {
           />
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiTile
+            <KpiTileV2
               label="Caja disponible"
-              value={formatCOP(control.data.caja_disponible)}
+              valor={control.data.caja_disponible}
+              contexto="caja del libro a hoy"
             />
-            <KpiTile
+            <KpiTileV2
               label="Presupuesto definido"
-              value={formatCOP(control.data.total.definido)}
+              valor={control.data.total.definido}
+              contexto="aprobado para el mes"
             />
-            <KpiTile
+            <KpiTileV2
               label="Ejecutado"
-              value={formatCOP(control.data.total.ejecutado)}
+              valor={control.data.total.ejecutado}
+              contexto="gastado en lo corrido del mes"
             />
-            <KpiTile
+            <KpiTileV2
               label="Disponible"
-              value={formatCOP(control.data.total.disponible)}
+              valor={control.data.total.disponible}
+              contexto="lo que queda del presupuesto aprobado"
             />
           </div>
 
@@ -358,7 +362,7 @@ function MatrizGrupo({
       <tr className="bg-surface-muted">
         <td
           colSpan={bancos.length + 2}
-          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
+          className="px-4 py-1.5 font-sans text-apoyo font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo.grupo] ?? grupo.grupo}
         </td>
@@ -377,13 +381,13 @@ function MatrizGrupo({
         </tr>
       ))}
       <tr className="border-b border-hairline text-ink-faint">
-        <td className="px-4 py-1.5 text-right text-xs italic">Subtotal</td>
+        <td className="px-4 py-1.5 text-right text-apoyo italic">Subtotal</td>
         {bancos.map((b) => (
-          <td key={b} className="tabular px-4 py-1.5 text-right text-xs">
+          <td key={b} className="tabular px-4 py-1.5 text-right text-apoyo">
             {formatCOP(grupo.subtotal.por_banco[b])}
           </td>
         ))}
-        <td className="tabular px-4 py-1.5 text-right text-xs">
+        <td className="tabular px-4 py-1.5 text-right text-apoyo">
           {formatCOP(grupo.subtotal.total)}
         </td>
       </tr>
@@ -401,7 +405,7 @@ function GrupoBloque({
       <tr className="bg-surface-muted">
         <td
           colSpan={6}
-          className="px-4 py-1.5 font-sans text-xs font-semibold tracking-wide text-ink-faint uppercase"
+          className="px-4 py-1.5 font-sans text-apoyo font-semibold tracking-wide text-ink-faint uppercase"
         >
           {GRUPO_LABEL[grupo.grupo] ?? grupo.grupo}
         </td>
@@ -411,7 +415,7 @@ function GrupoBloque({
         <tr
           key={l.rubro_id}
           id={`rubro-${l.rubro_id}`}
-          className="scroll-mt-16 border-b border-hairline/60 target:bg-amber/10"
+          className="scroll-mt-16 border-b border-hairline/60 target:bg-atencion/10"
         >
           <td className="px-4 py-2 text-ink">{l.rubro}</td>
           <td className="tabular px-4 py-2 text-right text-ink-soft">
@@ -429,7 +433,7 @@ function GrupoBloque({
           <td className="px-4 py-2">
             <span
               title={SEMAFORO_LABEL[l.semaforo]}
-              className={`rounded-full px-2 py-0.5 font-sans text-xs font-medium ${SEMAFORO_ESTILO[l.semaforo]}`}
+              className={`rounded-full px-2 py-0.5 font-sans text-apoyo font-medium ${SEMAFORO_ESTILO[l.semaforo]}`}
             >
               {SEMAFORO_LABEL[l.semaforo]}
             </span>
@@ -437,14 +441,14 @@ function GrupoBloque({
         </tr>
       ))}
       <tr className="border-b border-hairline text-ink-faint">
-        <td className="px-4 py-1.5 text-right text-xs italic">Subtotal</td>
-        <td className="tabular px-4 py-1.5 text-right text-xs">
+        <td className="px-4 py-1.5 text-right text-apoyo italic">Subtotal</td>
+        <td className="tabular px-4 py-1.5 text-right text-apoyo">
           {formatCOP(grupo.subtotal.definido)}
         </td>
-        <td className="tabular px-4 py-1.5 text-right text-xs">
+        <td className="tabular px-4 py-1.5 text-right text-apoyo">
           {formatCOP(grupo.subtotal.ejecutado)}
         </td>
-        <td className="tabular px-4 py-1.5 text-right text-xs">
+        <td className="tabular px-4 py-1.5 text-right text-apoyo">
           {formatCOP(grupo.subtotal.disponible)}
         </td>
         <td className="px-4 py-1.5" />

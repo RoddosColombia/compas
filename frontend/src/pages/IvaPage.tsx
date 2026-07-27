@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card, CardTitle } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   type LiquidacionIva,
   PERIODICIDAD_LABEL,
@@ -77,7 +77,7 @@ export default function IvaPage() {
 
 function PeriodicidadBadge({ liq }: { liq: LiquidacionIva }) {
   return (
-    <span className="rounded-full bg-cyan-tint px-3 py-1 font-sans text-xs font-semibold text-ink">
+    <span className="rounded-full bg-cyan-tint px-3 py-1 font-sans text-apoyo font-semibold text-ink">
       Período {PERIODICIDAD_LABEL[liq.periodicidad].toLowerCase()}
     </span>
   );
@@ -91,21 +91,23 @@ function ResumenIva({ periodos }: { periodos: PeriodoIva[] }) {
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-      <KpiTile
+      <KpiTileV2
         label="Próximo pago a la DIAN"
-        value={proximo ? formatCOP(proximo.neto_a_pagar) : "—"}
-        sub={proximo ? proximo.etiqueta : "sin pago pendiente"}
-        tono={proximo ? "peligro" : "neutro"}
+        valor={proximo ? proximo.neto_a_pagar : "0"}
+        valorTexto={proximo ? undefined : "—"}
+        contexto={proximo ? proximo.etiqueta : "sin pago pendiente"}
+        tono={proximo ? "atencion" : "positivo"}
       />
-      <KpiTile
+      <KpiTileV2
         label="Saldo a favor"
-        value={formatCOP(saldoFavor)}
-        sub="arrastre al próximo período"
+        valor={saldoFavor}
+        contexto="arrastre al próximo período"
       />
-      <KpiTile
+      <KpiTileV2
         label="Períodos liquidados"
-        value={String(periodos.length)}
-        sub="con facturas cargadas"
+        valor="0"
+        valorTexto={String(periodos.length)}
+        contexto="con facturas cargadas"
       />
     </div>
   );
@@ -159,12 +161,12 @@ function LiquidacionTabla({ periodos }: { periodos: PeriodoIva[] }) {
                   </td>
                   <td
                     className={`tabular px-4 py-2 text-right font-semibold ${
-                      paga ? "text-red" : "text-ink"
+                      paga ? "text-critico" : "text-ink"
                     }`}
                   >
                     {formatCOP(p.neto_a_pagar)}
                   </td>
-                  <td className="tabular px-4 py-2 text-right text-green">
+                  <td className="tabular px-4 py-2 text-right text-positivo">
                     {formatCOP(p.saldo_favor_nuevo)}
                   </td>
                 </tr>
@@ -188,7 +190,7 @@ function FondoProvision({ fondo }: { fondo: FondoMes[] }) {
     <Card className="overflow-hidden p-0">
       <div className="border-b border-hairline px-4 py-3">
         <CardTitle>Fondo de provisión</CardTitle>
-        <p className="mt-0.5 font-sans text-xs text-ink-faint">
+        <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
           Reserva mensual para que el pago del período no sea un golpe seco a la
           caja: al llegar la fecha DIAN el fondo ya tiene el monto y el pago lo
           vacía.
@@ -220,7 +222,7 @@ function FondoProvision({ fondo }: { fondo: FondoMes[] }) {
                 </td>
                 <td
                   className={`tabular px-4 py-2 text-right ${
-                    esPositivo(f.pago) ? "text-red" : "text-ink-soft"
+                    esPositivo(f.pago) ? "text-critico" : "text-ink-soft"
                   }`}
                 >
                   {formatCOP(f.pago)}

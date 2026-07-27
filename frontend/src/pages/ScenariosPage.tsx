@@ -31,9 +31,9 @@ const ESCENARIOS: { esc: Escenario; label: string; color: SerieColor }[] = [
 ];
 
 const PUNTO: Record<SerieColor, string> = {
-  amber: "bg-amber",
+  amber: "bg-atencion",
   cyan: "bg-cyan",
-  green: "bg-green",
+  green: "bg-positivo",
 };
 
 export default function ScenariosPage() {
@@ -100,7 +100,7 @@ export default function ScenariosPage() {
                 {ESCENARIOS.map((s) => (
                   <span
                     key={s.esc}
-                    className="flex items-center gap-1.5 font-sans text-xs text-ink-soft"
+                    className="flex items-center gap-1.5 font-sans text-apoyo text-ink-soft"
                   >
                     <span
                       className={`h-2 w-2 rounded-full ${PUNTO[s.color]}`}
@@ -108,8 +108,8 @@ export default function ScenariosPage() {
                     {s.label}
                   </span>
                 ))}
-                <span className="flex items-center gap-1.5 font-sans text-xs text-ink-soft">
-                  <span className="h-0 w-3 border-t-2 border-red border-dashed" />
+                <span className="flex items-center gap-1.5 font-sans text-apoyo text-ink-soft">
+                  <span className="h-0 w-3 border-t-2 border-critico border-dashed" />
                   Umbral
                 </span>
               </div>
@@ -195,17 +195,17 @@ function Metrica({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="font-sans text-xs text-ink-soft">{label}</dt>
+      <dt className="font-sans text-apoyo text-ink-soft">{label}</dt>
       <dd className="text-right">
         <span
           className={`tabular font-display text-sm font-semibold ${
-            peligro ? "text-red" : "text-ink"
+            peligro ? "text-critico" : "text-ink"
           }`}
         >
           {valor}
         </span>
         {sub && (
-          <span className="ml-1 font-sans text-[10px] text-ink-faint">
+          <span className="ml-1 font-sans text-apoyo text-ink-faint">
             {sub}
           </span>
         )}

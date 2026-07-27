@@ -32,7 +32,7 @@ export function Sidebar({ rol, puede, onCerrarSesion }: SidebarProps) {
           <p className="font-display text-base font-bold tracking-tight text-ink">
             COMPAS
           </p>
-          <p className="mt-0.5 font-sans text-[10px] font-medium tracking-wide text-ink-faint uppercase">
+          <p className="mt-0.5 font-sans text-apoyo font-medium tracking-wide text-ink-faint uppercase">
             RODDOS
           </p>
         </div>
@@ -42,7 +42,7 @@ export function Sidebar({ rol, puede, onCerrarSesion }: SidebarProps) {
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {grupos.map((grupo) => (
           <div key={grupo.titulo} className="mb-5">
-            <p className="px-3 pb-1.5 font-sans text-[10px] font-semibold tracking-wider text-ink-faint uppercase">
+            <p className="px-3 pb-1.5 font-sans text-apoyo font-semibold tracking-wider text-ink-faint uppercase">
               {grupo.titulo}
             </p>
             <ul className="space-y-0.5">
@@ -82,13 +82,13 @@ export function Sidebar({ rol, puede, onCerrarSesion }: SidebarProps) {
       {/* Pie: rol + salir */}
       <div className="border-t border-hairline px-4 py-3">
         <div className="flex items-center justify-between">
-          <span className="font-sans text-xs text-ink-soft capitalize">
+          <span className="font-sans text-apoyo text-ink-soft capitalize">
             {rol}
           </span>
           <button
             type="button"
             onClick={onCerrarSesion}
-            className="rounded-md px-2 py-1 font-sans text-xs font-medium text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+            className="rounded-md px-2 py-1 font-sans text-apoyo font-medium text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
           >
             Salir
           </button>

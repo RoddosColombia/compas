@@ -12,9 +12,14 @@ import { useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Card } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { type DiaCaja, obtenerCajaDiaria } from "@/lib/caja";
-import { formatCOP, formatFecha, parseMonto } from "@/lib/money";
+import {
+  formatCOP,
+  formatCOPCompact,
+  formatFecha,
+  parseMonto,
+} from "@/lib/money";
 
 export default function FlujoDiarioPage() {
   const [desde, setDesde] = useState("2026-03-01");
@@ -42,7 +47,7 @@ export default function FlujoDiarioPage() {
 
       <Card>
         <div className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
             Desde
             <input
               type="date"
@@ -51,7 +56,7 @@ export default function FlujoDiarioPage() {
               className="rounded-md border border-line px-2 py-1 text-sm text-ink"
             />
           </label>
-          <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
             Hasta
             <input
               type="date"
@@ -60,7 +65,7 @@ export default function FlujoDiarioPage() {
               className="rounded-md border border-line px-2 py-1 text-sm text-ink"
             />
           </label>
-          <label className="flex flex-col gap-1 font-sans text-xs text-ink-soft">
+          <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
             Saldo inicial (COP)
             <input
               type="number"
@@ -95,20 +100,25 @@ export default function FlujoDiarioPage() {
       {q.data && dias.length > 0 && (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <KpiTile
+            <KpiTileV2
               label="Ingresos"
-              value={formatCOP(q.data.total_ingresos)}
+              valor={q.data.total_ingresos}
+              contexto="entradas del período"
             />
-            <KpiTile label="Egresos" value={formatCOP(q.data.total_egresos)} />
-            <KpiTile
+            <KpiTileV2
+              label="Egresos"
+              valor={q.data.total_egresos}
+              contexto="salidas del período"
+            />
+            <KpiTileV2
               label="Flujo neto"
-              value={formatCOP(q.data.flujo_neto)}
-              sub={`${dias.length} días con movimiento`}
+              valor={q.data.flujo_neto}
+              contexto={`${dias.length} días con movimiento`}
             />
-            <KpiTile
+            <KpiTileV2
               label="Saldo final"
-              value={formatCOP(q.data.caja_final)}
-              sub={`inicial ${formatCOP(q.data.caja_inicial)}`}
+              valor={q.data.caja_final}
+              contexto={`arrancó en ${formatCOPCompact(q.data.caja_inicial)}`}
             />
           </div>
 
@@ -116,7 +126,7 @@ export default function FlujoDiarioPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] border-collapse font-sans text-sm">
                 <thead>
-                  <tr className="border-b border-line text-left text-xs text-ink-soft">
+                  <tr className="border-b border-line text-left text-apoyo text-ink-soft">
                     <th className="py-2 pr-3">Día</th>
                     <th className="py-2 pr-3 text-right">Ingresos</th>
                     <th className="py-2 pr-3 text-right">Egresos</th>

@@ -66,7 +66,7 @@ export function MesStatusBar() {
   if (!activo) {
     const pendiente = mesPendiente(items);
     return (
-      <div className="flex h-9 items-center gap-2 border-b border-hairline bg-surface px-4 font-sans text-xs md:px-6">
+      <div className="flex h-9 items-center gap-2 border-b border-hairline bg-surface px-4 font-sans text-apoyo md:px-6">
         <Link to="/mes" className="font-medium text-ink-soft hover:text-ink">
           Sin mes en ejecución
         </Link>
@@ -112,14 +112,14 @@ export function MesStatusBar() {
   return (
     <Link
       to="/mes"
-      className="flex h-9 items-center gap-2 border-b border-hairline bg-surface px-4 font-sans text-xs text-ink-soft transition-colors hover:bg-surface-muted md:px-6"
+      className="flex h-9 items-center gap-2 border-b border-hairline bg-surface px-4 font-sans text-apoyo text-ink-soft transition-colors hover:bg-surface-muted md:px-6"
     >
       <span className="font-semibold text-ink">
         <span className="sm:hidden">{corta}</span>
         <span className="hidden sm:inline">{larga}</span>
       </span>
       <span className="text-ink-faint">·</span>
-      <span className="font-medium text-green">En ejecución</span>
+      <span className="font-medium text-positivo">En ejecución</span>
       {pct !== null && (
         <>
           <span className="text-ink-faint">·</span>
@@ -131,15 +131,15 @@ export function MesStatusBar() {
       )}
       <span className="hidden text-ink-faint sm:inline">·</span>
       {reportados > 0 && alDia === reportados ? (
-        <span className="hidden font-medium text-green sm:inline">
+        <span className="hidden font-medium text-positivo sm:inline">
           caja reportada hoy ✓
         </span>
       ) : alDia > 0 ? (
-        <span className="hidden font-medium text-amber sm:inline">
+        <span className="hidden font-medium text-atencion sm:inline">
           caja parcial hoy ({alDia}/{reportados})
         </span>
       ) : (
-        <span className="hidden font-medium text-amber sm:inline">
+        <span className="hidden font-medium text-atencion sm:inline">
           caja sin reportar hoy
         </span>
       )}

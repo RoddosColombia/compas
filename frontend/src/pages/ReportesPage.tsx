@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
-import { KpiTile } from "@/components/ui/kpi-tile";
+import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { formatCOP, parseMonto } from "@/lib/money";
 import {
   type Escenario,
@@ -122,29 +122,37 @@ export default function ReportesPage() {
             )}
 
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-              <KpiTile
+              <KpiTileV2
                 label="Caja final (base)"
-                value={formatCOP(base.caja_final)}
+                valor={base.caja_final}
+                contexto="al final del horizonte"
               />
-              <KpiTile
+              <KpiTileV2
                 label="Piso de caja"
-                value={formatCOP(base.piso_caja)}
-                sub={`en ${base.mes_mas_ajustado}`}
-                tono={base.meses_bajo_minimo > 0 ? "peligro" : "neutro"}
+                valor={base.piso_caja}
+                contexto={`en ${base.mes_mas_ajustado}`}
+                tono={base.meses_bajo_minimo > 0 ? "critico" : "positivo"}
               />
-              <KpiTile
+              <KpiTileV2
                 label="Capital requerido"
-                value={formatCOP(base.capital_requerido)}
+                valor={base.capital_requerido}
+                contexto="para sostener el umbral"
                 tono={
                   parseMonto(base.capital_requerido).isZero()
-                    ? "neutro"
-                    : "peligro"
+                    ? "positivo"
+                    : "atencion"
                 }
               />
-              <KpiTile
+              <KpiTileV2
                 label="Runway"
-                value={
+                valor="0"
+                valorTexto={
                   base.runway_meses === null ? "—" : `${base.runway_meses} m`
+                }
+                contexto={
+                  base.runway_meses === null
+                    ? "caja no decrece"
+                    : "al ritmo actual"
                 }
               />
             </div>
@@ -192,12 +200,12 @@ export default function ReportesPage() {
                         {formatCOP(d.caja_final)}
                       </td>
                       <td
-                        className={`tabular px-4 py-2 text-right ${perf ? "text-red" : "text-ink-soft"}`}
+                        className={`tabular px-4 py-2 text-right ${perf ? "text-critico" : "text-ink-soft"}`}
                       >
                         {formatCOP(d.piso_caja)}
                       </td>
                       <td
-                        className={`tabular px-4 py-2 text-right ${perf ? "text-red" : "text-ink-soft"}`}
+                        className={`tabular px-4 py-2 text-right ${perf ? "text-critico" : "text-ink-soft"}`}
                       >
                         {d.meses_bajo_minimo}
                       </td>

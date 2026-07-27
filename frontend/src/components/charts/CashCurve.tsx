@@ -150,7 +150,7 @@ export function CashCurve({
         x2={W - MR}
         y1={yUmbral}
         y2={yUmbral}
-        className={anotada ? "stroke-critico" : "stroke-red"}
+        className="stroke-critico"
         strokeWidth={1.5}
         strokeDasharray="6 4"
       />
@@ -181,7 +181,7 @@ export function CashCurve({
             cx={x(i)}
             cy={y(v)}
             r={3}
-            className={anotada ? "fill-critico" : "fill-red"}
+            className="fill-critico"
           />
         ) : null,
       )}
