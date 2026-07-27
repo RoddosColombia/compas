@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PanelImpacto } from "@/components/supuestos/PanelImpacto";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
@@ -21,14 +22,13 @@ import {
   type Ajuste,
   type EscenarioGuardado,
   type TechoResultado,
-  type Valle,
   crearEscenario,
   eliminarEscenario,
   listarEscenarios,
   proyectarImpactos,
   resolver,
 } from "@/lib/decisiones";
-import { formatCOP, formatCOPCompact, formatMesCorto } from "@/lib/money";
+import { formatMesCorto } from "@/lib/money";
 import { agruparRubros, listarRubros } from "@/lib/rubros";
 import {
   esMontoHumanoValido,
@@ -490,72 +490,5 @@ function TechoCard({
       tono="atencion"
       contexto={`Lo máximo que puedes sumar cada mes sin que ningún valle baje del umbral. Lo limita ${formatMesCorto(techo.valle_limitante_mes)}.`}
     />
-  );
-}
-
-// ── Tarjeta de valles (§3) ────────────────────────────────────────────────────
-function VallesCard({
-  valles,
-  cargando,
-}: {
-  valles: Valle[];
-  cargando: boolean;
-}) {
-  return (
-    <Card className="flex flex-col gap-3 p-5">
-      <CardTitle>Valles de caja</CardTitle>
-      {cargando && valles.length === 0 && <Cargando variante="tabla" />}
-      {!cargando && valles.length === 0 && (
-        <p className="font-sans text-cuerpo text-positivo">
-          Ningún valle relevante en el horizonte: la caja queda holgada.
-        </p>
-      )}
-      <ul className="flex flex-col gap-3">
-        {valles.map((v) => (
-          <ValleFila key={v.mes} valle={v} />
-        ))}
-      </ul>
-    </Card>
-  );
-}
-
-function ValleFila({ valle }: { valle: Valle }) {
-  const perfora = valle.distancia_al_umbral.startsWith("-");
-  const meses = valle.meses_para_prepararse;
-  return (
-    <li className="flex flex-col gap-1 border-hairline border-l-2 pl-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="font-sans font-semibold text-ink">
-          {formatMesCorto(valle.mes)}
-        </span>
-        <span
-          className={`tabular font-sans text-cuerpo ${perfora ? "text-critico" : "text-ink-soft"}`}
-          title={formatCOP(valle.caja)}
-        >
-          {formatCOPCompact(valle.caja)}
-        </span>
-      </div>
-      <span className="font-sans text-apoyo text-ink-faint">
-        {meses <= 0
-          ? "es este mes"
-          : `faltan ${meses} ${meses === 1 ? "mes" : "meses"}`}
-        {perfora ? " · perfora el umbral" : ""}
-      </span>
-      {valle.causas.length > 0 && (
-        <span className="font-sans text-apoyo text-ink-soft">
-          Lo explica:{" "}
-          {valle.causas
-            .map(
-              (c) =>
-                `${c.etiqueta}${
-                  c.vs_promedio
-                    ? ` (+${Math.round(Number(c.vs_promedio) * 100)}% sobre lo normal)`
-                    : ""
-                }`,
-            )
-            .join(" · ")}
-        </span>
-      )}
-    </li>
   );
 }
