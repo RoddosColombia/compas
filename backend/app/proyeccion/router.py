@@ -100,6 +100,22 @@ async def operacion(
         raise HTTPException(e.status, e.detalle) from e
 
 
+@router.get("/sensibilidad")
+async def sensibilidad(
+    escenario: str = Query(default="base"),
+    mes_inicio: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """C3 §5.2 — el tornado '¿qué mueve mi umbral?': variación del piso de caja
+    ante cambios naturales de las 7 variables. Compute-only, cache por vigencia."""
+    try:
+        return await service.sensibilidad_vigente(
+            escenario=escenario, mes_inicio=_parse_mes_inicio(mes_inicio)
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
 @router.get("/comparar")
 async def comparar(
     escenario: str = Query(default="base"),

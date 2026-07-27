@@ -12,9 +12,10 @@ selecciona los presets (`PRESETS_ESCENARIO`), que el usuario puede sobrescribir.
 
 import re
 from datetime import datetime
+from decimal import Decimal
 
 from beanie import Document
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo import IndexModel
 
 from app.core.money import Money
@@ -22,6 +23,33 @@ from app.core.money import Money
 PARAMETROS_PROYECCION_COLLECTION = "parametros_proyeccion"
 
 _FECHA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+class ComponenteAlistamiento(BaseModel):
+    """CR-002: un componente del costo de alistamiento por moto vendida
+    (matrícula-trámite, instalación GPS, SOAT, …). Configurable desde el editor;
+    el motor recibe UN solo Decimal = Σ de los activos (motor.py intacto)."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    nombre: str = Field(min_length=1, max_length=80)
+    valor: Money
+    activo: bool = True
+    orden: int = 0
+
+
+def costo_alistamiento_total(
+    componentes: list[ComponenteAlistamiento] | None, costo_plano: Decimal
+) -> Decimal:
+    """La autoridad del CR-002: con componentes, el costo ES la Σ de los activos;
+    sin componentes (None/[]), manda el costo plano (compatibilidad)."""
+    if not componentes:
+        return costo_plano
+    total = Decimal("0")
+    for c in componentes:
+        if c.activo:
+            total += c.valor
+    return total
 
 
 class ParametrosProyeccion(Document):
@@ -43,7 +71,10 @@ class ParametrosProyeccion(Document):
     # opex
     gastos_fijos: Money
     gps_moto: Money
+    # CR-002: "Costos de alistamiento por moto vendida". Si hay componentes, este
+    # campo se mantiene = Σ activos (derivado server-side, para lectura coherente).
     costo_moto_nueva: Money
+    componentes_alistamiento: list[ComponenteAlistamiento] | None = None
     # deuda inversores
     deuda: Money
     tasa_deuda: Money
