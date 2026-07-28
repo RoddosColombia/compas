@@ -4,18 +4,14 @@
 // costo + gasto apilados (abajo) sobre un eje IZQUIERDO propio (cientos de M),
 // con la línea de caja acumulada encima sobre su eje DERECHO (miles de M) y el
 // umbral punteado. La ventana reconciliada (facturas reales) se sombrea. Hover
-// por mes con el desglose y "de los cuales Auteco" (real/proyectado). SVG a mano
-// como CashCurve; .toNumber() SOLO geometría de presentación (regla 1).
+// por período con el desglose y "de los cuales Auteco" (real/proyectado). En
+// horizontes largos agrega por trimestre/año (puntosComposicion) para no saturar
+// el eje X. SVG a mano como CashCurve; .toNumber() SOLO geometría (regla 1).
 
 import { useState } from "react";
 
-import { autecoDeMes, bucketsMes } from "@/lib/egreso";
-import {
-  formatCOPCompact,
-  formatCOPEntero,
-  formatMesCorto,
-  parseMonto,
-} from "@/lib/money";
+import { type PuntoComposicion, puntosComposicion } from "@/lib/egreso";
+import { formatCOPCompact, formatCOPEntero, parseMonto } from "@/lib/money";
 import type { MesProyeccion } from "@/lib/proyeccion";
 import { cn } from "@/lib/utils";
 
@@ -32,10 +28,6 @@ const MR = 78;
 const MT = 20;
 const MB = 54;
 
-function reconciliado(mes: string, v: [string, string] | null): boolean {
-  return v !== null && mes >= v[0] && mes <= v[1];
-}
-
 export function ComposicionCaja({
   meses,
   umbral,
@@ -44,11 +36,12 @@ export function ComposicionCaja({
   const [hover, setHover] = useState<number | null>(null);
   if (meses.length < 1) return null;
 
-  const b = meses.map(bucketsMes);
-  const ingreso = b.map((x) => x.ingreso.toNumber());
-  const costo = b.map((x) => x.costo.toNumber());
-  const gasto = b.map((x) => x.gasto.toNumber());
-  const cajas = meses.map((m) => parseMonto(m.caja).toNumber());
+  const P = puntosComposicion(meses, ventanaReconciliada);
+  const n = P.length;
+  const ingreso = P.map((p) => p.ingreso);
+  const costo = P.map((p) => p.costo);
+  const gasto = P.map((p) => p.gasto);
+  const cajas = P.map((p) => p.caja);
   const u = parseMonto(umbral).toNumber();
 
   // Eje IZQUIERDO (barras): ingreso hacia arriba, costo+gasto hacia abajo.
@@ -62,7 +55,7 @@ export function ComposicionCaja({
 
   const plotW = W - ML - MR;
   const plotH = H - MT - MB;
-  const slot = plotW / meses.length;
+  const slot = plotW / n;
   const barW = Math.min(slot * 0.6, 34);
   const cx = (i: number) => ML + (i + 0.5) * slot;
   const yBar = (v: number) => MT + (1 - (v - botBar) / spanBar) * plotH;
@@ -70,21 +63,18 @@ export function ComposicionCaja({
 
   const y0 = yBar(0);
   const lineaCaja = cajas.map((v, i) => `${cx(i)},${yCaja(v)}`).join(" ");
-  const pasoX = Math.max(1, Math.ceil(meses.length / 8));
+  const pasoX = Math.max(1, Math.ceil(n / 8));
 
-  // marcas de eje: izquierda (barras), derecha (caja)
   const ticksBar = [topBar, topBar / 2, 0, botBar / 2, botBar];
   const ticksCaja = [0, 1, 2, 3].map((k) => minCaja + (spanCaja * k) / 3);
 
-  // sombreado de la ventana reconciliada
+  // sombreado de la ventana reconciliada (períodos con facturas reales)
   let recL = -1;
   let recR = -1;
-  if (ventanaReconciliada) {
-    for (let i = 0; i < meses.length; i++) {
-      if (reconciliado(meses[i].mes, ventanaReconciliada)) {
-        if (recL < 0) recL = i;
-        recR = i;
-      }
+  for (let i = 0; i < n; i++) {
+    if (P[i].real) {
+      if (recL < 0) recL = i;
+      recR = i;
     }
   }
 
@@ -95,11 +85,12 @@ export function ComposicionCaja({
         className="h-full w-full"
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label="Ingreso, costo y gasto mensuales con la caja acumulada y su umbral"
+        aria-label="Ingreso, costo y gasto por período con la caja acumulada y su umbral"
       >
-        <title>Composición mensual de caja: ingreso, costo, gasto y caja</title>
+        <title>
+          Composición de caja: ingreso, costo, gasto y caja acumulada
+        </title>
 
-        {/* ventana reconciliada (facturas reales) */}
         {recL >= 0 && (
           <rect
             x={cx(recL) - slot / 2}
@@ -110,7 +101,6 @@ export function ComposicionCaja({
           />
         )}
 
-        {/* rejilla + marcas del eje derecho (caja, abreviado) */}
         {ticksCaja.map((v) => (
           <g key={`c${v}`}>
             <line
@@ -133,7 +123,6 @@ export function ComposicionCaja({
           </g>
         ))}
 
-        {/* marcas del eje izquierdo (barras) */}
         {ticksBar.map((v) => (
           <text
             key={`b${v}`}
@@ -147,7 +136,6 @@ export function ComposicionCaja({
           </text>
         ))}
 
-        {/* línea del cero de las barras */}
         <line
           x1={ML}
           x2={W - MR}
@@ -158,10 +146,10 @@ export function ComposicionCaja({
         />
 
         {/* barras: ingreso arriba, costo (oscuro) + gasto (claro) apilados abajo */}
-        {meses.map((m, i) => {
+        {P.map((p, i) => {
           const yc = yBar(-costo[i]);
           return (
-            <g key={m.mes}>
+            <g key={p.etiqueta}>
               <rect
                 x={cx(i) - barW / 2}
                 y={yBar(ingreso[i])}
@@ -207,26 +195,25 @@ export function ComposicionCaja({
           vectorEffect="non-scaling-stroke"
         />
 
-        {/* meses en el eje X */}
-        {meses.map((m, i) =>
+        {P.map((p, i) =>
           i % pasoX === 0 ? (
             <text
-              key={m.mes}
+              key={p.etiqueta}
               x={cx(i)}
               y={H - 30}
               textAnchor="middle"
               fontSize={12}
               className="fill-ink-faint font-sans"
             >
-              {formatMesCorto(m.mes)}
+              {p.etiqueta}
             </text>
           ) : null,
         )}
 
-        {/* zonas de hover invisibles por mes */}
-        {meses.map((m, i) => (
+        {/* zonas de hover invisibles por período */}
+        {P.map((p, i) => (
           <rect
-            key={m.mes}
+            key={p.etiqueta}
             x={ML + i * slot}
             y={MT}
             width={slot}
@@ -251,11 +238,7 @@ export function ComposicionCaja({
       </div>
 
       {hover !== null && (
-        <HoverTooltip
-          m={meses[hover]}
-          leftPct={(cx(hover) / W) * 100}
-          real={reconciliado(meses[hover].mes, ventanaReconciliada)}
-        />
+        <HoverTooltip p={P[hover]} leftPct={(cx(hover) / W) * 100} />
       )}
     </div>
   );
@@ -288,38 +271,31 @@ function Clave({
 }
 
 function HoverTooltip({
-  m,
+  p,
   leftPct,
-  real,
-}: {
-  m: MesProyeccion;
-  leftPct: number;
-  real: boolean;
-}) {
-  const bk = bucketsMes(m);
-  const auteco = autecoDeMes(m);
+}: { p: PuntoComposicion; leftPct: number }) {
   const izq = leftPct > 60;
   return (
     <div
       className="pointer-events-none absolute top-2 z-20 w-56 rounded-lg border border-hairline bg-surface p-3 text-apoyo shadow-lg"
       style={izq ? { right: `${100 - leftPct}%` } : { left: `${leftPct}%` }}
     >
-      <div className="mb-1 font-semibold text-ink">{formatMesCorto(m.mes)}</div>
-      <Fila etiqueta="Ingreso" valor={formatCOPEntero(bk.ingreso)} />
-      <Fila etiqueta="Costo" valor={formatCOPEntero(bk.costo)} />
-      {!auteco.isZero() && (
+      <div className="mb-1 font-semibold text-ink">{p.etiqueta}</div>
+      <Fila etiqueta="Ingreso" valor={formatCOPEntero(String(p.ingreso))} />
+      <Fila etiqueta="Costo" valor={formatCOPEntero(String(p.costo))} />
+      {p.auteco > 0 && (
         <div className="pl-3 text-ink-faint">
-          de los cuales Auteco: {formatCOPEntero(auteco)} ·{" "}
-          {real ? "real" : "proyectado"}
+          de los cuales Auteco: {formatCOPEntero(String(p.auteco))} ·{" "}
+          {p.real ? "real" : "proyectado"}
         </div>
       )}
-      <Fila etiqueta="Gasto" valor={formatCOPEntero(bk.gasto)} />
+      <Fila etiqueta="Gasto" valor={formatCOPEntero(String(p.gasto))} />
       <Fila
         etiqueta="Flujo"
-        valor={formatCOPEntero(bk.flujo)}
-        tono={bk.flujo.isNegative() ? "critico" : undefined}
+        valor={formatCOPEntero(String(p.flujo))}
+        tono={p.flujo < 0 ? "critico" : undefined}
       />
-      <Fila etiqueta="Caja" valor={formatCOPEntero(m.caja)} fuerte />
+      <Fila etiqueta="Caja" valor={formatCOPEntero(String(p.caja))} fuerte />
     </div>
   );
 }

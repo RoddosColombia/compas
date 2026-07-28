@@ -14,6 +14,8 @@ import {
   autecoDeMes,
   bucketsMes,
   interesConcuerda,
+  periodicidadPara,
+  puntosComposicion,
   totales,
 } from "@/lib/egreso";
 import type { MesProyeccion } from "@/lib/proyeccion";
@@ -88,6 +90,55 @@ describe("egreso — porción Auteco (hover del gráfico)", () => {
 
   it("es cero cuando no hay Auteco paramétrico ni real", () => {
     expect(autecoDeMes(NORMAL).toFixed(2)).toBe("0.00");
+  });
+});
+
+function serie(n: number, desde = "2026-07"): MesProyeccion[] {
+  const [y0, m0] = desde.split("-").map(Number);
+  return Array.from({ length: n }, (_, i) => {
+    const idx = m0 - 1 + i;
+    const y = y0 + Math.floor(idx / 12);
+    const m = (idx % 12) + 1;
+    return mes({
+      mes: `${y}-${String(m).padStart(2, "0")}`,
+      caja: `${(i + 1) * 1000000}.00`,
+    });
+  });
+}
+
+describe("egreso — agregación del gráfico (§2/§5)", () => {
+  it("elige periodicidad por longitud de la ventana", () => {
+    expect(periodicidadPara(18)).toBe("mes");
+    expect(periodicidadPara(60)).toBe("trimestre");
+    expect(periodicidadPara(180)).toBe("anio");
+  });
+
+  it("ventana corta: un punto por mes, sin agregar", () => {
+    const p = puntosComposicion(serie(12), null);
+    expect(p).toHaveLength(12);
+    expect(p[0].etiqueta).toBe("jul-26");
+  });
+
+  it("trimestral: agrupa y SUMA los buckets; la caja es la del cierre", () => {
+    // 30 meses desde jul-26: jul-sep-26 = T3-26 (3 meses)
+    const p = puntosComposicion(serie(30), null, "trimestre");
+    expect(p[0].etiqueta).toBe("T3-26");
+    // ingreso del trimestre = 3 × 34M
+    expect(p[0].ingreso).toBeCloseTo(102000000, 2);
+    // caja al cierre = la del 3er mes (i=2 → 3.000.000)
+    expect(p[0].caja).toBeCloseTo(3000000, 2);
+  });
+
+  it("anual: un punto por año", () => {
+    const p = puntosComposicion(serie(30), null, "anio");
+    expect(p.map((x) => x.etiqueta)).toEqual(["2026", "2027", "2028"]);
+  });
+
+  it("marca el período real si algún mes cae en la ventana reconciliada", () => {
+    const p = puntosComposicion(serie(12), ["2026-09", "2026-09"], "trimestre");
+    // T3-26 contiene sep-26 → real
+    expect(p[0].real).toBe(true);
+    expect(p[1].real).toBe(false);
   });
 });
 

@@ -14,7 +14,7 @@
 
 import Decimal from "decimal.js-light";
 
-import { parseMonto } from "@/lib/money";
+import { formatMesCorto, parseMonto } from "@/lib/money";
 import type { MesProyeccion } from "@/lib/proyeccion";
 
 const CERO = new Decimal(0);
@@ -62,6 +62,80 @@ export function totales(meses: MesProyeccion[]): BucketsMes {
  * hover del gráfico ("de los cuales Auteco: $X"). El interés (fondeo) va incluido. */
 export function autecoDeMes(m: MesProyeccion): Decimal {
   return parseMonto(m.pago_inventario).plus(m.fondeo).negated();
+}
+
+// ── Agregación del gráfico (§2/§5): mensual, trimestral o anual según el nº de
+// meses, para que el eje X no se sature en horizontes largos. Los buckets se SUMAN
+// por período; la caja es la del ÚLTIMO mes del período (es un stock, no un flujo). ──
+
+export type Periodicidad = "mes" | "trimestre" | "anio";
+
+export interface PuntoComposicion {
+  etiqueta: string; // "oct-26" | "T4-26" | "2028"
+  ingreso: number;
+  costo: number;
+  gasto: number;
+  flujo: number;
+  caja: number; // caja al cierre del período
+  auteco: number; // lote + fondeo del período (magnitud)
+  real: boolean; // algún mes del período cae en la ventana reconciliada
+}
+
+/** Periodicidad recomendada por longitud de la ventana. */
+export function periodicidadPara(nMeses: number): Periodicidad {
+  if (nMeses <= 24) return "mes";
+  if (nMeses <= 96) return "trimestre";
+  return "anio";
+}
+
+function claveEtiqueta(mes: string, modo: Periodicidad): [string, string] {
+  const [y, m] = mes.split("-");
+  if (modo === "anio") return [y, y];
+  if (modo === "trimestre") {
+    const q = Math.floor((Number(m) - 1) / 3) + 1;
+    return [`${y}-Q${q}`, `T${q}-${y.slice(2)}`];
+  }
+  return [mes, formatMesCorto(mes)];
+}
+
+/** Normaliza la serie mensual a puntos del gráfico, agregando por período cuando la
+ * ventana es larga. Con `modo` omitido se elige por longitud (periodicidadPara). */
+export function puntosComposicion(
+  meses: MesProyeccion[],
+  ventanaRec: [string, string] | null,
+  modo: Periodicidad = periodicidadPara(meses.length),
+): PuntoComposicion[] {
+  const out: PuntoComposicion[] = [];
+  let claveActual: string | null = null;
+  for (const m of meses) {
+    const [clave, etiqueta] = claveEtiqueta(m.mes, modo);
+    const b = bucketsMes(m);
+    const real =
+      ventanaRec !== null && m.mes >= ventanaRec[0] && m.mes <= ventanaRec[1];
+    if (clave !== claveActual) {
+      out.push({
+        etiqueta,
+        ingreso: b.ingreso.toNumber(),
+        costo: b.costo.toNumber(),
+        gasto: b.gasto.toNumber(),
+        flujo: b.flujo.toNumber(),
+        caja: parseMonto(m.caja).toNumber(),
+        auteco: autecoDeMes(m).toNumber(),
+        real,
+      });
+      claveActual = clave;
+    } else {
+      const p = out[out.length - 1];
+      p.ingreso += b.ingreso.toNumber();
+      p.costo += b.costo.toNumber();
+      p.gasto += b.gasto.toNumber();
+      p.flujo += b.flujo.toNumber();
+      p.caja = parseMonto(m.caja).toNumber(); // último mes del período
+      p.auteco += autecoDeMes(m).toNumber();
+      p.real = p.real || real;
+    }
+  }
+  return out;
 }
 
 /**
