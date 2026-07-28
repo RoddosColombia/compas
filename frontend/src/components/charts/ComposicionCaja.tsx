@@ -38,10 +38,11 @@ export function ComposicionCaja({
 
   const P = puntosComposicion(meses, ventanaReconciliada);
   const n = P.length;
-  const ingreso = P.map((p) => p.ingreso);
-  const costo = P.map((p) => p.costo);
-  const gasto = P.map((p) => p.gasto);
-  const cajas = P.map((p) => p.caja);
+  // number SOLO para la geometría de las barras/línea (regla 1); el formato usa Decimal.
+  const ingreso = P.map((p) => p.ingreso.toNumber());
+  const costo = P.map((p) => p.costo.toNumber());
+  const gasto = P.map((p) => p.gasto.toNumber());
+  const cajas = P.map((p) => p.caja.toNumber());
   const u = parseMonto(umbral).toNumber();
 
   // Eje IZQUIERDO (barras): ingreso hacia arriba, costo+gasto hacia abajo.
@@ -281,21 +282,21 @@ function HoverTooltip({
       style={izq ? { right: `${100 - leftPct}%` } : { left: `${leftPct}%` }}
     >
       <div className="mb-1 font-semibold text-ink">{p.etiqueta}</div>
-      <Fila etiqueta="Ingreso" valor={formatCOPEntero(String(p.ingreso))} />
-      <Fila etiqueta="Costo" valor={formatCOPEntero(String(p.costo))} />
-      {p.auteco > 0 && (
+      <Fila etiqueta="Ingreso" valor={formatCOPEntero(p.ingreso)} />
+      <Fila etiqueta="Costo" valor={formatCOPEntero(p.costo)} />
+      {!p.auteco.isZero() && (
         <div className="pl-3 text-ink-faint">
-          de los cuales Auteco: {formatCOPEntero(String(p.auteco))} ·{" "}
+          de los cuales Auteco: {formatCOPEntero(p.auteco)} ·{" "}
           {p.real ? "real" : "proyectado"}
         </div>
       )}
-      <Fila etiqueta="Gasto" valor={formatCOPEntero(String(p.gasto))} />
+      <Fila etiqueta="Gasto" valor={formatCOPEntero(p.gasto)} />
       <Fila
         etiqueta="Flujo"
-        valor={formatCOPEntero(String(p.flujo))}
-        tono={p.flujo < 0 ? "critico" : undefined}
+        valor={formatCOPEntero(p.flujo)}
+        tono={p.flujo.isNegative() ? "critico" : undefined}
       />
-      <Fila etiqueta="Caja" valor={formatCOPEntero(String(p.caja))} fuerte />
+      <Fila etiqueta="Caja" valor={formatCOPEntero(p.caja)} fuerte />
     </div>
   );
 }

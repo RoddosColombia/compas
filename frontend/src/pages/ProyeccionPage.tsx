@@ -47,8 +47,10 @@ const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
 // El juicio SIEMPRE mira al menos 60 m aunque la ventana sea corta (patrón F1).
 const HORIZONTE_JUICIO = 60;
 
-/** §4 — el Auteco que sale este mes y el próximo (lote + fondeo), real si esos
- * meses caen en la ventana reconciliada (facturas registradas), o proyectado. */
+/** §4 — el Auteco que sale este mes y el próximo (lote + fondeo). El origen es
+ * "registrado" (facturas reales) si AMBOS meses caen en la ventana reconciliada,
+ * "proyeccion" si ninguno, o "parcial" si solo uno (QA: no marcar ambos como
+ * registrados cuando solo uno lo está). */
 function compromisoAuteco(
   ventana: MesProyeccion[],
   ventanaRec: [string, string] | null,
@@ -57,11 +59,23 @@ function compromisoAuteco(
   let monto = autecoDeMes(dos[0]);
   if (dos[1]) monto = monto.plus(autecoDeMes(dos[1]));
   const meses = dos.map((m) => m.mes);
-  const real =
-    ventanaRec !== null &&
-    dos.some((m) => m.mes >= ventanaRec[0] && m.mes <= ventanaRec[1]);
-  return { monto, meses, real };
+  const enVentana = (mes: string) =>
+    ventanaRec !== null && mes >= ventanaRec[0] && mes <= ventanaRec[1];
+  const reales = meses.filter(enVentana).length;
+  const origen =
+    reales === 0
+      ? "proyeccion"
+      : reales === meses.length
+        ? "registrado"
+        : "parcial";
+  return { monto, meses, origen };
 }
+
+const ORIGEN_AUTECO: Record<string, string> = {
+  registrado: "facturas registradas",
+  proyeccion: "proyección",
+  parcial: "parte registrada, parte proyectada",
+};
 
 export default function ProyeccionPage() {
   const [escenario, setEscenario] = useState<Escenario>("base");
@@ -177,8 +191,8 @@ function ProyeccionContenido({
 
   return (
     <>
-      {/* 4 KPIs con juicio (calculados sobre el horizonte largo) */}
-      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+      {/* KPIs con juicio + Compromiso Auteco (§4) como quinta baldosa */}
+      <div className="grid grid-cols-2 gap-5 lg:grid-cols-3 xl:grid-cols-5">
         <KpiTileV2
           label="Piso de caja"
           valor={data.piso_caja}
@@ -225,20 +239,16 @@ function ProyeccionContenido({
             tono="atencion"
           />
         )}
+        {/* §4 — Compromiso Auteco: lo que sale este mes y el próximo (lote + fondeo) */}
+        <KpiTileV2
+          label="Compromiso Auteco"
+          valor={auteco.monto}
+          contexto={`Lote + fondeo de ${auteco.meses
+            .map(formatMesCorto)
+            .join(" y ")} · ${ORIGEN_AUTECO[auteco.origen]}`}
+          tono={autecoEnValle ? "atencion" : "neutro"}
+        />
       </div>
-
-      {/* §4 — Compromiso Auteco: lo que sale este mes y el próximo por lote + fondeo */}
-      <KpiTileV2
-        label="Compromiso Auteco"
-        valor={auteco.monto}
-        contexto={`Lote + fondeo de ${auteco.meses
-          .map(formatMesCorto)
-          .join(" y ")} · ${
-          auteco.real ? "facturas registradas" : "proyección"
-        }`}
-        tono={autecoEnValle ? "atencion" : "neutro"}
-        className="max-w-md"
-      />
 
       {/* Protagonista: la curva anotada en la ventana */}
       <ChartCard

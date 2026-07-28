@@ -119,19 +119,31 @@ describe("egreso — agregación del gráfico (§2/§5)", () => {
     expect(p[0].etiqueta).toBe("jul-26");
   });
 
-  it("trimestral: agrupa y SUMA los buckets; la caja es la del cierre", () => {
+  it("trimestral: agrupa y SUMA los buckets (en Decimal); caja es la del cierre", () => {
     // 30 meses desde jul-26: jul-sep-26 = T3-26 (3 meses)
     const p = puntosComposicion(serie(30), null, "trimestre");
     expect(p[0].etiqueta).toBe("T3-26");
-    // ingreso del trimestre = 3 × 34M
-    expect(p[0].ingreso).toBeCloseTo(102000000, 2);
+    // ingreso del trimestre = 3 × 34M, exacto en Decimal
+    expect(p[0].ingreso.toFixed(2)).toBe("102000000.00");
     // caja al cierre = la del 3er mes (i=2 → 3.000.000)
-    expect(p[0].caja).toBeCloseTo(3000000, 2);
+    expect(p[0].caja.toFixed(2)).toBe("3000000.00");
   });
 
   it("anual: un punto por año", () => {
     const p = puntosComposicion(serie(30), null, "anio");
     expect(p.map((x) => x.etiqueta)).toEqual(["2026", "2027", "2028"]);
+  });
+
+  it("candado del invariante en la ruta AGREGADA (trimestre y año)", () => {
+    // el invariante ingreso − (costo + gasto) == flujo debe sobrevivir a la suma
+    // por período: si un bucket se acumula mal, aquí se cae (no solo en mensual).
+    for (const modo of ["trimestre", "anio"] as const) {
+      for (const p of puntosComposicion(serie(24), null, modo)) {
+        expect(p.ingreso.minus(p.costo.plus(p.gasto)).equals(p.flujo)).toBe(
+          true,
+        );
+      }
+    }
   });
 
   it("marca el período real si algún mes cae en la ventana reconciliada", () => {

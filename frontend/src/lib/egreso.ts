@@ -72,12 +72,14 @@ export type Periodicidad = "mes" | "trimestre" | "anio";
 
 export interface PuntoComposicion {
   etiqueta: string; // "oct-26" | "T4-26" | "2028"
-  ingreso: number;
-  costo: number;
-  gasto: number;
-  flujo: number;
-  caja: number; // caja al cierre del período
-  auteco: number; // lote + fondeo del período (magnitud)
+  // Los montos se ACUMULAN en Decimal (regla 1): son cifras que se muestran, no
+  // geometría. El gráfico deriva el number solo para las barras (con .toNumber()).
+  ingreso: Decimal;
+  costo: Decimal;
+  gasto: Decimal;
+  flujo: Decimal;
+  caja: Decimal; // caja al cierre del período
+  auteco: Decimal; // lote + fondeo del período (magnitud)
   real: boolean; // algún mes del período cae en la ventana reconciliada
 }
 
@@ -115,23 +117,23 @@ export function puntosComposicion(
     if (clave !== claveActual) {
       out.push({
         etiqueta,
-        ingreso: b.ingreso.toNumber(),
-        costo: b.costo.toNumber(),
-        gasto: b.gasto.toNumber(),
-        flujo: b.flujo.toNumber(),
-        caja: parseMonto(m.caja).toNumber(),
-        auteco: autecoDeMes(m).toNumber(),
+        ingreso: b.ingreso,
+        costo: b.costo,
+        gasto: b.gasto,
+        flujo: b.flujo,
+        caja: parseMonto(m.caja),
+        auteco: autecoDeMes(m),
         real,
       });
       claveActual = clave;
     } else {
       const p = out[out.length - 1];
-      p.ingreso += b.ingreso.toNumber();
-      p.costo += b.costo.toNumber();
-      p.gasto += b.gasto.toNumber();
-      p.flujo += b.flujo.toNumber();
-      p.caja = parseMonto(m.caja).toNumber(); // último mes del período
-      p.auteco += autecoDeMes(m).toNumber();
+      p.ingreso = p.ingreso.plus(b.ingreso);
+      p.costo = p.costo.plus(b.costo);
+      p.gasto = p.gasto.plus(b.gasto);
+      p.flujo = p.flujo.plus(b.flujo);
+      p.caja = parseMonto(m.caja); // último mes del período
+      p.auteco = p.auteco.plus(autecoDeMes(m));
       p.real = p.real || real;
     }
   }
