@@ -12,7 +12,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { CashCurve } from "@/components/charts/CashCurve";
+import { ComposicionCaja } from "@/components/charts/ComposicionCaja";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
@@ -235,7 +235,11 @@ function ProyeccionContenido({
           ) : undefined
         }
       >
-        <CashCurve meses={ventana} umbral={data.caja_minima} anotada />
+        <ComposicionCaja
+          meses={ventana}
+          umbral={data.caja_minima}
+          ventanaReconciliada={data.ventana_reconciliada}
+        />
       </ChartCard>
 
       {/* Tabla V1 §3: tres totales por mes, fila expandible, fila de totales */}

@@ -58,6 +58,12 @@ export function totales(meses: MesProyeccion[]): BucketsMes {
   );
 }
 
+/** Porción Auteco del costo del mes (lote + fondeo), magnitud POSITIVA — para el
+ * hover del gráfico ("de los cuales Auteco: $X"). El interés (fondeo) va incluido. */
+export function autecoDeMes(m: MesProyeccion): Decimal {
+  return parseMonto(m.pago_inventario).plus(m.fondeo).negated();
+}
+
 /**
  * Candado anti-doble-conteo: el interés real ya viaja DENTRO de `fondeo` (Costo).
  * `interes_obligaciones` lo expone solo para mostrarlo; debe cumplir

@@ -10,7 +10,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { bucketsMes, interesConcuerda, totales } from "@/lib/egreso";
+import {
+  autecoDeMes,
+  bucketsMes,
+  interesConcuerda,
+  totales,
+} from "@/lib/egreso";
 import type { MesProyeccion } from "@/lib/proyeccion";
 
 function mes(over: Partial<MesProyeccion>): MesProyeccion {
@@ -73,6 +78,16 @@ describe("egreso — candado 1: invariante ingreso − (costo + gasto) == flujo"
     const flujoTotal = t.ingreso.minus(t.costo.plus(t.gasto));
     expect(flujoTotal.toFixed(2)).toBe("-382360000.00"); // −98,3M − 284,06M
     expect(flujoTotal.equals(t.flujo)).toBe(true);
+  });
+});
+
+describe("egreso — porción Auteco (hover del gráfico)", () => {
+  it("suma lote + fondeo como magnitud positiva", () => {
+    expect(autecoDeMes(RECONCILIADO).toFixed(2)).toBe("185760000.00"); // 180M + 5,76M
+  });
+
+  it("es cero cuando no hay Auteco paramétrico ni real", () => {
+    expect(autecoDeMes(NORMAL).toFixed(2)).toBe("0.00");
   });
 });
 
