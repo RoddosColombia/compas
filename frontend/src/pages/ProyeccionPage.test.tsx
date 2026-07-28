@@ -58,6 +58,8 @@ const PROY: Proyeccion = {
   caja_final: "200000000.00",
   capital_requerido: "85000000.00",
   runway_meses: null,
+  ventana_reconciliada: null,
+  interes_obligaciones: {},
   meses: MESES,
 };
 
