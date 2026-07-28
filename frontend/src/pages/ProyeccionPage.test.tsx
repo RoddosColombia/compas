@@ -152,10 +152,10 @@ describe("ProyeccionPage — F1.1 §2", () => {
     renderPage();
     await screen.findByText("Piso de caja");
     expect(document.querySelectorAll("tbody tr")).toHaveLength(18);
-    // sin centavos en la tabla (política F1 §3)
-    expect(screen.queryByText(/\$\s?30\.000\.000,00/)).toBeNull();
+    // sin centavos en la tabla (política F1 §3). La columna Ingreso = neto (34M).
+    expect(screen.queryByText(/\$\s?34\.000\.000,00/)).toBeNull();
     expect(
-      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 30.000.000")
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 34.000.000")
         .length,
     ).toBeGreaterThan(0);
     // estado con símbolo (color nunca solo)

@@ -15,8 +15,8 @@ import { useState } from "react";
 import { CashCurve } from "@/components/charts/CashCurve";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
 import { ChartCard } from "@/components/ui/chart-card";
 import { ErrorEstado } from "@/components/ui/error-estado";
@@ -30,37 +30,20 @@ import { ScenarioChip } from "@/components/ui/scenario-chip";
 import { obtenerValles } from "@/lib/decisiones";
 import {
   formatCOPCompact,
-  formatCOPEntero,
   formatDelta,
   formatMesCorto,
   parseMonto,
 } from "@/lib/money";
 import {
   ESCENARIO_LABEL,
-  ESTADO_LABEL,
   type Escenario,
-  type EstadoMes,
   type Proyeccion,
   obtenerProyeccion,
 } from "@/lib/proyeccion";
-import { cn } from "@/lib/utils";
 
 const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
 // El juicio SIEMPRE mira al menos 60 m aunque la ventana sea corta (patrón F1).
 const HORIZONTE_JUICIO = 60;
-
-const ESTADO_ESTILO: Record<EstadoMes, string> = {
-  ok: "bg-positivo/10 text-positivo",
-  critico: "bg-atencion/10 text-atencion",
-  negativo: "bg-critico/10 text-critico",
-};
-
-// Segundo canal del estado (el color nunca va solo — F1 §0.2).
-const ESTADO_SIMBOLO: Record<EstadoMes, string> = {
-  ok: "✓",
-  critico: "●",
-  negativo: "✗",
-};
 
 export default function ProyeccionPage() {
   const [escenario, setEscenario] = useState<Escenario>("base");
@@ -255,96 +238,28 @@ function ProyeccionContenido({
         <CashCurve meses={ventana} umbral={data.caja_minima} anotada />
       </ChartCard>
 
-      {/* Tabla: ventana por defecto, expandible — nunca un volcado */}
-      <Card className="overflow-hidden p-0">
-        <div
-          className={cn(
-            "overflow-x-auto",
-            expandida && "max-h-[34rem] overflow-y-auto",
-          )}
-        >
-          <table className="w-full font-sans text-cuerpo">
-            <thead className="sticky top-0 z-10 bg-surface">
-              <tr className="border-b border-hairline text-left text-ink-faint">
-                <th className="sticky left-0 z-10 bg-surface px-4 py-2.5 font-semibold">
-                  Mes
-                </th>
-                <th className="px-4 py-2.5 text-right font-semibold">Motos</th>
-                <th className="px-4 py-2.5 text-right font-semibold">
-                  Recaudo crédito
-                </th>
-                <th className="px-4 py-2.5 text-right font-semibold">
-                  Cuota inicial
-                </th>
-                <th className="px-4 py-2.5 text-right font-semibold">
-                  Ingreso bruto
-                </th>
-                <th className="px-4 py-2.5 text-right font-semibold">Flujo</th>
-                <th className="px-4 py-2.5 text-right font-semibold">Caja</th>
-                <th className="px-4 py-2.5 font-semibold">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.map((m) => {
-                const esCritico = perforada && m.mes === data.mes_mas_ajustado;
-                return (
-                  <tr
-                    key={m.mes}
-                    id={esCritico ? "mes-critico" : undefined}
-                    className={cn(
-                      "border-b border-hairline/60 last:border-0 hover:bg-surface-muted",
-                      esCritico && "scroll-mt-16 bg-atencion/10",
-                    )}
-                  >
-                    <td className="sticky left-0 bg-surface px-4 py-2 font-medium text-ink">
-                      {formatMesCorto(m.mes)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {m.motos}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {formatCOPEntero(m.recaudo_credito)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {formatCOPEntero(m.cuotas_iniciales)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right font-medium text-ink">
-                      {formatCOPEntero(m.ingreso_bruto)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {formatCOPEntero(m.flujo)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right font-medium text-ink">
-                      {formatCOPEntero(m.caja)}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 font-sans text-apoyo font-medium whitespace-nowrap ${ESTADO_ESTILO[m.estado]}`}
-                      >
-                        {ESTADO_SIMBOLO[m.estado]} {ESTADO_LABEL[m.estado]}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {/* Tabla V1 §3: tres totales por mes, fila expandible, fila de totales */}
+      <div className="flex flex-col gap-2">
+        <TablaEgreso
+          filas={filas}
+          mesCritico={data.mes_mas_ajustado}
+          perforada={perforada}
+          ventanaReconciliada={data.ventana_reconciliada}
+        />
         {data.meses.length > ventana.length && (
-          <div className="border-t border-hairline px-4 py-2.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setExpandida((v) => !v)}
-            >
-              {expandida
-                ? `Ver solo la ventana de ${ventana.length} meses`
-                : `Ver los ${data.meses.length} meses completos`}
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onClick={() => setExpandida((v) => !v)}
+          >
+            {expandida
+              ? `Ver solo la ventana de ${ventana.length} meses`
+              : `Ver los ${data.meses.length} meses completos`}
+          </Button>
         )}
-      </Card>
+      </div>
     </>
   );
 }
