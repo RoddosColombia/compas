@@ -133,9 +133,7 @@ async def resumen_mensual(
     grupo lo trae el rubro apuntado (el cruce con la arquitectura); un gasto cuyo rubro
     ya no exista se agrupa como 'sin_rubro'."""
     mes = mes_ref or now_bogota().strftime("%Y-%m")
-    vigentes = [
-        g for g in gastos if g.activo and (g.hasta is None or g.hasta >= mes)
-    ]
+    vigentes = [g for g in gastos if g.activo and (g.hasta is None or g.hasta >= mes)]
     activos = vigentes
     rubro_ids = {g.rubro_id for g in activos}
     rubros = {

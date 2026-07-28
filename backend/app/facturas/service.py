@@ -138,9 +138,7 @@ async def obtener_periodicidad() -> Periodicidad:
     """Periodicidad de IVA VIGENTE (clave CONFIGURACION `PERIODICIDAD_IVA`). Ausente o
     valor no reconocido → cuatrimestral (realidad actual RODDOS; nunca crashea)."""
     cfg = (
-        await Configuracion.find(
-            Configuracion.clave == ClaveConfig.PERIODICIDAD_IVA
-        )
+        await Configuracion.find(Configuracion.clave == ClaveConfig.PERIODICIDAD_IVA)
         .sort(-Configuracion.vigente_desde)
         .limit(1)
         .to_list()

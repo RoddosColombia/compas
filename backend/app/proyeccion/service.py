@@ -237,10 +237,7 @@ async def _facturas_reconciliar() -> list[FacturaReconciliar]:
     if not facturas:
         return []
     ids = list({f.obligacion_id for f in facturas})
-    obls = {
-        o.id: o
-        for o in await Obligacion.find({"_id": {"$in": ids}}).to_list()
-    }
+    obls = {o.id: o for o in await Obligacion.find({"_id": {"$in": ids}}).to_list()}
     out: list[FacturaReconciliar] = []
     for f in facturas:
         o = obls.get(f.obligacion_id)
@@ -648,8 +645,7 @@ def _variaciones(pm: ParametrosMotor) -> list[dict]:
         return replace(
             pm,
             modelos=[
-                replace(m, cuota_semanal=m.cuota_semanal * factor)
-                for m in pm.modelos
+                replace(m, cuota_semanal=m.cuota_semanal * factor) for m in pm.modelos
             ],
         )
 
@@ -667,9 +663,7 @@ def _variaciones(pm: ParametrosMotor) -> list[dict]:
             "variacion": "±1 punto",
             "mas": con(crec_pct_mensual=pm.crec_pct_mensual + Decimal("0.01")),
             "menos": con(
-                crec_pct_mensual=max(
-                    _CERO, pm.crec_pct_mensual - Decimal("0.01")
-                )
+                crec_pct_mensual=max(_CERO, pm.crec_pct_mensual - Decimal("0.01"))
             ),
         },
         {
@@ -706,9 +700,7 @@ def _variaciones(pm: ParametrosMotor) -> list[dict]:
             "variacion": "±$ 100 mil/moto",
             "mas": con(costo_moto_nueva=pm.costo_moto_nueva + Decimal("100000")),
             "menos": con(
-                costo_moto_nueva=max(
-                    _CERO, pm.costo_moto_nueva - Decimal("100000")
-                )
+                costo_moto_nueva=max(_CERO, pm.costo_moto_nueva - Decimal("100000"))
             ),
         },
     ]
@@ -742,9 +734,7 @@ def _fingerprint(params: ParametrosProyeccion, modelos: list[ModeloMoto]) -> tup
     )
 
 
-async def sensibilidad_vigente(
-    *, escenario: str, mes_inicio: tuple[int, int]
-) -> dict:
+async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -> dict:
     """El tornado '¿qué mueve mi umbral?': 7 variables × ± → 14 corridas del motor
     puro a 60 meses sobre el set vigente. Compute-only; cache por vigencia."""
     params, modelos = await _cargar_config_vigente()
@@ -865,7 +855,5 @@ async def comparar_vigente(
             {"mes": mc.mes[:7], "caja_real": money_str(caja)}
             for mc, caja in actuals_out
         ],
-        "forecast": [
-            {"mes": f["mes"], "caja": f["caja"]} for f in forecast["meses"]
-        ],
+        "forecast": [{"mes": f["mes"], "caja": f["caja"]} for f in forecast["meses"]],
     }

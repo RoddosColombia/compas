@@ -77,9 +77,7 @@ def _causas_del_mes(
     candidatas.sort(key=lambda x: x[3], reverse=True)
     causas: list[Causa] = []
     for c, monto, prom, _desvio in candidatas[:max_causas]:
-        rel = (
-            ((monto - prom) / prom).quantize(_REL) if prom > 0 else None
-        )
+        rel = ((monto - prom) / prom).quantize(_REL) if prom > 0 else None
         causas.append(
             Causa(
                 concepto=c,

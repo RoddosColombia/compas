@@ -17,8 +17,18 @@ from enum import StrEnum
 _CENTAVO = Decimal("0.01")
 
 _MESES_ABBR = (
-    "ene", "feb", "mar", "abr", "may", "jun",
-    "jul", "ago", "sep", "oct", "nov", "dic",
+    "ene",
+    "feb",
+    "mar",
+    "abr",
+    "may",
+    "jun",
+    "jul",
+    "ago",
+    "sep",
+    "oct",
+    "nov",
+    "dic",
 )
 
 
@@ -213,11 +223,9 @@ def liquidar(
 
     out: list[LiquidacionPeriodo] = []
     favor = Decimal("0")
-    for (anio, c) in sorted(grupos):
+    for anio, c in sorted(grupos):
         fs = grupos[(anio, c)]
-        generado = sum(
-            (f.iva_valor for f in fs if f.tipo == "venta"), Decimal("0")
-        )
+        generado = sum((f.iva_valor for f in fs if f.tipo == "venta"), Decimal("0"))
         descontable = sum(
             (f.iva_valor for f in fs if f.tipo == "compra" and f.deducible),
             Decimal("0"),

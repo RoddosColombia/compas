@@ -79,9 +79,7 @@ def test_semilla_tiene_las_claves_esperadas():
 
 
 def test_semilla_periodicidad_iva_default_cuatrimestral():
-    p = next(
-        c for c in SEMILLA_CONFIGURACION if c["clave"] == "PERIODICIDAD_IVA"
-    )
+    p = next(c for c in SEMILLA_CONFIGURACION if c["clave"] == "PERIODICIDAD_IVA")
     assert p["valor_json"] == {"periodicidad": "cuatrimestral"}
 
 

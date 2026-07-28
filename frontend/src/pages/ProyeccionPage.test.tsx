@@ -109,8 +109,40 @@ describe("ProyeccionPage — F1.1 §2", () => {
         name: /La caja toca su punto más bajo en oct-26/,
       }),
     ).toBeInTheDocument();
-    const ancla = screen.getByRole("link", { name: /Ver el mes crítico/ });
-    expect(ancla).toHaveAttribute("href", "#mes-critico");
+    // botón accesible (no <a>): expande y desplaza a la fila del mes crítico
+    const ancla = screen.getByRole("button", { name: /Ver el mes crítico/ });
+    expect(ancla).toBeInTheDocument();
+    expect(document.getElementById("mes-critico")).not.toBeNull();
+  });
+
+  it("crítico fuera de la ventana: 'Ver el mes crítico' expande la tabla", async () => {
+    // el mes crítico cae en el índice 30 (2029-01), fuera de la ventana de 18 m
+    Element.prototype.scrollIntoView = vi.fn(); // jsdom no lo implementa
+    const meses = Array.from({ length: 60 }, (_, i) =>
+      i === 30
+        ? mesProy(i, { caja: "40000000.00", estado: "critico" })
+        : mesProy(i),
+    );
+    mocks.obtenerProyeccion.mockResolvedValue({
+      ...PROY,
+      mes_mas_ajustado: meses[30].mes,
+      meses,
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProyeccionPage />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Piso de caja");
+    // ventana por defecto: 18 filas y el mes crítico aún NO está en el DOM
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(18);
+    expect(document.getElementById("mes-critico")).toBeNull();
+    // clic en el botón → la tabla se expande y el mes crítico aparece
+    fireEvent.click(screen.getByRole("button", { name: /Ver el mes crítico/ }));
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(60);
     expect(document.getElementById("mes-critico")).not.toBeNull();
   });
 
