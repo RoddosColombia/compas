@@ -179,6 +179,15 @@ describe("ProyeccionPage — F1.1 §2", () => {
     expect(screen.getByLabelText(/Horizonte/)).toHaveValue("18");
   });
 
+  it("muestra el KPI Compromiso Auteco (este mes + el próximo)", async () => {
+    renderPage();
+    expect(await screen.findByText("Compromiso Auteco")).toBeInTheDocument();
+    // sin facturas registradas → proyección; los dos primeros meses de la ventana
+    expect(
+      screen.getByText(/Lote \+ fondeo de jul-26 y ago-26 · proyección/),
+    ).toBeInTheDocument();
+  });
+
   it("ofrece los tres escenarios", async () => {
     renderPage();
     await screen.findByText("Piso de caja");

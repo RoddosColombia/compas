@@ -28,6 +28,7 @@ import {
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { ScenarioChip } from "@/components/ui/scenario-chip";
 import { obtenerValles } from "@/lib/decisiones";
+import { autecoDeMes } from "@/lib/egreso";
 import {
   formatCOPCompact,
   formatDelta,
@@ -37,6 +38,7 @@ import {
 import {
   ESCENARIO_LABEL,
   type Escenario,
+  type MesProyeccion,
   type Proyeccion,
   obtenerProyeccion,
 } from "@/lib/proyeccion";
@@ -44,6 +46,22 @@ import {
 const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
 // El juicio SIEMPRE mira al menos 60 m aunque la ventana sea corta (patrón F1).
 const HORIZONTE_JUICIO = 60;
+
+/** §4 — el Auteco que sale este mes y el próximo (lote + fondeo), real si esos
+ * meses caen en la ventana reconciliada (facturas registradas), o proyectado. */
+function compromisoAuteco(
+  ventana: MesProyeccion[],
+  ventanaRec: [string, string] | null,
+) {
+  const dos = ventana.slice(0, 2);
+  let monto = autecoDeMes(dos[0]);
+  if (dos[1]) monto = monto.plus(autecoDeMes(dos[1]));
+  const meses = dos.map((m) => m.mes);
+  const real =
+    ventanaRec !== null &&
+    dos.some((m) => m.mes >= ventanaRec[0] && m.mes <= ventanaRec[1]);
+  return { monto, meses, real };
+}
 
 export default function ProyeccionPage() {
   const [escenario, setEscenario] = useState<Escenario>("base");
@@ -115,6 +133,7 @@ export default function ProyeccionPage() {
           data={q.data}
           ventanaMeses={horizonte}
           escenario={escenario}
+          vallesMeses={(vallesQ.data?.valles ?? []).map((v) => v.mes)}
         />
       )}
 
@@ -133,10 +152,12 @@ function ProyeccionContenido({
   data,
   ventanaMeses,
   escenario,
+  vallesMeses,
 }: {
   data: Proyeccion;
   ventanaMeses: number;
   escenario: Escenario;
+  vallesMeses: string[];
 }) {
   const [expandida, setExpandida] = useState(false);
 
@@ -149,6 +170,10 @@ function ProyeccionContenido({
   const criticoFuera =
     perforada && data.mes_mas_ajustado > ventana[ventana.length - 1].mes;
   const filas = expandida ? data.meses : ventana;
+
+  // KPI "Compromiso Auteco" (§4): lote + fondeo que sale este mes y el próximo.
+  const auteco = compromisoAuteco(ventana, data.ventana_reconciliada);
+  const autecoEnValle = auteco.meses.some((m) => vallesMeses.includes(m));
 
   return (
     <>
@@ -201,6 +226,19 @@ function ProyeccionContenido({
           />
         )}
       </div>
+
+      {/* §4 — Compromiso Auteco: lo que sale este mes y el próximo por lote + fondeo */}
+      <KpiTileV2
+        label="Compromiso Auteco"
+        valor={auteco.monto}
+        contexto={`Lote + fondeo de ${auteco.meses
+          .map(formatMesCorto)
+          .join(" y ")} · ${
+          auteco.real ? "facturas registradas" : "proyección"
+        }`}
+        tono={autecoEnValle ? "atencion" : "neutro"}
+        className="max-w-md"
+      />
 
       {/* Protagonista: la curva anotada en la ventana */}
       <ChartCard
