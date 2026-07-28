@@ -123,7 +123,9 @@ Al cierre de D2 deben pasar TODOS; cada fase marca los suyos:
 | C1 · C2 · F1 · C3+CR-002 | ✅ En producción | 2026-07-26/27 |
 | F1.1 | ✅ Cerrada — prueba 10s de un tercero PASÓ | 2026-07-27 |
 | D1 | ✅ En producción (`95acf9c`, PR #42, GO CEO) — pasada visual pendiente en prod | 2026-07-27 |
-| D2 | 📝 Definida aquí (spec detallada al terminar D1) | — |
+| D2 — backend | ✅ En producción (`23e3166`, PR #43, GO CEO). Fix §0 coherencia incluido; motor.py cero diffs; golden-master verde; candado de paridad al peso. Gate-waiver: CI Actions bloqueado por billing de la org → gates locales verdes como control compensatorio, Kimi retroactivo pendiente | 2026-07-28 |
+| V1 — "Ver el egreso" | 📝 GO CEO 2026-07-27; frontend Proyecciones (ingreso/costo/gasto). Va entre D2-backend y D2 §7 | — |
+| D2 — §7 frontend | 📝 Página Obligaciones + registro + simulador UI + metas block. Backend ya expone los datos | — |
 | F4 | 📝 Definida aquí | — |
 | D3 | 📝 Definida aquí (espera histórico) | — |
 | F6 · F7 | 📝 Definidas aquí | — |
