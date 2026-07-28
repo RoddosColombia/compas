@@ -91,7 +91,20 @@ def aplicar_impactos(
         for m in range(i0, i1 + 1):
             deltas[m] = _cop(deltas[m] + _delta_flujo(base[m], aj))
 
-    # 2) re-acumular caja con la MISMA regla del motor (primer mes fijo)
+    return reacumular(resultado, deltas, caja_minima)
+
+
+def reacumular(
+    resultado: ResultadoProyeccion,
+    deltas: list[Decimal],
+    caja_minima: Decimal,
+) -> ResultadoAjustado:
+    """Aplica un delta de flujo por mes YA calculado y re-acumula la caja con la MISMA
+    regla del motor (primer mes fijo; caja[m]=caja[m-1]+flujo[m]). Lo comparten la capa
+    de impactos (deltas de ajustes) y la reconciliación de obligaciones (deltas de
+    netear el paramétrico y sumar el calendario real). Deltas todos cero => base bit a
+    bit."""
+    base = resultado.meses
     filas: list[MesProyeccion] = []
     caja_prev = _CERO
     for m, fila in enumerate(base):
@@ -106,7 +119,6 @@ def aplicar_impactos(
                 estado=_estado_caja(caja, caja_minima),
             )
         )
-
     kpis = calcular_kpis(
         [f.caja for f in filas],
         [f.flujo for f in filas],

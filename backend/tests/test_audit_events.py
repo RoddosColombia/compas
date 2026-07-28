@@ -15,9 +15,9 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_50_eventos():
-    assert len(AuditEvento) == 50
-    assert len(CATALOGO_EVENTOS) == 50
+def test_catalogo_tiene_exactamente_58_eventos():
+    assert len(AuditEvento) == 58
+    assert len(CATALOGO_EVENTOS) == 58
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():
@@ -58,6 +58,14 @@ def test_eventos_clave_presentes():
         "escenario_impacto.creado",  # CR-D1: guardar escenario what-if
         "escenario_impacto.editado",  # CR-D1: editar/reactivar escenario
         "escenario_impacto.eliminado",  # CR-D1: baja lógica de escenario
+        "obligacion.creada",  # CR-D2: alta de obligación
+        "obligacion.editada",  # CR-D2: edición/reactivación
+        "obligacion.eliminada",  # CR-D2: baja lógica
+        "factura_obligacion.registrada",  # CR-D2: registro de factura
+        "factura_obligacion.anulada",  # CR-D2: anulación de factura
+        "meta_ingreso.creada",  # CR-D2: alta de meta de ingreso
+        "meta_ingreso.editada",  # CR-D2: edición de meta
+        "meta_ingreso.eliminada",  # CR-D2: baja lógica de meta
     ):
         assert esperado in CATALOGO_EVENTOS
 

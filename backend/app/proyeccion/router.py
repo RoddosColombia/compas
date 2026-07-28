@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth.deps import require_permission
 from app.auth.models import User
@@ -201,6 +201,34 @@ async def resolver(
             colchon=_a_decimal(body.colchon, "colchon"),
             variable=body.variable,
             objetivo_caja=objetivo_caja,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
+class SimularPlazoBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    plazo_dias: int = Field(ge=0)
+
+
+@router.post("/simular-plazo")
+async def simular_plazo(
+    body: SimularPlazoBody,
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _u: User = Depends(require_permission("proyeccion:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """D2 §5 — política de plazos: piso/valle/costo si todas las facturas activas
+    tomaran `plazo_dias`. Compute-only; el front compara 90/120/150 lado a lado."""
+    try:
+        return await service.simular_plazo(
+            plazo_dias=body.plazo_dias,
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
         )
     except service.ProyeccionError as e:
         raise HTTPException(e.status, e.detalle) from e

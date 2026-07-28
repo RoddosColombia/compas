@@ -17,6 +17,7 @@ from app.domain.idempotency import IdempotencyKey
 from app.domain.loantape import LoanTapeCredito
 from app.domain.mes_control import MesControl
 from app.domain.modelo_moto import ModeloMoto
+from app.domain.obligacion import FacturaObligacion, MetaIngreso, Obligacion
 from app.domain.pago_planeado import PagoPlaneado
 from app.domain.parametros_proyeccion import ParametrosProyeccion
 from app.domain.presupuesto import PresupuestoLinea
@@ -41,6 +42,9 @@ DOMAIN_DOCUMENTS: list[type] = [
     LoanTapeCredito,
     GastoRecurrente,
     EscenarioImpacto,
+    Obligacion,
+    FacturaObligacion,
+    MetaIngreso,
 ]
 
 __all__ = [
@@ -60,5 +64,8 @@ __all__ = [
     "LoanTapeCredito",
     "GastoRecurrente",
     "EscenarioImpacto",
+    "Obligacion",
+    "FacturaObligacion",
+    "MetaIngreso",
     "DOMAIN_DOCUMENTS",
 ]

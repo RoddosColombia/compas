@@ -13,11 +13,23 @@ const mocks = vi.hoisted(() => ({
   crearEscenario: vi.fn(),
   eliminarEscenario: vi.fn(),
   listarRubros: vi.fn(),
+  listarMeses: vi.fn(),
+  vistaControl: vi.fn(),
 }));
 
 vi.mock("@/auth/AuthContext", () => ({
   useAuth: () => ({ puede: mocks.puede }),
 }));
+
+vi.mock("@/lib/meses", async (io) => {
+  const real = await io<typeof import("@/lib/meses")>();
+  return { ...real, listarMeses: mocks.listarMeses };
+});
+
+vi.mock("@/lib/control", async (io) => {
+  const real = await io<typeof import("@/lib/control")>();
+  return { ...real, vistaControl: mocks.vistaControl };
+});
 
 vi.mock("@/lib/decisiones", async (io) => {
   const real = await io<typeof import("@/lib/decisiones")>();
@@ -70,6 +82,19 @@ describe("PanelDecisiones (D1 §4)", () => {
     });
     mocks.listarEscenarios.mockResolvedValue([]);
     mocks.listarRubros.mockResolvedValue([]);
+    mocks.listarMeses.mockResolvedValue({ items: [] });
+    mocks.vistaControl.mockResolvedValue({
+      mes: "2026-08-01",
+      estado: "en_ejecucion",
+      grupos: [],
+      total: {
+        definido: "100000000",
+        ejecutado: "0",
+        disponible: "100000000",
+      },
+      caja_disponible: "0",
+      sin_presupuesto: [],
+    });
   });
 
   it("sin permiso de gestión muestra el aviso, no el editor", () => {
@@ -99,5 +124,31 @@ describe("PanelDecisiones (D1 §4)", () => {
     renderPanel();
     // el impacto base (ajustes vacíos) sí se pide al montar
     await waitFor(() => expect(mocks.proyectarImpactos).toHaveBeenCalled());
+  });
+
+  it("sin mes en ejecución el cruce del techo es honesto (Pieza 0)", async () => {
+    renderPanel();
+    expect(await screen.findByText(/Sin mes en ejecución/i)).toBeTruthy();
+  });
+
+  it("con mes en ejecución y sobre-gasto muestra el cruce (Pieza 0)", async () => {
+    mocks.listarMeses.mockResolvedValue({
+      items: [{ mes: "2026-08-01", estado: "en_ejecucion" }],
+    });
+    mocks.vistaControl.mockResolvedValue({
+      mes: "2026-08-01",
+      estado: "en_ejecucion",
+      grupos: [],
+      total: {
+        definido: "100000000",
+        ejecutado: "110000000", // $10 M sobre lo aprobado
+        disponible: "-10000000",
+      },
+      caja_disponible: "0",
+      sin_presupuesto: [],
+    });
+    renderPanel();
+    // $10 M sobre el presupuesto vs techo $1 M (mock) => crítico, indica el exceso
+    expect(await screen.findByText(/excede el techo en/i)).toBeTruthy();
   });
 });
