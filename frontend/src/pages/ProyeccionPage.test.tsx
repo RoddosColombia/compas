@@ -141,9 +141,7 @@ describe("ProyeccionPage — F1.1 §2", () => {
     expect(document.querySelectorAll("tbody tr")).toHaveLength(18);
     expect(document.getElementById("mes-critico")).toBeNull();
     // clic en el botón → la tabla se expande y el mes crítico aparece
-    fireEvent.click(
-      screen.getByRole("button", { name: /Ver el mes crítico/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Ver el mes crítico/ }));
     expect(document.querySelectorAll("tbody tr")).toHaveLength(60);
     expect(document.getElementById("mes-critico")).not.toBeNull();
   });
