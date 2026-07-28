@@ -11,11 +11,17 @@ de PAGO reales** (fecha de factura + plazo). Dentro de esa ventana se NETEA el
 en sus meses de pago verdaderos). Fuera de la ventana, la proyección paramétrica sigue
 tal cual. El interés real viaja SEPARADO para la serialización. Sin facturas activas ⇒
 la serie es la base, bit a bit.
+
+§0 (Sprint V1): además de ajustar flujo/caja, dentro de la ventana se reescriben los
+campos POR CONCEPTO del mes (`pago_inventario` = capital real, `fondeo` = interés real;
+0 en meses sin pago) para que `neto + Σ egresos == flujo` al peso en toda la serie. Esto
+vive aquí (capa D2 §4), NO en `reacumular` — que D1 comparte y donde reescribir
+conceptos sería incorrecto.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from app.obligaciones.calculadora import pago_factura
@@ -92,6 +98,24 @@ def reconciliar(
         deltas[m] = _cop(deltas[m] - cap[mes] - interes[mes])
 
     ajustado = reacumular(resultado, deltas, caja_minima)
+
+    # 3) coherencia concepto-a-concepto (§0 Sprint V1): `reacumular` ajustó flujo+caja
+    # pero dejó `pago_inventario`/`fondeo` con el valor PARAMÉTRICO. Dentro de la
+    # ventana los reemplazamos por el pago REAL — capital → pago_inventario, interés →
+    # fondeo (mapeo CEO 2026-07-27: el fondeo Auteco es costo de inventario), 0 en los
+    # meses sin pago. Así `neto + Σ egresos == flujo` al peso en toda la serie y V1
+    # muestra el Auteco real, no el proyectado. No se toca `reacumular` (D1 lo comparte:
+    # allí un ajuste genérico no es de ningún concepto y reescribirlo sería error).
+    filas = list(ajustado.meses)
+    for m in range(i_desde, i_hasta + 1):
+        mes = base[m].mes
+        filas[m] = replace(
+            filas[m],
+            pago_inventario=_cop(-cap.get(mes, _CERO)),
+            fondeo=_cop(-interes.get(mes, _CERO)),
+        )
+    ajustado = replace(ajustado, meses=filas)
+
     return ResultadoReconciliado(
         ajustado=ajustado,
         ventana=(desde, hasta),

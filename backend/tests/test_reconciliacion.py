@@ -125,3 +125,74 @@ def test_meses_fuera_de_la_ventana_intactos():
     for i, (a, b) in enumerate(zip(rec.ajustado.meses, r.meses, strict=True)):
         if i != ventana:
             assert a.flujo == b.flujo  # fuera de la ventana, intacto
+
+
+def _suma_conceptos(fila) -> Decimal:
+    """neto + Σ egresos del mes (todos los egresos son negativos en el motor)."""
+    return (
+        fila.neto
+        + fila.gastos_fijos
+        + fila.gps
+        + fila.costo_nueva
+        + fila.adelanto
+        + fila.pago_inventario
+        + fila.fondeo
+        + fila.int_deuda
+        + fila.iva
+    )
+
+
+def _dos_facturas():
+    # una paga 2026-10 (plazo 60), otra 2026-12 (plazo 120): ventana con hueco en nov
+    return [
+        FacturaReconciliar(
+            fecha_factura="2026-08-15",
+            valor=Decimal("1000000"),
+            plazo_elegido_dias=60,
+            plazo_base_dias=30,
+            tasa_excedente_mensual=Decimal("0.016"),
+        ),
+        FacturaReconciliar(
+            fecha_factura="2026-08-15",
+            valor=Decimal("2000000"),
+            plazo_elegido_dias=120,
+            plazo_base_dias=30,
+            tasa_excedente_mensual=Decimal("0.016"),
+        ),
+    ]
+
+
+def test_coherencia_concepto_a_concepto_toda_la_serie():
+    """§0 Sprint V1: para TODA la serie, incluida la ventana reconciliada, la suma de
+    conceptos explica el flujo al peso. neto + Σ egresos == flujo. Sin este invariante
+    V1 mostraría el Auteco paramétrico en vez del real y la pantalla no cuadraría."""
+    r, cm = _base()
+    rec = reconciliar(r, _dos_facturas(), cm)
+    assert rec.ventana == ("2026-10", "2026-12")
+    for fila in rec.ajustado.meses:
+        assert _suma_conceptos(fila) == fila.flujo, fila.mes
+
+
+def test_ventana_reescribe_conceptos_con_el_pago_real():
+    """§0: en el mes de pago, pago_inventario = capital real (negativo) y fondeo =
+    interés real (negativo); el paramétrico ya no aparece."""
+    r, cm = _base()
+    rec = reconciliar(r, _dos_facturas(), cm)
+    idx = {m.mes: i for i, m in enumerate(rec.ajustado.meses)}
+    oct_ = rec.ajustado.meses[idx["2026-10"]]
+    assert oct_.pago_inventario == Decimal("-1000000.00")
+    assert oct_.fondeo == Decimal("-16000.00")  # 1M × 1,6% × 1 mes
+    dic = rec.ajustado.meses[idx["2026-12"]]
+    assert dic.pago_inventario == Decimal("-2000000.00")
+    assert dic.fondeo == Decimal("-96000.00")  # 2M × 1,6% × 3 meses
+
+
+def test_hueco_en_ventana_netea_el_parametrico_a_cero():
+    """Mes dentro de la ventana pero sin pago real: los conceptos Auteco quedan en 0
+    (paramétrico neteado), sin residuo."""
+    r, cm = _base()
+    rec = reconciliar(r, _dos_facturas(), cm)
+    idx = {m.mes: i for i, m in enumerate(rec.ajustado.meses)}
+    nov = rec.ajustado.meses[idx["2026-11"]]
+    assert nov.pago_inventario == Decimal("0.00")
+    assert nov.fondeo == Decimal("0.00")
