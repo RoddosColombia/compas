@@ -12,11 +12,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { CashCurve } from "@/components/charts/CashCurve";
+import { ComposicionCaja } from "@/components/charts/ComposicionCaja";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
 import { ChartCard } from "@/components/ui/chart-card";
 import { ErrorEstado } from "@/components/ui/error-estado";
@@ -28,38 +28,53 @@ import {
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { ScenarioChip } from "@/components/ui/scenario-chip";
 import { obtenerValles } from "@/lib/decisiones";
+import { autecoDeMes } from "@/lib/egreso";
 import {
   formatCOPCompact,
-  formatCOPEntero,
   formatDelta,
   formatMesCorto,
   parseMonto,
 } from "@/lib/money";
 import {
   ESCENARIO_LABEL,
-  ESTADO_LABEL,
   type Escenario,
-  type EstadoMes,
+  type MesProyeccion,
   type Proyeccion,
   obtenerProyeccion,
 } from "@/lib/proyeccion";
-import { cn } from "@/lib/utils";
 
 const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
 // El juicio SIEMPRE mira al menos 60 m aunque la ventana sea corta (patrón F1).
 const HORIZONTE_JUICIO = 60;
 
-const ESTADO_ESTILO: Record<EstadoMes, string> = {
-  ok: "bg-positivo/10 text-positivo",
-  critico: "bg-atencion/10 text-atencion",
-  negativo: "bg-critico/10 text-critico",
-};
+/** §4 — el Auteco que sale este mes y el próximo (lote + fondeo). El origen es
+ * "registrado" (facturas reales) si AMBOS meses caen en la ventana reconciliada,
+ * "proyeccion" si ninguno, o "parcial" si solo uno (QA: no marcar ambos como
+ * registrados cuando solo uno lo está). */
+function compromisoAuteco(
+  ventana: MesProyeccion[],
+  ventanaRec: [string, string] | null,
+) {
+  const dos = ventana.slice(0, 2);
+  let monto = autecoDeMes(dos[0]);
+  if (dos[1]) monto = monto.plus(autecoDeMes(dos[1]));
+  const meses = dos.map((m) => m.mes);
+  const enVentana = (mes: string) =>
+    ventanaRec !== null && mes >= ventanaRec[0] && mes <= ventanaRec[1];
+  const reales = meses.filter(enVentana).length;
+  const origen =
+    reales === 0
+      ? "proyeccion"
+      : reales === meses.length
+        ? "registrado"
+        : "parcial";
+  return { monto, meses, origen };
+}
 
-// Segundo canal del estado (el color nunca va solo — F1 §0.2).
-const ESTADO_SIMBOLO: Record<EstadoMes, string> = {
-  ok: "✓",
-  critico: "●",
-  negativo: "✗",
+const ORIGEN_AUTECO: Record<string, string> = {
+  registrado: "facturas registradas",
+  proyeccion: "proyección",
+  parcial: "parte registrada, parte proyectada",
 };
 
 export default function ProyeccionPage() {
@@ -132,6 +147,7 @@ export default function ProyeccionPage() {
           data={q.data}
           ventanaMeses={horizonte}
           escenario={escenario}
+          vallesMeses={(vallesQ.data?.valles ?? []).map((v) => v.mes)}
         />
       )}
 
@@ -150,10 +166,12 @@ function ProyeccionContenido({
   data,
   ventanaMeses,
   escenario,
+  vallesMeses,
 }: {
   data: Proyeccion;
   ventanaMeses: number;
   escenario: Escenario;
+  vallesMeses: string[];
 }) {
   const [expandida, setExpandida] = useState(false);
 
@@ -167,10 +185,14 @@ function ProyeccionContenido({
     perforada && data.mes_mas_ajustado > ventana[ventana.length - 1].mes;
   const filas = expandida ? data.meses : ventana;
 
+  // KPI "Compromiso Auteco" (§4): lote + fondeo que sale este mes y el próximo.
+  const auteco = compromisoAuteco(ventana, data.ventana_reconciliada);
+  const autecoEnValle = auteco.meses.some((m) => vallesMeses.includes(m));
+
   return (
     <>
-      {/* 4 KPIs con juicio (calculados sobre el horizonte largo) */}
-      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+      {/* KPIs con juicio + Compromiso Auteco (§4) como quinta baldosa */}
+      <div className="grid grid-cols-2 gap-5 lg:grid-cols-3 xl:grid-cols-5">
         <KpiTileV2
           label="Piso de caja"
           valor={data.piso_caja}
@@ -217,6 +239,15 @@ function ProyeccionContenido({
             tono="atencion"
           />
         )}
+        {/* §4 — Compromiso Auteco: lo que sale este mes y el próximo (lote + fondeo) */}
+        <KpiTileV2
+          label="Compromiso Auteco"
+          valor={auteco.monto}
+          contexto={`Lote + fondeo de ${auteco.meses
+            .map(formatMesCorto)
+            .join(" y ")} · ${ORIGEN_AUTECO[auteco.origen]}`}
+          tono={autecoEnValle ? "atencion" : "neutro"}
+        />
       </div>
 
       {/* Protagonista: la curva anotada en la ventana */}
@@ -252,99 +283,35 @@ function ProyeccionContenido({
           ) : undefined
         }
       >
-        <CashCurve meses={ventana} umbral={data.caja_minima} anotada />
+        <ComposicionCaja
+          meses={ventana}
+          umbral={data.caja_minima}
+          ventanaReconciliada={data.ventana_reconciliada}
+        />
       </ChartCard>
 
-      {/* Tabla: ventana por defecto, expandible — nunca un volcado */}
-      <Card className="overflow-hidden p-0">
-        <div
-          className={cn(
-            "overflow-x-auto",
-            expandida && "max-h-[34rem] overflow-y-auto",
-          )}
-        >
-          <table className="w-full font-sans text-cuerpo">
-            <thead className="sticky top-0 z-10 bg-surface">
-              <tr className="border-b border-hairline text-left text-ink-faint">
-                <th className="sticky left-0 z-10 bg-surface px-4 py-2.5 font-semibold">
-                  Mes
-                </th>
-                <th className="px-4 py-2.5 text-right font-semibold">Motos</th>
-                <th className="px-4 py-2.5 text-right font-semibold">
-                  Recaudo crédito
-                </th>
-                <th className="px-4 py-2.5 text-right font-semibold">
-                  Cuota inicial
-                </th>
-                <th className="px-4 py-2.5 text-right font-semibold">
-                  Ingreso bruto
-                </th>
-                <th className="px-4 py-2.5 text-right font-semibold">Flujo</th>
-                <th className="px-4 py-2.5 text-right font-semibold">Caja</th>
-                <th className="px-4 py-2.5 font-semibold">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.map((m) => {
-                const esCritico = perforada && m.mes === data.mes_mas_ajustado;
-                return (
-                  <tr
-                    key={m.mes}
-                    id={esCritico ? "mes-critico" : undefined}
-                    className={cn(
-                      "border-b border-hairline/60 last:border-0 hover:bg-surface-muted",
-                      esCritico && "scroll-mt-16 bg-atencion/10",
-                    )}
-                  >
-                    <td className="sticky left-0 bg-surface px-4 py-2 font-medium text-ink">
-                      {formatMesCorto(m.mes)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {m.motos}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {formatCOPEntero(m.recaudo_credito)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {formatCOPEntero(m.cuotas_iniciales)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right font-medium text-ink">
-                      {formatCOPEntero(m.ingreso_bruto)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {formatCOPEntero(m.flujo)}
-                    </td>
-                    <td className="tabular px-4 py-2 text-right font-medium text-ink">
-                      {formatCOPEntero(m.caja)}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 font-sans text-apoyo font-medium whitespace-nowrap ${ESTADO_ESTILO[m.estado]}`}
-                      >
-                        {ESTADO_SIMBOLO[m.estado]} {ESTADO_LABEL[m.estado]}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {/* Tabla V1 §3: tres totales por mes, fila expandible, fila de totales */}
+      <div className="flex flex-col gap-2">
+        <TablaEgreso
+          filas={filas}
+          mesCritico={data.mes_mas_ajustado}
+          perforada={perforada}
+          ventanaReconciliada={data.ventana_reconciliada}
+        />
         {data.meses.length > ventana.length && (
-          <div className="border-t border-hairline px-4 py-2.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setExpandida((v) => !v)}
-            >
-              {expandida
-                ? `Ver solo la ventana de ${ventana.length} meses`
-                : `Ver los ${data.meses.length} meses completos`}
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onClick={() => setExpandida((v) => !v)}
+          >
+            {expandida
+              ? `Ver solo la ventana de ${ventana.length} meses`
+              : `Ver los ${data.meses.length} meses completos`}
+          </Button>
         )}
-      </Card>
+      </div>
     </>
   );
 }

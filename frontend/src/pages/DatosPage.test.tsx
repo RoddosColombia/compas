@@ -51,6 +51,8 @@ function proy(piso: string, extras: Partial<Proyeccion> = {}): Proyeccion {
     caja_final: "500000000.00",
     capital_requerido: "0.00",
     runway_meses: null,
+    ventana_reconciliada: null,
+    interes_obligaciones: {},
     meses: [mesProy("2026-07", "100000000.00"), mesProy("2026-08", piso)],
     ...extras,
   };

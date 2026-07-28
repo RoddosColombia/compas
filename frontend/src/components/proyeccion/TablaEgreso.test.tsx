@@ -1,0 +1,92 @@
+// components/proyeccion/TablaEgreso.test.tsx
+//
+// V1 §3 — la tabla muestra los tres totales por mes, expande el desglose al clic,
+// marca el lote Auteco real/proyectado según la ventana reconciliada, y cierra con
+// una fila de totales.
+
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+
+import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
+import type { MesProyeccion } from "@/lib/proyeccion";
+
+function mes(over: Partial<MesProyeccion>): MesProyeccion {
+  return {
+    mes: "2026-10",
+    motos: 50,
+    cartera: 120,
+    recaudo_credito: "30000000.00",
+    cuotas_iniciales: "4000000.00",
+    ingreso_bruto: "34000000.00",
+    neto: "34000000.00",
+    provision: "0.00",
+    gastos_fijos: "-125000000.00",
+    gps: "-4000000.00",
+    costo_nueva: "-3000000.00",
+    adelanto: "0.00",
+    pago_inventario: "0.00",
+    fondeo: "0.00",
+    int_deuda: "-300000.00",
+    iva: "0.00",
+    egresos: "-132300000.00",
+    flujo: "-98300000.00",
+    caja: "40000000.00",
+    estado: "critico",
+    ...over,
+  };
+}
+
+const PROYECTADO = mes({ mes: "2026-10" });
+const RECONCILIADO = mes({
+  mes: "2027-01",
+  pago_inventario: "-180000000.00",
+  fondeo: "-5760000.00",
+  flujo: "-284060000.00",
+  caja: "10000000.00",
+});
+
+function renderTabla() {
+  return render(
+    <TablaEgreso
+      filas={[PROYECTADO, RECONCILIADO]}
+      mesCritico="2026-10"
+      perforada={true}
+      ventanaReconciliada={["2027-01", "2027-01"]}
+    />,
+  );
+}
+
+describe("TablaEgreso — V1 §3", () => {
+  it("encabeza con los tres buckets Ingreso · Costo · Gasto", () => {
+    renderTabla();
+    for (const h of ["Ingreso", "Costo", "Gasto"]) {
+      expect(screen.getByRole("columnheader", { name: h })).toBeInTheDocument();
+    }
+  });
+
+  it("cierra con una fila de totales (Σ ingreso de la ventana)", () => {
+    renderTabla();
+    expect(screen.getByText("Totales")).toBeInTheDocument();
+    // Σ ingreso = 34M + 34M = 68M
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 68.000.000")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("expande el desglose al clic y marca el lote Auteco proyectado", () => {
+    renderTabla();
+    // el desglose no está antes de expandir
+    expect(screen.queryByText("Recaudo crédito")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /oct-26/ }));
+    expect(screen.getByText("Recaudo crédito")).toBeInTheDocument();
+    // 2026-10 no está en la ventana reconciliada → proyectado
+    expect(screen.getByText(/Lote Auteco · proyectado/)).toBeInTheDocument();
+  });
+
+  it("marca el lote Auteco REAL dentro de la ventana reconciliada", () => {
+    renderTabla();
+    fireEvent.click(screen.getByRole("button", { name: /ene-27/ }));
+    expect(screen.getByText(/Lote Auteco · real/)).toBeInTheDocument();
+  });
+});

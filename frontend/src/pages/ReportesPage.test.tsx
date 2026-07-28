@@ -52,6 +52,8 @@ function proy(e: Escenario): Proyeccion {
     caja_final: FINAL[e],
     capital_requerido: e === "optimista" ? "0.00" : "85000000.00",
     runway_meses: null,
+    ventana_reconciliada: null,
+    interes_obligaciones: {},
     meses: [m("2026-07", "80000000"), m("2026-08", FINAL[e])],
   };
 }

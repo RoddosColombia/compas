@@ -51,6 +51,12 @@ export interface Proyeccion {
   capital_requerido: string;
   runway_meses: string | null;
   meses: MesProyeccion[];
+  // D2 §4 — reconciliación de obligaciones (Auteco real vs. paramétrico):
+  // [desde, hasta] de los meses con facturas reales, o null si no hay facturas.
+  ventana_reconciliada: [string, string] | null;
+  // interés real de obligaciones por mes de pago (string COP positivo). Es el MISMO
+  // interés que ya vive dentro de `fondeo` (Costo) — solo para mostrar, jamás sumar.
+  interes_obligaciones: Record<string, string>;
 }
 
 export const ESCENARIO_LABEL: Record<Escenario, string> = {

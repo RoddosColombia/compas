@@ -58,6 +58,8 @@ const PROY: Proyeccion = {
   caja_final: "200000000.00",
   capital_requerido: "85000000.00",
   runway_meses: null,
+  ventana_reconciliada: null,
+  interes_obligaciones: {},
   meses: MESES,
 };
 
@@ -150,10 +152,10 @@ describe("ProyeccionPage — F1.1 §2", () => {
     renderPage();
     await screen.findByText("Piso de caja");
     expect(document.querySelectorAll("tbody tr")).toHaveLength(18);
-    // sin centavos en la tabla (política F1 §3)
-    expect(screen.queryByText(/\$\s?30\.000\.000,00/)).toBeNull();
+    // sin centavos en la tabla (política F1 §3). La columna Ingreso = neto (34M).
+    expect(screen.queryByText(/\$\s?34\.000\.000,00/)).toBeNull();
     expect(
-      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 30.000.000")
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 34.000.000")
         .length,
     ).toBeGreaterThan(0);
     // estado con símbolo (color nunca solo)
@@ -175,6 +177,15 @@ describe("ProyeccionPage — F1.1 §2", () => {
     fireEvent.click(limpiar);
     expect(screen.queryByRole("button", { name: "Limpiar" })).toBeNull();
     expect(screen.getByLabelText(/Horizonte/)).toHaveValue("18");
+  });
+
+  it("muestra el KPI Compromiso Auteco (este mes + el próximo)", async () => {
+    renderPage();
+    expect(await screen.findByText("Compromiso Auteco")).toBeInTheDocument();
+    // sin facturas registradas → proyección; los dos primeros meses de la ventana
+    expect(
+      screen.getByText(/Lote \+ fondeo de jul-26 y ago-26 · proyección/),
+    ).toBeInTheDocument();
   });
 
   it("ofrece los tres escenarios", async () => {
