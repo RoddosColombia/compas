@@ -167,6 +167,7 @@ def test_plan_fondo_provision_reserva_durante_el_periodo_y_paga_en_dian():
         liq, _CAL_DIAN, mes_inicio=(2026, 1), horizonte_meses=6
     )
     assert len(fondo) == 6
+
     def _d(*xs):
         return [Decimal(x) for x in xs]
 
@@ -180,9 +181,7 @@ def test_plan_fondo_provision_reserva_durante_el_periodo_y_paga_en_dian():
 
 def test_plan_fondo_provision_saldo_a_favor_no_reserva():
     # período con neto 0 (saldo a favor) → sin reserva ni pago.
-    liq = liquidar(
-        [FacturaIva("compra", "2026-02-10", Decimal("500000"), True)]
-    )
+    liq = liquidar([FacturaIva("compra", "2026-02-10", Decimal("500000"), True)])
     fondo = plan_fondo_provision(
         liq, _CAL_DIAN, mes_inicio=(2026, 1), horizonte_meses=6
     )

@@ -128,9 +128,7 @@ async def test_cargar_loantape_upsert_por_corte_e_idempotente(db):
 
     total = await LoanTapeCredito.find_all().count()
     assert total == 2  # A (pisado) + B
-    doc = await db["compas_test"]["audit_log"].find_one(
-        {"evento": "loantape.cargado"}
-    )
+    doc = await db["compas_test"]["audit_log"].find_one({"evento": "loantape.cargado"})
     assert doc is not None
 
 
@@ -141,17 +139,31 @@ async def test_obtener_aging_usa_el_ultimo_corte(db):
 
     # corte viejo: todos al día
     await service.cargar_loantape(
-        [_raw(credito_id="A", fecha_corte="2026-07-15", dias_mora="0",
-              saldo_en_mora="0.00")],
+        [
+            _raw(
+                credito_id="A",
+                fecha_corte="2026-07-15",
+                dias_mora="0",
+                saldo_en_mora="0.00",
+            )
+        ],
         usuario_id="u1",
     )
     # corte nuevo: A cae en mora 40 días (500k) + B a 100 días (900k)
     await service.cargar_loantape(
         [
-            _raw(credito_id="A", fecha_corte="2026-07-22", dias_mora="40",
-                 saldo_en_mora="500000.00"),
-            _raw(credito_id="B", fecha_corte="2026-07-22", dias_mora="100",
-                 saldo_en_mora="900000.00"),
+            _raw(
+                credito_id="A",
+                fecha_corte="2026-07-22",
+                dias_mora="40",
+                saldo_en_mora="500000.00",
+            ),
+            _raw(
+                credito_id="B",
+                fecha_corte="2026-07-22",
+                dias_mora="100",
+                saldo_en_mora="900000.00",
+            ),
         ],
         usuario_id="u1",
     )
@@ -182,9 +194,7 @@ async def test_loantape_credito_persiste(db):
         estado="en_mora",
     )
     await cr.insert()
-    leido = await LoanTapeCredito.find_one(
-        LoanTapeCredito.credito_id == "CR-000123"
-    )
+    leido = await LoanTapeCredito.find_one(LoanTapeCredito.credito_id == "CR-000123")
     assert leido is not None
     assert leido.saldo_en_mora == Decimal("329800.00")
     assert leido.estado == "en_mora"

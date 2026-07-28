@@ -131,7 +131,6 @@ async def obtener_aging(fecha_corte: str | None = None) -> dict:
         LoanTapeCredito.fecha_corte == corte
     ).to_list()
     items = [
-        {"dias_mora": c.dias_mora, "saldo_en_mora": c.saldo_en_mora}
-        for c in creditos
+        {"dias_mora": c.dias_mora, "saldo_en_mora": c.saldo_en_mora} for c in creditos
     ]
     return {"fecha_corte": corte, "tramos": aging_por_tramo(items)}

@@ -121,9 +121,7 @@ async def _setup_config(ac):
 @pytest.mark.asyncio
 async def test_sensibilidad_shape_y_semantica(api):
     h = await _setup_config(api)
-    r = await api.get(
-        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
-    )
+    r = await api.get("/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h)
     assert r.status_code == 200, r.text
     data = r.json()
     assert "piso_base" in data
@@ -154,9 +152,7 @@ async def test_sensibilidad_shape_y_semantica(api):
 async def test_sensibilidad_es_lectura_para_todos(api):
     await _setup_config(api)
     h = await _token(api, "consulta@roddos.com")
-    r = await api.get(
-        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
-    )
+    r = await api.get("/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h)
     assert r.status_code == 200  # dashboard:leer basta (panel de lectura)
 
 
@@ -173,9 +169,7 @@ async def test_editar_dos_veces_el_mismo_dia_no_sirve_cache_viejo(api):
     guardar dos veces el mismo día → el fingerprint debe cubrir los VALORES,
     no solo la identidad de la fila."""
     h = await _setup_config(api)
-    r1 = await api.get(
-        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
-    )
+    r1 = await api.get("/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h)
     assert r1.status_code == 200
     base_antes = r1.json()["piso_base"]
 
@@ -206,9 +200,7 @@ async def test_editar_dos_veces_el_mismo_dia_no_sirve_cache_viejo(api):
     r = await api.put("/api/v1/parametros-proyeccion", json=body, headers=h)
     assert r.status_code == 200
 
-    r2 = await api.get(
-        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
-    )
+    r2 = await api.get("/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h)
     assert r2.status_code == 200
     base_despues = r2.json()["piso_base"]
     # más gasto fijo → peor piso; si el cache sirviera lo viejo, serían iguales

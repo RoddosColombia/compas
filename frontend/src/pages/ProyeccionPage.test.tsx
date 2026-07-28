@@ -109,8 +109,9 @@ describe("ProyeccionPage — F1.1 §2", () => {
         name: /La caja toca su punto más bajo en oct-26/,
       }),
     ).toBeInTheDocument();
-    const ancla = screen.getByRole("link", { name: /Ver el mes crítico/ });
-    expect(ancla).toHaveAttribute("href", "#mes-critico");
+    // botón accesible (no <a>): expande y desplaza a la fila del mes crítico
+    const ancla = screen.getByRole("button", { name: /Ver el mes crítico/ });
+    expect(ancla).toBeInTheDocument();
     expect(document.getElementById("mes-critico")).not.toBeNull();
   });
 

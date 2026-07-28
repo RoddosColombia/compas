@@ -106,9 +106,7 @@ class TestClaveOcurrencia:
         from app.cargas.service import _clave_ocurrencia
 
         a = self._mov(banco=Banco.BANCOLOMBIA, referencia=None)
-        b = self._mov(
-            banco=Banco.BANCOLOMBIA, referencia=None, monto=Decimal("99999")
-        )
+        b = self._mov(banco=Banco.BANCOLOMBIA, referencia=None, monto=Decimal("99999"))
         assert _clave_ocurrencia(a) != _clave_ocurrencia(b)
 
 

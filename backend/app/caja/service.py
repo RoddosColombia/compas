@@ -123,9 +123,7 @@ async def _restaurar(col, mes: str, banco: Banco, previo: SaldoBanco | None) -> 
         )
 
 
-async def caja_diaria(
-    *, desde: str, hasta: str, caja_inicial: Decimal
-) -> dict:
+async def caja_diaria(*, desde: str, hasta: str, caja_inicial: Decimal) -> dict:
     """Evolución DIARIA de la caja en [desde, hasta] (YYYY-MM-DD). Lee las
     transacciones reales (todos los bancos), corre el saldo desde `caja_inicial`.
     No depende del motor ni del ciclo presupuestal — sirve para administrar el flujo
@@ -134,9 +132,7 @@ async def caja_diaria(
     async for t in Transaccion.find(
         Transaccion.fecha >= desde, Transaccion.fecha <= hasta
     ):
-        movs.append(
-            {"fecha": t.fecha, "tipo_flujo": t.tipo_flujo, "valor": t.valor}
-        )
+        movs.append({"fecha": t.fecha, "tipo_flujo": t.tipo_flujo, "valor": t.valor})
     serie = serie_diaria(movs, caja_inicial)
     total_ing = sum((d["ingresos"] for d in serie), Decimal("0"))
     total_egr = sum((d["egresos"] for d in serie), Decimal("0"))

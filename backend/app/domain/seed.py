@@ -117,10 +117,20 @@ SEMILLA_REGLAS: list[dict] = [
     # Solo las genéricas de INGRESO (PRD M7 / MODELO §C3). Las de egreso se
     # RETIRARON (decisión CEO 2026-07-26): la clasificación de egresos viene curada
     # del Excel del CEO (Base real egresos), NO de reglas que adivinen comercios.
-    {"patron": "Abono", "tipo_flujo": "ingreso", "rubro_nombre": "Recaudo de cartera",
-     "prioridad": 1, "origen": "manual"},
-    {"patron": "Recibido de", "tipo_flujo": "ingreso",
-     "rubro_nombre": "Recaudo de cartera", "prioridad": 2, "origen": "manual"},
+    {
+        "patron": "Abono",
+        "tipo_flujo": "ingreso",
+        "rubro_nombre": "Recaudo de cartera",
+        "prioridad": 1,
+        "origen": "manual",
+    },
+    {
+        "patron": "Recibido de",
+        "tipo_flujo": "ingreso",
+        "rubro_nombre": "Recaudo de cartera",
+        "prioridad": 2,
+        "origen": "manual",
+    },
 ]
 
 

@@ -233,15 +233,22 @@ function ProyeccionContenido({
         protagonista
         acciones={
           perforada ? (
-            <a
-              href="#mes-critico"
+            <button
+              type="button"
               onClick={() => {
                 if (criticoFuera || !expandida) setExpandida(true);
+                // desplazar a la fila del mes crítico una vez visible
+                requestAnimationFrame(() =>
+                  document.getElementById("mes-critico")?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                  }),
+                );
               }}
               className="font-sans text-cuerpo font-semibold text-cyan hover:underline"
             >
               Ver el mes crítico ↓
-            </a>
+            </button>
           ) : undefined
         }
       >

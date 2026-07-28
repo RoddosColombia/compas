@@ -28,6 +28,4 @@ class CarteraPreviaRecaudo(Document):
     class Settings:
         name = CARTERA_PREVIA_COLLECTION
         # Único por semana (upsert idempotente). Unicidad real → @requires_real_mongo.
-        indexes = [
-            IndexModel([("semana_global", 1)], name="semana_unica", unique=True)
-        ]
+        indexes = [IndexModel([("semana_global", 1)], name="semana_unica", unique=True)]
