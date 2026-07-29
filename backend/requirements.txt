@@ -9,6 +9,7 @@ motor==3.7.1
 anyio==4.12.1
 httpx==0.28.1
 openpyxl==3.1.5
+pdfplumber==0.11.4  # E2: extracción del IVA de la Representación Gráfica DIAN (PDF)
 python-multipart==0.0.31  # UploadFile (POST /cargas); FastAPI lo exige en runtime
 APScheduler==3.11.2
 bcrypt==5.0.0
