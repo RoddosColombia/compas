@@ -68,7 +68,14 @@ class Factura(Document):
     tercero_nombre: str = Field(min_length=1, max_length=200)
     tercero_nit: str = Field(min_length=1, max_length=30)
     fecha: str  # 'YYYY-MM-DD' (Bogotá); el cuatrimestre se deriva de aquí
-    base_gravable: Money
+    # base GRAVADA (la que causa IVA). Manual: obligatoria. Ingesta DIAN: None —
+    # la Representación Gráfica solo trae el "Total Bruto" (que incluye líneas sin
+    # IVA), no la base gravada por línea; guardarlo aquí sería fiscalmente falso
+    # (tarifa implícita absurda, reportes fiscales errados). R5: no se inventa.
+    base_gravable: Money | None
+    # Total Bruto Factura de la DIAN (incluye líneas sin IVA). None en captura
+    # manual (ahí manda base_gravable). Junto con iva/inc/... cuadra el total (A6).
+    total_bruto: Money | None = None
     # fracción (0.19 general, 0 exento) — informativo si viene iva_valor. None
     # SOLO en la ingesta DIAN: una factura puede mezclar tarifas (trampa 4 del
     # §2) y derivar tarifa desde iva/base mete redondeos en un dato fiscal

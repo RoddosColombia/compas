@@ -221,6 +221,11 @@ async def test_cargar_recibida_crea_factura(api):
     assert f.iva_valor == Decimal("190.00")  # el IVA extraído, NO base×tarifa
     assert f.total == Decimal("1290.00")
     assert f.tarifa_iva is None  # DIAN puede mezclar tarifas; no se inventa una
+    # el Total Bruto DIAN va a total_bruto; base_gravable (base GRAVADA real) NO se
+    # conoce sin parsear líneas → None (R5: no se inventa). El "1000" del _dian es
+    # Total Bruto, no base gravada.
+    assert f.total_bruto == Decimal("1000.00")
+    assert f.base_gravable is None
     assert f.archivo_ref is not None and "sha256:" in f.archivo_ref
     assert f.deducible is False  # decisión explícita pendiente (pieza 7)
 
@@ -262,7 +267,9 @@ async def test_iva_extraido_manda_sobre_base_por_tarifa(api, monkeypatch):
     assert r.json()["resultados"][0]["estado"] == "creada"
     f = await Factura.find_one(Factura.cufe == _cufe_de(b"PDF-MIXTA"))
     assert f.iva_valor == Decimal("1452.94")  # el extraído
-    assert f.iva_valor != Decimal("31447.06") * Decimal("0.19")  # NO base×tarifa
+    assert f.iva_valor != Decimal("31447.06") * Decimal("0.19")  # NO total_bruto×tarifa
+    assert f.total_bruto == Decimal("31447.06")  # Total Bruto, no base gravada
+    assert f.base_gravable is None
     assert f.tarifa_iva is None
 
 
@@ -272,6 +279,25 @@ def test_campos_desde_dian_mapea_inc_a_inc_valor():
     campos = ingesta.campos_desde_dian(_dian(), nit_auteco=NIT_AUTECO)
     assert campos["inc_valor"] == Decimal("100.00")
     assert "inc" not in campos  # el campo del Document se llama inc_valor
+
+
+def test_campos_desde_dian_total_bruto_no_base_gravable():
+    """Total Bruto DIAN → total_bruto; base_gravable=None (no es la base gravada)."""
+    campos = ingesta.campos_desde_dian(
+        _dian(base_gravable=Decimal("31447.06")), nit_auteco=NIT_AUTECO
+    )
+    assert campos["total_bruto"] == Decimal("31447.06")
+    assert campos["base_gravable"] is None
+
+
+async def test_datos_extraidos_muestra_total_bruto_no_base(api):
+    """El resultado por archivo rotula el Total Bruto como tal; base_gravable None."""
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(URL, files=_archivos(b"PDF-OK"), headers=h)
+    datos = r.json()["resultados"][0]["datos_extraidos"]
+    assert datos["total_bruto"] == "1000.00"
+    assert datos["base_gravable"] is None
 
 
 # ── Mapeos: emitida→venta · Auteco→origen auteco ──

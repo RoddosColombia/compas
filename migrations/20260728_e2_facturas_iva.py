@@ -14,8 +14,8 @@ creación del índice no tiene riesgo de datos.
 Plan de reversa (NO ejecutar sin aprobación): borrar el índice `cufe_unico`
 (`db.facturas.drop_index("cufe_unico")`), quitar los campos nuevos de las facturas
 creadas (`$unset cufe, tipo_documento, signo, inc_valor, bolsas, otros_impuestos,
-rete_fuente, rete_iva, rete_ica, archivo_ref`) y las 3 claves de config sembradas. La
-colección
+rete_fuente, rete_iva, rete_ica, total_bruto, archivo_ref`) y las 3 claves de config
+sembradas. La colección
 estaba vacía → la reversa es limpia.
 
 Uso:  python migrations/20260728_e2_facturas_iva.py "<MONGODB_URI>" [db=compas]

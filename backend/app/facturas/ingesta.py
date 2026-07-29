@@ -135,7 +135,11 @@ def campos_desde_dian(f: FacturaDian, *, nit_auteco: str | None) -> dict:
         "tercero_nombre": tercero_nombre,
         "tercero_nit": tercero_nit,
         "fecha": f.fecha.isoformat(),
-        "base_gravable": f.base_gravable,
+        # `FacturaDian.base_gravable` es el Total Bruto (incluye líneas sin IVA):
+        # va a total_bruto. La base GRAVADA real no se conoce sin parsear líneas →
+        # base_gravable=None (R5). Manda el iva_valor extraído (D-13).
+        "base_gravable": None,
+        "total_bruto": f.base_gravable,
         "tarifa_iva": None,
         "iva_valor": f.iva,
         "total": f.total_factura,
@@ -164,7 +168,9 @@ def _datos_extraidos(f: FacturaDian, campos: dict) -> dict:
         "origen": campos["origen"].value,
         "tercero_nit": campos["tercero_nit"],
         "tercero_nombre": campos["tercero_nombre"],
-        "base_gravable": money_str(f.base_gravable),
+        # base gravada desconocida en la DIAN (R5); el Total Bruto va rotulado aparte
+        "base_gravable": None,
+        "total_bruto": money_str(f.base_gravable),
         "iva_valor": money_str(f.iva),
         "inc_valor": money_str(f.inc),
         "bolsas": money_str(f.bolsas),

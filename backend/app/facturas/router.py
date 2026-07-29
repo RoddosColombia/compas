@@ -10,11 +10,13 @@ hace inocuo el replay (→ 409). La liquidación se calcula en el backend."""
 
 from decimal import Decimal, InvalidOperation
 
+from beanie import PydanticObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth.deps import require_permission
 from app.auth.models import User
+from app.auth.permissions import has_permission
 from app.auth.router import verify_origin
 from app.core.money import money_str
 from app.domain.factura import (
@@ -56,17 +58,25 @@ def _etiqueta_periodo(anio: int, idx: int, periodicidad: Periodicidad) -> str:
     return f"{anio}-{prefijo}{idx}"
 
 
-def _serializar(f: Factura, periodicidad: Periodicidad) -> dict:
+def _serializar(
+    f: Factura, periodicidad: Periodicidad, *, ver_pii: bool = True
+) -> dict:
     anio, idx = periodo_de(f.fecha, periodicidad)
     return {
         "id": str(f.id),
         "tipo": f.tipo.value,
         "origen": f.origen.value,
         "numero": f.numero,
-        "tercero_nombre": f.tercero_nombre,
-        "tercero_nit": f.tercero_nit,
+        # A17 (Ley 1581): la contraparte es PII (persona natural en emitidas). Se
+        # oculta a quien no tiene facturas:ver_detalle; el resto queda visible.
+        "tercero_nombre": f.tercero_nombre if ver_pii else None,
+        "tercero_nit": f.tercero_nit if ver_pii else None,
         "fecha": f.fecha,
-        "base_gravable": money_str(f.base_gravable),
+        # None (DIAN) → "—" en la UI, nunca un valor prestado (R5)
+        "base_gravable": money_str(f.base_gravable)
+        if f.base_gravable is not None
+        else None,
+        "total_bruto": money_str(f.total_bruto) if f.total_bruto is not None else None,
         # None = ingesta DIAN (tarifas mezcladas; manda iva_valor, D-13)
         "tarifa_iva": str(f.tarifa_iva) if f.tarifa_iva is not None else None,
         "iva_valor": money_str(f.iva_valor),
@@ -80,11 +90,12 @@ def _serializar(f: Factura, periodicidad: Periodicidad) -> dict:
 @router.get("")
 async def listar(
     activo: bool | None = Query(default=None),
-    _: User = Depends(require_permission("dashboard:leer")),
+    user: User = Depends(require_permission("dashboard:leer")),
 ):
     periodicidad = await service.obtener_periodicidad()
     facturas = await service.listar_facturas(activo=activo)
-    return [_serializar(f, periodicidad) for f in facturas]
+    ver_pii = has_permission(user.rol, "facturas:ver_detalle")
+    return [_serializar(f, periodicidad, ver_pii=ver_pii) for f in facturas]
 
 
 @router.get("/liquidacion")
@@ -111,6 +122,24 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
             for c in liquidar(items, periodicidad)
         ],
     }
+
+
+@router.get("/{factura_id}")
+async def detalle(
+    factura_id: str,
+    _: User = Depends(require_permission("facturas:ver_detalle")),
+):
+    """Detalle de una factura con PII completa (A17 / Ley 1581): solo
+    facturas:ver_detalle = {financiero, admin}. La ruta va DESPUÉS de /liquidacion
+    para que ese literal no caiga en {factura_id}."""
+    try:
+        fid = PydanticObjectId(factura_id)
+    except Exception:
+        raise HTTPException(422, "factura_id inválido") from None
+    f = await Factura.get(fid)
+    if f is None:
+        raise HTTPException(404, "la factura no existe")
+    return _serializar(f, await service.obtener_periodicidad(), ver_pii=True)
 
 
 @router.post("/cargar")
