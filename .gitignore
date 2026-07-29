@@ -24,6 +24,8 @@ dist-ssr/
 *.local
 .vite/
 coverage/
+# Caché incremental de TypeScript: artefacto generado (cambia en cada build).
+*.tsbuildinfo
 
 # ── Sistema operativo / editor ──
 .DS_Store
