@@ -236,6 +236,36 @@ async def test_inc_mayor_a_cero_queda_en_inc_valor(api):
     assert f.inc_valor != Decimal("0.00")
 
 
+# ── Pieza 5: PRECEDENCIA del iva_valor extraído sobre base×tarifa (D-13/§3.2) ──
+async def test_iva_extraido_manda_sobre_base_por_tarifa(api, monkeypatch):
+    """El iva_valor del bloque de totales DIAN se guarda tal cual; NO se recalcula
+    como base×0.19. Números del A1 real: base_gravable (Total Bruto, incluye líneas
+    sin IVA) 31.447,06 con IVA 1.452,94 → base×0.19 daría 5.974,94. Se guarda
+    1.452,94 y tarifa_iva=None (la DIAN puede mezclar tarifas)."""
+
+    def _mixta(contenido, nombre, nit_propio):
+        return _dian(
+            cufe=_cufe_de(contenido),
+            numero="MIX-1",
+            base_gravable=Decimal("31447.06"),
+            iva=Decimal("1452.94"),
+            inc=Decimal("0.00"),
+            total_impuesto=Decimal("1452.94"),
+            total_factura=Decimal("32900.00"),
+        )
+
+    monkeypatch.setattr(ingesta, "_extraer_bytes", _mixta)
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(URL, files=_archivos(b"PDF-MIXTA"), headers=h)
+    assert r.status_code == 200
+    assert r.json()["resultados"][0]["estado"] == "creada"
+    f = await Factura.find_one(Factura.cufe == _cufe_de(b"PDF-MIXTA"))
+    assert f.iva_valor == Decimal("1452.94")  # el extraído
+    assert f.iva_valor != Decimal("31447.06") * Decimal("0.19")  # NO base×tarifa
+    assert f.tarifa_iva is None
+
+
 def test_campos_desde_dian_mapea_inc_a_inc_valor():
     """Costura pura: el desajuste FacturaDian.inc→Factura.inc_valor guardaría un
     cero en silencio; este test lo hace imposible."""

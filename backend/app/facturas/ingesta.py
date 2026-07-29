@@ -234,6 +234,13 @@ async def _procesar_archivo(
     campos = campos_desde_dian(dian, nit_auteco=nit_auteco)
     datos = _datos_extraidos(dian, campos)
 
+    # Pieza 5: la validación de integridad de la extracción es la COHERENCIA A6
+    # (base + iva + inc + bolsas + otros == total), NO `iva ≈ base × tarifa`. Esa
+    # última no aplica al PDF DIAN: `base_gravable` es el Total Bruto (incluye
+    # líneas sin IVA) y el doc puede mezclar tarifas (trampa 4 del §2), así que la
+    # tasa implícita ≠ nominal. Ejemplo real (A1): base 31.447,06 con IVA 1.452,94
+    # → base×0.19 = 5.974,94; un gate base×tarifa marcaría la propia muestra de oro
+    # como requiere_confirmacion. R6: se reporta, no se implementa el gate dañino.
     if not dian.coherente():  # A6: no se guarda, pide revisión
         return _resultado(
             nombre,
