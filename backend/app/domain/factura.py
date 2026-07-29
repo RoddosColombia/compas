@@ -32,6 +32,14 @@ _FECHA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # Único tipo de documento que E2 procesa (D-16: NC/ND/soporte van a E2.1).
 TIPO_DOC_FACTURA_VENTA = "FACTURA ELECTRÓNICA DE VENTA"
 
+# Pieza 6 (E2 §3.5): tarifas IVA legales en Colombia — 0% (exento/excluido), 5%
+# (reducida) y 19% (general). Lista CERRADA para la captura MANUAL (endurecer, no
+# cambiar el cálculo → sin CR por R6). La ingesta DIAN NO valida contra esto: el PDF
+# puede mezclar tarifas (trampa 4 del §2) y guarda tarifa_iva=None (manda iva_valor).
+TARIFAS_IVA_VALIDAS = frozenset(
+    {Decimal("0"), Decimal("0.05"), Decimal("0.19")}
+)
+
 
 class TipoFactura(StrEnum):
     venta = "venta"  # genera IVA (débito fiscal) — 'emitida' en el PDF DIAN

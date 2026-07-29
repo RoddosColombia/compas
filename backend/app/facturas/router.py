@@ -17,7 +17,12 @@ from app.auth.deps import require_permission
 from app.auth.models import User
 from app.auth.router import verify_origin
 from app.core.money import money_str
-from app.domain.factura import Factura, OrigenFactura, TipoFactura
+from app.domain.factura import (
+    TARIFAS_IVA_VALIDAS,
+    Factura,
+    OrigenFactura,
+    TipoFactura,
+)
 from app.facturas import ingesta, service
 from app.iva.liquidacion import Periodicidad, liquidar, periodo_de
 
@@ -141,6 +146,13 @@ async def crear(
         raise HTTPException(422, f"tipo inválido: {body.tipo}")
     if body.origen not in OrigenFactura._value2member_map_:
         raise HTTPException(422, f"origen inválido: {body.origen}")
+    tarifa = _dec(body.tarifa_iva, "tarifa_iva")
+    if tarifa not in TARIFAS_IVA_VALIDAS:
+        raise HTTPException(
+            422,
+            f"tarifa_iva inválida: {body.tarifa_iva}. Tarifas IVA legales en "
+            "Colombia: 0, 0.05, 0.19 (pieza 6)",
+        )
     try:
         factura = await service.crear_factura(
             usuario_id=user.id,
@@ -151,7 +163,7 @@ async def crear(
             tercero_nit=body.tercero_nit,
             fecha=body.fecha,
             base_gravable=_dec(body.base_gravable, "base_gravable"),
-            tarifa_iva=_dec(body.tarifa_iva, "tarifa_iva"),
+            tarifa_iva=tarifa,
             deducible=body.deducible,
         )
     except service.FacturasError as e:

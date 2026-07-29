@@ -83,6 +83,40 @@ async def test_crear_factura_201_calcula_iva(api):
     assert data["periodo"] == "2026-C1"  # derivado de la fecha (cuatrimestral default)
 
 
+async def test_crear_factura_tarifa_no_legal_es_422(api):
+    """Pieza 6: endurecer tarifa_iva a las tarifas IVA legales en Colombia
+    (0, 0.05, 0.19). 0.16 (tarifa vieja) → 422, no se guarda."""
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post("/api/v1/facturas", json=_compra(tarifa_iva="0.16"), headers=h)
+    assert r.status_code == 422
+    assert "tarifa" in r.json()["detail"].lower()
+
+
+async def test_crear_factura_tarifa_exenta_cero_ok(api):
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(
+        "/api/v1/facturas",
+        json=_compra(numero="FC-EX", tarifa_iva="0", base_gravable="1000000"),
+        headers=h,
+    )
+    assert r.status_code == 201
+    assert r.json()["iva_valor"] == "0.00"
+
+
+async def test_crear_factura_tarifa_reducida_5pct_ok(api):
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(
+        "/api/v1/facturas",
+        json=_compra(numero="FC-5", tarifa_iva="0.05", base_gravable="1000000"),
+        headers=h,
+    )
+    assert r.status_code == 201
+    assert r.json()["iva_valor"] == "50000.00"
+
+
 async def test_crear_factura_consulta_es_403(api):
     ac, _ = api
     h = await _token(ac, "consulta@roddos.com")
