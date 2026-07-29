@@ -16,6 +16,7 @@ pero NUNCA se le aplica ReteFuente (regla de contabilidad RODDOS). CUATRIMESTRAL
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from beanie import Document
@@ -28,10 +29,13 @@ FACTURAS_COLLECTION = "facturas"
 
 _FECHA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# Único tipo de documento que E2 procesa (D-16: NC/ND/soporte van a E2.1).
+TIPO_DOC_FACTURA_VENTA = "FACTURA ELECTRÓNICA DE VENTA"
+
 
 class TipoFactura(StrEnum):
-    venta = "venta"  # genera IVA (débito fiscal)
-    compra = "compra"  # IVA descontable si es deducible
+    venta = "venta"  # genera IVA (débito fiscal) — 'emitida' en el PDF DIAN
+    compra = "compra"  # IVA descontable si es deducible — 'recibida' en el PDF
 
 
 class OrigenFactura(StrEnum):
@@ -41,6 +45,10 @@ class OrigenFactura(StrEnum):
     repuesto = "repuesto"
     servicio = "servicio"
     otro = "otro"
+    # E2: la ingesta NO puede deducir el origen de negocio del PDF (a diferencia del
+    # tipo, que sí sale del NIT). Entra 'sin_clasificar' con contador visible; el CEO
+    # lo reclasifica. Nunca se adivina (R5).
+    sin_clasificar = "sin_clasificar"
 
 
 class Factura(Document):
@@ -53,18 +61,33 @@ class Factura(Document):
     tercero_nit: str = Field(min_length=1, max_length=30)
     fecha: str  # 'YYYY-MM-DD' (Bogotá); el cuatrimestre se deriva de aquí
     base_gravable: Money
-    tarifa_iva: Money  # fracción (0.19 general, 0 exento)
-    iva_valor: Money  # = base_gravable × tarifa_iva (lo calcula el servicio)
-    total: Money  # = base_gravable + iva_valor
+    # fracción (0.19 general, 0 exento) — informativo si viene iva_valor
+    tarifa_iva: Money
+    # E2/D-13: el iva_valor extraído del PDF MANDA; si no, base × tarifa (servicio)
+    iva_valor: Money
+    # = base_gravable + impuestos (se reutiliza; no se agrega total_factura)
+    total: Money
     deducible: bool = False  # solo compras: si su IVA es descontable
     activo: bool = True  # baja lógica (anulación)
+
+    # ── E2: campos de la Representación Gráfica DIAN ──
+    cufe: str | None = None  # identificador único DIAN; None en captura manual
+    tipo_documento: str = TIPO_DOC_FACTURA_VENTA  # radar E2.1 (NC/ND llevarían otro)
+    signo: int = 1  # +1 factura; -1 reservado para notas crédito (E2.1)
+    inc: Money = Decimal("0.00")
+    bolsas: Money = Decimal("0.00")
+    otros_impuestos: Money = Decimal("0.00")
+    rete_fuente: Money = Decimal("0.00")
+    rete_iva: Money = Decimal("0.00")
+    rete_ica: Money = Decimal("0.00")
+    # ref/hash del PDF original (auditable, restringido por rol PII)
+    archivo_ref: str | None = None
 
     class Settings:
         name = FACTURAS_COLLECTION
         indexes = [
-            # Regla 5: dedup por el par natural NIT+número. Único donde numero es
-            # string (siempre). En Mongo real lanza DuplicateKeyError; mongomock no lo
-            # exige → la unicidad real se prueba con @requires_real_mongo.
+            # Regla 5: dedup por el par natural NIT+número. Se conserva porque las
+            # capturas MANUALES no tienen CUFE. Único donde numero es string (siempre).
             IndexModel(
                 [("tercero_nit", 1), ("numero", 1)],
                 name="nit_numero_unico",
@@ -72,6 +95,13 @@ class Factura(Document):
                 partialFilterExpression={"numero": {"$type": "string"}},
             ),
             IndexModel([("fecha", 1)], name="por_fecha"),
+            # ⚠ El índice único de CUFE (A2) va en la MIGRACIÓN, no aquí. El
+            # partialFilterExpression {"cufe": {"$type":"string"}} es correcto en
+            # Mongo real (excluye capturas manuales sin CUFE), pero mongomock IGNORA
+            # el partial y lo trataría como único simple → dos cufe=None colisionan y
+            # rompen la suite rápida. Se crea (cufe_unico) en la migración
+            # 20260728_e2_facturas_iva; la dedup CUFE va además en el servicio y se
+            # verifica @requires_real_mongo.
         ]
 
     @field_validator("fecha")

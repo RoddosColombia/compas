@@ -31,6 +31,12 @@ class ClaveConfig(StrEnum):
     # Período de liquidación del IVA (decisión CEO 2026-07-25): default cuatrimestral;
     # la DIAN puede pasar a RODDOS a bimestral por volumen → configurable por dato.
     PERIODICIDAD_IVA = "PERIODICIDAD_IVA"
+    # E2: NIT propio (RODDOS) y de Auteco a config, no hardcodeados en el extractor.
+    NIT_RODDOS = "NIT_RODDOS"
+    NIT_AUTECO = "NIT_AUTECO"
+    # E2 (CR-E2-COMPUERTA): compuerta IVA→proyección. Apagada por defecto → E2 captura
+    # facturas y liquida el IVA SIN mover la caja proyectada (D-12). Encender es dato.
+    IVA_ALIMENTA_PROYECCION = "IVA_ALIMENTA_PROYECCION"
 
 
 # Tipo esperado por clave (M-03). "decimal" | "fecha" | "json".
@@ -39,6 +45,9 @@ _TIPO_POR_CLAVE: dict[ClaveConfig, str] = {
     ClaveConfig.CALENDARIO_DIAN: "json",
     ClaveConfig.DIAS_CREDITO_POR_PROVEEDOR: "json",
     ClaveConfig.PERIODICIDAD_IVA: "json",
+    ClaveConfig.NIT_RODDOS: "json",
+    ClaveConfig.NIT_AUTECO: "json",
+    ClaveConfig.IVA_ALIMENTA_PROYECCION: "json",
 }
 
 
@@ -132,6 +141,22 @@ SEMILLA_CONFIGURACION: list[dict] = [
         # 'bimestral' cuando la DIAN lo exija — sin tocar código (decisión 2026-07-25).
         "clave": "PERIODICIDAD_IVA",
         "valor_json": {"periodicidad": "cuatrimestral"},
+        "vigente_desde": "2026-01-01",
+    },
+    {
+        "clave": "NIT_RODDOS",
+        "valor_json": {"nit": "901012622"},
+        "vigente_desde": "2026-01-01",
+    },
+    {
+        "clave": "NIT_AUTECO",
+        "valor_json": {"nit": "860024781"},
+        "vigente_desde": "2026-01-01",
+    },
+    {
+        # CR-E2-COMPUERTA: IVA→proyección APAGADA por defecto (D-12). Encender = dato.
+        "clave": "IVA_ALIMENTA_PROYECCION",
+        "valor_json": {"activa": False},
         "vigente_desde": "2026-01-01",
     },
 ]
