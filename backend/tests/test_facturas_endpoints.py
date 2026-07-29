@@ -6,6 +6,8 @@ admin} → consulta/directivo reciben 403. Montos como string (regla 1). La liqu
 se calcula en el backend y se sirve por GET /facturas/liquidacion (lo consume la vista).
 """
 
+from decimal import Decimal
+
 import httpx
 import pytest_asyncio
 from app.audit.service import configure_audit, reset_audit
@@ -146,6 +148,114 @@ async def test_listar_y_anular(api):
     rl = await ac.get("/api/v1/facturas?activo=true", headers=h)
     assert rl.status_code == 200
     assert rl.json() == []
+
+
+# ── A17 / punto 4: PII (Ley 1581) — facturas:ver_detalle {financiero, admin} ──
+async def test_listado_minimiza_pii_sin_ver_detalle(api):
+    """consulta tiene dashboard:leer pero NO facturas:ver_detalle → el listado le
+    oculta tercero_nombre/tercero_nit (PII); el resto de campos visibles."""
+    ac, _ = api
+    hfin = await _token(ac)
+    await ac.post("/api/v1/facturas", json=_compra(), headers=hfin)
+
+    hcon = await _token(ac, "consulta@roddos.com")
+    r = await ac.get("/api/v1/facturas", headers=hcon)
+    assert r.status_code == 200
+    fila = r.json()[0]
+    assert fila["tercero_nombre"] is None
+    assert fila["tercero_nit"] is None
+    assert fila["iva_valor"] == "190000.00"  # el número de IVA sí es visible
+
+
+async def test_listado_muestra_pii_con_ver_detalle(api):
+    ac, _ = api
+    h = await _token(ac)  # financiero
+    await ac.post("/api/v1/facturas", json=_compra(), headers=h)
+    r = await ac.get("/api/v1/facturas", headers=h)
+    fila = r.json()[0]
+    assert fila["tercero_nombre"] == "Auteco S.A.S."
+    assert fila["tercero_nit"] == "860024781"
+
+
+async def test_detalle_factura_requiere_ver_detalle(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = (await ac.post("/api/v1/facturas", json=_compra(), headers=h)).json()["id"]
+
+    rcon = await ac.get(
+        f"/api/v1/facturas/{fid}", headers=await _token(ac, "consulta@roddos.com")
+    )
+    assert rcon.status_code == 403
+
+    rfin = await ac.get(f"/api/v1/facturas/{fid}", headers=h)
+    assert rfin.status_code == 200
+    assert rfin.json()["tercero_nit"] == "860024781"  # PII completa para autorizado
+
+
+async def test_liquidacion_visible_para_directivo(api):
+    """GET /liquidacion se queda bajo dashboard:leer: el directivo ve el número de
+    IVA (lo que NO ve es la contraparte, cubierto por el listado/detalle)."""
+    ac, _ = api
+    r = await ac.get(
+        "/api/v1/facturas/liquidacion", headers=await _token(ac, "consulta@roddos.com")
+    )
+    assert r.status_code == 200
+
+
+async def test_a10_ejemplo_aritmetico_spec_6_end_to_end(api):
+    """A10: el ejemplo §6 reproduce EXACTO el arrastre y el pago, vía el endpoint
+    real GET /facturas/liquidacion. IVA exacto (sin base×tarifa) insertando facturas
+    estilo DIAN (base_gravable=None). La NO deducible queda registrada pero excluida
+    del descontable."""
+    from app.domain.factura import Factura
+
+    async def _ins(numero, tipo, fecha, iva, deducible):
+        await Factura(
+            tipo=tipo,
+            origen="sin_clasificar",
+            numero=numero,
+            tercero_nombre="Contraparte",
+            tercero_nit="900",
+            fecha=fecha,
+            base_gravable=None,
+            total_bruto=None,
+            tarifa_iva=None,
+            iva_valor=Decimal(iva),
+            total=Decimal(iva),
+            deducible=deducible,
+        ).insert()
+
+    # C2-2026 (may–ago)
+    await _ins("R-1", "compra", "2026-05-28", "1452.94", True)
+    await _ins("R-2", "compra", "2026-06-15", "19000000.00", True)
+    await _ins("E-1", "venta", "2026-05-10", "8000000.00", False)
+    # C3-2026 (sep–dic)
+    await _ins("E-2", "venta", "2026-09-15", "15000000.00", False)
+    await _ins("R-3", "compra", "2026-10-01", "2000000.00", True)
+    await _ins("R-4", "compra", "2026-11-01", "500000.00", False)  # NO deducible
+
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.get("/api/v1/facturas/liquidacion", headers=h)
+    assert r.status_code == 200
+    periodos = {p["etiqueta"]: p for p in r.json()["periodos"]}
+
+    c2 = periodos["2026-C2"]
+    assert c2["generado"] == "8000000.00"
+    assert c2["descontable"] == "19001452.94"  # 1452.94 + 19.000.000
+    assert c2["neto_a_pagar"] == "0.00"  # saldo a favor, nunca pago negativo
+    assert c2["saldo_favor_nuevo"] == "11001452.94"  # se arrastra
+
+    c3 = periodos["2026-C3"]
+    assert c3["generado"] == "15000000.00"
+    assert c3["descontable"] == "2000000.00"  # los 500.000 NO deducibles quedan fuera
+    assert c3["saldo_favor_previo"] == "11001452.94"  # arrastre del C2
+    assert c3["neto_a_pagar"] == "1998547.06"
+    assert c3["saldo_favor_nuevo"] == "0.00"  # arrastre agotado
+
+    # la NO deducible SÍ está registrada (excluida del descontable, no del registro)
+    rl = await ac.get("/api/v1/facturas?activo=true", headers=h)
+    assert any(f["numero"] == "R-4" for f in rl.json())
 
 
 async def test_liquidacion_cuatrimestral(api):

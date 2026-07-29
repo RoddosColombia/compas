@@ -32,6 +32,8 @@ CANONICA: dict[str, set[Role]] = {
     "proyeccion:gestionar": {Role.financiero, Role.admin},
     # CR "Fidelidad de caja" (C11 IVA): carga de facturas + liquidación
     "iva:gestionar": {Role.financiero, Role.admin},
+    # E2 A17 (Ley 1581): ver detalle de factura + PII de la contraparte
+    "facturas:ver_detalle": {Role.financiero, Role.admin},
     # §2.4 — autoridad del ciclo (manda sobre §4.1)
     "ciclo:abrir": {Role.financiero, Role.directivo, Role.admin},
     "ciclo:proponer": {Role.financiero, Role.directivo, Role.admin},
