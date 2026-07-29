@@ -61,8 +61,11 @@ class Factura(Document):
     tercero_nit: str = Field(min_length=1, max_length=30)
     fecha: str  # 'YYYY-MM-DD' (Bogotá); el cuatrimestre se deriva de aquí
     base_gravable: Money
-    # fracción (0.19 general, 0 exento) — informativo si viene iva_valor
-    tarifa_iva: Money
+    # fracción (0.19 general, 0 exento) — informativo si viene iva_valor. None
+    # SOLO en la ingesta DIAN: una factura puede mezclar tarifas (trampa 4 del
+    # §2) y derivar tarifa desde iva/base mete redondeos en un dato fiscal
+    # (alternativa rechazada en §3.2); la captura manual la sigue exigiendo.
+    tarifa_iva: Money | None
     # E2/D-13: el iva_valor extraído del PDF MANDA; si no, base × tarifa (servicio)
     iva_valor: Money
     # = base_gravable + impuestos (se reutiliza; no se agrega total_factura)

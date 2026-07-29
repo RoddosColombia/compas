@@ -10,7 +10,7 @@ hace inocuo el replay (→ 409). La liquidación se calcula en el backend."""
 
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth.deps import require_permission
@@ -18,7 +18,7 @@ from app.auth.models import User
 from app.auth.router import verify_origin
 from app.core.money import money_str
 from app.domain.factura import Factura, OrigenFactura, TipoFactura
-from app.facturas import service
+from app.facturas import ingesta, service
 from app.iva.liquidacion import Periodicidad, liquidar, periodo_de
 
 router = APIRouter(prefix="/facturas", tags=["facturas"])
@@ -62,7 +62,8 @@ def _serializar(f: Factura, periodicidad: Periodicidad) -> dict:
         "tercero_nit": f.tercero_nit,
         "fecha": f.fecha,
         "base_gravable": money_str(f.base_gravable),
-        "tarifa_iva": str(f.tarifa_iva),
+        # None = ingesta DIAN (tarifas mezcladas; manda iva_valor, D-13)
+        "tarifa_iva": str(f.tarifa_iva) if f.tarifa_iva is not None else None,
         "iva_valor": money_str(f.iva_valor),
         "total": money_str(f.total),
         "deducible": f.deducible,
@@ -105,6 +106,29 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
             for c in liquidar(items, periodicidad)
         ],
     }
+
+
+@router.post("/cargar")
+async def cargar(
+    archivos: list[UploadFile],
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """Ingesta por documento (E2 §3.3): lote de PDFs DIAN → resultado POR ARCHIVO
+    (creada | duplicada | rechazada_no_dian | rechazada_tipo_no_soportado |
+    requiere_confirmacion | error) + resumen. Parseo fuera del event loop (A16);
+    tope de 20 archivos y 10 MB por archivo (coherente con POST /api/v1/cargas).
+    RBAC iva:gestionar: cargar es una mutación fiscal, no una lectura."""
+    if len(archivos) > ingesta.MAX_ARCHIVOS_LOTE:
+        raise HTTPException(
+            413,
+            f"máximo {ingesta.MAX_ARCHIVOS_LOTE} archivos por lote; "
+            f"recibidos {len(archivos)}",
+        )
+    try:
+        return await ingesta.procesar_lote(archivos, usuario_id=user.id)
+    except ingesta.ConfigFaltanteError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @router.post("", status_code=201)
