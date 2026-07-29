@@ -74,7 +74,9 @@ class Factura(Document):
     cufe: str | None = None  # identificador único DIAN; None en captura manual
     tipo_documento: str = TIPO_DOC_FACTURA_VENTA  # radar E2.1 (NC/ND llevarían otro)
     signo: int = 1  # +1 factura; -1 reservado para notas crédito (E2.1)
-    inc: Money = Decimal("0.00")
+    # `inc_valor` y no `inc`: `inc` pisa un atributo de beanie.Document (UserWarning de
+    # Pydantic; rompería updates a futuro). Desviación del §3.1 documentada en el PR.
+    inc_valor: Money = Decimal("0.00")
     bolsas: Money = Decimal("0.00")
     otros_impuestos: Money = Decimal("0.00")
     rete_fuente: Money = Decimal("0.00")

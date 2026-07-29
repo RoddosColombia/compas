@@ -158,8 +158,13 @@ def test_a7_no_dian_se_rechaza():
         )
 
 
-# ── A1: PDF real (se auto-activa cuando el fixture exista) ──
-_FIXTURE = Path(__file__).parent / "fixtures" / "ALMACENES ÉXITO S.A mayo 28.pdf"
+# ── A1: caso de oro sobre el PDF real. Es TAMBIÉN el candado del pin de versión:
+# el extractor se validó en pdfplumber 0.11.9 y el repo pinó 0.11.4; la extracción por
+# POSICIÓN puede variar entre versiones, y este es el único test que lo atraparía. Si
+# falla por versión, es un HALLAZGO (no se ajusta el valor esperado). ──
+_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "dian_factura_venta_exito_2026-05-28.pdf"
+)
 
 
 @pytest.mark.skipif(
@@ -167,9 +172,13 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "ALMACENES ÉXITO S.A mayo 28.pd
     reason="A1: falta el PDF de muestra — dejar en backend/tests/fixtures/",
 )
 def test_a1_pdf_de_muestra():
+    from app.iva.liquidacion import cuatrimestre_de
+
     f = extraer(_FIXTURE, nit_propio=NIT_RODDOS)
     assert f.iva == Decimal("1452.94")
     assert f.base_gravable == Decimal("31447.06")
     assert f.total_factura == Decimal("32900.00")
     assert f.tipo == "recibida"
     assert f.coherente() is True
+    # cuatrimestre may–ago = C2 (28-may-2026)
+    assert cuatrimestre_de(f.fecha.isoformat()) == (2026, 2)

@@ -33,7 +33,7 @@ def test_campos_nuevos_tienen_defaults_seguros():
     assert f.cufe is None  # captura manual no trae CUFE
     assert f.tipo_documento == TIPO_DOC_FACTURA_VENTA
     assert f.signo == 1
-    assert f.inc == Decimal("0.00")
+    assert f.inc_valor == Decimal("0.00")
     assert f.bolsas == Decimal("0.00")
     assert f.otros_impuestos == Decimal("0.00")
     assert f.rete_fuente == Decimal("0.00")
@@ -54,10 +54,10 @@ def test_cufe_se_persiste_cuando_viene():
 
 def test_impuestos_dian_se_guardan():
     f = _minima(
-        inc=Decimal("100.00"),
+        inc_valor=Decimal("100.00"),
         rete_fuente=Decimal("50.00"),
         archivo_ref="s3://facturas/UI90-16716.pdf",
     )
-    assert f.inc == Decimal("100.00")
+    assert f.inc_valor == Decimal("100.00")
     assert f.rete_fuente == Decimal("50.00")
     assert f.archivo_ref.endswith(".pdf")
