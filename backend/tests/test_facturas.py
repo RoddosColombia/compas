@@ -227,16 +227,32 @@ async def test_proyeccion_iva_segun_compuerta(db, compuerta_activa):
 
 
 async def test_a14_compuerta_apagada_proyeccion_identica_bit_a_bit(db):
-    """A14 / CR-E2-COMPUERTA (criterio del CEO): con facturas cargadas y la compuerta
-    APAGADA por defecto (sin sembrarla), GET /proyeccion es idéntico BIT A BIT al estado
-    sin facturas. Es el candado de que E2 no mueve la caja proyectada (D-12)."""
+    """A14 / CR-E2-COMPUERTA (criterio central del CEO): con facturas cargadas y la
+    compuerta APAGADA, GET /proyeccion es idéntico BIT A BIT al estado sin facturas
+    (candado de D-12). Con CONTROL NEGATIVO en el mismo test y el mismo fixture: al
+    ENCENDER la compuerta la proyección SÍ cambia (si no cambiara, el escenario no
+    ejercita el puente y el candado sería vacuo). Se siembra CALENDARIO_DIAN para que el
+    egreso de IVA tenga una fecha real y el escenario sea sensible."""
     from decimal import Decimal
 
+    from app.domain.configuracion import Configuracion
     from app.domain.modelo_moto import ModeloMoto
     from app.domain.parametros_proyeccion import ParametrosProyeccion
     from app.facturas import service
     from app.proyeccion import service as proy
 
+    # calendario real: sin esto el egreso saldría vacío por otra razón (test vacuo)
+    await Configuracion(
+        clave="CALENDARIO_DIAN",
+        valor_json={
+            "2026": {
+                "ene_abr": "2026-05-13",
+                "may_ago": "2026-09-10",
+                "sep_dic": "2027-01-14",
+            }
+        },
+        vigente_desde="2026-01-01",
+    ).insert()
     await ParametrosProyeccion(
         vigente_desde="2026-01-01",
         caja_inicial=Decimal("0"),
@@ -302,10 +318,25 @@ async def test_a14_compuerta_apagada_proyeccion_identica_bit_a_bit(db):
         deducible=True,
     )
 
-    despues = await proy.proyectar_vigente(
+    # compuerta APAGADA (default, no sembrada) → proyección idéntica bit a bit (D-12)
+    despues_off = await proy.proyectar_vigente(
         escenario="base", mes_inicio=(2026, 1), horizonte_meses=8
     )
-    assert despues == antes  # idéntico bit a bit (D-12)
+    assert despues_off == antes
+
+    # CONTROL NEGATIVO: al ENCENDER la compuerta, la MISMA factura SÍ mueve la
+    # proyección. Si esto no cambia, el escenario no ejercita el puente → candado vacuo.
+    await Configuracion(
+        clave="IVA_ALIMENTA_PROYECCION",
+        valor_json={"activa": True},
+        vigente_desde="2026-01-02",  # vigencia más nueva → gana
+    ).insert()
+    despues_on = await proy.proyectar_vigente(
+        escenario="base", mes_inicio=(2026, 1), horizonte_meses=8
+    )
+    assert despues_on != antes
+    # y concretamente: el IVA generado por la venta sale en el mes DIAN (13-may → idx 4)
+    assert despues_on["meses"][4]["iva"] == "-190000.00"
 
 
 async def test_obtener_facturas_iva_solo_activas_para_liquidar(db):
