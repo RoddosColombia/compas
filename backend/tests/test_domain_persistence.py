@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 from app.domain import DOMAIN_DOCUMENTS
-from app.domain.configuracion import Configuracion
+from app.domain.configuracion import SEMILLA_CONFIGURACION, Configuracion
 from app.domain.mes_control import MesControl
 from app.domain.rubro import Rubro
 from app.domain.seed import (
@@ -102,7 +102,10 @@ async def test_seed_configuracion_idempotente(db):
     await seed_configuracion(db)
     await seed_configuracion(db)
     total = await Configuracion.find_all().count()
-    assert total == 4  # + PERIODICIDAD_IVA (CR IVA período configurable)
+    # 7 = las 4 previas (+ PERIODICIDAD_IVA, CR IVA período configurable) + las 3
+    # de E2 (NIT_RODDOS, NIT_AUTECO, IVA_ALIMENTA_PROYECCION). Atado a la semilla
+    # real para que agregar una clave sin pasar por aquí no pase desapercibido.
+    assert total == len(SEMILLA_CONFIGURACION) == 7
 
 
 # ── C3: semilla de reglas de clasificación (GO Kimi PLAN-I 9.3) ──
