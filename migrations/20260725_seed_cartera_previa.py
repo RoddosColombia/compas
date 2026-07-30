@@ -8,12 +8,13 @@ umbral de mayo-2027). Idempotente ($setOnInsert por `semana_global`): una segund
 NO pisa correcciones del CEO. Total sembrado: $1.095.640.900.
 
 Uso (Windows: exportar PYTHONUTF8=1):
-    python migrations/20260725_seed_cartera_previa.py "<MONGODB_URI>" [db=compas]
+    MONGODB_URI_COMPAS="<uri>" python migrations/20260725_seed_cartera_previa.py [db=compas]
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 sys.path.insert(0, "backend")
@@ -35,12 +36,14 @@ async def _run(uri: str, db_name: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
+    uri = os.environ.get("MONGODB_URI_COMPAS") or os.environ.get("MONGODB_URI")
+    if not uri:
         sys.exit(
-            'Uso: python migrations/20260725_seed_cartera_previa.py "<MONGODB_URI>" [db]'
+            "ERROR: falta MONGODB_URI_COMPAS (o MONGODB_URI) en el entorno; nunca por "
+            'argv (visible en ps/historial). Uso: MONGODB_URI_COMPAS="<uri>" '
+            "python migrations/20260725_seed_cartera_previa.py [db=compas]"
         )
-    uri = sys.argv[1]
-    db_name = sys.argv[2] if len(sys.argv) > 2 else "compas"
+    db_name = sys.argv[1] if len(sys.argv) > 1 else "compas"
     asyncio.run(_run(uri, db_name))
 
 

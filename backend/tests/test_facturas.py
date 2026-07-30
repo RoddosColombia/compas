@@ -370,3 +370,31 @@ async def test_obtener_facturas_iva_solo_activas_para_liquidar(db):
     assert c.generado == Decimal("190000")
     assert c.descontable == Decimal("190000")  # solo la activa, no la anulada
     assert c.neto_a_pagar == Decimal("0")
+
+
+# ── B-2 (Kimi PR1): fail-SAFE de la periodicidad ──
+async def test_obtener_periodicidad_sin_clave_default_cuatrimestral(db):
+    """SIN la clave PERIODICIDAD_IVA en Configuracion, obtener_periodicidad() hace
+    default a cuatrimestral (fail-SAFE, no fail-loud roto). Fija el comportamiento
+    que PROD tuvo hasta que la migración E2 sembró la clave (la 4ª): la proyección y
+    la liquidación seguían cuatrimestrales, sin crash."""
+    from app.facturas.service import obtener_periodicidad
+    from app.iva.liquidacion import Periodicidad
+
+    # no se sembró NINGUNA Configuracion → la clave está ausente
+    assert await obtener_periodicidad() == Periodicidad.cuatrimestral
+
+
+async def test_obtener_periodicidad_honra_bimestral_si_esta(db):
+    """Y no está hardcodeada: con la clave en 'bimestral', la respeta (prueba que el
+    default no enmascara una lectura rota)."""
+    from app.domain.configuracion import Configuracion
+    from app.facturas.service import obtener_periodicidad
+    from app.iva.liquidacion import Periodicidad
+
+    await Configuracion(
+        clave="PERIODICIDAD_IVA",
+        valor_json={"periodicidad": "bimestral"},
+        vigente_desde="2026-01-01",
+    ).insert()
+    assert await obtener_periodicidad() == Periodicidad.bimestral
