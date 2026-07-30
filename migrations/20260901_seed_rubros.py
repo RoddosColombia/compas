@@ -5,13 +5,14 @@ Inserta las 32 categorías reales del Excel congelado + el rubro de sistema
 'Ajuste de conciliación'. Idempotente ($setOnInsert por (grupo, nombre)): re-correr
 no duplica ni pisa ediciones del Admin.
 
-Uso:  python migrations/20260901_seed_rubros.py "<MONGODB_URI>" [db=compas]
+Uso:  MONGODB_URI_COMPAS="<uri>" python migrations/20260901_seed_rubros.py [db=compas]
 Lo corre el operador (RUNBOOK) y el CI de la Sesión 3.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 sys.path.insert(0, "backend")
@@ -29,10 +30,14 @@ async def _run(uri: str, db_name: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        sys.exit('Uso: python migrations/20260901_seed_rubros.py "<MONGODB_URI>" [db]')
-    uri = sys.argv[1]
-    db_name = sys.argv[2] if len(sys.argv) > 2 else "compas"
+    uri = os.environ.get("MONGODB_URI_COMPAS") or os.environ.get("MONGODB_URI")
+    if not uri:
+        sys.exit(
+            "ERROR: falta MONGODB_URI_COMPAS (o MONGODB_URI) en el entorno; nunca por "
+            'argv (visible en ps/historial). Uso: MONGODB_URI_COMPAS="<uri>" '
+            "python migrations/20260901_seed_rubros.py [db=compas]"
+        )
+    db_name = sys.argv[1] if len(sys.argv) > 1 else "compas"
     asyncio.run(_run(uri, db_name))
 
 
