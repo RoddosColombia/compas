@@ -147,6 +147,7 @@ def campos_desde_dian(f: FacturaDian, *, nit_auteco: str | None) -> dict:
         "cufe": f.cufe,
         "tipo_documento": f.tipo_documento,
         "signo": 1,
+        "tipo_contribuyente": f.tipo_contribuyente_contraparte,
         "inc_valor": f.inc,  # ← el rename anti-shadow
         "bolsas": f.bolsas,
         "otros_impuestos": f.otros_impuestos,
@@ -168,6 +169,7 @@ def _datos_extraidos(f: FacturaDian, campos: dict) -> dict:
         "origen": campos["origen"].value,
         "tercero_nit": campos["tercero_nit"],
         "tercero_nombre": campos["tercero_nombre"],
+        "tipo_contribuyente": f.tipo_contribuyente_contraparte,
         # base gravada desconocida en la DIAN (R5); el Total Bruto va rotulado aparte
         "base_gravable": None,
         "total_bruto": money_str(f.base_gravable),

@@ -24,18 +24,27 @@ NIT_RODDOS = "901012622"
 
 
 def _texto(
-    titulo: str, nit_emisor: str = "890900608", nit_adq: str = NIT_RODDOS
+    titulo: str,
+    nit_emisor: str = "890900608",
+    nit_adq: str = NIT_RODDOS,
+    contrib_emisor: str = "Persona Jurídica",
+    contrib_adq: str = "Persona Jurídica",
 ) -> str:
-    """Texto DIAN mínimo válido con el título dado."""
+    """Texto DIAN mínimo válido con el título dado. Refleja la estructura real de
+    dos bloques (emisor / adquiriente), cada uno con su Tipo de Contribuyente."""
     return (
         f"{titulo}\n"
         "Representación Gráfica Dian\n"
         "CUFE : abcdef0123456789abcdef0123456789abcdef01\n"
         "Número de Factura: UI90-16716\n"
         "Fecha de Emisión: 28/05/2026\n"
+        "Datos del Emisor / Vendedor\n"
         f"Nit del Emisor: {nit_emisor}\n"
         "Razón Social: ALMACENES ÉXITO S.A\n"
+        f"Tipo de Contribuyente: {contrib_emisor} Departamento: Bogotá\n"
+        "Datos del Adquiriente / Comprador\n"
         f"Número Documento: {nit_adq}\n"
+        f"Tipo de Contribuyente: {contrib_adq} Municipio: Bogotá\n"
     )
 
 
@@ -111,6 +120,71 @@ def test_a4_documento_ajeno_se_rechaza():
         )
 
 
+# ── tipo_contribuyente de la CONTRAPARTE (GO CEO punto 1: enmascaramiento fino) ──
+def test_contribuyente_contraparte_es_el_emisor_en_recibida():
+    f = factura_desde_documento(
+        _texto(
+            "FACTURA ELECTRÓNICA DE VENTA",
+            contrib_emisor="Persona Natural",
+            contrib_adq="Persona Jurídica",
+        ),
+        _filas_inc(),
+        "Representación Gráfica Dian",
+        NIT_RODDOS,
+    )
+    # recibida → la contraparte es el emisor (natural), no el adquiriente RODDOS
+    assert f.tipo == "recibida"
+    assert f.tipo_contribuyente_contraparte == "persona_natural"
+
+
+def test_contribuyente_contraparte_es_el_adquiriente_en_emitida():
+    f = factura_desde_documento(
+        _texto(
+            "FACTURA ELECTRÓNICA DE VENTA",
+            nit_emisor=NIT_RODDOS,
+            nit_adq="800111222",
+            contrib_emisor="Persona Jurídica",
+            contrib_adq="Persona Natural",
+        ),
+        _filas_inc(),
+        "Representación Gráfica Dian",
+        NIT_RODDOS,
+    )
+    # emitida → la contraparte es el adquiriente (natural)
+    assert f.tipo == "emitida"
+    assert f.tipo_contribuyente_contraparte == "persona_natural"
+
+
+def test_contribuyente_juridica_se_reconoce():
+    f = factura_desde_documento(
+        _texto("FACTURA ELECTRÓNICA DE VENTA"),  # ambos jurídica por defecto
+        _filas_inc(),
+        "Representación Gráfica Dian",
+        NIT_RODDOS,
+    )
+    assert f.tipo_contribuyente_contraparte == "persona_juridica"
+
+
+def test_contribuyente_ausente_es_none():
+    # texto sin la línea de Tipo de Contribuyente en el bloque del emisor
+    texto = (
+        "FACTURA ELECTRÓNICA DE VENTA\n"
+        "Representación Gráfica Dian\n"
+        "CUFE : abcdef0123456789abcdef0123456789abcdef01\n"
+        "Número de Factura: UI90-1\n"
+        "Fecha de Emisión: 28/05/2026\n"
+        "Datos del Emisor / Vendedor\n"
+        "Nit del Emisor: 890900608\n"
+        "Razón Social: PROVEEDOR\n"
+        "Datos del Adquiriente / Comprador\n"
+        f"Número Documento: {NIT_RODDOS}\n"
+    )
+    f = factura_desde_documento(
+        texto, _filas_inc(), "Representación Gráfica Dian", NIT_RODDOS
+    )
+    assert f.tipo_contribuyente_contraparte is None
+
+
 # ── A5 (OBLIGATORIO): con INC>0 se toma el IVA, NO Total impuesto ──
 def test_a5_toma_iva_no_total_impuesto():
     f = factura_desde_documento(
@@ -179,6 +253,8 @@ def test_a1_pdf_de_muestra():
     assert f.base_gravable == Decimal("31447.06")
     assert f.total_factura == Decimal("32900.00")
     assert f.tipo == "recibida"
+    # contraparte (emisor Éxito) = persona jurídica → NO es PII (Ley 1581)
+    assert f.tipo_contribuyente_contraparte == "persona_juridica"
     assert f.coherente() is True
     # cuatrimestre may–ago = C2 (28-may-2026)
     assert cuatrimestre_de(f.fecha.isoformat()) == (2026, 2)

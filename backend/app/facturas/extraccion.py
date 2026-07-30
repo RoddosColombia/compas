@@ -57,6 +57,18 @@ MARCADORES_NO_SOPORTADOS = (
 
 _LINEAS_ENCABEZADO = 6
 
+# Bloques de la Representación Gráfica (verificado en el PDF real): el Tipo de
+# Contribuyente aparece DOS veces (emisor y adquiriente), con el mismo rótulo. Se
+# aísla por sección para leer el de la CONTRAPARTE correcta (GO CEO punto 1).
+_SEC_EMISOR = "Datos del Emisor"
+_SEC_ADQUIRIENTE = "Datos del Adquiriente"
+_RE_CONTRIB = re.compile(
+    r"Tipo de Contribuyente:\s*(Persona\s+(?:Jur[ií]dica|Natural))", re.IGNORECASE
+)
+# Valores canónicos del tipo de contribuyente (persona natural = PII, Ley 1581).
+PERSONA_JURIDICA = "persona_juridica"
+PERSONA_NATURAL = "persona_natural"
+
 # Fixtures de título para el test A8 (títulos OFICIALES DIAN, no simplificados).
 TITULOS_A8 = (
     "Nota Crédito de Factura Electrónica de Venta",
@@ -94,6 +106,7 @@ class FacturaDian:
     nombre_emisor: str
     nit_adquiriente: str
     tipo: str  # "emitida" | "recibida" (la ingesta mapea a venta|compra)
+    tipo_contribuyente_contraparte: str | None  # persona_juridica|persona_natural|None
     base_gravable: Decimal
     iva: Decimal
     inc: Decimal
@@ -164,6 +177,35 @@ def _valor_de(filas: list[list[dict]], etiqueta: str) -> Decimal | None:
     return None
 
 
+def _seccion(texto: str, inicio: str, fin: str | None) -> str:
+    """Rebana el texto desde el marcador `inicio` hasta `fin` (o el final)."""
+    a = texto.find(inicio)
+    if a < 0:
+        return ""
+    b = texto.find(fin, a + len(inicio)) if fin else -1
+    return texto[a:] if b < 0 else texto[a:b]
+
+
+def tipo_contribuyente_contraparte(texto: str, tipo: str) -> str | None:
+    """Tipo de contribuyente de la CONTRAPARTE (emisor si la factura es recibida,
+    adquiriente si es emitida). Se lee dentro de la sección correcta para no leer el
+    de RODDOS. Ausente/ilegible → None (R5: no se inventa; la ingesta lo trata como
+    PII por precaución)."""
+    if tipo == "recibida":
+        seccion = _seccion(texto, _SEC_EMISOR, _SEC_ADQUIRIENTE)
+    else:  # emitida → la contraparte es el adquiriente
+        seccion = _seccion(texto, _SEC_ADQUIRIENTE, None)
+    m = _RE_CONTRIB.search(seccion)
+    if not m:
+        return None
+    valor = _sin_acentos(m.group(1))  # "PERSONA JURIDICA" | "PERSONA NATURAL"
+    if "JURIDICA" in valor:
+        return PERSONA_JURIDICA
+    if "NATURAL" in valor:
+        return PERSONA_NATURAL
+    return None
+
+
 def factura_desde_documento(
     texto: str,
     filas: list[list[dict]],
@@ -229,6 +271,7 @@ def factura_desde_documento(
         nombre_emisor=nombre_emisor or "",
         nit_adquiriente=nit_adquiriente,
         tipo=tipo,
+        tipo_contribuyente_contraparte=tipo_contribuyente_contraparte(texto, tipo),
         base_gravable=v("Total Bruto Factura"),
         iva=v("IVA"),  # el campo "IVA", NO "Total impuesto" (trampa 2)
         inc=v("INC"),

@@ -50,6 +50,7 @@ def _dian(**kw) -> FacturaDian:
         nombre_emisor="ALMACENES ÉXITO S.A",
         nit_adquiriente=NIT_RODDOS,
         tipo="recibida",
+        tipo_contribuyente_contraparte="persona_juridica",
         base_gravable=Decimal("1000.00"),
         iva=Decimal("190.00"),
         inc=Decimal("100.00"),

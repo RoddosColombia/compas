@@ -167,6 +167,68 @@ async def test_listado_minimiza_pii_sin_ver_detalle(api):
     assert fila["iva_valor"] == "190000.00"  # el número de IVA sí es visible
 
 
+async def _insert_factura(numero, tipo_contribuyente):
+    from app.domain.factura import Factura
+
+    await Factura(
+        tipo="compra",
+        origen="sin_clasificar",
+        numero=numero,
+        tercero_nombre="Contraparte X",
+        tercero_nit="900123",
+        fecha="2026-05-10",
+        base_gravable=None,
+        total_bruto=Decimal("1000.00"),
+        tarifa_iva=None,
+        iva_valor=Decimal("190.00"),
+        total=Decimal("1190.00"),
+        deducible=False,
+        tipo_contribuyente=tipo_contribuyente,
+    ).insert()
+
+
+async def test_listado_persona_juridica_visible_para_consulta(api):
+    """La razón social de una persona jurídica NO es PII → visible para consulta
+    aunque no tenga facturas:ver_detalle."""
+    ac, _ = api
+    await _token(ac)  # asegura beanie/app arriba
+    await _insert_factura("J-1", "persona_juridica")
+    r = await ac.get(
+        "/api/v1/facturas", headers=await _token(ac, "consulta@roddos.com")
+    )
+    fila = next(f for f in r.json() if f["numero"] == "J-1")
+    assert fila["tercero_nombre"] == "Contraparte X"
+    assert fila["tercero_nit"] == "900123"
+
+
+async def test_listado_persona_natural_enmascarada_para_consulta(api):
+    ac, _ = api
+    await _token(ac)
+    await _insert_factura("N-1", "persona_natural")
+    # consulta (sin ver_detalle) → enmascarada
+    rc = await ac.get(
+        "/api/v1/facturas", headers=await _token(ac, "consulta@roddos.com")
+    )
+    fc = next(f for f in rc.json() if f["numero"] == "N-1")
+    assert fc["tercero_nombre"] is None and fc["tercero_nit"] is None
+    # financiero (con ver_detalle) → visible
+    rf = await ac.get("/api/v1/facturas", headers=await _token(ac))
+    ff = next(f for f in rf.json() if f["numero"] == "N-1")
+    assert ff["tercero_nombre"] == "Contraparte X"
+
+
+async def test_listado_contribuyente_desconocido_enmascarado_para_consulta(api):
+    """None (captura manual o PDF sin dato) → PII por precaución."""
+    ac, _ = api
+    await _token(ac)
+    await _insert_factura("U-1", None)
+    r = await ac.get(
+        "/api/v1/facturas", headers=await _token(ac, "consulta@roddos.com")
+    )
+    fila = next(f for f in r.json() if f["numero"] == "U-1")
+    assert fila["tercero_nombre"] is None and fila["tercero_nit"] is None
+
+
 async def test_listado_muestra_pii_con_ver_detalle(api):
     ac, _ = api
     h = await _token(ac)  # financiero
@@ -210,6 +272,11 @@ async def test_a10_ejemplo_aritmetico_spec_6_end_to_end(api):
     from app.domain.factura import Factura
 
     async def _ins(numero, tipo, fecha, iva, deducible):
+        iva_d = Decimal(iva)
+        # total_bruto plausible (base 19% = iva/0.19) y total = total_bruto + iva:
+        # una factura aritméticamente válida (no total == solo el impuesto). Las
+        # aserciones de la liquidación dependen de iva_valor+deducible, no de esto.
+        bruto = (iva_d / Decimal("0.19")).quantize(Decimal("0.01"))
         await Factura(
             tipo=tipo,
             origen="sin_clasificar",
@@ -218,10 +285,10 @@ async def test_a10_ejemplo_aritmetico_spec_6_end_to_end(api):
             tercero_nit="900",
             fecha=fecha,
             base_gravable=None,
-            total_bruto=None,
+            total_bruto=bruto,
             tarifa_iva=None,
-            iva_valor=Decimal(iva),
-            total=Decimal(iva),
+            iva_valor=iva_d,
+            total=bruto + iva_d,
             deducible=deducible,
         ).insert()
 

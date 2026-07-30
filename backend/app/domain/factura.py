@@ -92,6 +92,11 @@ class Factura(Document):
     cufe: str | None = None  # identificador único DIAN; None en captura manual
     tipo_documento: str = TIPO_DOC_FACTURA_VENTA  # radar E2.1 (NC/ND llevarían otro)
     signo: int = 1  # +1 factura; -1 reservado para notas crédito (E2.1)
+    # Tipo de contribuyente de la CONTRAPARTE (persona_juridica|persona_natural|None).
+    # Gobierna el enmascaramiento del LISTADO (A17): la razón social de una persona
+    # jurídica NO es PII (Ley 1581 protege a la natural). None (manual / PDF sin
+    # dato) → se trata como PII por precaución. El detalle sigue restringido siempre.
+    tipo_contribuyente: str | None = None
     # `inc_valor` y no `inc`: `inc` pisa un atributo de beanie.Document (UserWarning de
     # Pydantic; rompería updates a futuro). Desviación del §3.1 documentada en el PR.
     inc_valor: Money = Decimal("0.00")
@@ -100,7 +105,11 @@ class Factura(Document):
     rete_fuente: Money = Decimal("0.00")
     rete_iva: Money = Decimal("0.00")
     rete_ica: Money = Decimal("0.00")
-    # ref/hash del PDF original (auditable, restringido por rol PII)
+    # hash sha256 del PDF cargado. Decisión CEO: NO se guardan los bytes del PDF ni
+    # hay endpoint de descarga — el CUFE es el puntero (con él se re-descarga el
+    # documento de la DIAN, que es el archivo de registro) y el sha256 solo sirve
+    # para verificar un archivo que ya se tenga. Por eso `archivos:descargar` NO
+    # aplica a A17.
     archivo_ref: str | None = None
 
     class Settings:

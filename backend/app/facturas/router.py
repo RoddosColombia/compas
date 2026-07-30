@@ -26,6 +26,7 @@ from app.domain.factura import (
     TipoFactura,
 )
 from app.facturas import ingesta, service
+from app.facturas.extraccion import PERSONA_JURIDICA
 from app.iva.liquidacion import Periodicidad, liquidar, periodo_de
 
 router = APIRouter(prefix="/facturas", tags=["facturas"])
@@ -62,15 +63,20 @@ def _serializar(
     f: Factura, periodicidad: Periodicidad, *, ver_pii: bool = True
 ) -> dict:
     anio, idx = periodo_de(f.fecha, periodicidad)
+    # A17 (Ley 1581): la Ley protege a la PERSONA NATURAL. La razón social de una
+    # persona jurídica (Auteco, Éxito, Hunter) NO es PII y debe verla el directivo.
+    # Se enmascara SOLO si la contraparte es natural o su tipo es desconocido
+    # (manual / PDF sin dato → por precaución) y el usuario no tiene ver_detalle.
+    es_juridica = f.tipo_contribuyente == PERSONA_JURIDICA
+    ver_contraparte = ver_pii or es_juridica
     return {
         "id": str(f.id),
         "tipo": f.tipo.value,
         "origen": f.origen.value,
         "numero": f.numero,
-        # A17 (Ley 1581): la contraparte es PII (persona natural en emitidas). Se
-        # oculta a quien no tiene facturas:ver_detalle; el resto queda visible.
-        "tercero_nombre": f.tercero_nombre if ver_pii else None,
-        "tercero_nit": f.tercero_nit if ver_pii else None,
+        "tercero_nombre": f.tercero_nombre if ver_contraparte else None,
+        "tercero_nit": f.tercero_nit if ver_contraparte else None,
+        "tipo_contribuyente": f.tipo_contribuyente,
         "fecha": f.fecha,
         # None (DIAN) → "—" en la UI, nunca un valor prestado (R5)
         "base_gravable": money_str(f.base_gravable)
