@@ -109,13 +109,14 @@ async def actualizar_factura(
     usuario_id: str,
     deducible: bool | None = None,
     origen: str | None = None,
-) -> Factura:
+) -> tuple[Factura, bool]:
     """CR-E2-EDITAR: edita SOLO los campos no fiscales `deducible`/`origen` (la factura
     es inmutable en lo fiscal: montos/fechas/tipo se anulan y se recargan). Emite
     `factura.actualizada` con autor (fail-closed saga O1). Solo cuenta y emite si algo
     cambió de verdad; sin cambios → 422. `deducible` en una venta → 422 (solo compras).
 
-    Devuelve la factura ya actualizada. No toca `motor.py` ni la proyección."""
+    Devuelve `(factura, cambió)`: `cambió=False` cuando los valores enviados ya eran
+    los actuales (no-op, sin evento). No toca `motor.py` ni la proyección."""
     if deducible is None and origen is None:
         raise FacturasError("nada que actualizar: envía deducible u origen", 422)
 
@@ -138,7 +139,7 @@ async def actualizar_factura(
         factura.deducible = deducible
 
     if not cambios:  # los valores enviados ya eran los actuales → no-op sin evento
-        return factura
+        return factura, False
 
     await factura.save()
     try:
@@ -155,7 +156,31 @@ async def actualizar_factura(
             setattr(factura, campo, valor)
         await factura.save()
         raise
-    return factura
+    return factura, True
+
+
+async def actualizar_deducibilidad_lote(
+    *, ids: list[str], deducible: bool, usuario_id: str
+) -> list[dict]:
+    """Marca la deducibilidad de un lote (spec de diseño §4). Tolerante a fallos
+    PARCIALES y fail-closed POR FACTURA (refinamiento CEO): cada id es su propia saga;
+    si una falla (incl. el emit del evento, ya revertido en `actualizar_factura`), sale
+    con `estado='error'` y su motivo, y las demás siguen. Estados: actualizada |
+    sin_cambio | error."""
+    resultados: list[dict] = []
+    for fid in ids:
+        try:
+            _, cambio = await actualizar_factura(
+                factura_id=fid, usuario_id=usuario_id, deducible=deducible
+            )
+            resultados.append(
+                {"id": fid, "estado": "actualizada" if cambio else "sin_cambio"}
+            )
+        except FacturasError as e:
+            resultados.append({"id": fid, "estado": "error", "motivo": e.detalle})
+        except Exception:
+            resultados.append({"id": fid, "estado": "error", "motivo": "error interno"})
+    return resultados
 
 
 async def listar_facturas(*, activo: bool | None = None) -> list[Factura]:

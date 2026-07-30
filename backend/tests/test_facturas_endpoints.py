@@ -228,6 +228,117 @@ async def test_patch_consulta_es_403(api):
     assert rp.status_code == 403
 
 
+# ── PASO 1b: PATCH /facturas/deducibilidad — lote, tolerante a fallos parciales ──
+async def test_patch_lote_marca_varias(api):
+    ac, _ = api
+    h = await _token(ac)
+    ids = [
+        await _crear(ac, h, numero=f"FC-{i}", tercero_nit="900", deducible=False)
+        for i in range(3)
+    ]
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": ids, "deducible": True},
+        headers=h,
+    )
+    assert r.status_code == 200
+    res = r.json()["resultados"]
+    assert all(x["estado"] == "actualizada" for x in res)
+    assert r.json()["resumen"]["actualizadas"] == 3
+
+
+async def test_patch_lote_venta_erra_solo_esa(api):
+    ac, _ = api
+    h = await _token(ac)
+    compra = await _crear(ac, h, numero="C-1", tercero_nit="900", deducible=False)
+    rv = await ac.post(
+        "/api/v1/facturas",
+        json={
+            "tipo": "venta",
+            "origen": "moto",
+            "numero": "V-1",
+            "tercero_nombre": "Cliente",
+            "tercero_nit": "79",
+            "fecha": "2026-02-01",
+            "base_gravable": "1000000",
+            "tarifa_iva": "0.19",
+            "deducible": False,
+        },
+        headers=h,
+    )
+    venta = rv.json()["id"]
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": [compra, venta], "deducible": True},
+        headers=h,
+    )
+    res = {x["id"]: x for x in r.json()["resultados"]}
+    assert res[compra]["estado"] == "actualizada"
+    assert res[venta]["estado"] == "error"
+    assert "venta" in res[venta]["motivo"].lower()
+
+
+async def test_patch_lote_fail_closed_por_factura(api, monkeypatch):
+    """El emit del evento de UNA factura falla → SOLO esa se revierte y sale con
+    error; las demás siguen (refinamiento CEO)."""
+    ac, _ = api
+    h = await _token(ac)
+    bomba = await _crear(ac, h, numero="BOMBA", tercero_nit="900", deducible=False)
+    buena = await _crear(ac, h, numero="BUENA", tercero_nit="900", deducible=False)
+
+    from app.facturas import service as svc
+
+    real_emit = svc.emit_audit
+
+    async def emit_selectivo(evento, **kw):
+        if kw.get("metadata", {}).get("numero") == "BOMBA":
+            raise RuntimeError("audit caído para BOMBA")
+        return await real_emit(evento, **kw)
+
+    monkeypatch.setattr(svc, "emit_audit", emit_selectivo)
+
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": [bomba, buena], "deducible": True},
+        headers=h,
+    )
+    res = {x["id"]: x for x in r.json()["resultados"]}
+    assert res[bomba]["estado"] == "error"
+    assert res[buena]["estado"] == "actualizada"
+    # la bomba quedó revertida (deducible sigue False), la buena sí cambió
+    from app.domain.factura import Factura
+    from beanie import PydanticObjectId
+
+    assert (await Factura.get(PydanticObjectId(bomba))).deducible is False
+    assert (await Factura.get(PydanticObjectId(buena))).deducible is True
+
+
+async def test_patch_lote_id_desconocido_erra_solo_ese(api):
+    ac, _ = api
+    h = await _token(ac)
+    ok = await _crear(ac, h, numero="OK-1", tercero_nit="900", deducible=False)
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": [ok, "deadbeef"], "deducible": True},
+        headers=h,
+    )
+    res = {x["id"]: x for x in r.json()["resultados"]}
+    assert res[ok]["estado"] == "actualizada"
+    assert res["deadbeef"]["estado"] == "error"
+
+
+async def test_patch_lote_consulta_403(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h)
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": [fid], "deducible": True},
+        headers=await _token(ac, "consulta@roddos.com"),
+    )
+    assert r.status_code == 403
+
+
 async def test_crear_factura_duplicada_409(api):
     ac, _ = api
     h = await _token(ac)

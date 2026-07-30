@@ -215,6 +215,36 @@ async def crear(
     return _serializar(factura, await service.obtener_periodicidad())
 
 
+class DeducibilidadLoteBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    ids: list[str] = Field(min_length=1, max_length=500)
+    deducible: bool
+
+
+@router.patch("/deducibilidad")
+async def marcar_deducibilidad_lote(
+    body: DeducibilidadLoteBody,
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """Marca la deducibilidad de un LOTE (spec de diseño §4). Resultado POR ID,
+    tolerante a fallos parciales y fail-closed por factura. Va ANTES de PATCH
+    /{factura_id} para que el literal no caiga en el path param."""
+    resultados = await service.actualizar_deducibilidad_lote(
+        ids=body.ids, deducible=body.deducible, usuario_id=user.id
+    )
+    resumen = {"actualizadas": 0, "sin_cambio": 0, "errores": 0}
+    _clave = {
+        "actualizada": "actualizadas",
+        "sin_cambio": "sin_cambio",
+        "error": "errores",
+    }
+    for r in resultados:
+        resumen[_clave[r["estado"]]] += 1
+    return {"resultados": resultados, "resumen": resumen}
+
+
 @router.patch("/{factura_id}")
 async def editar(
     factura_id: str,
@@ -228,7 +258,7 @@ async def editar(
     if body.origen is not None and body.origen not in OrigenFactura._value2member_map_:
         raise HTTPException(422, f"origen inválido: {body.origen}")
     try:
-        factura = await service.actualizar_factura(
+        factura, _ = await service.actualizar_factura(
             factura_id=factura_id,
             usuario_id=user.id,
             deducible=body.deducible,
