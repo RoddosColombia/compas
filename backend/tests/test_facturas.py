@@ -120,9 +120,12 @@ async def test_anular_factura_es_baja_logica_y_emite_evento(db):
     assert e.value.status == 409
 
 
-async def test_proyeccion_resta_iva_en_el_mes_dian(db):
-    """Puente C11↔C7 (PR-2b): una venta con IVA en C1-2026 hace que la proyección reste
-    ese IVA de la caja en el mes de la fecha DIAN real (13-may-26 → índice 4)."""
+@pytest.mark.parametrize("compuerta_activa", [True, False])
+async def test_proyeccion_iva_segun_compuerta(db, compuerta_activa):
+    """CR-E2-COMPUERTA (parametriza el antiguo test_proyeccion_resta_iva...):
+    con la compuerta ENCENDIDA una venta con IVA en C1-2026 hace que la proyección
+    reste ese IVA en el mes DIAN (13-may-26 → índice 4); APAGADA (default) el IVA NO
+    alimenta la proyección y la serie queda en cero, aunque la factura esté cargada."""
     from decimal import Decimal
 
     from app.domain.configuracion import Configuracion
@@ -131,6 +134,11 @@ async def test_proyeccion_resta_iva_en_el_mes_dian(db):
     from app.facturas import service
     from app.proyeccion import service as proy
 
+    await Configuracion(
+        clave="IVA_ALIMENTA_PROYECCION",
+        valor_json={"activa": compuerta_activa},
+        vigente_desde="2026-01-01",
+    ).insert()
     await Configuracion(
         clave="CALENDARIO_DIAN",
         valor_json={
@@ -192,25 +200,143 @@ async def test_proyeccion_resta_iva_en_el_mes_dian(db):
     res = await proy.proyectar_vigente(
         escenario="base", mes_inicio=(2026, 1), horizonte_meses=8
     )
-    # 13-may-26 = índice 4 desde ene-2026; el IVA sale ahí (negativo) y solo ahí
-    assert res["meses"][4]["iva"] == "-190000.00"
-    assert res["meses"][3]["iva"] == "0.00"
-    # fondo de provisión: reserva 47500/mes en ene-abr (190000/4); saldo lleno en abr,
-    # el pago de may lo vacía. Serie informativa (no mueve la caja del motor).
-    fondo = res["fondo_provision"]
-    assert fondo[0] == {
-        "mes": "2026-01",
-        "reserva": "47500.00",
-        "pago": "0.00",
-        "saldo": "47500.00",
-    }
-    assert fondo[3]["saldo"] == "190000.00"
-    assert fondo[4] == {
-        "mes": "2026-05",
-        "reserva": "0.00",
-        "pago": "190000.00",
-        "saldo": "0.00",
-    }
+    if compuerta_activa:
+        # 13-may-26 = índice 4 desde ene-2026; el IVA sale ahí (negativo) y solo ahí
+        assert res["meses"][4]["iva"] == "-190000.00"
+        assert res["meses"][3]["iva"] == "0.00"
+        # fondo de provisión: reserva 47500/mes en ene-abr (190000/4); saldo lleno en
+        # abr, el pago de may lo vacía. Serie informativa (no mueve la caja del motor).
+        fondo = res["fondo_provision"]
+        assert fondo[0] == {
+            "mes": "2026-01",
+            "reserva": "47500.00",
+            "pago": "0.00",
+            "saldo": "47500.00",
+        }
+        assert fondo[3]["saldo"] == "190000.00"
+        assert fondo[4] == {
+            "mes": "2026-05",
+            "reserva": "0.00",
+            "pago": "190000.00",
+            "saldo": "0.00",
+        }
+    else:
+        # compuerta apagada: la factura NO mueve la proyección (D-12)
+        assert all(m["iva"] == "0.00" for m in res["meses"])
+        assert res["fondo_provision"] == []
+
+
+async def test_a14_compuerta_apagada_proyeccion_identica_bit_a_bit(db):
+    """A14 / CR-E2-COMPUERTA (criterio central del CEO): con facturas cargadas y la
+    compuerta APAGADA, GET /proyeccion es idéntico BIT A BIT al estado sin facturas
+    (candado de D-12). Con CONTROL NEGATIVO en el mismo test y el mismo fixture: al
+    ENCENDER la compuerta la proyección SÍ cambia (si no cambiara, el escenario no
+    ejercita el puente y el candado sería vacuo). Se siembra CALENDARIO_DIAN para que el
+    egreso de IVA tenga una fecha real y el escenario sea sensible."""
+    from decimal import Decimal
+
+    from app.domain.configuracion import Configuracion
+    from app.domain.modelo_moto import ModeloMoto
+    from app.domain.parametros_proyeccion import ParametrosProyeccion
+    from app.facturas import service
+    from app.proyeccion import service as proy
+
+    # calendario real: sin esto el egreso saldría vacío por otra razón (test vacuo)
+    await Configuracion(
+        clave="CALENDARIO_DIAN",
+        valor_json={
+            "2026": {
+                "ene_abr": "2026-05-13",
+                "may_ago": "2026-09-10",
+                "sep_dic": "2027-01-14",
+            }
+        },
+        vigente_desde="2026-01-01",
+    ).insert()
+    await ParametrosProyeccion(
+        vigente_desde="2026-01-01",
+        caja_inicial=Decimal("0"),
+        caja_minima=Decimal("0"),
+        motos_base=0,
+        crec_pct_mensual=Decimal("0"),
+        horizonte_meses=8,
+        adelanto_auteco=Decimal("0"),
+        plazo_auteco_dias=0,
+        base_auteco_dias=0,
+        tasa_auteco=Decimal("0"),
+        gastos_fijos=Decimal("0"),
+        gps_moto=Decimal("0"),
+        costo_moto_nueva=Decimal("0"),
+        deuda=Decimal("0"),
+        tasa_deuda=Decimal("0"),
+        mes_inicio_deuda=0,
+        meses_deuda=0,
+        pct_mora=Decimal("0"),
+        pct_recuperacion=Decimal("0"),
+        pct_default=Decimal("0"),
+        pct_provision=Decimal("0"),
+    ).insert()
+    await ModeloMoto(
+        nombre="Raider",
+        costo_auteco=Decimal("0"),
+        precio_venta_con_iva=Decimal("0"),
+        cuota_inicial=Decimal("0"),
+        cuota_semanal=Decimal("0"),
+        plazo_semanas=6,
+        matricula=Decimal("0"),
+        participacion_mix=Decimal("1"),
+        orden=0,
+    ).insert()
+
+    antes = await proy.proyectar_vigente(
+        escenario="base", mes_inicio=(2026, 1), horizonte_meses=8
+    )
+
+    # facturas de venta y compra que moverían el IVA con la compuerta encendida
+    await service.crear_factura(
+        usuario_id="u1",
+        tipo="venta",
+        origen="moto",
+        numero="FV-9",
+        tercero_nombre="Cliente",
+        tercero_nit="79",
+        fecha="2026-02-01",
+        base_gravable=Decimal("1000000"),
+        tarifa_iva=Decimal("0.19"),
+        deducible=False,
+    )
+    await service.crear_factura(
+        usuario_id="u1",
+        tipo="compra",
+        origen="auteco",
+        numero="FC-9",
+        tercero_nombre="Auteco",
+        tercero_nit="860024781",
+        fecha="2026-06-01",
+        base_gravable=Decimal("2000000"),
+        tarifa_iva=Decimal("0.19"),
+        deducible=True,
+    )
+
+    # compuerta APAGADA (default, no sembrada) → proyección idéntica bit a bit (D-12)
+    despues_off = await proy.proyectar_vigente(
+        escenario="base", mes_inicio=(2026, 1), horizonte_meses=8
+    )
+    assert despues_off == antes
+
+    # CONTROL NEGATIVO: al ENCENDER la compuerta, la MISMA factura SÍ mueve la
+    # proyección. Si esto no cambia, el escenario no ejercita el puente → candado vacuo.
+    await Configuracion(
+        clave="IVA_ALIMENTA_PROYECCION",
+        valor_json={"activa": True},
+        vigente_desde="2026-01-02",  # vigencia más nueva → gana
+    ).insert()
+    despues_on = await proy.proyectar_vigente(
+        escenario="base", mes_inicio=(2026, 1), horizonte_meses=8
+    )
+    assert despues_on != antes
+    # y concretamente: el IVA generado por la venta sale en el mes DIAN (13-may → idx 4)
+    assert despues_on["meses"][4]["iva"] == "-190000.00"
 
 
 async def test_obtener_facturas_iva_solo_activas_para_liquidar(db):

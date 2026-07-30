@@ -34,6 +34,11 @@ PERMISSIONS: dict[str, frozenset[Role]] = {
     "proyeccion:gestionar": frozenset({Role.financiero, Role.admin}),
     # ── CR "Fidelidad de caja" (C11 IVA: carga de facturas + liquidación) ──
     "iva:gestionar": frozenset({Role.financiero, Role.admin}),
+    # ── E2 A17 (Ley 1581): PII de facturas. Detalle + archivo original solo para
+    # quien puede ver la contraparte. Permiso PROPIO (no reusar evidencia:ver).
+    # El listado se minimiza para quien NO lo tenga; /liquidacion sigue en
+    # dashboard:leer (el directivo ve el número de IVA, no la contraparte).
+    "facturas:ver_detalle": frozenset({Role.financiero, Role.admin}),
     # ── Spec §2.4 (autoridad del ciclo mensual — manda sobre §4.1) ──
     "ciclo:abrir": frozenset({Role.financiero, Role.directivo, Role.admin}),
     "ciclo:proponer": frozenset({Role.financiero, Role.directivo, Role.admin}),

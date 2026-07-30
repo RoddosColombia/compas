@@ -10,15 +10,23 @@ hace inocuo el replay (→ 409). La liquidación se calcula en el backend."""
 
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from beanie import PydanticObjectId
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth.deps import require_permission
 from app.auth.models import User
+from app.auth.permissions import has_permission
 from app.auth.router import verify_origin
 from app.core.money import money_str
-from app.domain.factura import Factura, OrigenFactura, TipoFactura
-from app.facturas import service
+from app.domain.factura import (
+    TARIFAS_IVA_VALIDAS,
+    Factura,
+    OrigenFactura,
+    TipoFactura,
+)
+from app.facturas import ingesta, service
+from app.facturas.extraccion import PERSONA_JURIDICA
 from app.iva.liquidacion import Periodicidad, liquidar, periodo_de
 
 router = APIRouter(prefix="/facturas", tags=["facturas"])
@@ -51,18 +59,32 @@ def _etiqueta_periodo(anio: int, idx: int, periodicidad: Periodicidad) -> str:
     return f"{anio}-{prefijo}{idx}"
 
 
-def _serializar(f: Factura, periodicidad: Periodicidad) -> dict:
+def _serializar(
+    f: Factura, periodicidad: Periodicidad, *, ver_pii: bool = True
+) -> dict:
     anio, idx = periodo_de(f.fecha, periodicidad)
+    # A17 (Ley 1581): la Ley protege a la PERSONA NATURAL. La razón social de una
+    # persona jurídica (Auteco, Éxito, Hunter) NO es PII y debe verla el directivo.
+    # Se enmascara SOLO si la contraparte es natural o su tipo es desconocido
+    # (manual / PDF sin dato → por precaución) y el usuario no tiene ver_detalle.
+    es_juridica = f.tipo_contribuyente == PERSONA_JURIDICA
+    ver_contraparte = ver_pii or es_juridica
     return {
         "id": str(f.id),
         "tipo": f.tipo.value,
         "origen": f.origen.value,
         "numero": f.numero,
-        "tercero_nombre": f.tercero_nombre,
-        "tercero_nit": f.tercero_nit,
+        "tercero_nombre": f.tercero_nombre if ver_contraparte else None,
+        "tercero_nit": f.tercero_nit if ver_contraparte else None,
+        "tipo_contribuyente": f.tipo_contribuyente,
         "fecha": f.fecha,
-        "base_gravable": money_str(f.base_gravable),
-        "tarifa_iva": str(f.tarifa_iva),
+        # None (DIAN) → "—" en la UI, nunca un valor prestado (R5)
+        "base_gravable": money_str(f.base_gravable)
+        if f.base_gravable is not None
+        else None,
+        "total_bruto": money_str(f.total_bruto) if f.total_bruto is not None else None,
+        # None = ingesta DIAN (tarifas mezcladas; manda iva_valor, D-13)
+        "tarifa_iva": str(f.tarifa_iva) if f.tarifa_iva is not None else None,
         "iva_valor": money_str(f.iva_valor),
         "total": money_str(f.total),
         "deducible": f.deducible,
@@ -74,11 +96,12 @@ def _serializar(f: Factura, periodicidad: Periodicidad) -> dict:
 @router.get("")
 async def listar(
     activo: bool | None = Query(default=None),
-    _: User = Depends(require_permission("dashboard:leer")),
+    user: User = Depends(require_permission("dashboard:leer")),
 ):
     periodicidad = await service.obtener_periodicidad()
     facturas = await service.listar_facturas(activo=activo)
-    return [_serializar(f, periodicidad) for f in facturas]
+    ver_pii = has_permission(user.rol, "facturas:ver_detalle")
+    return [_serializar(f, periodicidad, ver_pii=ver_pii) for f in facturas]
 
 
 @router.get("/liquidacion")
@@ -107,6 +130,47 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
     }
 
 
+@router.get("/{factura_id}")
+async def detalle(
+    factura_id: str,
+    _: User = Depends(require_permission("facturas:ver_detalle")),
+):
+    """Detalle de una factura con PII completa (A17 / Ley 1581): solo
+    facturas:ver_detalle = {financiero, admin}. La ruta va DESPUÉS de /liquidacion
+    para que ese literal no caiga en {factura_id}."""
+    try:
+        fid = PydanticObjectId(factura_id)
+    except Exception:
+        raise HTTPException(422, "factura_id inválido") from None
+    f = await Factura.get(fid)
+    if f is None:
+        raise HTTPException(404, "la factura no existe")
+    return _serializar(f, await service.obtener_periodicidad(), ver_pii=True)
+
+
+@router.post("/cargar")
+async def cargar(
+    archivos: list[UploadFile],
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """Ingesta por documento (E2 §3.3): lote de PDFs DIAN → resultado POR ARCHIVO
+    (creada | duplicada | rechazada_no_dian | rechazada_tipo_no_soportado |
+    requiere_confirmacion | error) + resumen. Parseo fuera del event loop (A16);
+    tope de 20 archivos y 10 MB por archivo (coherente con POST /api/v1/cargas).
+    RBAC iva:gestionar: cargar es una mutación fiscal, no una lectura."""
+    if len(archivos) > ingesta.MAX_ARCHIVOS_LOTE:
+        raise HTTPException(
+            413,
+            f"máximo {ingesta.MAX_ARCHIVOS_LOTE} archivos por lote; "
+            f"recibidos {len(archivos)}",
+        )
+    try:
+        return await ingesta.procesar_lote(archivos, usuario_id=user.id)
+    except ingesta.ConfigFaltanteError as e:
+        raise HTTPException(409, str(e)) from e
+
+
 @router.post("", status_code=201)
 async def crear(
     body: FacturaCrearBody,
@@ -117,6 +181,13 @@ async def crear(
         raise HTTPException(422, f"tipo inválido: {body.tipo}")
     if body.origen not in OrigenFactura._value2member_map_:
         raise HTTPException(422, f"origen inválido: {body.origen}")
+    tarifa = _dec(body.tarifa_iva, "tarifa_iva")
+    if tarifa not in TARIFAS_IVA_VALIDAS:
+        raise HTTPException(
+            422,
+            f"tarifa_iva inválida: {body.tarifa_iva}. Tarifas IVA legales en "
+            "Colombia: 0, 0.05, 0.19 (pieza 6)",
+        )
     try:
         factura = await service.crear_factura(
             usuario_id=user.id,
@@ -127,7 +198,7 @@ async def crear(
             tercero_nit=body.tercero_nit,
             fecha=body.fecha,
             base_gravable=_dec(body.base_gravable, "base_gravable"),
-            tarifa_iva=_dec(body.tarifa_iva, "tarifa_iva"),
+            tarifa_iva=tarifa,
             deducible=body.deducible,
         )
     except service.FacturasError as e:

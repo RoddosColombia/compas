@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 from app.domain import DOMAIN_DOCUMENTS
 from app.domain.configuracion import Configuracion
+from app.domain.factura import Factura
 from app.domain.rubro import Rubro
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -76,6 +77,43 @@ async def test_regla_patron_activo_unico_parcial(real_db):
             prioridad=3,
             creada_por="u",
         ).insert()  # segunda ACTIVA idéntica → colisión
+
+
+def _factura(**over) -> Factura:
+    base = dict(
+        tipo="compra",
+        origen="otra_compra",
+        numero="F1",
+        tercero_nombre="Proveedor",
+        tercero_nit="900",
+        fecha="2026-05-28",
+        base_gravable=Decimal("1000.00"),
+        tarifa_iva=Decimal("0.19"),
+        iva_valor=Decimal("190.00"),
+        total=Decimal("1190.00"),
+    )
+    base.update(over)
+    return Factura(**base)
+
+
+async def test_cufe_unico_sparse_en_mongo_real(real_db):
+    """E2/A2: el índice cufe_unico (creado en la migración, NO en Settings) impide dos
+    facturas con el mismo CUFE, pero admite VARIAS capturas manuales sin CUFE
+    (partialFilterExpression $type:string). Se crea aquí igual que en la migración."""
+    await real_db["facturas"].create_index(
+        [("cufe", 1)],
+        name="cufe_unico",
+        unique=True,
+        partialFilterExpression={"cufe": {"$type": "string"}},
+    )
+    cufe = "fabdb194877f049b698d92065704f28fec96e9c0abcd"
+    await _factura(cufe=cufe, numero="F1", tercero_nit="900").insert()
+    with pytest.raises(DuplicateKeyError):
+        await _factura(cufe=cufe, numero="F2", tercero_nit="901").insert()
+
+    # dos capturas MANUALES (cufe=None) NO colisionan: el partial las excluye del índice
+    await _factura(cufe=None, numero="M1", tercero_nit="902").insert()
+    await _factura(cufe=None, numero="M2", tercero_nit="903").insert()
 
 
 async def test_configuracion_clave_vigencia_unica(real_db):

@@ -200,13 +200,36 @@ async def _calendario_dian() -> dict:
     return cfg[0].valor_json if cfg and cfg[0].valor_json else {}
 
 
+async def _compuerta_iva_activa() -> bool:
+    """CR-E2-COMPUERTA: ¿el IVA de las facturas alimenta la proyección? Clave
+    CONFIGURACION `IVA_ALIMENTA_PROYECCION`. Ausente o apagada → False (D-12: por
+    defecto el IVA NO mueve la caja; encenderla es una decisión de dato del CEO)."""
+    cfg = (
+        await Configuracion.find(
+            Configuracion.clave == ClaveConfig.IVA_ALIMENTA_PROYECCION
+        )
+        .sort(-Configuracion.vigente_desde)
+        .limit(1)
+        .to_list()
+    )
+    if cfg and cfg[0].valor_json:
+        return bool(cfg[0].valor_json.get("activa", False))
+    return False
+
+
 async def _iva_plan(
     mes_inicio: tuple[int, int], horizonte: int
 ) -> tuple[dict[int, object], list]:
     """Puente C11↔C7: liquida las facturas cargadas y devuelve (egreso_por_mes, fondo).
     `egreso_por_mes` = IVA neto de cada período en el índice de su fecha DIAN real
     (PR-2b, entra al motor). `fondo` = plan de provisión mes a mes (P1.4, informativo,
-    NO entra al flujo del motor). Sin facturas → ({}, [])."""
+    NO entra al flujo del motor). Sin facturas → ({}, []).
+
+    CR-E2-COMPUERTA: con la compuerta APAGADA (default) devuelve ({}, []) aunque haya
+    facturas cargadas, de modo que E2 capture facturas y liquide el IVA SIN mover la
+    proyección (D-12). `GET /proyeccion` queda idéntico bit a bit al estado previo."""
+    if not await _compuerta_iva_activa():
+        return {}, []
     facturas = await facturas_service.obtener_facturas_iva()
     if not facturas:
         return {}, []
