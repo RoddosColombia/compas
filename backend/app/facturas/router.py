@@ -53,6 +53,15 @@ class FacturaCrearBody(BaseModel):
     deducible: bool = False
 
 
+class FacturaEditarBody(BaseModel):
+    # CR-E2-EDITAR: SOLO los campos no fiscales. `extra=forbid` → un intento de tocar
+    # un monto/fecha/tipo (factura inmutable en lo fiscal) responde 422.
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    deducible: bool | None = None
+    origen: str | None = None
+
+
 def _etiqueta_periodo(anio: int, idx: int, periodicidad: Periodicidad) -> str:
     # 'C' cuatrimestral (2026-C1) · 'B' bimestral (2026-B1)
     prefijo = "C" if periodicidad == Periodicidad.cuatrimestral else "B"
@@ -200,6 +209,30 @@ async def crear(
             base_gravable=_dec(body.base_gravable, "base_gravable"),
             tarifa_iva=tarifa,
             deducible=body.deducible,
+        )
+    except service.FacturasError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _serializar(factura, await service.obtener_periodicidad())
+
+
+@router.patch("/{factura_id}")
+async def editar(
+    factura_id: str,
+    body: FacturaEditarBody,
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """CR-E2-EDITAR: edita SOLO deducible/origen (la factura es inmutable en lo
+    fiscal). `origen` se valida contra el enum; `deducible` en venta → 422. Emite
+    `factura.actualizada` con autor."""
+    if body.origen is not None and body.origen not in OrigenFactura._value2member_map_:
+        raise HTTPException(422, f"origen inválido: {body.origen}")
+    try:
+        factura = await service.actualizar_factura(
+            factura_id=factura_id,
+            usuario_id=user.id,
+            deducible=body.deducible,
+            origen=body.origen,
         )
     except service.FacturasError as e:
         raise HTTPException(e.status, e.detalle) from e

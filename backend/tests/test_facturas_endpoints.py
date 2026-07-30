@@ -126,6 +126,108 @@ async def test_crear_factura_consulta_es_403(api):
     assert r.status_code == 403
 
 
+# ── PASO 1 (CR-E2-EDITAR): PATCH /facturas/{id} {deducible?, origen?} ──
+async def _crear(ac, h, **kw) -> str:
+    r = await ac.post("/api/v1/facturas", json=_compra(**kw), headers=h)
+    assert r.status_code == 201
+    return r.json()["id"]
+
+
+async def test_patch_marca_deducible_y_audita(api):
+    ac, c = api
+    h = await _token(ac)
+    fid = await _crear(ac, h, deducible=False)
+    r = await ac.patch(
+        f"/api/v1/facturas/{fid}", json={"deducible": True}, headers=h
+    )
+    assert r.status_code == 200
+    assert r.json()["deducible"] is True
+    eventos = (
+        await c["compas_test"]["audit_log"]
+        .find({"evento": "factura.actualizada"})
+        .to_list(10)
+    )
+    assert len(eventos) == 1
+    # sin PII en la metadata (Ley 1581): ni nombre ni NIT del tercero
+    meta = eventos[0]["metadata"]
+    assert meta["deducible"] == {"antes": False, "despues": True}
+    assert "tercero_nit" not in meta and "tercero_nombre" not in meta
+
+
+async def test_patch_reclasifica_origen(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h, origen="sin_clasificar")
+    r = await ac.patch(
+        f"/api/v1/facturas/{fid}", json={"origen": "repuesto"}, headers=h
+    )
+    assert r.status_code == 200
+    assert r.json()["origen"] == "repuesto"
+
+
+async def test_patch_deducible_en_venta_es_422(api):
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(
+        "/api/v1/facturas",
+        json={
+            "tipo": "venta",
+            "origen": "moto",
+            "numero": "FV-1",
+            "tercero_nombre": "Cliente",
+            "tercero_nit": "79",
+            "fecha": "2026-02-01",
+            "base_gravable": "1000000",
+            "tarifa_iva": "0.19",
+            "deducible": False,
+        },
+        headers=h,
+    )
+    fid = r.json()["id"]
+    rp = await ac.patch(
+        f"/api/v1/facturas/{fid}", json={"deducible": True}, headers=h
+    )
+    assert rp.status_code == 422
+    assert "venta" in rp.json()["detail"].lower()
+
+
+async def test_patch_rechaza_campos_fiscales(api):
+    """La factura es inmutable en lo fiscal: solo deducible/origen. Un intento de
+    tocar un monto (o fecha/tipo) → 422 (body strict, extra=forbid)."""
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h)
+    for payload in (
+        {"iva_valor": "999.00"},
+        {"base_gravable": "999.00"},
+        {"fecha": "2026-01-01"},
+        {"tipo": "venta"},
+        {"total": "1.00"},
+    ):
+        rp = await ac.patch(f"/api/v1/facturas/{fid}", json=payload, headers=h)
+        assert rp.status_code == 422, payload
+
+
+async def test_patch_sin_cambios_es_422(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h)
+    rp = await ac.patch(f"/api/v1/facturas/{fid}", json={}, headers=h)
+    assert rp.status_code == 422
+
+
+async def test_patch_consulta_es_403(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h)
+    rp = await ac.patch(
+        f"/api/v1/facturas/{fid}",
+        json={"deducible": True},
+        headers=await _token(ac, "consulta@roddos.com"),
+    )
+    assert rp.status_code == 403
+
+
 async def test_crear_factura_duplicada_409(api):
     ac, _ = api
     h = await _token(ac)

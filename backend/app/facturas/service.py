@@ -103,6 +103,61 @@ async def crear_factura(
     return factura
 
 
+async def actualizar_factura(
+    *,
+    factura_id: str,
+    usuario_id: str,
+    deducible: bool | None = None,
+    origen: str | None = None,
+) -> Factura:
+    """CR-E2-EDITAR: edita SOLO los campos no fiscales `deducible`/`origen` (la factura
+    es inmutable en lo fiscal: montos/fechas/tipo se anulan y se recargan). Emite
+    `factura.actualizada` con autor (fail-closed saga O1). Solo cuenta y emite si algo
+    cambió de verdad; sin cambios → 422. `deducible` en una venta → 422 (solo compras).
+
+    Devuelve la factura ya actualizada. No toca `motor.py` ni la proyección."""
+    if deducible is None and origen is None:
+        raise FacturasError("nada que actualizar: envía deducible u origen", 422)
+
+    factura = await _obtener(factura_id)
+    cambios: dict[str, dict] = {}
+    previos: dict[str, object] = {}
+
+    if origen is not None and origen != factura.origen.value:
+        cambios["origen"] = {"antes": factura.origen.value, "despues": origen}
+        previos["origen"] = factura.origen
+        factura.origen = OrigenFactura(origen)
+
+    if deducible is not None and deducible != factura.deducible:
+        if factura.tipo == TipoFactura.venta and deducible:
+            raise FacturasError(
+                "deducible solo aplica a compras; esta factura es de venta", 422
+            )
+        cambios["deducible"] = {"antes": factura.deducible, "despues": deducible}
+        previos["deducible"] = factura.deducible
+        factura.deducible = deducible
+
+    if not cambios:  # los valores enviados ya eran los actuales → no-op sin evento
+        return factura
+
+    await factura.save()
+    try:
+        await emit_audit(
+            AuditEvento.factura_actualizada,
+            entidad="factura",
+            entidad_id=str(factura.id),
+            actor_id=usuario_id,
+            # sin PII (Ley 1581): CUFE+número identifican; nada de tercero.
+            metadata={"numero": factura.numero, "cufe": factura.cufe, **cambios},
+        )
+    except Exception:
+        for campo, valor in previos.items():  # saga O1: sin rastro, no hay cambio
+            setattr(factura, campo, valor)
+        await factura.save()
+        raise
+    return factura
+
+
 async def listar_facturas(*, activo: bool | None = None) -> list[Factura]:
     filtros = []
     if activo is not None:
