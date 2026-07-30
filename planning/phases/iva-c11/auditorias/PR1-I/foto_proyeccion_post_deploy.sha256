@@ -1,0 +1,5 @@
+sha256=18fe9f13ff780e662022aa1a7d456fac4e68ebe7b74fda0b93f781a9e19d6bc9
+status=200
+bytes_canonico=94925
+params={'escenario': 'base', 'horizonte_meses': 180, 'mes_inicio': '2026-07'}
+endpoint=https://api.compas.roddos.com/api/v1/proyeccion
