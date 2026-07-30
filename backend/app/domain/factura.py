@@ -36,9 +36,7 @@ TIPO_DOC_FACTURA_VENTA = "FACTURA ELECTRÓNICA DE VENTA"
 # (reducida) y 19% (general). Lista CERRADA para la captura MANUAL (endurecer, no
 # cambiar el cálculo → sin CR por R6). La ingesta DIAN NO valida contra esto: el PDF
 # puede mezclar tarifas (trampa 4 del §2) y guarda tarifa_iva=None (manda iva_valor).
-TARIFAS_IVA_VALIDAS = frozenset(
-    {Decimal("0"), Decimal("0.05"), Decimal("0.19")}
-)
+TARIFAS_IVA_VALIDAS = frozenset({Decimal("0"), Decimal("0.05"), Decimal("0.19")})
 
 
 class TipoFactura(StrEnum):

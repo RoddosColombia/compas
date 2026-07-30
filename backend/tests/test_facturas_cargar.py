@@ -414,9 +414,11 @@ async def test_cargar_emite_factura_creada(api):
     ac, c = api
     h = await _token(ac)
     await ac.post(URL, files=_archivos(b"PDF-OK"), headers=h)
-    eventos = await c["compas_test"]["audit_log"].find(
-        {"evento": "factura.creada"}
-    ).to_list(10)
+    eventos = (
+        await c["compas_test"]["audit_log"]
+        .find({"evento": "factura.creada"})
+        .to_list(10)
+    )
     assert len(eventos) == 1
 
 

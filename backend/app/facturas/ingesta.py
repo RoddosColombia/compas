@@ -229,9 +229,7 @@ async def _procesar_archivo(
         )
 
     try:
-        dian = await to_thread.run_sync(
-            _extraer_bytes, contenido, nombre, nit_propio
-        )
+        dian = await to_thread.run_sync(_extraer_bytes, contenido, nombre, nit_propio)
     except TipoNoSoportado as e:
         return _resultado(
             nombre, EstadoIngesta.rechazada_tipo_no_soportado, motivo=str(e)

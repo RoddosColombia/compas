@@ -233,9 +233,10 @@ def test_a7_no_dian_se_rechaza():
 
 
 # ── A1: caso de oro sobre el PDF real. Es TAMBIÉN el candado del pin de versión:
-# el extractor se validó en pdfplumber 0.11.9 y el repo pinó 0.11.4; la extracción por
-# POSICIÓN puede variar entre versiones, y este es el único test que lo atraparía. Si
-# falla por versión, es un HALLAZGO (no se ajusta el valor esperado). ──
+# el extractor se validó en pdfplumber 0.11.9 (el repo AHORA pinea esa misma versión,
+# tras subir de 0.11.4 para cerrar los CVE de pdfminer.six PYSEC-2026-1761/1762); la
+# extracción por POSICIÓN puede variar entre versiones, y este es el único test que lo
+# atraparía. Si falla por versión, es un HALLAZGO (no se ajusta el valor esperado). ──
 _FIXTURE = (
     Path(__file__).parent / "fixtures" / "dian_factura_venta_exito_2026-05-28.pdf"
 )
