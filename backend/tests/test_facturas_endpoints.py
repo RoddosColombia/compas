@@ -538,6 +538,43 @@ async def test_a10_ejemplo_aritmetico_spec_6_end_to_end(api):
     assert any(f["numero"] == "R-4" for f in rl.json())
 
 
+# ── PASO 1c: proximo_pago {fecha, dias} en /liquidacion desde CALENDARIO_DIAN ──
+async def test_liquidacion_incluye_proximo_pago_dian(api):
+    from datetime import date
+
+    from app.core.time import today_bogota
+    from app.domain.configuracion import Configuracion
+
+    ac, _ = api
+    h = await _token(ac)
+    await Configuracion(
+        clave="CALENDARIO_DIAN",
+        valor_json={
+            "2026": {
+                "ene_abr": "2026-05-13",
+                "may_ago": "2026-09-10",
+                "sep_dic": "2027-01-14",
+            }
+        },
+        vigente_desde="2026-01-01",
+    ).insert()
+    await _crear(ac, h, numero="C2f", fecha="2026-06-15", deducible=True)  # C2
+    r = await ac.get("/api/v1/facturas/liquidacion", headers=h)
+    per = {p["etiqueta"]: p for p in r.json()["periodos"]}
+    pp = per["2026-C2"]["proximo_pago"]
+    assert pp["fecha"] == "2026-09-10"
+    assert pp["dias"] == (date(2026, 9, 10) - today_bogota()).days
+
+
+async def test_liquidacion_proximo_pago_null_sin_calendario(api):
+    """Sin fecha en CALENDARIO_DIAN → null, NO se inventa una fecha (R5)."""
+    ac, _ = api
+    h = await _token(ac)
+    await _crear(ac, h, numero="C1f", fecha="2026-02-10", deducible=True)  # C1
+    r = await ac.get("/api/v1/facturas/liquidacion", headers=h)
+    assert r.json()["periodos"][0]["proximo_pago"] is None
+
+
 async def test_liquidacion_cuatrimestral(api):
     ac, _ = api
     h = await _token(ac)

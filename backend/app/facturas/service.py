@@ -230,6 +230,19 @@ async def obtener_periodicidad() -> Periodicidad:
     return Periodicidad.cuatrimestral
 
 
+async def obtener_calendario_dian() -> dict:
+    """Última vigencia de `CALENDARIO_DIAN` ({"2026": {"ene_abr": "2026-05-13", ...}}).
+    Ausente → {} (la UI omite la línea del próximo pago; NUNCA se inventa una fecha,
+    R5). Es la única fuente del §3③ del spec de diseño."""
+    cfg = (
+        await Configuracion.find(Configuracion.clave == ClaveConfig.CALENDARIO_DIAN)
+        .sort(-Configuracion.vigente_desde)
+        .limit(1)
+        .to_list()
+    )
+    return cfg[0].valor_json if cfg and cfg[0].valor_json else {}
+
+
 async def obtener_facturas_iva() -> list[FacturaIva]:
     """Proyecta las facturas ACTIVAS a `FacturaIva` (insumo del liquidador). Una
     factura anulada no afecta la liquidación."""
