@@ -64,6 +64,32 @@ export function autecoDeMes(m: MesProyeccion): Decimal {
   return parseMonto(m.pago_inventario).plus(m.fondeo).negated();
 }
 
+export interface CompromisoAuteco {
+  mes: string; // 'YYYY-MM' del próximo compromiso
+  monto: Decimal; // lote + fondeo de ese mes (magnitud positiva)
+  mesesDistancia: number; // 0 = este mes, 1 = el siguiente, …
+  real: boolean; // el mes cae en la ventana reconciliada (factura registrada)
+}
+
+/** V1.1 ítem 6: el PRÓXIMO compromiso Auteco (no la suma de los dos primeros meses,
+ * que daba "$0" cuando ambos eran paramétricos). Recorre la ventana y devuelve el
+ * primer mes con Auteco > 0, con su distancia en meses; `null` si no hay ninguno. */
+export function proximoCompromisoAuteco(
+  meses: MesProyeccion[],
+  ventanaRec: [string, string] | null,
+): CompromisoAuteco | null {
+  for (let i = 0; i < meses.length; i++) {
+    const monto = autecoDeMes(meses[i]);
+    if (monto.greaterThan(0)) {
+      const mes = meses[i].mes;
+      const real =
+        ventanaRec !== null && mes >= ventanaRec[0] && mes <= ventanaRec[1];
+      return { mes, monto, mesesDistancia: i, real };
+    }
+  }
+  return null;
+}
+
 // ── Agregación del gráfico (§2/§5): mensual, trimestral o anual según el nº de
 // meses, para que el eje X no se sature en horizontes largos. Los buckets se SUMAN
 // por período; la caja es la del ÚLTIMO mes del período (es un stock, no un flujo). ──
@@ -79,8 +105,18 @@ export interface PuntoComposicion {
   gasto: Decimal;
   flujo: Decimal;
   caja: Decimal; // caja al cierre del período
-  auteco: Decimal; // lote + fondeo del período (magnitud)
+  auteco: Decimal; // lote + fondeo del período (magnitud) — porción Auteco del costo
+  // V1.1 discriminación (ítems 1-2): NO re-mapea nada, son sumas de presentación.
+  recaudo: Decimal; // ingreso: cuotas semanales del crédito (recaudo_credito)
+  inicial: Decimal; // ingreso: cuota inicial (cuotas_iniciales)
+  nueva: Decimal; // costo de moto nueva (costo_nueva + adelanto); auteco + nueva == costo
   real: boolean; // algún mes del período cae en la ventana reconciliada
+}
+
+/** Costo de moto nueva del mes (alistamiento + adelanto), magnitud POSITIVA. Con la
+ * porción Auteco (`autecoDeMes`) reconstruye el bucket costo: auteco + nueva == costo. */
+export function nuevaDeMes(m: MesProyeccion): Decimal {
+  return parseMonto(m.costo_nueva).plus(m.adelanto).negated();
 }
 
 /** Periodicidad recomendada por longitud de la ventana. */
@@ -123,6 +159,9 @@ export function puntosComposicion(
         flujo: b.flujo,
         caja: parseMonto(m.caja),
         auteco: autecoDeMes(m),
+        recaudo: parseMonto(m.recaudo_credito),
+        inicial: parseMonto(m.cuotas_iniciales),
+        nueva: nuevaDeMes(m),
         real,
       });
       claveActual = clave;
@@ -134,6 +173,9 @@ export function puntosComposicion(
       p.flujo = p.flujo.plus(b.flujo);
       p.caja = parseMonto(m.caja); // último mes del período
       p.auteco = p.auteco.plus(autecoDeMes(m));
+      p.recaudo = p.recaudo.plus(m.recaudo_credito);
+      p.inicial = p.inicial.plus(m.cuotas_iniciales);
+      p.nueva = p.nueva.plus(nuevaDeMes(m));
       p.real = p.real || real;
     }
   }

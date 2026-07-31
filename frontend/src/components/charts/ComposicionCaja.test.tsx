@@ -71,21 +71,31 @@ describe("ComposicionCaja — V1 §2", () => {
     }
   });
 
-  it("hover sobre un mes proyectado: Auteco marcado 'proyectado'", () => {
+  it("hover: ingreso discriminado (recaudo semanal vs cuota inicial) — ítem 1", () => {
     const { container } = renderChart();
     const zonas = container.querySelectorAll('rect[fill="transparent"]');
-    // 2026-10 no tiene Auteco (paramétrico 0) → no aparece la línea de Auteco
     fireEvent.mouseEnter(zonas[0]);
-    expect(screen.getByText("Flujo")).toBeInTheDocument();
-    expect(screen.queryByText(/de los cuales Auteco/)).toBeNull();
+    expect(screen.getByText("Recaudo semanal")).toBeInTheDocument();
+    expect(screen.getByText("Cuota inicial")).toBeInTheDocument();
   });
 
-  it("hover sobre el mes reconciliado: Auteco real con su monto", () => {
+  it("hover sobre un mes proyectado: sin Auteco (paramétrico 0)", () => {
+    const { container } = renderChart();
+    const zonas = container.querySelectorAll('rect[fill="transparent"]');
+    // 2026-10 no tiene Auteco → no aparece su línea; sí la de moto nueva (costo)
+    fireEvent.mouseEnter(zonas[0]);
+    expect(screen.getByText("Flujo")).toBeInTheDocument();
+    expect(screen.queryByText(/Auteco/)).toBeNull();
+    expect(screen.getByText("Moto nueva")).toBeInTheDocument();
+  });
+
+  it("hover sobre el mes reconciliado: costo discriminado, Auteco real — ítem 2", () => {
     const { container } = renderChart();
     const zonas = container.querySelectorAll('rect[fill="transparent"]');
     fireEvent.mouseEnter(zonas[1]);
-    const linea = screen.getByText(/de los cuales Auteco/);
+    const linea = screen.getByText(/Auteco/);
     expect(linea.textContent).toMatch(/real/);
     expect(linea.textContent).not.toMatch(/proyectado/);
+    expect(screen.getByText("Moto nueva")).toBeInTheDocument();
   });
 });

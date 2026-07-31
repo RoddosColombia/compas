@@ -179,13 +179,34 @@ describe("ProyeccionPage — F1.1 §2", () => {
     expect(screen.getByLabelText(/Horizonte/)).toHaveValue("18");
   });
 
-  it("muestra el KPI Compromiso Auteco (este mes + el próximo)", async () => {
-    renderPage();
+  it("Compromiso Auteco sin compromisos: lo dice, no muestra $0 (ítem 6)", async () => {
+    renderPage(); // todos los meses con Auteco paramétrico 0 → no hay compromiso
     expect(await screen.findByText("Compromiso Auteco")).toBeInTheDocument();
-    // sin facturas registradas → proyección; los dos primeros meses de la ventana
     expect(
-      screen.getByText(/Lote \+ fondeo de jul-26 y ago-26 · proyección/),
+      screen.getByText(/ninguno en el horizonte proyectado/),
     ).toBeInTheDocument();
+  });
+
+  it("Compromiso Auteco: muestra el PRÓXIMO compromiso con su distancia (ítem 6)", async () => {
+    // un mes con Auteco > 0 (índice 2 = 2026-09, a 2 meses de jul-26)
+    const conAuteco = MESES.map((m, i) =>
+      i === 2
+        ? { ...m, pago_inventario: "-180000000.00", fondeo: "-5760000.00" }
+        : m,
+    );
+    mocks.obtenerProyeccion.mockResolvedValue({ ...PROY, meses: conAuteco });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProyeccionPage />
+      </QueryClientProvider>,
+    );
+    expect(
+      await screen.findByText("Próximo compromiso Auteco"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/en 2 meses/)).toBeInTheDocument();
   });
 
   it("ofrece los tres escenarios", async () => {

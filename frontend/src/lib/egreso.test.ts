@@ -15,6 +15,7 @@ import {
   bucketsMes,
   interesConcuerda,
   periodicidadPara,
+  proximoCompromisoAuteco,
   puntosComposicion,
   totales,
 } from "@/lib/egreso";
@@ -151,6 +152,47 @@ describe("egreso — agregación del gráfico (§2/§5)", () => {
     // T3-26 contiene sep-26 → real
     expect(p[0].real).toBe(true);
     expect(p[1].real).toBe(false);
+  });
+});
+
+describe("egreso — discriminación del gráfico (V1.1 ítems 1-2)", () => {
+  it("ingreso discriminado: recaudo semanal vs cuota inicial", () => {
+    const p = puntosComposicion([NORMAL], null);
+    expect(p[0].recaudo.toFixed(2)).toBe("30000000.00"); // recaudo_credito
+    expect(p[0].inicial.toFixed(2)).toBe("4000000.00"); // cuotas_iniciales
+  });
+
+  it("costo discriminado: Auteco (lote+fondeo) vs moto nueva, y suman el costo", () => {
+    const p = puntosComposicion([RECONCILIADO], null);
+    // Auteco = 180M + 5,76M ; moto nueva (costo_nueva + adelanto) = 3M
+    expect(p[0].auteco.toFixed(2)).toBe("185760000.00");
+    expect(p[0].nueva.toFixed(2)).toBe("3000000.00");
+    // candado: auteco + nueva == costo (magnitud) al peso
+    expect(p[0].auteco.plus(p[0].nueva).equals(p[0].costo)).toBe(true);
+  });
+
+  it("agrega la discriminación por período (suma en Decimal)", () => {
+    const p = puntosComposicion([NORMAL, NORMAL], null, "trimestre");
+    expect(p[0].recaudo.toFixed(2)).toBe("60000000.00"); // 2 × 30M
+    expect(p[0].nueva.toFixed(2)).toBe("6000000.00"); // 2 × 3M
+  });
+});
+
+describe("egreso — próximo compromiso Auteco (V1.1 ítem 6)", () => {
+  it("encuentra el próximo mes con Auteco > 0, con su distancia en meses", () => {
+    const c = proximoCompromisoAuteco(
+      [NORMAL, RECONCILIADO],
+      ["2027-01", "2027-01"],
+    );
+    expect(c).not.toBeNull();
+    expect(c?.mes).toBe("2027-01");
+    expect(c?.monto.toFixed(2)).toBe("185760000.00");
+    expect(c?.mesesDistancia).toBe(1); // 0 = este mes; RECONCILIADO es el siguiente
+    expect(c?.real).toBe(true); // cae en la ventana reconciliada
+  });
+
+  it("null cuando ningún mes tiene compromiso Auteco", () => {
+    expect(proximoCompromisoAuteco([NORMAL, NORMAL], null)).toBeNull();
   });
 });
 
