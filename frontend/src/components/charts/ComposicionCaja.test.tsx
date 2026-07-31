@@ -71,6 +71,16 @@ describe("ComposicionCaja — V1 §2", () => {
     }
   });
 
+  it("anota el mes de menor caja, el próximo Auteco y la perforación (V1.2 A4)", () => {
+    renderChart();
+    // menor caja: 2027-01 tiene 10M (< 40M de 2026-10)
+    expect(screen.getByText(/menor caja/)).toBeInTheDocument();
+    // próximo compromiso Auteco: 2027-01 (lote+fondeo 185,76M)
+    expect(screen.getByText(/Compromiso Auteco/)).toBeInTheDocument();
+    // ambos meses caen bajo el umbral (125M) → hay perforación anotada
+    expect(screen.getByText(/perfora el umbral/)).toBeInTheDocument();
+  });
+
   it("hover: ingreso discriminado (recaudo semanal vs cuota inicial) — ítem 1", () => {
     const { container } = renderChart();
     const zonas = container.querySelectorAll('rect[fill="transparent"]');
@@ -85,7 +95,9 @@ describe("ComposicionCaja — V1 §2", () => {
     // 2026-10 no tiene Auteco → no aparece su línea; sí la de moto nueva (costo)
     fireEvent.mouseEnter(zonas[0]);
     expect(screen.getByText("Flujo")).toBeInTheDocument();
-    expect(screen.queryByText(/Auteco/)).toBeNull();
+    // el hover NO trae la sub-línea "Auteco · …" (la anotación del gráfico sí dice
+    // "Compromiso Auteco", por eso se filtra por el separador del desglose)
+    expect(screen.queryByText(/Auteco ·/)).toBeNull();
     expect(screen.getByText("Moto nueva")).toBeInTheDocument();
   });
 
@@ -93,7 +105,7 @@ describe("ComposicionCaja — V1 §2", () => {
     const { container } = renderChart();
     const zonas = container.querySelectorAll('rect[fill="transparent"]');
     fireEvent.mouseEnter(zonas[1]);
-    const linea = screen.getByText(/Auteco/);
+    const linea = screen.getByText(/Auteco ·/);
     expect(linea.textContent).toMatch(/real/);
     expect(linea.textContent).not.toMatch(/proyectado/);
     expect(screen.getByText("Moto nueva")).toBeInTheDocument();

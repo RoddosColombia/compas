@@ -1,18 +1,23 @@
 // components/charts/ComposicionCaja.tsx
 //
-// V1 §2 + V1.1 (Parte VI): la caja deja de estar sola. DOS paneles alineados sobre el
-// MISMO eje X (ítem 5: antes la caja compartía lienzo con las barras y su línea se leía
-// como "negativa"): arriba, barras de ingreso (verde) y costo+gasto apilados (gama de
-// ROJOS, ítem 3 — distinta del `critico` de alertas); abajo, la caja acumulada con su
-// umbral, en su propio eje. La barra de costo se DISCRIMINA en Auteco vs moto nueva
-// (ítem 2). El hover trae el desglose (ítem 1: recaudo semanal vs cuota inicial; costo:
-// Auteco real/proyectado vs moto nueva). Layout en columna flex para que las etiquetas
-// del eje X y la leyenda quepan sin invadir el pie de la tarjeta (ítems 4 y 7).
-// SVG a mano; .toNumber() SOLO geometría (regla 1).
+// V1.2 (Parte VI iterado) — el gráfico se reorganiza alrededor de la CAJA, que es la
+// variable que decide. DOS paneles sobre el mismo eje X:
+//   · arriba (45%): ingreso y egreso LADO A LADO (barras agrupadas) para comparar mes
+//     a mes; el egreso apila su gama de ROJOS discriminada (Auteco + moto nueva) y el
+//     gasto encima.
+//   · abajo (55%, más alto): la caja acumulada con su umbral, en un eje ANCLADO AL
+//     UMBRAL (no al cero) para que las caídas de $100-200 M se vean. Anotada: el mes de
+//     menor caja, el próximo compromiso Auteco y —si ocurre— la perforación del umbral.
+// Nada se inventa: una anotación sin dato no se dibuja. SVG a mano; .toNumber() SOLO
+// geometría (regla 1); los rótulos usan Decimal.
 
 import { useState } from "react";
 
-import { type PuntoComposicion, puntosComposicion } from "@/lib/egreso";
+import {
+  type PuntoComposicion,
+  anotacionesCaja,
+  puntosComposicion,
+} from "@/lib/egreso";
 import { formatCOPCompact, formatCOPEntero, parseMonto } from "@/lib/money";
 import type { MesProyeccion } from "@/lib/proyeccion";
 import { cn } from "@/lib/utils";
@@ -24,12 +29,12 @@ interface ComposicionCajaProps {
 }
 
 const W = 900;
-const H = 300;
+const H = 320;
 const ML = 78;
 const MR = 78;
-const MT = 16;
+const MT = 18;
 const MB = 40; // banda inferior para las etiquetas compartidas del eje X
-const GAP = 22; // separación entre el panel de barras y el de caja
+const GAP = 20; // separación entre el panel de barras y el de caja
 
 export function ComposicionCaja({
   meses,
@@ -41,44 +46,47 @@ export function ComposicionCaja({
 
   const P = puntosComposicion(meses, ventanaReconciliada);
   const n = P.length;
-  // number SOLO para la geometría de las barras/línea (regla 1); el formato usa Decimal.
+  // number SOLO para la geometría (regla 1); el formato usa Decimal.
   const ingreso = P.map((p) => p.ingreso.toNumber());
   const auteco = P.map((p) => p.auteco.toNumber());
   const costo = P.map((p) => p.costo.toNumber());
   const gasto = P.map((p) => p.gasto.toNumber());
   const cajas = P.map((p) => p.caja.toNumber());
   const u = parseMonto(umbral).toNumber();
+  const anota = anotacionesCaja(P, parseMonto(umbral));
 
   const plotW = W - ML - MR;
   const slot = plotW / n;
-  const barW = Math.min(slot * 0.6, 34);
   const cx = (i: number) => ML + (i + 0.5) * slot;
-
-  // ── Dos paneles apilados que comparten el eje X ──
-  const plotH = H - MT - MB;
-  const topH = Math.round(plotH * 0.58); // barras
-  const botH = plotH - topH - GAP; // caja
-  const topY0 = MT;
-  const botY0 = MT + topH + GAP;
-
-  // Panel SUPERIOR (barras): ingreso hacia arriba, costo+gasto hacia abajo.
-  const topBar = Math.max(...ingreso, 0);
-  const botBar = -Math.max(...costo.map((c, i) => c + gasto[i]), 0);
-  const spanBar = topBar - botBar || 1;
-  const yBar = (v: number) => topY0 + (1 - (v - botBar) / spanBar) * topH;
-  const y0 = yBar(0);
-
-  // Panel INFERIOR (caja): incluye umbral y 0.
-  const minCaja = Math.min(...cajas, u, 0);
-  const maxCaja = Math.max(...cajas, u);
-  const spanCaja = maxCaja - minCaja || 1;
-  const yCaja = (v: number) => botY0 + (1 - (v - minCaja) / spanCaja) * botH;
-
-  const lineaCaja = cajas.map((v, i) => `${cx(i)},${yCaja(v)}`).join(" ");
   const pasoX = Math.max(1, Math.ceil(n / 8));
 
-  const ticksBar = [topBar, 0, botBar];
-  const ticksCaja = [0, 1, 2].map((k) => minCaja + (spanCaja * k) / 2);
+  // ── Dos paneles: barras (45%) arriba, caja (55%) abajo ──
+  const plotH = H - MT - MB;
+  const barsH = Math.round(plotH * 0.45);
+  const cajaH = plotH - barsH - GAP;
+  const barsY0 = MT;
+  const barsY1 = MT + barsH; // línea base (cero) de las barras
+  const cajaY0 = barsY1 + GAP;
+  const cajaY1 = cajaY0 + cajaH;
+
+  // Panel de BARRAS agrupadas — ingreso y egreso (costo+gasto) hacia ARRIBA.
+  const egresoTot = costo.map((c, i) => c + gasto[i]);
+  const maxBar = Math.max(...ingreso, ...egresoTot, 0) || 1;
+  const yBar = (v: number) => barsY1 - (v / maxBar) * barsH;
+  const bw = Math.min(slot * 0.34, 24); // ancho de cada barra del par
+
+  // Panel de CAJA — eje anclado al UMBRAL (A1): [min(caja,umbral)−m, max(caja,umbral)+m].
+  const lo = Math.min(...cajas, u);
+  const hi = Math.max(...cajas, u);
+  const margen = (hi - lo || Math.abs(hi) || 1) * 0.08;
+  const cMin = lo - margen;
+  const cMax = hi + margen;
+  const spanCaja = cMax - cMin || 1;
+  const yCaja = (v: number) => cajaY1 - ((v - cMin) / spanCaja) * cajaH;
+  const lineaCaja = cajas.map((v, i) => `${cx(i)},${yCaja(v)}`).join(" ");
+
+  const ticksBar = [maxBar, maxBar / 2, 0];
+  const ticksCaja = [cMin, (cMin + cMax) / 2, cMax];
 
   // sombreado de la ventana reconciliada (períodos con facturas reales) — ambos paneles
   let recL = -1;
@@ -90,6 +98,9 @@ export function ComposicionCaja({
     }
   }
 
+  // posición del rótulo de una anotación sin salirse del lienzo
+  const clampX = (i: number) => Math.min(Math.max(cx(i), ML + 32), W - MR - 32);
+
   return (
     <div className="flex h-full flex-col">
       <svg
@@ -97,24 +108,48 @@ export function ComposicionCaja({
         className="min-h-0 w-full flex-1"
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label="Ingreso, costo y gasto por período y, debajo, la caja acumulada contra su umbral"
+        aria-label="Ingreso y egreso por período (barras agrupadas) y, debajo, la caja acumulada contra su umbral, anotada"
       >
         <title>
-          Composición de caja: ingreso, costo y gasto arriba; caja acumulada y
-          umbral abajo
+          Composición de caja: ingreso y egreso arriba; caja acumulada y umbral
+          abajo, con anotaciones de los meses clave
         </title>
 
         {recL >= 0 && (
           <rect
             x={cx(recL) - slot / 2}
-            y={topY0}
+            y={barsY0}
             width={(recR - recL) * slot + slot}
-            height={botY0 + botH - topY0}
+            height={cajaY1 - barsY0}
             className="fill-cyan/5"
           />
         )}
 
-        {/* ── Panel superior: barras ── */}
+        {/* marca vertical del próximo compromiso Auteco (A4) — atraviesa ambos paneles */}
+        {anota.autecoIdx !== null && (
+          <g>
+            <line
+              x1={cx(anota.autecoIdx)}
+              x2={cx(anota.autecoIdx)}
+              y1={barsY0}
+              y2={cajaY1}
+              className="stroke-ink/30"
+              strokeWidth={1}
+              strokeDasharray="3 3"
+            />
+            <text
+              x={clampX(anota.autecoIdx)}
+              y={barsY0 + 10}
+              textAnchor="middle"
+              fontSize={11}
+              className="fill-ink-soft font-sans"
+            >
+              Compromiso Auteco {formatCOPCompact(P[anota.autecoIdx].auteco)}
+            </text>
+          </g>
+        )}
+
+        {/* ── Panel superior: barras agrupadas ── */}
         {ticksBar.map((v) => (
           <text
             key={`b${v}`}
@@ -127,58 +162,58 @@ export function ComposicionCaja({
             {formatCOPCompact(String(v))}
           </text>
         ))}
-
         <line
           x1={ML}
           x2={W - MR}
-          y1={y0}
-          y2={y0}
+          y1={barsY1}
+          y2={barsY1}
           className="stroke-ink/25"
           strokeWidth={1}
         />
 
-        {/* barras: ingreso arriba; costo (Auteco + moto nueva) y gasto apilados abajo */}
         {P.map((p, i) => {
-          const yAut = yBar(-auteco[i]); // fin del segmento Auteco
-          const yCosto = yBar(-costo[i]); // fin del costo (Auteco + nueva)
+          const xIng = cx(i) - bw - 1; // ingreso a la izquierda del par
+          const xEg = cx(i) + 1; // egreso a la derecha
+          const yAut = yBar(auteco[i]);
+          const yCosto = yBar(costo[i]);
+          const yEg = yBar(egresoTot[i]);
           return (
             <g key={p.etiqueta}>
+              {/* ingreso (verde) */}
               <rect
-                x={cx(i) - barW / 2}
+                x={xIng}
                 y={yBar(ingreso[i])}
-                width={barW}
-                height={Math.max(0, y0 - yBar(ingreso[i]))}
+                width={bw}
+                height={Math.max(0, barsY1 - yBar(ingreso[i]))}
                 className="fill-positivo/80"
               />
-              {/* costo — Auteco (rojo pleno) */}
+              {/* egreso apilado: Auteco (rojo) + moto nueva (rojo claro) + gasto */}
               <rect
-                x={cx(i) - barW / 2}
-                y={y0}
-                width={barW}
-                height={Math.max(0, yAut - y0)}
+                x={xEg}
+                y={yAut}
+                width={bw}
+                height={Math.max(0, barsY1 - yAut)}
                 className="fill-costo"
               />
-              {/* costo — moto nueva (mismo rojo, más claro) */}
               <rect
-                x={cx(i) - barW / 2}
-                y={yAut}
-                width={barW}
-                height={Math.max(0, yCosto - yAut)}
+                x={xEg}
+                y={yCosto}
+                width={bw}
+                height={Math.max(0, yAut - yCosto)}
                 className="fill-costo/55"
               />
-              {/* gasto — rojo suave de la gama */}
               <rect
-                x={cx(i) - barW / 2}
-                y={yCosto}
-                width={barW}
-                height={Math.max(0, yBar(-(costo[i] + gasto[i])) - yCosto)}
+                x={xEg}
+                y={yEg}
+                width={bw}
+                height={Math.max(0, yCosto - yEg)}
                 className="fill-gasto"
               />
             </g>
           );
         })}
 
-        {/* ── Panel inferior: caja acumulada + umbral ── */}
+        {/* ── Panel inferior: caja acumulada + umbral, anclado al umbral ── */}
         {ticksCaja.map((v) => (
           <g key={`c${v}`}>
             <line
@@ -201,7 +236,7 @@ export function ComposicionCaja({
           </g>
         ))}
 
-        {/* umbral (línea punteada sobre el eje de la caja) */}
+        {/* umbral (línea punteada, sobre el eje de la caja) */}
         <line
           x1={ML}
           x2={W - MR}
@@ -230,7 +265,48 @@ export function ComposicionCaja({
           vectorEffect="non-scaling-stroke"
         />
 
-        {/* etiquetas del eje X — COMPARTIDAS, en la banda inferior (no invaden el pie) */}
+        {/* anotación: mes de MENOR caja (A4) — siempre existe */}
+        <g>
+          <circle
+            cx={cx(anota.minIdx)}
+            cy={yCaja(cajas[anota.minIdx])}
+            r={4}
+            className="fill-cyan"
+          />
+          <text
+            x={clampX(anota.minIdx)}
+            y={yCaja(cajas[anota.minIdx]) - 10}
+            textAnchor="middle"
+            fontSize={11}
+            className="fill-ink font-sans font-semibold"
+          >
+            menor caja {formatCOPCompact(P[anota.minIdx].caja)}
+          </text>
+        </g>
+
+        {/* anotación: perforación del umbral (A4) — solo si ocurre */}
+        {anota.perforaIdx !== null && (
+          <g>
+            <circle
+              cx={cx(anota.perforaIdx)}
+              cy={yCaja(cajas[anota.perforaIdx])}
+              r={4}
+              className="fill-surface stroke-critico"
+              strokeWidth={2}
+            />
+            <text
+              x={clampX(anota.perforaIdx)}
+              y={yCaja(cajas[anota.perforaIdx]) + 18}
+              textAnchor="middle"
+              fontSize={11}
+              className="fill-critico font-sans"
+            >
+              perfora el umbral
+            </text>
+          </g>
+        )}
+
+        {/* etiquetas del eje X — compartidas, en la banda inferior */}
         {P.map((p, i) =>
           i % pasoX === 0 ? (
             <text
@@ -251,9 +327,9 @@ export function ComposicionCaja({
           <rect
             key={p.etiqueta}
             x={ML + i * slot}
-            y={topY0}
+            y={barsY0}
             width={slot}
-            height={botY0 + botH - topY0}
+            height={cajaY1 - barsY0}
             fill="transparent"
             onMouseEnter={() => setHover(i)}
             onMouseLeave={() => setHover((h) => (h === i ? null : h))}
@@ -261,8 +337,7 @@ export function ComposicionCaja({
         ))}
       </svg>
 
-      {/* leyenda (el color nunca va solo — F1). Fuera del SVG, en la columna flex, para
-          que SIEMPRE quepa (ítem 7) sin empujar contra el pie de la tarjeta (ítem 4). */}
+      {/* leyenda (el color nunca va solo — F1). Fuera del SVG, en la columna flex. */}
       <div className="mt-1 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 px-2 text-apoyo text-ink-soft">
         <Clave className="bg-positivo/80" label="Ingreso" />
         <Clave className="bg-costo" label="Costo" />
@@ -320,12 +395,10 @@ function HoverTooltip({
       <div className="mb-1 font-semibold text-ink">{p.etiqueta}</div>
 
       <Fila etiqueta="Ingreso" valor={formatCOPEntero(p.ingreso)} />
-      {/* ítem 1 — ingreso discriminado */}
       <Sub etiqueta="Recaudo semanal" valor={formatCOPEntero(p.recaudo)} />
       <Sub etiqueta="Cuota inicial" valor={formatCOPEntero(p.inicial)} />
 
       <Fila etiqueta="Costo" valor={formatCOPEntero(p.costo)} />
-      {/* ítem 2 — costo discriminado */}
       {!p.auteco.isZero() && (
         <Sub
           etiqueta={`Auteco · ${p.real ? "real" : "proyectado"}`}

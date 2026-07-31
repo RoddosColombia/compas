@@ -9,7 +9,7 @@
 import { Fragment, type ReactNode, useState } from "react";
 
 import { Card } from "@/components/ui/card";
-import { bucketsMes, totales } from "@/lib/egreso";
+import { autecoDeMes, bucketsMes, nuevaDeMes, totales } from "@/lib/egreso";
 import { formatCOPEntero, formatMesCorto } from "@/lib/money";
 import {
   ESTADO_LABEL,
@@ -17,7 +17,16 @@ import {
   type MesProyeccion,
 } from "@/lib/proyeccion";
 import { cn } from "@/lib/utils";
-import type Decimal from "decimal.js-light";
+import Decimal from "decimal.js-light";
+
+/** Σ de una columna sobre las filas (sumas de presentación de valores del backend,
+ * mismo patrón que `totales`; nunca cálculo financiero nuevo). */
+function sumaCol(
+  filas: MesProyeccion[],
+  valor: (m: MesProyeccion) => Decimal | string,
+): Decimal {
+  return filas.reduce<Decimal>((acc, m) => acc.plus(valor(m)), new Decimal(0));
+}
 
 const ESTADO_ESTILO: Record<EstadoMes, string> = {
   ok: "bg-positivo/10 text-positivo",
@@ -67,6 +76,11 @@ export function TablaEgreso({
 }: TablaEgresoProps) {
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   const t = totales(filas);
+  // V1.2 B — totales de las columnas discriminadas (ingreso y costo a la vista)
+  const tInicial = sumaCol(filas, (m) => m.cuotas_iniciales);
+  const tSemanal = sumaCol(filas, (m) => m.recaudo_credito);
+  const tActivacion = sumaCol(filas, nuevaDeMes);
+  const tAuteco = sumaCol(filas, autecoDeMes);
 
   const toggle = (mes: string) =>
     setAbiertos((prev) => {
@@ -84,8 +98,19 @@ export function TablaEgreso({
               <th className="sticky left-0 z-10 bg-surface px-4 py-2.5 font-semibold">
                 Mes
               </th>
-              <th className="px-4 py-2.5 text-right font-semibold">Motos</th>
+              {/* Ingreso discriminado a la VISTA (V1.2 B) */}
+              <th className="px-4 py-2.5 text-right font-semibold">
+                Cuota inicial
+              </th>
+              <th className="px-4 py-2.5 text-right font-semibold">
+                Cuotas semanales
+              </th>
               <th className="px-4 py-2.5 text-right font-semibold">Ingreso</th>
+              {/* Costo discriminado a la VISTA (V1.2 B) */}
+              <th className="px-4 py-2.5 text-right font-semibold">
+                Activación
+              </th>
+              <th className="px-4 py-2.5 text-right font-semibold">Auteco</th>
               <th className="px-4 py-2.5 text-right font-semibold">Costo</th>
               <th className="px-4 py-2.5 text-right font-semibold">Gasto</th>
               <th className="px-4 py-2.5 text-right font-semibold">Flujo</th>
@@ -121,11 +146,18 @@ export function TablaEgreso({
                         {formatMesCorto(m.mes)}
                       </button>
                     </td>
-                    <td className="tabular px-4 py-2 text-right text-ink-soft">
-                      {m.motos}
-                    </td>
+                    <Monto
+                      valor={m.cuotas_iniciales}
+                      className="text-ink-soft"
+                    />
+                    <Monto
+                      valor={m.recaudo_credito}
+                      className="text-ink-soft"
+                    />
                     <Monto valor={b.ingreso} className="font-medium text-ink" />
-                    <Monto valor={b.costo} className="text-ink-soft" />
+                    <Monto valor={nuevaDeMes(m)} className="text-ink-soft" />
+                    <Monto valor={autecoDeMes(m)} className="text-ink-soft" />
+                    <Monto valor={b.costo} className="font-medium text-ink" />
                     <Monto valor={b.gasto} className="text-ink-soft" />
                     <Monto
                       valor={b.flujo}
@@ -145,7 +177,7 @@ export function TablaEgreso({
                   </tr>
                   {abierto && (
                     <tr className="border-b border-hairline/60 bg-surface-muted/40">
-                      <td colSpan={8} className="px-4 py-3">
+                      <td colSpan={11} className="px-4 py-3">
                         <DesgloseMes
                           m={m}
                           reconciliado={esReconciliado(
@@ -163,8 +195,11 @@ export function TablaEgreso({
           <tfoot className="border-t-2 border-hairline">
             <tr className="font-semibold text-ink">
               <td className="sticky left-0 bg-surface px-4 py-2.5">Totales</td>
-              <td />
+              <Monto valor={tInicial} />
+              <Monto valor={tSemanal} />
               <Monto valor={t.ingreso} />
+              <Monto valor={tActivacion} />
+              <Monto valor={tAuteco} />
               <Monto valor={t.costo} />
               <Monto valor={t.gasto} />
               <Monto
@@ -184,8 +219,10 @@ export function TablaEgreso({
   );
 }
 
-/** Fila de detalle: los componentes de cada bucket, agrupados. Reconcilia con
- * los tres totales (candado de lib/egreso). Marca el lote Auteco real/proyectado. */
+/** Fila de detalle (V1.2 B): ingreso y costo ya están DISCRIMINADOS en columnas, así
+ * que aquí solo queda lo que NO subió a columna — de qué se compone el Auteco (lote +
+ * fondeo del plazo: transparencia del interés, candado anti-doble-conteo) y el
+ * desglose del gasto. Marca el lote Auteco real/proyectado según la ventana. */
 function DesgloseMes({
   m,
   reconciliado,
@@ -196,21 +233,13 @@ function DesgloseMes({
   // los campos de egreso ya llegan negativos del motor: formatCOPEntero pinta el signo.
   const f = formatCOPEntero;
   return (
-    <div className="grid grid-cols-1 gap-x-8 gap-y-1 text-apoyo sm:grid-cols-3">
-      <Grupo titulo="Ingreso">
-        <Linea etiqueta="Recaudo crédito" valor={f(m.recaudo_credito)} />
-        <Linea etiqueta="Cuota inicial" valor={f(m.cuotas_iniciales)} />
-      </Grupo>
-      <Grupo titulo="Costo">
+    <div className="grid grid-cols-1 gap-x-8 gap-y-1 text-apoyo sm:grid-cols-2">
+      <Grupo titulo="Auteco (dentro de Costo)">
         <Linea
-          etiqueta={`Lote Auteco · ${reconciliado ? "real" : "proyectado"}`}
+          etiqueta={`Lote · ${reconciliado ? "real" : "proyectado"}`}
           valor={f(m.pago_inventario)}
         />
-        <Linea etiqueta="Fondeo del plazo" valor={f(m.fondeo)} />
-        <Linea etiqueta="Alistamiento" valor={f(m.costo_nueva)} />
-        {m.adelanto !== "0.00" && (
-          <Linea etiqueta="Adelanto" valor={f(m.adelanto)} />
-        )}
+        <Linea etiqueta="Fondeo del plazo (interés)" valor={f(m.fondeo)} />
       </Grupo>
       <Grupo titulo="Gasto">
         <Linea etiqueta="Gastos fijos" valor={f(m.gastos_fijos)} />

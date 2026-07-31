@@ -10,7 +10,10 @@
 
 import { describe, expect, it } from "vitest";
 
+import Decimal from "decimal.js-light";
+
 import {
+  anotacionesCaja,
   autecoDeMes,
   bucketsMes,
   interesConcuerda,
@@ -193,6 +196,35 @@ describe("egreso — próximo compromiso Auteco (V1.1 ítem 6)", () => {
 
   it("null cuando ningún mes tiene compromiso Auteco", () => {
     expect(proximoCompromisoAuteco([NORMAL, NORMAL], null)).toBeNull();
+  });
+});
+
+describe("egreso — anotaciones del gráfico de caja (V1.2 A4)", () => {
+  const P = puntosComposicion(
+    [
+      mes({ mes: "2026-10", caja: "200000000.00" }),
+      mes({ mes: "2026-11", caja: "40000000.00" }), // menos caja Y perfora el umbral
+      mes({
+        mes: "2026-12",
+        caja: "528000000.00",
+        pago_inventario: "-528000000.00", // salto de compromiso Auteco
+      }),
+    ],
+    null,
+  );
+
+  it("marca el mes de menos caja, la perforación y el próximo Auteco", () => {
+    const a = anotacionesCaja(P, new Decimal("125000000"));
+    expect(a.minIdx).toBe(1); // 40M es la caja más baja
+    expect(a.perforaIdx).toBe(1); // primer mes con caja < umbral
+    expect(a.autecoIdx).toBe(2); // primer mes con Auteco > 0
+  });
+
+  it("no inventa: sin perforación ni Auteco, esos índices son null", () => {
+    const a = anotacionesCaja(P, new Decimal("10000000")); // umbral bajo: nadie perfora
+    expect(a.perforaIdx).toBeNull();
+    const sinAuteco = puntosComposicion([mes({ caja: "5.00" })], null);
+    expect(anotacionesCaja(sinAuteco, new Decimal("0")).autecoIdx).toBeNull();
   });
 });
 

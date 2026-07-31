@@ -64,6 +64,29 @@ export function autecoDeMes(m: MesProyeccion): Decimal {
   return parseMonto(m.pago_inventario).plus(m.fondeo).negated();
 }
 
+export interface AnotacionesCaja {
+  minIdx: number; // período con MENOS caja (siempre existe si hay ≥1 punto)
+  perforaIdx: number | null; // primer período con caja < umbral (null si no perfora)
+  autecoIdx: number | null; // primer período con Auteco > 0 (próximo compromiso)
+}
+
+/** V1.2 A4 — qué anotar en la línea de caja. NO inventa: perforación y Auteco son
+ * `null` cuando el dato no está (no se marca nada). Comparaciones en Decimal (§5). */
+export function anotacionesCaja(
+  P: PuntoComposicion[],
+  umbral: Decimal,
+): AnotacionesCaja {
+  let minIdx = 0;
+  let perforaIdx: number | null = null;
+  let autecoIdx: number | null = null;
+  for (let i = 0; i < P.length; i++) {
+    if (P[i].caja.lessThan(P[minIdx].caja)) minIdx = i;
+    if (perforaIdx === null && P[i].caja.lessThan(umbral)) perforaIdx = i;
+    if (autecoIdx === null && P[i].auteco.greaterThan(0)) autecoIdx = i;
+  }
+  return { minIdx, perforaIdx, autecoIdx };
+}
+
 export interface CompromisoAuteco {
   mes: string; // 'YYYY-MM' del próximo compromiso
   monto: Decimal; // lote + fondeo de ese mes (magnitud positiva)
