@@ -13,6 +13,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { CargaPanel } from "@/components/iva/CargaPanel";
+import { FacturasTabla } from "@/components/iva/FacturasTabla";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -100,10 +101,9 @@ export default function IvaPage() {
       )}
 
       {!cargando && !hayError && !vacio && (
-        // Piezas 3–6 (tabla, liquidación, titular, atención) se montan aquí.
-        <p className="font-sans text-apoyo text-ink-faint">
-          {facturas.data?.length} factura(s) cargada(s).
-        </p>
+        // Piezas 5-6 (titular, qué exige atención) y 4 (liquidación) se montan
+        // ARRIBA de la tabla en las próximas piezas. Aquí va la tabla (§4).
+        <FacturasTabla facturas={facturas.data ?? []} onCambio={refrescarTodo} />
       )}
     </div>
   );

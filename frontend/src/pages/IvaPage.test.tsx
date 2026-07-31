@@ -49,4 +49,30 @@ describe("IvaPage — shell", () => {
       screen.getAllByRole("button", { name: /Cargar facturas/ }).length,
     ).toBeGreaterThan(0);
   });
+
+  it("con facturas monta la tabla (§4)", async () => {
+    facturasData = [
+      {
+        id: "1",
+        tipo: "compra",
+        origen: "auteco",
+        numero: "FC-VISIBLE",
+        tercero_nombre: "Auteco S.A.S.",
+        tercero_nit: "860024781",
+        tipo_contribuyente: "persona_juridica",
+        fecha: "2026-05-28",
+        base_gravable: null,
+        total_bruto: "1000000.00",
+        tarifa_iva: null,
+        iva_valor: "190000.00",
+        total: "1190000.00",
+        deducible: false,
+        deducible_decidido: false,
+        activo: true,
+        periodo: "2026-C2",
+      },
+    ];
+    renderPage();
+    expect(await screen.findByText("FC-VISIBLE")).toBeInTheDocument();
+  });
 });

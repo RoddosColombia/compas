@@ -26,6 +26,9 @@ export interface FacturaRow {
   iva_valor: string;
   total: string;
   deducible: boolean;
+  // 3 estados en la columna Deducible: decidido+true = Sí, decidido+false = No,
+  // no decidido = "Sin decidir" (§4). El §2 cuenta las compras activas sin decidir.
+  deducible_decidido: boolean;
   activo: boolean;
   periodo: string; // '2026-C2'
 }
@@ -128,6 +131,12 @@ export async function marcarDeducibilidadLote(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids, deducible }),
   });
+}
+
+/** POST /facturas/{id}/anular — baja lógica. No se puede editar una factura en lo
+ * fiscal: se anula y se vuelve a cargar (§3④). */
+export async function anularFactura(id: string): Promise<FacturaRow> {
+  return apiJson(`/facturas/${id}/anular`, { method: "POST" });
 }
 
 // ── Captura manual (POST /facturas) — la usa la pantalla de confirmación ──
