@@ -137,9 +137,7 @@ async def test_patch_marca_deducible_y_audita(api):
     ac, c = api
     h = await _token(ac)
     fid = await _crear(ac, h, deducible=False)
-    r = await ac.patch(
-        f"/api/v1/facturas/{fid}", json={"deducible": True}, headers=h
-    )
+    r = await ac.patch(f"/api/v1/facturas/{fid}", json={"deducible": True}, headers=h)
     assert r.status_code == 200
     assert r.json()["deducible"] is True
     eventos = (
@@ -184,9 +182,7 @@ async def test_patch_deducible_en_venta_es_422(api):
         headers=h,
     )
     fid = r.json()["id"]
-    rp = await ac.patch(
-        f"/api/v1/facturas/{fid}", json={"deducible": True}, headers=h
-    )
+    rp = await ac.patch(f"/api/v1/facturas/{fid}", json={"deducible": True}, headers=h)
     assert rp.status_code == 422
     assert "venta" in rp.json()["detail"].lower()
 
@@ -337,6 +333,74 @@ async def test_patch_lote_consulta_403(api):
         headers=await _token(ac, "consulta@roddos.com"),
     )
     assert r.status_code == 403
+
+
+# ── deducible_decidido: 3 estados (Sí / No / Sin decidir) para el §2 ──
+async def test_serializador_expone_deducible_decidido(api):
+    """El listado expone el flag para que el cliente distinga los 3 estados de la
+    columna y cuente las recibidas sin decidir (§2). Manual → decidido True."""
+    ac, _ = api
+    h = await _token(ac)
+    await ac.post("/api/v1/facturas", json=_compra(), headers=h)
+    r = await ac.get("/api/v1/facturas", headers=h)
+    assert r.json()[0]["deducible_decidido"] is True
+
+
+async def test_patch_no_deducible_sobre_sin_decidir_es_cambio(api):
+    """Marcar 'No es deducible' sobre una factura DIAN sin decidir (deducible=False,
+    decidido=False) ES un cambio real: registra la decisión aunque el bool no varíe.
+    Segunda vez idéntica → no-op, no vuelve a auditar."""
+    from app.domain.factura import Factura
+    from beanie import PydanticObjectId
+
+    ac, c = api
+    h = await _token(ac)
+    await _insert_factura("D-1", "persona_juridica")  # DIAN: decidido=False
+    fid = str((await Factura.find_one(Factura.numero == "D-1")).id)
+
+    r = await ac.patch(f"/api/v1/facturas/{fid}", json={"deducible": False}, headers=h)
+    assert r.status_code == 200
+    assert r.json()["deducible"] is False
+    assert r.json()["deducible_decidido"] is True
+    f = await Factura.get(PydanticObjectId(fid))
+    assert f.deducible is False and f.deducible_decidido is True
+    evs = (
+        await c["compas_test"]["audit_log"]
+        .find({"evento": "factura.actualizada"})
+        .to_list(10)
+    )
+    assert len(evs) == 1  # la decisión se auditó
+
+    r2 = await ac.patch(f"/api/v1/facturas/{fid}", json={"deducible": False}, headers=h)
+    assert r2.status_code == 200
+    evs2 = (
+        await c["compas_test"]["audit_log"]
+        .find({"evento": "factura.actualizada"})
+        .to_list(10)
+    )
+    assert len(evs2) == 1  # sigue en 1: no-op, no re-audita
+
+
+async def test_patch_lote_no_deducible_sobre_sin_decidir_actualiza(api):
+    """El lote que marca 'No' sobre DIAN sin decidir da 'actualizada' (no
+    'sin_cambio'): el resumen real refleja que la decisión se registró."""
+    from app.domain.factura import Factura
+
+    ac, _ = api
+    h = await _token(ac)
+    await _insert_factura("L-1", "persona_juridica")
+    await _insert_factura("L-2", "persona_juridica")
+    ids = [
+        str((await Factura.find_one(Factura.numero == n)).id) for n in ("L-1", "L-2")
+    ]
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": ids, "deducible": False},
+        headers=h,
+    )
+    assert r.status_code == 200
+    assert r.json()["resumen"]["actualizadas"] == 2
+    assert r.json()["resumen"]["sin_cambio"] == 0
 
 
 async def test_crear_factura_duplicada_409(api):

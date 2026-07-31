@@ -112,6 +112,9 @@ def _serializar(
         "iva_valor": money_str(f.iva_valor),
         "total": money_str(f.total),
         "deducible": f.deducible,
+        # 3 estados en la UI: decidido+True=Sí, decidido+False=No, no decidido=Sin
+        # decidir. El §2 cuenta las compras activas con deducible_decidido=False.
+        "deducible_decidido": f.deducible_decidido,
         "activo": f.activo,
         "periodo": _etiqueta_periodo(anio, idx, periodicidad),  # derivado de la fecha
     }

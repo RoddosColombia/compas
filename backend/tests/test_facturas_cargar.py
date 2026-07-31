@@ -229,6 +229,9 @@ async def test_cargar_recibida_crea_factura(api):
     assert f.base_gravable is None
     assert f.archivo_ref is not None and "sha256:" in f.archivo_ref
     assert f.deducible is False  # decisión explícita pendiente (pieza 7)
+    # DIAN no decide la deducibilidad: entra "sin decidir" para el contador del §2
+    # (bool 'deducible' solo no distingue "sin revisar" de "se decidió que NO")
+    assert f.deducible_decidido is False
 
 
 # ── Candado del rename inc→inc_valor: INC>0 NUNCA se guarda en 0.00 ──
@@ -280,6 +283,14 @@ def test_campos_desde_dian_mapea_inc_a_inc_valor():
     campos = ingesta.campos_desde_dian(_dian(), nit_auteco=NIT_AUTECO)
     assert campos["inc_valor"] == Decimal("100.00")
     assert "inc" not in campos  # el campo del Document se llama inc_valor
+
+
+def test_campos_desde_dian_queda_sin_decidir():
+    """DIAN no decide la deducibilidad: deducible_decidido=False para que el §2 cuente
+    las recibidas sin decidir. La decisión la fija el operador (PATCH/manual)."""
+    campos = ingesta.campos_desde_dian(_dian(), nit_auteco=NIT_AUTECO)
+    assert campos["deducible"] is False
+    assert campos["deducible_decidido"] is False
 
 
 def test_campos_desde_dian_total_bruto_no_base_gravable():

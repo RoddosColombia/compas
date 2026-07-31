@@ -113,8 +113,9 @@ def campos_desde_dian(f: FacturaDian, *, nit_auteco: str | None) -> dict:
     a `inc` — pisaría un atributo de beanie.Document. Candado en tests.
     `tarifa_iva=None`: una factura DIAN puede mezclar tarifas (trampa 4 del §2) y
     derivar la tarifa desde iva/base mete redondeos en un dato fiscal (§3.2); el
-    `iva_valor` extraído manda (D-13). `deducible=False`: la decisión es explícita
-    del operador (contador de "recibidas sin marcar deducible" en el listado)."""
+    `iva_valor` extraído manda (D-13). `deducible=False` + `deducible_decidido=False`:
+    la decisión es explícita del operador; el flag deja al §2 contar las recibidas
+    sin decidir (un bool `deducible` solo no distingue "sin revisar" de "es que NO")."""
     if f.tipo == "recibida":
         tercero_nit, tercero_nombre = f.nit_emisor, f.nombre_emisor
         tipo = TipoFactura.compra
@@ -144,6 +145,9 @@ def campos_desde_dian(f: FacturaDian, *, nit_auteco: str | None) -> dict:
         "iva_valor": f.iva,
         "total": f.total_factura,
         "deducible": False,
+        # DIAN no decide: entra "sin decidir" para el contador del §2 (el operador
+        # marca Sí/No después). No confundir con `deducible=False` "ya decidido".
+        "deducible_decidido": False,
         "cufe": f.cufe,
         "tipo_documento": f.tipo_documento,
         "signo": 1,

@@ -76,6 +76,9 @@ async def crear_factura(
         iva_valor=iva_valor,
         total=base_gravable + iva_valor,
         deducible=deducible,
+        # captura manual = el usuario dio el valor explícitamente → ya decidido
+        # (no entra al contador de "sin decidir" del §2, aunque haya elegido "No").
+        deducible_decidido=True,
     )
     try:
         await factura.insert()
@@ -129,14 +132,29 @@ async def actualizar_factura(
         previos["origen"] = factura.origen
         factura.origen = OrigenFactura(origen)
 
-    if deducible is not None and deducible != factura.deducible:
-        if factura.tipo == TipoFactura.venta and deducible:
-            raise FacturasError(
-                "deducible solo aplica a compras; esta factura es de venta", 422
-            )
-        cambios["deducible"] = {"antes": factura.deducible, "despues": deducible}
-        previos["deducible"] = factura.deducible
-        factura.deducible = deducible
+    if deducible is not None:
+        if factura.tipo == TipoFactura.venta:
+            # deducible no aplica a ventas: 'Sí' es error; 'No' es no-op silencioso
+            # (nunca se "decide" la deducibilidad de una venta → no toca decidido).
+            if deducible:
+                raise FacturasError(
+                    "deducible solo aplica a compras; esta factura es de venta", 422
+                )
+        else:
+            # cambia el VALOR → se registra el cambio de valor
+            if deducible != factura.deducible:
+                cambios["deducible"] = {
+                    "antes": factura.deducible,
+                    "despues": deducible,
+                }
+                previos["deducible"] = factura.deducible
+                factura.deducible = deducible
+            # marcar "No" sobre una compra SIN DECIDIR es un cambio real aunque el
+            # bool no varíe: lo que cambia es la DECISIÓN (sin decidir → decidido).
+            if not factura.deducible_decidido:
+                cambios["deducible_decidido"] = {"antes": False, "despues": True}
+                previos["deducible_decidido"] = factura.deducible_decidido
+                factura.deducible_decidido = True
 
     if not cambios:  # los valores enviados ya eran los actuales → no-op sin evento
         return factura, False
