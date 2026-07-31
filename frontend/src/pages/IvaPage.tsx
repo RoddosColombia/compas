@@ -15,6 +15,7 @@ import { useState } from "react";
 import { CargaPanel } from "@/components/iva/CargaPanel";
 import { FacturasTabla } from "@/components/iva/FacturasTabla";
 import { LiquidacionCard } from "@/components/iva/LiquidacionCard";
+import { TitularIva } from "@/components/iva/TitularIva";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -101,11 +102,12 @@ export default function IvaPage() {
         </Card>
       )}
 
-      {!cargando && !hayError && !vacio && (
-        // Piezas 5-6 (titular, qué exige atención) se montan ARRIBA en las próximas
-        // piezas. Orden de razonamiento del §3: liquidación (§3③) → tabla (§4).
+      {!cargando && !hayError && !vacio && liq.data && (
+        // Orden de razonamiento del §3: titular (§3①) → liquidación (§3③) → tabla
+        // (§4). El bloque "qué exige atención" (§2) es la pieza 6, tras el deploy.
         <>
-          {liq.data && <LiquidacionCard liquidacion={liq.data} />}
+          <TitularIva liquidacion={liq.data} facturas={facturas.data ?? []} />
+          <LiquidacionCard liquidacion={liq.data} />
           <FacturasTabla
             facturas={facturas.data ?? []}
             onCambio={refrescarTodo}
