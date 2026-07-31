@@ -76,7 +76,8 @@ function TipoBadge({ tipo }: { tipo: "compra" | "venta" }) {
 }
 
 function DeducibleCelda({ f }: { f: FacturaRow }) {
-  if (f.tipo !== "compra") return <span className="text-ink-decor">·</span>;
+  // deducible solo aplica a compras (§4): en ventas, celda vacía
+  if (f.tipo !== "compra") return null;
   const est = estadoDeducible(f);
   if (est === "si") return <span className="text-ink">Sí</span>;
   if (est === "no") return <span className="text-ink">No</span>;
