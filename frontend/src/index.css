@@ -25,6 +25,12 @@
   --color-atencion: #b45309; /* 4,5:1 — exige atención / cerca del límite (● o !) */
   --color-critico: #b91c1c; /* 5,9:1 — crítico / fuera de rango (▼ o ✗) */
 
+  /* V1.1 ítem 3 — gama de ROJOS para costo y gasto en los gráficos (hace juego con el
+     verde de ingresos). DISTINTA del `critico`, que queda RESERVADO para alertas (R7):
+     costo un rojo pleno, gasto el mismo tono más claro. Nunca se usan como estado. */
+  --color-costo: #d1483f; /* rojo del costo (barras) */
+  --color-gasto: #ef938c; /* rojo suave del gasto (misma gama, más claro) */
+
   /* Neutrales sobre blanco (F1: valores AA — ink-faint es el MÍNIMO para texto;
      el slate-400 histórico queda SOLO decorativo como ink-decor, jamás texto) */
   --color-ink: #0f172a; /* texto principal (slate-900) — 15,9:1 */

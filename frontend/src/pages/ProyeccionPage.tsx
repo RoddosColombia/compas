@@ -28,7 +28,7 @@ import {
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { ScenarioChip } from "@/components/ui/scenario-chip";
 import { obtenerValles } from "@/lib/decisiones";
-import { autecoDeMes } from "@/lib/egreso";
+import { proximoCompromisoAuteco } from "@/lib/egreso";
 import {
   formatCOPCompact,
   formatDelta,
@@ -38,7 +38,6 @@ import {
 import {
   ESCENARIO_LABEL,
   type Escenario,
-  type MesProyeccion,
   type Proyeccion,
   obtenerProyeccion,
 } from "@/lib/proyeccion";
@@ -47,35 +46,12 @@ const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
 // El juicio SIEMPRE mira al menos 60 m aunque la ventana sea corta (patrón F1).
 const HORIZONTE_JUICIO = 60;
 
-/** §4 — el Auteco que sale este mes y el próximo (lote + fondeo). El origen es
- * "registrado" (facturas reales) si AMBOS meses caen en la ventana reconciliada,
- * "proyeccion" si ninguno, o "parcial" si solo uno (QA: no marcar ambos como
- * registrados cuando solo uno lo está). */
-function compromisoAuteco(
-  ventana: MesProyeccion[],
-  ventanaRec: [string, string] | null,
-) {
-  const dos = ventana.slice(0, 2);
-  let monto = autecoDeMes(dos[0]);
-  if (dos[1]) monto = monto.plus(autecoDeMes(dos[1]));
-  const meses = dos.map((m) => m.mes);
-  const enVentana = (mes: string) =>
-    ventanaRec !== null && mes >= ventanaRec[0] && mes <= ventanaRec[1];
-  const reales = meses.filter(enVentana).length;
-  const origen =
-    reales === 0
-      ? "proyeccion"
-      : reales === meses.length
-        ? "registrado"
-        : "parcial";
-  return { monto, meses, origen };
+/** V1.1 ítem 6 — distancia en meses del próximo compromiso, en lenguaje natural. */
+function distanciaTexto(meses: number): string {
+  if (meses <= 0) return "este mes";
+  if (meses === 1) return "el próximo mes";
+  return `en ${meses} meses`;
 }
-
-const ORIGEN_AUTECO: Record<string, string> = {
-  registrado: "facturas registradas",
-  proyeccion: "proyección",
-  parcial: "parte registrada, parte proyectada",
-};
 
 export default function ProyeccionPage() {
   const [escenario, setEscenario] = useState<Escenario>("base");
@@ -185,9 +161,15 @@ function ProyeccionContenido({
     perforada && data.mes_mas_ajustado > ventana[ventana.length - 1].mes;
   const filas = expandida ? data.meses : ventana;
 
-  // KPI "Compromiso Auteco" (§4): lote + fondeo que sale este mes y el próximo.
-  const auteco = compromisoAuteco(ventana, data.ventana_reconciliada);
-  const autecoEnValle = auteco.meses.some((m) => vallesMeses.includes(m));
+  // KPI "Compromiso Auteco" (V1.1 ítem 6): el PRÓXIMO compromiso (mes, monto,
+  // distancia) en TODO el horizonte — no la suma de dos meses que daba "$0" cuando
+  // ambos eran paramétricos. Busca en data.meses (completo), no solo en la ventana.
+  const compromiso = proximoCompromisoAuteco(
+    data.meses,
+    data.ventana_reconciliada,
+  );
+  const autecoEnValle =
+    compromiso !== null && vallesMeses.includes(compromiso.mes);
 
   return (
     <>
@@ -239,15 +221,25 @@ function ProyeccionContenido({
             tono="atencion"
           />
         )}
-        {/* §4 — Compromiso Auteco: lo que sale este mes y el próximo (lote + fondeo) */}
-        <KpiTileV2
-          label="Compromiso Auteco"
-          valor={auteco.monto}
-          contexto={`Lote + fondeo de ${auteco.meses
-            .map(formatMesCorto)
-            .join(" y ")} · ${ORIGEN_AUTECO[auteco.origen]}`}
-          tono={autecoEnValle ? "atencion" : "neutro"}
-        />
+        {/* V1.1 ítem 6 — Próximo compromiso Auteco: mes, monto y meses de distancia */}
+        {compromiso === null ? (
+          <KpiTileV2
+            label="Compromiso Auteco"
+            valor="0"
+            valorTexto="Sin compromisos"
+            contexto="ninguno en el horizonte proyectado"
+            tono="positivo"
+          />
+        ) : (
+          <KpiTileV2
+            label="Próximo compromiso Auteco"
+            valor={compromiso.monto}
+            contexto={`${formatMesCorto(compromiso.mes)} · ${distanciaTexto(
+              compromiso.mesesDistancia,
+            )} · lote + fondeo · ${compromiso.real ? "factura registrada" : "proyección"}`}
+            tono={autecoEnValle ? "atencion" : "neutro"}
+          />
+        )}
       </div>
 
       {/* Protagonista: la curva anotada en la ventana */}
