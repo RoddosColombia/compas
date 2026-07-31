@@ -64,6 +64,29 @@ describe("TablaEgreso — V1 §3", () => {
     }
   });
 
+  it("discrimina ingreso y costo en COLUMNAS a la vista (V1.2 B)", () => {
+    renderTabla();
+    for (const h of [
+      "Cuota inicial",
+      "Cuotas semanales",
+      "Activación",
+      "Auteco",
+    ]) {
+      expect(screen.getByRole("columnheader", { name: h })).toBeInTheDocument();
+    }
+    // valores a la vista SIN expandir: recaudo semanal 30M y Auteco del reconciliado
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 30.000.000")
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 185.760.000")
+        .length,
+    ).toBeGreaterThan(0);
+    // "Motos" se quitó por ancho (se priorizan las columnas discriminadas)
+    expect(screen.queryByRole("columnheader", { name: "Motos" })).toBeNull();
+  });
+
   it("cierra con una fila de totales (Σ ingreso de la ventana)", () => {
     renderTabla();
     expect(screen.getByText("Totales")).toBeInTheDocument();
@@ -74,19 +97,20 @@ describe("TablaEgreso — V1 §3", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("expande el desglose al clic y marca el lote Auteco proyectado", () => {
+  it("expande el desglose: solo lo NO promovido (Auteco lote/fondeo + gasto)", () => {
     renderTabla();
-    // el desglose no está antes de expandir
-    expect(screen.queryByText("Recaudo crédito")).toBeNull();
+    // ingreso ya está en columnas → NO se repite en el expandible
+    expect(screen.queryByText("Fondeo del plazo (interés)")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /oct-26/ }));
-    expect(screen.getByText("Recaudo crédito")).toBeInTheDocument();
+    expect(screen.getByText("Fondeo del plazo (interés)")).toBeInTheDocument();
+    expect(screen.getByText("Gastos fijos")).toBeInTheDocument();
     // 2026-10 no está en la ventana reconciliada → proyectado
-    expect(screen.getByText(/Lote Auteco · proyectado/)).toBeInTheDocument();
+    expect(screen.getByText(/Lote · proyectado/)).toBeInTheDocument();
   });
 
   it("marca el lote Auteco REAL dentro de la ventana reconciliada", () => {
     renderTabla();
     fireEvent.click(screen.getByRole("button", { name: /ene-27/ }));
-    expect(screen.getByText(/Lote Auteco · real/)).toBeInTheDocument();
+    expect(screen.getByText(/Lote · real/)).toBeInTheDocument();
   });
 });
