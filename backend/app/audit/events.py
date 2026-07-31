@@ -94,6 +94,10 @@ class AuditEvento(StrEnum):
     # (par de `factura.creada`, ya en v1.0). `factura_emitida.anulada` es SOLO para la
     # emisión de ventas; esta cubre compras+ventas cargadas al liquidador (45 -> 46).
     factura_anulada = "factura.anulada"
+    # CR-E2-EDITAR (PR2): edición de los campos NO fiscales de una factura de IVA
+    # (deducible/origen) vía PATCH. Marcar deducibilidad cambia el IVA a pagar -> autor
+    # obligatorio (R3). Un evento por factura tocada; metadata sin PII. Catálogo 58->59.
+    factura_actualizada = "factura.actualizada"
     # Aging SISMO-V3: carga del LoanTape semanal (snapshot por crédito) para mora por
     # tramo + proyección crédito a crédito (46 -> 47).
     loantape_cargado = "loantape.cargado"

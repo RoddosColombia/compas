@@ -84,6 +84,13 @@ class Factura(Document):
     # = base_gravable + impuestos (se reutiliza; no se agrega total_factura)
     total: Money
     deducible: bool = False  # solo compras: si su IVA es descontable
+    # ¿Ya se DECIDIÓ la deducibilidad? Sin este flag, `deducible=False` no distingue
+    # "nadie la ha revisado" de "se decidió que NO es deducible" — y el §2 necesita
+    # CONTAR las compras sin decidir para advertir antes de dar la cifra de IVA. La
+    # ingesta DIAN entra en False (el operador decide); la captura manual y el PATCH
+    # lo ponen en True. `liquidar()` NO lo mira: sigue leyendo `deducible` (un False
+    # sin decidir se trata como no descontable — conservador, cero cambio en cifras).
+    deducible_decidido: bool = False
     activo: bool = True  # baja lógica (anulación)
 
     # ── E2: campos de la Representación Gráfica DIAN ──

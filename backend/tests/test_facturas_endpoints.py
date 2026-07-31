@@ -126,6 +126,283 @@ async def test_crear_factura_consulta_es_403(api):
     assert r.status_code == 403
 
 
+# ── PASO 1 (CR-E2-EDITAR): PATCH /facturas/{id} {deducible?, origen?} ──
+async def _crear(ac, h, **kw) -> str:
+    r = await ac.post("/api/v1/facturas", json=_compra(**kw), headers=h)
+    assert r.status_code == 201
+    return r.json()["id"]
+
+
+async def test_patch_marca_deducible_y_audita(api):
+    ac, c = api
+    h = await _token(ac)
+    fid = await _crear(ac, h, deducible=False)
+    r = await ac.patch(f"/api/v1/facturas/{fid}", json={"deducible": True}, headers=h)
+    assert r.status_code == 200
+    assert r.json()["deducible"] is True
+    eventos = (
+        await c["compas_test"]["audit_log"]
+        .find({"evento": "factura.actualizada"})
+        .to_list(10)
+    )
+    assert len(eventos) == 1
+    # sin PII en la metadata (Ley 1581): ni nombre ni NIT del tercero
+    meta = eventos[0]["metadata"]
+    assert meta["deducible"] == {"antes": False, "despues": True}
+    assert "tercero_nit" not in meta and "tercero_nombre" not in meta
+
+
+async def test_patch_reclasifica_origen(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h, origen="sin_clasificar")
+    r = await ac.patch(
+        f"/api/v1/facturas/{fid}", json={"origen": "repuesto"}, headers=h
+    )
+    assert r.status_code == 200
+    assert r.json()["origen"] == "repuesto"
+
+
+async def test_patch_deducible_en_venta_es_422(api):
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(
+        "/api/v1/facturas",
+        json={
+            "tipo": "venta",
+            "origen": "moto",
+            "numero": "FV-1",
+            "tercero_nombre": "Cliente",
+            "tercero_nit": "79",
+            "fecha": "2026-02-01",
+            "base_gravable": "1000000",
+            "tarifa_iva": "0.19",
+            "deducible": False,
+        },
+        headers=h,
+    )
+    fid = r.json()["id"]
+    rp = await ac.patch(f"/api/v1/facturas/{fid}", json={"deducible": True}, headers=h)
+    assert rp.status_code == 422
+    assert "venta" in rp.json()["detail"].lower()
+
+
+async def test_patch_rechaza_campos_fiscales(api):
+    """La factura es inmutable en lo fiscal: solo deducible/origen. Un intento de
+    tocar un monto (o fecha/tipo) → 422 (body strict, extra=forbid)."""
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h)
+    for payload in (
+        {"iva_valor": "999.00"},
+        {"base_gravable": "999.00"},
+        {"fecha": "2026-01-01"},
+        {"tipo": "venta"},
+        {"total": "1.00"},
+    ):
+        rp = await ac.patch(f"/api/v1/facturas/{fid}", json=payload, headers=h)
+        assert rp.status_code == 422, payload
+
+
+async def test_patch_sin_cambios_es_422(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h)
+    rp = await ac.patch(f"/api/v1/facturas/{fid}", json={}, headers=h)
+    assert rp.status_code == 422
+
+
+async def test_patch_consulta_es_403(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h)
+    rp = await ac.patch(
+        f"/api/v1/facturas/{fid}",
+        json={"deducible": True},
+        headers=await _token(ac, "consulta@roddos.com"),
+    )
+    assert rp.status_code == 403
+
+
+# ── PASO 1b: PATCH /facturas/deducibilidad — lote, tolerante a fallos parciales ──
+async def test_patch_lote_marca_varias(api):
+    ac, _ = api
+    h = await _token(ac)
+    ids = [
+        await _crear(ac, h, numero=f"FC-{i}", tercero_nit="900", deducible=False)
+        for i in range(3)
+    ]
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": ids, "deducible": True},
+        headers=h,
+    )
+    assert r.status_code == 200
+    res = r.json()["resultados"]
+    assert all(x["estado"] == "actualizada" for x in res)
+    assert r.json()["resumen"]["actualizadas"] == 3
+
+
+async def test_patch_lote_venta_erra_solo_esa(api):
+    ac, _ = api
+    h = await _token(ac)
+    compra = await _crear(ac, h, numero="C-1", tercero_nit="900", deducible=False)
+    rv = await ac.post(
+        "/api/v1/facturas",
+        json={
+            "tipo": "venta",
+            "origen": "moto",
+            "numero": "V-1",
+            "tercero_nombre": "Cliente",
+            "tercero_nit": "79",
+            "fecha": "2026-02-01",
+            "base_gravable": "1000000",
+            "tarifa_iva": "0.19",
+            "deducible": False,
+        },
+        headers=h,
+    )
+    venta = rv.json()["id"]
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": [compra, venta], "deducible": True},
+        headers=h,
+    )
+    res = {x["id"]: x for x in r.json()["resultados"]}
+    assert res[compra]["estado"] == "actualizada"
+    assert res[venta]["estado"] == "error"
+    assert "venta" in res[venta]["motivo"].lower()
+
+
+async def test_patch_lote_fail_closed_por_factura(api, monkeypatch):
+    """El emit del evento de UNA factura falla → SOLO esa se revierte y sale con
+    error; las demás siguen (refinamiento CEO)."""
+    ac, _ = api
+    h = await _token(ac)
+    bomba = await _crear(ac, h, numero="BOMBA", tercero_nit="900", deducible=False)
+    buena = await _crear(ac, h, numero="BUENA", tercero_nit="900", deducible=False)
+
+    from app.facturas import service as svc
+
+    real_emit = svc.emit_audit
+
+    async def emit_selectivo(evento, **kw):
+        if kw.get("metadata", {}).get("numero") == "BOMBA":
+            raise RuntimeError("audit caído para BOMBA")
+        return await real_emit(evento, **kw)
+
+    monkeypatch.setattr(svc, "emit_audit", emit_selectivo)
+
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": [bomba, buena], "deducible": True},
+        headers=h,
+    )
+    res = {x["id"]: x for x in r.json()["resultados"]}
+    assert res[bomba]["estado"] == "error"
+    assert res[buena]["estado"] == "actualizada"
+    # la bomba quedó revertida (deducible sigue False), la buena sí cambió
+    from app.domain.factura import Factura
+    from beanie import PydanticObjectId
+
+    assert (await Factura.get(PydanticObjectId(bomba))).deducible is False
+    assert (await Factura.get(PydanticObjectId(buena))).deducible is True
+
+
+async def test_patch_lote_id_desconocido_erra_solo_ese(api):
+    ac, _ = api
+    h = await _token(ac)
+    ok = await _crear(ac, h, numero="OK-1", tercero_nit="900", deducible=False)
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": [ok, "deadbeef"], "deducible": True},
+        headers=h,
+    )
+    res = {x["id"]: x for x in r.json()["resultados"]}
+    assert res[ok]["estado"] == "actualizada"
+    assert res["deadbeef"]["estado"] == "error"
+
+
+async def test_patch_lote_consulta_403(api):
+    ac, _ = api
+    h = await _token(ac)
+    fid = await _crear(ac, h)
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": [fid], "deducible": True},
+        headers=await _token(ac, "consulta@roddos.com"),
+    )
+    assert r.status_code == 403
+
+
+# ── deducible_decidido: 3 estados (Sí / No / Sin decidir) para el §2 ──
+async def test_serializador_expone_deducible_decidido(api):
+    """El listado expone el flag para que el cliente distinga los 3 estados de la
+    columna y cuente las recibidas sin decidir (§2). Manual → decidido True."""
+    ac, _ = api
+    h = await _token(ac)
+    await ac.post("/api/v1/facturas", json=_compra(), headers=h)
+    r = await ac.get("/api/v1/facturas", headers=h)
+    assert r.json()[0]["deducible_decidido"] is True
+
+
+async def test_patch_no_deducible_sobre_sin_decidir_es_cambio(api):
+    """Marcar 'No es deducible' sobre una factura DIAN sin decidir (deducible=False,
+    decidido=False) ES un cambio real: registra la decisión aunque el bool no varíe.
+    Segunda vez idéntica → no-op, no vuelve a auditar."""
+    from app.domain.factura import Factura
+    from beanie import PydanticObjectId
+
+    ac, c = api
+    h = await _token(ac)
+    await _insert_factura("D-1", "persona_juridica")  # DIAN: decidido=False
+    fid = str((await Factura.find_one(Factura.numero == "D-1")).id)
+
+    r = await ac.patch(f"/api/v1/facturas/{fid}", json={"deducible": False}, headers=h)
+    assert r.status_code == 200
+    assert r.json()["deducible"] is False
+    assert r.json()["deducible_decidido"] is True
+    f = await Factura.get(PydanticObjectId(fid))
+    assert f.deducible is False and f.deducible_decidido is True
+    evs = (
+        await c["compas_test"]["audit_log"]
+        .find({"evento": "factura.actualizada"})
+        .to_list(10)
+    )
+    assert len(evs) == 1  # la decisión se auditó
+
+    r2 = await ac.patch(f"/api/v1/facturas/{fid}", json={"deducible": False}, headers=h)
+    assert r2.status_code == 200
+    evs2 = (
+        await c["compas_test"]["audit_log"]
+        .find({"evento": "factura.actualizada"})
+        .to_list(10)
+    )
+    assert len(evs2) == 1  # sigue en 1: no-op, no re-audita
+
+
+async def test_patch_lote_no_deducible_sobre_sin_decidir_actualiza(api):
+    """El lote que marca 'No' sobre DIAN sin decidir da 'actualizada' (no
+    'sin_cambio'): el resumen real refleja que la decisión se registró."""
+    from app.domain.factura import Factura
+
+    ac, _ = api
+    h = await _token(ac)
+    await _insert_factura("L-1", "persona_juridica")
+    await _insert_factura("L-2", "persona_juridica")
+    ids = [
+        str((await Factura.find_one(Factura.numero == n)).id) for n in ("L-1", "L-2")
+    ]
+    r = await ac.patch(
+        "/api/v1/facturas/deducibilidad",
+        json={"ids": ids, "deducible": False},
+        headers=h,
+    )
+    assert r.status_code == 200
+    assert r.json()["resumen"]["actualizadas"] == 2
+    assert r.json()["resumen"]["sin_cambio"] == 0
+
+
 async def test_crear_factura_duplicada_409(api):
     ac, _ = api
     h = await _token(ac)
@@ -323,6 +600,43 @@ async def test_a10_ejemplo_aritmetico_spec_6_end_to_end(api):
     # la NO deducible SÍ está registrada (excluida del descontable, no del registro)
     rl = await ac.get("/api/v1/facturas?activo=true", headers=h)
     assert any(f["numero"] == "R-4" for f in rl.json())
+
+
+# ── PASO 1c: proximo_pago {fecha, dias} en /liquidacion desde CALENDARIO_DIAN ──
+async def test_liquidacion_incluye_proximo_pago_dian(api):
+    from datetime import date
+
+    from app.core.time import today_bogota
+    from app.domain.configuracion import Configuracion
+
+    ac, _ = api
+    h = await _token(ac)
+    await Configuracion(
+        clave="CALENDARIO_DIAN",
+        valor_json={
+            "2026": {
+                "ene_abr": "2026-05-13",
+                "may_ago": "2026-09-10",
+                "sep_dic": "2027-01-14",
+            }
+        },
+        vigente_desde="2026-01-01",
+    ).insert()
+    await _crear(ac, h, numero="C2f", fecha="2026-06-15", deducible=True)  # C2
+    r = await ac.get("/api/v1/facturas/liquidacion", headers=h)
+    per = {p["etiqueta"]: p for p in r.json()["periodos"]}
+    pp = per["2026-C2"]["proximo_pago"]
+    assert pp["fecha"] == "2026-09-10"
+    assert pp["dias"] == (date(2026, 9, 10) - today_bogota()).days
+
+
+async def test_liquidacion_proximo_pago_null_sin_calendario(api):
+    """Sin fecha en CALENDARIO_DIAN → null, NO se inventa una fecha (R5)."""
+    ac, _ = api
+    h = await _token(ac)
+    await _crear(ac, h, numero="C1f", fecha="2026-02-10", deducible=True)  # C1
+    r = await ac.get("/api/v1/facturas/liquidacion", headers=h)
+    assert r.json()["periodos"][0]["proximo_pago"] is None
 
 
 async def test_liquidacion_cuatrimestral(api):

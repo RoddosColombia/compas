@@ -54,6 +54,16 @@ async def test_crear_factura_calcula_iva_y_total_y_emite_evento(db):
     assert doc is not None
 
 
+async def test_crear_factura_manual_queda_decidido(db):
+    """Captura manual = el usuario dio el valor explícitamente → deducible_decidido
+    True (no entra al contador de 'sin decidir' del §2), incluso si eligió 'No'."""
+    from app.facturas import service
+
+    f = await service.crear_factura(usuario_id="u1", **_compra(deducible=False))
+    assert f.deducible is False
+    assert f.deducible_decidido is True
+
+
 async def test_crear_factura_venta_calcula_iva(db):
     from app.facturas import service
 

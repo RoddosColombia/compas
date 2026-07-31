@@ -9,6 +9,11 @@ import { apiJson } from "@/lib/api";
 
 export type Periodicidad = "cuatrimestral" | "bimestral";
 
+export interface ProximoPago {
+  fecha: string; // 'YYYY-MM-DD' del calendario DIAN
+  dias: number; // días desde hoy (Bogotá); puede ser negativo si ya pasó
+}
+
 export interface PeriodoIva {
   anio: number;
   periodo: number; // índice del período (1..3 cuatrimestral | 1..6 bimestral)
@@ -19,6 +24,8 @@ export interface PeriodoIva {
   saldo_favor_previo: string;
   neto_a_pagar: string;
   saldo_favor_nuevo: string;
+  // null cuando no hay fecha en CALENDARIO_DIAN → la UI omite la línea (R5)
+  proximo_pago: ProximoPago | null;
 }
 
 export interface LiquidacionIva {

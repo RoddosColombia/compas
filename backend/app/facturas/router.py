@@ -8,6 +8,7 @@ Decimal antes de construir la factura; la respuesta los serializa con `money_str
 Idempotency-Key: no es un movimiento de dinero; el índice único (tercero_nit, numero)
 hace inocuo el replay (→ 409). La liquidación se calcula en el backend."""
 
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from beanie import PydanticObjectId
@@ -19,6 +20,7 @@ from app.auth.models import User
 from app.auth.permissions import has_permission
 from app.auth.router import verify_origin
 from app.core.money import money_str
+from app.core.time import today_bogota
 from app.domain.factura import (
     TARIFAS_IVA_VALIDAS,
     Factura,
@@ -27,7 +29,7 @@ from app.domain.factura import (
 )
 from app.facturas import ingesta, service
 from app.facturas.extraccion import PERSONA_JURIDICA
-from app.iva.liquidacion import Periodicidad, liquidar, periodo_de
+from app.iva.liquidacion import Periodicidad, clave_dian, liquidar, periodo_de
 
 router = APIRouter(prefix="/facturas", tags=["facturas"])
 
@@ -53,10 +55,32 @@ class FacturaCrearBody(BaseModel):
     deducible: bool = False
 
 
+class FacturaEditarBody(BaseModel):
+    # CR-E2-EDITAR: SOLO los campos no fiscales. `extra=forbid` → un intento de tocar
+    # un monto/fecha/tipo (factura inmutable en lo fiscal) responde 422.
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    deducible: bool | None = None
+    origen: str | None = None
+
+
 def _etiqueta_periodo(anio: int, idx: int, periodicidad: Periodicidad) -> str:
     # 'C' cuatrimestral (2026-C1) · 'B' bimestral (2026-B1)
     prefijo = "C" if periodicidad == Periodicidad.cuatrimestral else "B"
     return f"{anio}-{prefijo}{idx}"
+
+
+def _proximo_pago(
+    anio: int, idx: int, periodicidad: Periodicidad, calendario: dict
+) -> dict | None:
+    """Fecha DIAN del período (de `CALENDARIO_DIAN`) + días desde hoy (Bogotá). Sin
+    fecha en el calendario → None: la UI omite la línea, no se inventa (R5, §3③)."""
+    anio_cal = calendario.get(str(anio))
+    fecha = anio_cal.get(clave_dian(idx, periodicidad)) if anio_cal else None
+    if not fecha:
+        return None
+    y, m, d = (int(x) for x in fecha.split("-"))
+    return {"fecha": fecha, "dias": (date(y, m, d) - today_bogota()).days}
 
 
 def _serializar(
@@ -88,6 +112,9 @@ def _serializar(
         "iva_valor": money_str(f.iva_valor),
         "total": money_str(f.total),
         "deducible": f.deducible,
+        # 3 estados en la UI: decidido+True=Sí, decidido+False=No, no decidido=Sin
+        # decidir. El §2 cuenta las compras activas con deducible_decidido=False.
+        "deducible_decidido": f.deducible_decidido,
         "activo": f.activo,
         "periodo": _etiqueta_periodo(anio, idx, periodicidad),  # derivado de la fecha
     }
@@ -111,6 +138,7 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
     como string (regla 1)."""
     periodicidad = await service.obtener_periodicidad()
     items = await service.obtener_facturas_iva()
+    calendario = await service.obtener_calendario_dian()
     return {
         "periodicidad": periodicidad.value,
         "periodos": [
@@ -124,6 +152,9 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
                 "saldo_favor_previo": money_str(c.saldo_favor_previo),
                 "neto_a_pagar": money_str(c.neto_a_pagar),
                 "saldo_favor_nuevo": money_str(c.saldo_favor_nuevo),
+                "proximo_pago": _proximo_pago(
+                    c.anio, c.periodo, periodicidad, calendario
+                ),
             }
             for c in liquidar(items, periodicidad)
         ],
@@ -200,6 +231,60 @@ async def crear(
             base_gravable=_dec(body.base_gravable, "base_gravable"),
             tarifa_iva=tarifa,
             deducible=body.deducible,
+        )
+    except service.FacturasError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _serializar(factura, await service.obtener_periodicidad())
+
+
+class DeducibilidadLoteBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    ids: list[str] = Field(min_length=1, max_length=500)
+    deducible: bool
+
+
+@router.patch("/deducibilidad")
+async def marcar_deducibilidad_lote(
+    body: DeducibilidadLoteBody,
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """Marca la deducibilidad de un LOTE (spec de diseño §4). Resultado POR ID,
+    tolerante a fallos parciales y fail-closed por factura. Va ANTES de PATCH
+    /{factura_id} para que el literal no caiga en el path param."""
+    resultados = await service.actualizar_deducibilidad_lote(
+        ids=body.ids, deducible=body.deducible, usuario_id=user.id
+    )
+    resumen = {"actualizadas": 0, "sin_cambio": 0, "errores": 0}
+    _clave = {
+        "actualizada": "actualizadas",
+        "sin_cambio": "sin_cambio",
+        "error": "errores",
+    }
+    for r in resultados:
+        resumen[_clave[r["estado"]]] += 1
+    return {"resultados": resultados, "resumen": resumen}
+
+
+@router.patch("/{factura_id}")
+async def editar(
+    factura_id: str,
+    body: FacturaEditarBody,
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """CR-E2-EDITAR: edita SOLO deducible/origen (la factura es inmutable en lo
+    fiscal). `origen` se valida contra el enum; `deducible` en venta → 422. Emite
+    `factura.actualizada` con autor."""
+    if body.origen is not None and body.origen not in OrigenFactura._value2member_map_:
+        raise HTTPException(422, f"origen inválido: {body.origen}")
+    try:
+        factura, _ = await service.actualizar_factura(
+            factura_id=factura_id,
+            usuario_id=user.id,
+            deducible=body.deducible,
+            origen=body.origen,
         )
     except service.FacturasError as e:
         raise HTTPException(e.status, e.detalle) from e
