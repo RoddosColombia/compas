@@ -50,8 +50,11 @@ class FacturaCrearBody(BaseModel):
     tercero_nombre: str = Field(min_length=1, max_length=200)
     tercero_nit: str = Field(min_length=1, max_length=30)
     fecha: str
-    base_gravable: str
-    tarifa_iva: str
+    # Pieza 2 (D-13): si viene `iva_valor`, MANDA y base/tarifa quedan opcionales
+    # (misma precedencia que la ruta DIAN). Sin él, base+tarifa son obligatorias.
+    base_gravable: str | None = None
+    tarifa_iva: str | None = None
+    iva_valor: str | None = None
     deducible: bool = False
 
 
@@ -212,8 +215,17 @@ async def crear(
         raise HTTPException(422, f"tipo inválido: {body.tipo}")
     if body.origen not in OrigenFactura._value2member_map_:
         raise HTTPException(422, f"origen inválido: {body.origen}")
-    tarifa = _dec(body.tarifa_iva, "tarifa_iva")
-    if tarifa not in TARIFAS_IVA_VALIDAS:
+
+    iva_valor = _dec(body.iva_valor, "iva_valor") if body.iva_valor else None
+    base = _dec(body.base_gravable, "base_gravable") if body.base_gravable else None
+    tarifa = _dec(body.tarifa_iva, "tarifa_iva") if body.tarifa_iva else None
+    if iva_valor is None:
+        # captura manual clásica: base + tarifa obligatorias (tarifa endurecida)
+        if base is None or tarifa is None:
+            raise HTTPException(
+                422, "sin iva_valor, base_gravable y tarifa_iva son obligatorias"
+            )
+    if tarifa is not None and tarifa not in TARIFAS_IVA_VALIDAS:
         raise HTTPException(
             422,
             f"tarifa_iva inválida: {body.tarifa_iva}. Tarifas IVA legales en "
@@ -228,9 +240,38 @@ async def crear(
             tercero_nombre=body.tercero_nombre,
             tercero_nit=body.tercero_nit,
             fecha=body.fecha,
-            base_gravable=_dec(body.base_gravable, "base_gravable"),
+            base_gravable=base,
             tarifa_iva=tarifa,
+            iva_valor=iva_valor,
             deducible=body.deducible,
+        )
+    except service.FacturasError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _serializar(factura, await service.obtener_periodicidad())
+
+
+class IvaGeneradoBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    mes: str  # 'YYYY-MM' del mes vencido
+    iva_valor: str  # monto COP como string (regla 1)
+
+
+@router.post("/iva-generado", status_code=201)
+async def registrar_iva_generado(
+    body: IvaGeneradoBody,
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """Pieza 2 (decisión CEO): registra el IVA generado de un mes vencido (captura
+    manual AGREGADA). Crea la venta `VENTAS-YYYY-MM` a nombre de RODDOS (NIT de
+    Configuracion). El monto del IVA MANDA (D-13); no se inventa base. Dedup por
+    (NIT, numero) → 409. Reusa `factura.creada` (sin evento nuevo)."""
+    try:
+        factura = await service.registrar_iva_generado(
+            usuario_id=user.id,
+            mes=body.mes,
+            iva_valor=_dec(body.iva_valor, "iva_valor"),
         )
     except service.FacturasError as e:
         raise HTTPException(e.status, e.detalle) from e

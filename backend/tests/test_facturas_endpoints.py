@@ -126,6 +126,69 @@ async def test_crear_factura_consulta_es_403(api):
     assert r.status_code == 403
 
 
+# ── Pieza 2: captura manual acepta iva_valor directo (D-13), base/tarifa opcionales ──
+async def test_crear_factura_iva_valor_directo_sin_base(api):
+    """POST /facturas con iva_valor y SIN base/tarifa → 201: el IVA manda, tarifa
+    queda null (misma precedencia que la ruta DIAN)."""
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(
+        "/api/v1/facturas",
+        json={
+            "tipo": "venta",
+            "origen": "otro",
+            "numero": "IVA-DIR-1",
+            "tercero_nombre": "RODDOS",
+            "tercero_nit": "901012622",
+            "fecha": "2026-07-01",
+            "iva_valor": "8000000",
+        },
+        headers=h,
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["iva_valor"] == "8000000.00"
+    assert data["tarifa_iva"] is None
+    assert data["base_gravable"] is None
+
+
+# ── Pieza 2: POST /facturas/iva-generado {mes, iva_valor} → venta VENTAS-YYYY-MM ──
+async def test_iva_generado_endpoint_crea_venta_y_suma_al_periodo(api):
+    from app.domain.configuracion import Configuracion
+
+    ac, _ = api
+    h = await _token(ac)
+    await Configuracion(
+        clave="NIT_RODDOS",
+        valor_json={"nit": "901012622"},
+        vigente_desde="2026-01-01",
+    ).insert()
+    r = await ac.post(
+        "/api/v1/facturas/iva-generado",
+        json={"mes": "2026-07", "iva_valor": "8000000"},
+        headers=h,
+    )
+    assert r.status_code == 201
+    assert r.json()["numero"] == "VENTAS-2026-07"
+    assert r.json()["tipo"] == "venta"
+    assert r.json()["periodo"] == "2026-C2"
+
+    rl = await ac.get("/api/v1/facturas/liquidacion", headers=h)
+    per = {p["etiqueta"]: p for p in rl.json()["periodos"]}
+    assert per["2026-C2"]["generado"] == "8000000.00"
+
+
+async def test_iva_generado_endpoint_consulta_es_403(api):
+    ac, _ = api
+    h = await _token(ac, "consulta@roddos.com")
+    r = await ac.post(
+        "/api/v1/facturas/iva-generado",
+        json={"mes": "2026-07", "iva_valor": "8000000"},
+        headers=h,
+    )
+    assert r.status_code == 403
+
+
 # ── PASO 1 (CR-E2-EDITAR): PATCH /facturas/{id} {deducible?, origen?} ──
 async def _crear(ac, h, **kw) -> str:
     r = await ac.post("/api/v1/facturas", json=_compra(**kw), headers=h)

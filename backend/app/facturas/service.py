@@ -8,6 +8,7 @@ falla, COMPENSAR). El IVA se calcula AQUÍ (regla 1): `iva_valor = base × tarif
 `total = base + iva_valor`. `obtener_facturas_iva()` proyecta las facturas ACTIVAS a
 `FacturaIva` para el liquidador (puente C11↔liquidación)."""
 
+import re
 from decimal import Decimal
 
 from beanie import PydanticObjectId
@@ -18,6 +19,8 @@ from app.audit.service import emit_audit
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.factura import Factura, OrigenFactura, TipoFactura
 from app.iva.liquidacion import FacturaIva, Periodicidad, iva_desde_base
+
+_MES = re.compile(r"^\d{4}-\d{2}$")
 
 
 class FacturasError(Exception):
@@ -47,12 +50,17 @@ async def crear_factura(
     tercero_nombre: str,
     tercero_nit: str,
     fecha: str,
-    base_gravable: Decimal,
-    tarifa_iva: Decimal,
+    base_gravable: Decimal | None = None,
+    tarifa_iva: Decimal | None = None,
+    iva_valor: Decimal | None = None,
     deducible: bool = False,
 ) -> Factura:
     """Crea la factura calculando IVA y total en el backend (regla 1). Emite
-    `factura.creada` (fail-closed). Duplicado (tercero_nit, numero) → 409."""
+    `factura.creada` (fail-closed). Duplicado (tercero_nit, numero) → 409.
+
+    Precedencia del IVA (D-13 / pieza 2): si viene `iva_valor` directo, MANDA y
+    base/tarifa quedan opcionales (no se inventa una base — captura agregada del IVA
+    generado del mes). Sin él, se exige base+tarifa y el IVA = base × tarifa."""
     if (
         await Factura.find_one(
             Factura.tercero_nit == tercero_nit, Factura.numero == numero
@@ -63,7 +71,18 @@ async def crear_factura(
             f"ya existe la factura '{numero}' del NIT {tercero_nit}", 409
         )
 
-    iva_valor = iva_desde_base(base_gravable, tarifa_iva)
+    if iva_valor is not None:
+        # el IVA dado manda; total = base + IVA si hay base, si no el único monto
+        # conocido es el propio IVA (no se fabrica una base ni un total, R5)
+        iva = iva_valor
+        total = (base_gravable + iva) if base_gravable is not None else iva
+    else:
+        if base_gravable is None or tarifa_iva is None:
+            raise FacturasError(
+                "sin iva_valor, base_gravable y tarifa_iva son obligatorias", 422
+            )
+        iva = iva_desde_base(base_gravable, tarifa_iva)
+        total = base_gravable + iva
     factura = Factura(
         tipo=TipoFactura(tipo),
         origen=OrigenFactura(origen),
@@ -73,8 +92,8 @@ async def crear_factura(
         fecha=fecha,
         base_gravable=base_gravable,
         tarifa_iva=tarifa_iva,
-        iva_valor=iva_valor,
-        total=base_gravable + iva_valor,
+        iva_valor=iva,
+        total=total,
         deducible=deducible,
         # captura manual = el usuario dio el valor explícitamente → ya decidido
         # (no entra al contador de "sin decidir" del §2, aunque haya elegido "No").
@@ -97,13 +116,59 @@ async def crear_factura(
                 "tipo": tipo,
                 "numero": numero,
                 "tercero_nit": tercero_nit,
-                "iva_valor": str(iva_valor),
+                "iva_valor": str(iva),
             },
         )
     except Exception:
         await factura.delete()  # saga O1: sin rastro no hay alta → compensar
         raise
     return factura
+
+
+async def _nit_roddos() -> str | None:
+    """NIT propio de RODDOS (clave NIT_RODDOS, última vigencia). Ausente → None. El NIT
+    vive en Configuracion, jamás hardcodeado."""
+    cfg = (
+        await Configuracion.find(Configuracion.clave == ClaveConfig.NIT_RODDOS)
+        .sort(-Configuracion.vigente_desde)
+        .limit(1)
+        .to_list()
+    )
+    if cfg and cfg[0].valor_json:
+        nit = cfg[0].valor_json.get("nit")
+        return str(nit) if nit else None
+    return None
+
+
+async def registrar_iva_generado(
+    *, usuario_id: str, mes: str, iva_valor: Decimal
+) -> Factura:
+    """Pieza 2 (decisión CEO): captura MANUAL AGREGADA del IVA generado de un mes
+    vencido. Arma una venta sintética `VENTAS-YYYY-MM` a nombre de RODDOS con solo el
+    IVA del mes (D-13: el IVA se lee, no se calcula; no se inventa una base). El índice
+    único (tercero_nit, numero) impide cargarla dos veces (→ 409). Aparece en el
+    generado del período de `mes`."""
+    if not _MES.match(mes):
+        raise FacturasError("mes debe ser 'YYYY-MM'", 422)
+    if iva_valor <= 0:
+        raise FacturasError("el IVA generado debe ser mayor que cero", 422)
+    nit = await _nit_roddos()
+    if not nit:
+        raise FacturasError(
+            "NIT_RODDOS no está en Configuracion: no se puede registrar el IVA "
+            "generado a nombre de RODDOS. Corra la migración 20260728_e2_facturas_iva.",
+            409,
+        )
+    return await crear_factura(
+        usuario_id=usuario_id,
+        tipo="venta",
+        origen="otro",  # agregado del mes: no es una venta de moto concreta
+        numero=f"VENTAS-{mes}",
+        tercero_nombre="RODDOS",
+        tercero_nit=nit,
+        fecha=f"{mes}-01",  # día 1 → el período se deriva de la fecha
+        iva_valor=iva_valor,
+    )
 
 
 async def actualizar_factura(

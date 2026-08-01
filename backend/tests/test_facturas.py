@@ -83,6 +83,89 @@ async def test_crear_factura_venta_calcula_iva(db):
     assert f.iva_valor == Decimal("31331.00")
 
 
+# ── Pieza 2 (IVA generado mensual): iva_valor directo + captura agregada ──
+async def test_crear_factura_iva_valor_directo_manda(db):
+    """D-13 / pieza 2: si viene iva_valor directo, MANDA y base/tarifa quedan
+    opcionales (no se inventa una base). Sin base, total = iva_valor (único monto
+    conocido)."""
+    from app.facturas import service
+
+    f = await service.crear_factura(
+        usuario_id="u1",
+        tipo="venta",
+        origen="otro",
+        numero="VENTAS-2026-07",
+        tercero_nombre="RODDOS",
+        tercero_nit="901012622",
+        fecha="2026-07-01",
+        iva_valor=Decimal("8000000"),
+    )
+    assert f.iva_valor == Decimal("8000000.00")
+    assert f.base_gravable is None
+    assert f.tarifa_iva is None
+    assert f.total == Decimal("8000000.00")
+
+
+async def test_registrar_iva_generado_sube_el_generado_del_periodo(db):
+    """Test del CEO: registrar $8.000.000 de jul-26 → el generado de 2026-C2 (may-ago
+    cuatrimestral) sube EXACTAMENTE eso. Arma la venta VENTAS-2026-07 a nombre de
+    RODDOS (NIT de Configuracion, jamás hardcodeado)."""
+    from app.domain.configuracion import Configuracion
+    from app.facturas import service
+    from app.iva.liquidacion import liquidar
+
+    await Configuracion(
+        clave="NIT_RODDOS",
+        valor_json={"nit": "901012622"},
+        vigente_desde="2026-01-01",
+    ).insert()
+
+    f = await service.registrar_iva_generado(
+        usuario_id="u1", mes="2026-07", iva_valor=Decimal("8000000")
+    )
+    assert f.tipo.value == "venta"
+    assert f.numero == "VENTAS-2026-07"
+    assert f.tercero_nit == "901012622"
+    assert f.fecha == "2026-07-01"
+
+    items = await service.obtener_facturas_iva()
+    liq = liquidar(items)
+    c2 = next(x for x in liq if (x.anio, x.periodo) == (2026, 2))
+    assert c2.generado == Decimal("8000000.00")
+
+
+async def test_registrar_iva_generado_dedup_mismo_mes_409(db):
+    """El índice (tercero_nit, numero) impide cargar el mismo mes dos veces → 409."""
+    from app.domain.configuracion import Configuracion
+    from app.facturas import service
+
+    await Configuracion(
+        clave="NIT_RODDOS",
+        valor_json={"nit": "901012622"},
+        vigente_desde="2026-01-01",
+    ).insert()
+    await service.registrar_iva_generado(
+        usuario_id="u1", mes="2026-07", iva_valor=Decimal("8000000")
+    )
+    with pytest.raises(service.FacturasError) as e:
+        await service.registrar_iva_generado(
+            usuario_id="u1", mes="2026-07", iva_valor=Decimal("1")
+        )
+    assert e.value.status == 409
+
+
+async def test_registrar_iva_generado_sin_nit_roddos_es_error(db):
+    """Sin NIT_RODDOS en Configuracion no se puede armar la venta a nombre de RODDOS →
+    error accionable (el NIT nunca se hardcodea)."""
+    from app.facturas import service
+
+    with pytest.raises(service.FacturasError) as e:
+        await service.registrar_iva_generado(
+            usuario_id="u1", mes="2026-07", iva_valor=Decimal("8000000")
+        )
+    assert e.value.status == 409
+
+
 async def test_crear_factura_duplicada_por_tercero_y_numero_es_409(db):
     from app.facturas import service
 

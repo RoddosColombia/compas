@@ -61,6 +61,12 @@ vi.mock("@/lib/proyeccion", async (importOriginal) => {
   return { ...real, obtenerProyeccion: () => Promise.resolve(PROY) };
 });
 
+// El techo de gasto (pieza 1) se gatilla con proyeccion:gestionar; sin permiso no
+// añade carga → el perfil mide la misma ruta de siempre.
+vi.mock("@/auth/AuthContext", () => ({
+  useAuth: () => ({ puede: () => false }),
+}));
+
 describe("PERFIL ProyeccionPage (180 meses)", () => {
   it("mide mount + updates", async () => {
     const qc = new QueryClient({

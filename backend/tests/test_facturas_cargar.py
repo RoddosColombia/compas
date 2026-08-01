@@ -27,7 +27,7 @@ from app.auth.roles import Role
 from app.config import get_settings
 from app.domain import DOMAIN_DOCUMENTS
 from app.domain.configuracion import Configuracion
-from app.domain.factura import Factura
+from app.domain.factura import Factura, OrigenFactura
 from app.facturas import ingesta
 from app.facturas.extraccion import DocumentoNoDian, FacturaDian, TipoNoSoportado
 from app.main import create_app
@@ -334,6 +334,32 @@ async def test_recibida_de_auteco_queda_origen_auteco(api):
     assert r.status_code == 200
     f = await Factura.find_one(Factura.cufe == _cufe_de(b"PDF-AUTECO"))
     assert f.origen.value == "auteco"
+
+
+# ── Auteco auto-deducible (decisión CEO 2026-07-31): su IVA es descontable ──
+def test_campos_desde_dian_auteco_es_deducible_decidido():
+    """El IVA de compras a Auteco es descontable. Cuando el emisor es el NIT de Auteco
+    (de Configuracion), la ingesta marca deducible=True + decidido=True: la decisión
+    viene del DOCUMENTO+CONFIG, no del operador (no entra al contador 'sin decidir')."""
+    campos = ingesta.campos_desde_dian(
+        _dian(nit_emisor=NIT_AUTECO, nombre_emisor="AUTECO S.A.S."),
+        nit_auteco=NIT_AUTECO,
+    )
+    assert campos["origen"] == OrigenFactura.auteco
+    assert campos["deducible"] is True
+    assert campos["deducible_decidido"] is True
+
+
+async def test_cargar_auteco_queda_deducible_decidido(api):
+    """El PDF de Auteco entra deducible=True + decidido=True; otro NIT sigue sin
+    decidir (cubierto por test_cargar_recibida_crea_factura)."""
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(URL, files=_archivos(b"PDF-AUTECO"), headers=h)
+    assert r.status_code == 200
+    f = await Factura.find_one(Factura.cufe == _cufe_de(b"PDF-AUTECO"))
+    assert f.deducible is True
+    assert f.deducible_decidido is True
 
 
 # ── Idempotencia (A2): mismo lote dos veces → todas duplicadas, ninguna nueva ──

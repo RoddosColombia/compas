@@ -12,10 +12,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { useAuth } from "@/auth/AuthContext";
 import { ComposicionCaja } from "@/components/charts/ComposicionCaja";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
+import { TechoGastoCard } from "@/components/proyeccion/TechoGastoCard";
 import { Button } from "@/components/ui/button";
 import { Cargando } from "@/components/ui/cargando";
 import { ChartCard } from "@/components/ui/chart-card";
@@ -27,7 +29,7 @@ import {
 } from "@/components/ui/filtro-barra";
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { ScenarioChip } from "@/components/ui/scenario-chip";
-import { obtenerValles } from "@/lib/decisiones";
+import { obtenerValles, resolver } from "@/lib/decisiones";
 import { proximoCompromisoAuteco } from "@/lib/egreso";
 import {
   formatCOPCompact,
@@ -54,8 +56,23 @@ function distanciaTexto(meses: number): string {
 }
 
 export default function ProyeccionPage() {
+  const { puede } = useAuth();
+  const puedeGestionar = puede("proyeccion:gestionar");
   const [escenario, setEscenario] = useState<Escenario>("base");
   const [horizonte, setHorizonte] = useState(Number(HORIZONTE_DEFAULT));
+
+  // Pieza 1 (ENTREGA 3) — techo de gasto del escenario en pantalla, a horizonte de
+  // juicio (60 m: nunca un techo falsamente alto por ventana corta). Compute-only,
+  // mismo permiso que el editor de Decisiones (matemática que propone, no persiste).
+  const techoQ = useQuery({
+    queryKey: ["resolver", "techo-proy", escenario],
+    queryFn: () =>
+      resolver(
+        { objetivo: "techo_gasto" },
+        { escenario, horizonteMeses: HORIZONTE_JUICIO },
+      ),
+    enabled: puedeGestionar,
+  });
 
   // Se consulta el máximo entre la ventana elegida y el horizonte del juicio:
   // la ventana es un slice, así que una sola query cubre ambos.
@@ -104,6 +121,17 @@ export default function ProyeccionPage() {
           />
         ))}
       </div>
+
+      {/* Pieza 1: el techo de gasto — con qué el CEO arma el presupuesto del mes */}
+      {puedeGestionar && (
+        <TechoGastoCard
+          techo={
+            techoQ.data?.objetivo === "techo_gasto" ? techoQ.data : undefined
+          }
+          cargando={techoQ.isFetching}
+          horizonteJuicio={HORIZONTE_JUICIO}
+        />
+      )}
 
       {q.isLoading && (
         <>

@@ -70,6 +70,33 @@ vi.mock("@/lib/proyeccion", async (importOriginal) => {
   return { ...real, obtenerProyeccion: mocks.obtenerProyeccion };
 });
 
+// ENTREGA 3 pieza 1: el techo de gasto se gatilla con proyeccion:gestionar y usa el
+// solver. Se stubea el auth (el CEO lo tiene) y el solver (compute-only).
+vi.mock("@/auth/AuthContext", () => ({
+  useAuth: () => ({ puede: () => true }),
+}));
+
+vi.mock("@/lib/decisiones", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/decisiones")>();
+  return {
+    ...real,
+    obtenerValles: vi.fn().mockResolvedValue({
+      escenario: "base",
+      caja_minima: "125000000.00",
+      valles: [],
+    }),
+    resolver: vi.fn().mockResolvedValue({
+      objetivo: "techo_gasto",
+      techo_mensual: "5000000.00",
+      valle_limitante_mes: "2027-05",
+      piso_resultante: "10000000.00",
+      meta: "0.00",
+      colchon: "0.00",
+      hay_holgura: true,
+    }),
+  };
+});
+
 function renderPage() {
   mocks.obtenerProyeccion.mockResolvedValue(PROY);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -207,6 +234,17 @@ describe("ProyeccionPage — F1.1 §2", () => {
       await screen.findByText("Próximo compromiso Auteco"),
     ).toBeInTheDocument();
     expect(screen.getByText(/en 2 meses/)).toBeInTheDocument();
+  });
+
+  it("muestra el techo de gasto (pieza 1): la pregunta y la cifra grande", async () => {
+    renderPage();
+    expect(
+      await screen.findByText(/¿Cuánto puedo gastar al mes/i),
+    ).toBeInTheDocument();
+    // la frase de lectura del techo (única de la tarjeta) confirma la rama con holgura
+    expect(
+      screen.getByText(/la caja se sostiene sobre el umbral los 60 meses/i),
+    ).toBeInTheDocument();
   });
 
   it("ofrece los tres escenarios", async () => {
