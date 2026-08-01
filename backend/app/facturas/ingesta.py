@@ -113,18 +113,26 @@ def campos_desde_dian(f: FacturaDian, *, nit_auteco: str | None) -> dict:
     a `inc` — pisaría un atributo de beanie.Document. Candado en tests.
     `tarifa_iva=None`: una factura DIAN puede mezclar tarifas (trampa 4 del §2) y
     derivar la tarifa desde iva/base mete redondeos en un dato fiscal (§3.2); el
-    `iva_valor` extraído manda (D-13). `deducible=False` + `deducible_decidido=False`:
-    la decisión es explícita del operador; el flag deja al §2 contar las recibidas
-    sin decidir (un bool `deducible` solo no distingue "sin revisar" de "es que NO")."""
+    `iva_valor` extraído manda (D-13). Deducibilidad: una compra a Auteco entra
+    deducible=True + decidido=True (decisión CEO 2026-07-31: su IVA es descontable, y
+    la decisión la fija la CONFIGURACIÓN por el NIT, no el operador). El resto de
+    recibidas entra deducible=False + decidido=False para que el §2 cuente las que
+    faltan por revisar (un bool `deducible` solo no distingue "sin revisar" de "NO")."""
     if f.tipo == "recibida":
         tercero_nit, tercero_nombre = f.nit_emisor, f.nombre_emisor
         tipo = TipoFactura.compra
         es_auteco = nit_auteco is not None and f.nit_emisor == nit_auteco
         origen = OrigenFactura.auteco if es_auteco else OrigenFactura.sin_clasificar
+        # Auteco: descontable por configuración (decidido por el documento, no el
+        # operador). Las demás recibidas quedan "sin decidir" para el contador del §2.
+        deducible = es_auteco
+        deducible_decidido = es_auteco
     else:  # emitida
         tercero_nit, tercero_nombre = f.nit_adquiriente, ""
         tipo = TipoFactura.venta
         origen = OrigenFactura.sin_clasificar
+        deducible = False  # deducible no aplica a ventas
+        deducible_decidido = False
     if not tercero_nombre:
         # el extractor no captura el nombre del adquiriente: se etiqueta con el
         # NIT real (R5: no se inventa); la pantalla de confirmación lo corrige
@@ -144,10 +152,10 @@ def campos_desde_dian(f: FacturaDian, *, nit_auteco: str | None) -> dict:
         "tarifa_iva": None,
         "iva_valor": f.iva,
         "total": f.total_factura,
-        "deducible": False,
-        # DIAN no decide: entra "sin decidir" para el contador del §2 (el operador
-        # marca Sí/No después). No confundir con `deducible=False` "ya decidido".
-        "deducible_decidido": False,
+        "deducible": deducible,
+        # Auteco entra ya decidido (descontable por config); el resto "sin decidir"
+        # para el contador del §2 (el operador marca Sí/No después).
+        "deducible_decidido": deducible_decidido,
         "cufe": f.cufe,
         "tipo_documento": f.tipo_documento,
         "signo": 1,
@@ -301,6 +309,10 @@ async def _procesar_archivo(
                 "tipo": factura.tipo.value,
                 "origen": factura.origen.value,
                 "iva_valor": money_str(factura.iva_valor),
+                # deja el valor DECIDIDO en el rastro (Auteco → True por config); no
+                # exige un evento nuevo (la decisión viaja con origen=auteco).
+                "deducible": factura.deducible,
+                "deducible_decidido": factura.deducible_decidido,
             },
         )
     except Exception:

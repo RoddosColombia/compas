@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { CargaPanel } from "@/components/iva/CargaPanel";
 import { FacturasTabla } from "@/components/iva/FacturasTabla";
+import { IvaGeneradoPanel } from "@/components/iva/IvaGeneradoPanel";
 import { LiquidacionCard } from "@/components/iva/LiquidacionCard";
 import { TitularIva } from "@/components/iva/TitularIva";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -27,6 +28,7 @@ import { obtenerLiquidacionIva } from "@/lib/iva";
 export default function IvaPage() {
   const qc = useQueryClient();
   const [mostrarCarga, setMostrarCarga] = useState(false);
+  const [mostrarGenerado, setMostrarGenerado] = useState(false);
 
   const liq = useQuery({
     queryKey: ["iva", "liquidacion"],
@@ -43,6 +45,10 @@ export default function IvaPage() {
     void qc.invalidateQueries({ queryKey: ["facturas"] });
   };
 
+  // "Registrar IVA generado del mes" está SIEMPRE disponible (incluso sin facturas):
+  // es la carga mensual del CEO. "Cargar facturas" duplica el CTA del estado vacío,
+  // así que solo aparece cuando ya hay facturas.
+
   const cargando = liq.isLoading || facturas.isLoading;
   const hayError = liq.isError || facturas.isError;
   const vacio = (facturas.data?.length ?? 0) === 0;
@@ -53,17 +59,33 @@ export default function IvaPage() {
         titulo="IVA"
         descripcion="Cuánto pagarías de IVA el próximo período y qué falta cargar para que la cifra sea confiable."
         acciones={
-          !vacio && (
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              variant="cyan"
-              onClick={() => setMostrarCarga(true)}
+              variant="outline"
+              onClick={() => setMostrarGenerado(true)}
             >
-              Cargar facturas
+              Registrar IVA generado del mes
             </Button>
-          )
+            {!vacio && (
+              <Button
+                type="button"
+                variant="cyan"
+                onClick={() => setMostrarCarga(true)}
+              >
+                Cargar facturas
+              </Button>
+            )}
+          </div>
         }
       />
+
+      {mostrarGenerado && (
+        <IvaGeneradoPanel
+          onCerrar={() => setMostrarGenerado(false)}
+          onRegistrado={refrescarTodo}
+        />
+      )}
 
       {mostrarCarga && (
         <CargaPanel

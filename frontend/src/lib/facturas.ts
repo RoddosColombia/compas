@@ -161,3 +161,19 @@ export async function crearFacturaManual(
     body: JSON.stringify(body),
   });
 }
+
+// ── IVA generado del mes (POST /facturas/iva-generado) — pieza 2 ──
+// Captura manual AGREGADA: el CEO registra, el mes vencido, el IVA generado (mes +
+// valor). El backend arma la venta VENTAS-YYYY-MM a nombre de RODDOS (NIT de config)
+// y el monto del IVA MANDA (no se inventa base). `ivaValor` viaja como string canónico
+// (regla 1): NUNCA se hace aritmética de dinero en el front.
+export async function registrarIvaGenerado(
+  mes: string,
+  ivaValor: string,
+): Promise<FacturaRow> {
+  return apiJson("/facturas/iva-generado", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mes, iva_valor: ivaValor }),
+  });
+}
