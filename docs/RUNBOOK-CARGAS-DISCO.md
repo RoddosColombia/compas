@@ -1,49 +1,57 @@
-# Habilitar la carga por `/cargas` — SIN AWS (disco persistente de Render)
+# Habilitar la carga por `/cargas` — SIN AWS
 
-**Decisión CEO (2026-08-02):** camino A. Nada de AWS. El original de cada carga se guarda en un
-**disco persistente de Render** (sobrevive los redeploys). Todos los datos siguen en MongoDB; esto es
-solo el archivador del `.xlsx` original (regla M-04, §1.6). Object Lock / inmutabilidad = go-live.
+**Decisión CEO (2026-08-02):** nada de AWS. Todos los datos siguen en MongoDB; esto es solo dónde se
+guarda el `.xlsx` original de cada carga (regla M-04, §1.6). El código acepta la carga si `ORIGINALES_DIR`
+apunta a una carpeta escribible (la crea sola con `mkdir`). Object Lock / inmutabilidad = go-live.
 
-## Qué lee el código
+## Dos opciones
 
-`procesar_carga` acepta la carga si hay dónde preservar el original. Con el env **`ORIGINALES_DIR`**
-apuntando a una carpeta, el original se escribe ahí (`local://{ruta}`) y la carga pasa (sin M-04). Si
-esa carpeta es un **disco persistente**, el original no se pierde en el próximo deploy.
+| | **Opción 1 — Gratis, ya** | **Opción 2 — Disco persistente (pago)** |
+|---|---|---|
+| Acción | env `ORIGINALES_DIR=/tmp/originales` | upgrade compas-api a Starter + disco + env |
+| `/cargas` funciona | Sí | Sí |
+| Datos (movimientos) → Mongo | Durables | Durables |
+| Archivo original `.xlsx` | Efímero (se pierde en redeploy/spin-down) | Durable |
+| Costo | Ninguno | ~US$7/mes |
 
-## Pasos (dashboard de Render — para Claude Chrome o a mano)
+**compas-api está en plan Free** → los discos persistentes exigen Starter (pago). Por eso la Opción 1
+es la vía sin fricción para hoy; el archivado durable del original es endurecimiento de go-live.
 
-> Todo en `dashboard.render.com`. `[ANDRÉS]` = paso que hace el humano (login).
+## Opción 1 — pasos (Render, `dashboard.render.com`)
+
+> `[ANDRÉS]` = login (humano).
 
 ```
 [ANDRÉS] Inicia sesión en Render.
-1. Abre el servicio web "compas-api" (NO el worker "compas-jobs").
-2. Ve a la sección "Disks" (o Settings → Disks) → "Add Disk":
-   - Name: originales
-   - Mount Path: /var/data/originales
-   - Size: 1 GB
-   → guardar.
-3. Ve a "Environment" → "Add Environment Variable":
-   - Key: ORIGINALES_DIR
-   - Value: /var/data/originales
+1. Abre el servicio web "compas-api" (NO el worker "compas-jobs") → "Environment".
+2. "Add Environment Variable":
+   - Key:   ORIGINALES_DIR
+   - Value: /tmp/originales
    → "Save changes" (dispara redeploy).
-4. Espera a que el servicio vuelva a estado "Live".
+3. Espera a estado "Live".
 ```
 
-> Nota: un disco persistente ata el servicio a **1 instancia** (correcto hoy: compas-api es 1
-> instancia). Requiere plan de pago (compas-api ya es Standard).
+## Opción 2 — pasos (cuando quieras el original durable)
 
-## Verificación
+```
+[ANDRÉS] Upgrade de compas-api a Starter (cambio de facturación — lo haces tú).
+1. compas-api → "Disks" → "Add Disk": name=originales, mount=/var/data/originales, size=1 GB.
+2. "Environment" → ORIGINALES_DIR = /var/data/originales → "Save changes".
+3. Espera a "Live".
+```
 
-1. En COMPAS → `/cargas` → subir `Global66_MovimientosCuentaCOP_2026-07.xlsx`.
+## Verificación (cualquiera de las dos)
+
+1. COMPAS → `/cargas` → subir `Global66_MovimientosCuentaCOP_2026-07.xlsx`.
    Esperado: **565 · ~86 creadas / ~479 duplicadas / 0 errores**, sin M-04.
-2. La data queda en Mongo (los movimientos); el original queda en el disco
-   (`/var/data/originales/{hash}.xlsx`).
+2. Los movimientos quedan en Mongo. (Con Opción 2, el original queda en el disco;
+   con Opción 1, el original es transitorio — tú conservas el `.xlsx`.)
 
 ## Diagnóstico
 
-- **"M-04"** al subir: falta `ORIGINALES_DIR` en `compas-api`, o el redeploy no terminó.
+- **"M-04"** al subir: falta `ORIGINALES_DIR`, o el redeploy no terminó.
 
 ## Para go-live (después, no ahora)
 
-Endurecer el archivo a S3 con Object Lock (inmutable) — está descrito en `RUNBOOK-INFRA §6`. Es solo
-config: el código ya soporta S3 (`S3_BUCKET` + llaves) sin tocar nada más. No es urgente y no bloquea nada.
+Endurecer el archivo a S3 con Object Lock (inmutable), descrito en `RUNBOOK-INFRA §6`. El código ya
+soporta S3 (`S3_BUCKET` + llaves) sin tocar nada más. No es urgente y no bloquea nada.
