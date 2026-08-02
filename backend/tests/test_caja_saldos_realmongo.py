@@ -332,6 +332,88 @@ class TestReportarSaldosReal:
         assert por.get(Banco.GLOBAL66) == Decimal("111.00")
         assert por.get(Banco.BBVA) == Decimal("222.00")
 
+    # ── A-6 — no-retroceso y estado ATÓMICOS (TOCTOU) ──
+
+    async def test_upsert_no_retroceso_atomico_directo(self, entorno):
+        # El no-retroceso vive TAMBIÉN dentro del update atómico, no solo en la
+        # validación de snapshot de arriba. Llamando _upsert_saldo directo (como una
+        # carrera que ya superó el snapshot con una fecha anterior) el $elemMatch
+        # {fecha <= nueva} no casa → releer → 422; el banco NO se mueve.
+        from app.caja import service as caja_service
+
+        _, _ = entorno
+        mc = await self._mes(
+            saldos=[
+                SaldoBanco(
+                    banco=Banco.GLOBAL66, saldo=Decimal("5"), fecha_reporte="2026-07-20"
+                )
+            ]
+        )
+        col = MesControl.get_pymongo_collection()
+        with pytest.raises(caja_service.CajaError) as ei:
+            await caja_service._upsert_saldo(
+                col,
+                "2026-07-01",
+                caja_service.ReporteBanco(
+                    banco=Banco.GLOBAL66,
+                    saldo=Decimal("9"),
+                    fecha_reporte="2026-07-10",  # retroceso vs 07-20
+                ),
+            )
+        assert ei.value.status == 422
+        mc = await MesControl.get(mc.id)
+        assert mc.saldos_banco[0].fecha_reporte == "2026-07-20"  # intacto
+        assert mc.saldos_banco[0].saldo == Decimal("5")
+
+    async def test_upsert_estado_no_en_ejecucion_atomico_no_escribe(self, entorno):
+        # El update atómico exige estado=en_ejecucion. Si el mes se cerró tras el
+        # snapshot, la escritura no cuela → 409 y NADA se escribe (ni $set ni $push).
+        from app.caja import service as caja_service
+
+        _, _ = entorno
+        mc = await self._mes()
+        mc.estado = EstadoMes.CERRADO  # cierre concurrente tras el snapshot
+        await mc.save()
+        col = MesControl.get_pymongo_collection()
+        with pytest.raises(caja_service.CajaError) as ei:
+            await caja_service._upsert_saldo(
+                col,
+                "2026-07-01",
+                caja_service.ReporteBanco(
+                    banco=Banco.GLOBAL66,
+                    saldo=Decimal("9"),
+                    fecha_reporte="2026-07-15",
+                ),
+            )
+        assert ei.value.status == 409
+        mc = await MesControl.get(mc.id)
+        assert mc.saldos_banco == []  # no se creó el banco en un mes cerrado
+
+    async def test_upsert_correccion_mismo_dia_pasa_el_elemmatch(self, entorno):
+        # Frontera del $lte: misma fecha (corrección del día) SÍ casa el $elemMatch
+        # {fecha <= nueva} → actualiza saldo sin tocar la fecha. No es retroceso.
+        from app.caja import service as caja_service
+
+        _, _ = entorno
+        mc = await self._mes(
+            saldos=[
+                SaldoBanco(
+                    banco=Banco.GLOBAL66, saldo=Decimal("5"), fecha_reporte="2026-07-15"
+                )
+            ]
+        )
+        col = MesControl.get_pymongo_collection()
+        await caja_service._upsert_saldo(
+            col,
+            "2026-07-01",
+            caja_service.ReporteBanco(
+                banco=Banco.GLOBAL66, saldo=Decimal("42"), fecha_reporte="2026-07-15"
+            ),
+        )
+        mc = await MesControl.get(mc.id)
+        assert mc.saldos_banco[0].saldo == Decimal("42")
+        assert mc.saldos_banco[0].fecha_reporte == "2026-07-15"
+
     # ── D6 — reintento con el mismo body ──
 
     async def test_reintento_mismo_body_converge(self, entorno):
