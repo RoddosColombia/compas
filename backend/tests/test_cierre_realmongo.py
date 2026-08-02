@@ -22,6 +22,7 @@ from app.auth.roles import Role
 from app.cierre import service
 from app.config import get_settings
 from app.domain import DOMAIN_DOCUMENTS
+from app.domain.bancos import Banco
 from app.domain.configuracion import Configuracion
 from app.domain.mes_control import EstadoMes, MesControl, SaldoBanco
 from app.domain.rubro import Rubro
@@ -167,6 +168,41 @@ class TestCierreReal:
         r2 = await self._confirmar(ac, h, "kx")
         assert r1.status_code == 200 and r2.status_code == 200
         assert r1.json() == r2.json()
+
+    async def test_mes_con_tx_manual_cierra_y_sobrevive_reapertura(self, entorno):
+        # A-2 / P1-5 end-to-end: ANTES de A-2 el mes NO cerraba jamás (una tx manual
+        # dejaba sin_dato=['manual'] → 409 permanente). Ahora cierra y el dinero
+        # manual queda intacto tras cierre y reapertura.
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+        import app.core.ulid as u
+
+        man = Transaccion(
+            fecha="2026-06-12",
+            descripcion="ingreso manual omitido del extracto",
+            valor=Decimal("40"),
+            tipo_flujo="ingreso",
+            rubro_id=arr.id,
+            mes_id=jun.id,
+            banco=Banco.MANUAL,
+            id_banco=f"MAN-{u.new_ulid()}",
+        )
+        await man.insert()
+
+        r = await self._confirmar(ac, h)
+        assert r.status_code == 200  # cierra PESE a la tx manual (antes: 409)
+        assert (await MesControl.get(jun.id)).estado is EstadoMes.CERRADO
+        # la tx manual sigue intacta tras el cierre
+        man2 = await Transaccion.get(man.id)
+        assert man2 is not None and man2.valor == Decimal("40")
+        assert man2.banco is Banco.MANUAL
+
+        # reabrir → la tx manual sigue intacta y el mes vuelve a ejecución
+        await service.reabrir_mes(mes="2026-06-01", usuario_id="admin")
+        assert (await MesControl.get(jun.id)).estado is EstadoMes.EN_EJECUCION
+        man3 = await Transaccion.get(man.id)
+        assert man3 is not None and man3.valor == Decimal("40")
         assert await db["audit_log"].count_documents({"evento": "mes.cerrado"}) == 1
 
     async def test_doble_cierre_distinta_key_409(self, entorno):

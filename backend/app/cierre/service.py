@@ -99,8 +99,16 @@ async def _conciliar(mc: MesControl, rubro_ajuste_id) -> dict:
     # movimientos por banco (excluye el rubro de ajuste)
     bancos_con_mov: set[Banco] = set()
     mov_post: dict[Banco, Decimal] = {}
+    manual_neto = Decimal("0")
     async for t in Transaccion.find(Transaccion.mes_id == mc.id):
         if t.rubro_id == rubro_ajuste_id:
+            continue
+        if t.banco is Banco.MANUAL:
+            # A-2 / P1-5 (D-FIX-1): manual = movimiento bancario omitido. Cuenta en
+            # el libro (C_M vía _caja_libro) y su contraparte real ya está en el
+            # saldo reportado del banco (R_M) → cuadra por construcción. NO exige un
+            # saldo 'manual' reportable (que no existe) ni entra a mov_post/R_M.
+            manual_neto += _signo(t)
             continue
         bancos_con_mov.add(t.banco)
         sb = reportados.get(t.banco)
@@ -134,6 +142,11 @@ async def _conciliar(mc: MesControl, rubro_ajuste_id) -> dict:
         "diferencia": diferencia,
         "umbral": umbral,
         "dentro_de_umbral": dentro,
+        # A-2: movimientos manuales registrados fuera de extracto (regla 7: línea
+        # nombrada, visible, nunca absorbida en la diferencia). Aviso si el neto
+        # supera el mismo umbral de conciliación.
+        "manual_neto": manual_neto,
+        "aviso_manual": abs(manual_neto) > umbral,
     }
 
 
@@ -155,6 +168,8 @@ async def conciliacion(mes: str) -> dict:
         "diferencia": money_str(r["diferencia"]),
         "umbral": money_str(r["umbral"]),
         "dentro_de_umbral": r["dentro_de_umbral"],
+        "manual_neto": money_str(r["manual_neto"]),
+        "aviso_manual": r["aviso_manual"],
     }
 
 

@@ -157,6 +157,61 @@ async def test_conciliacion_sin_dato_por_banco(api):
     assert d["dentro_de_umbral"] is False  # no se puede conciliar bbva
 
 
+# ── A-2: MANUAL fuera de la conciliación (D-FIX-1: manual = banco omitido) ───
+
+
+async def test_conciliacion_tx_manual_no_exige_saldo_ni_mueve_diferencia(api):
+    # P1-5: una tx manual ya NO deja 'manual' en sin_dato → el mes puede cerrar.
+    # Y la diferencia es idéntica al baseline (el mismo egreso como bancolombia da
+    # -2.00): relabelar una tx como manual no mueve R_M ni C_M, solo quita el
+    # falso sin_dato y expone manual_neto.
+    h = await _token(api, "fin@roddos.com")
+    sb = SaldoBanco(
+        banco="bancolombia", saldo=Decimal("118"), fecha_reporte="2026-07-31"
+    )
+    mc = await _mes("2026-07-01", EstadoMes.EN_EJECUCION, "100", [sb])
+    arr = await _rubro("Arriendos")
+    await _tx(mc, arr, "50", "ingreso")  # bancolombia
+    await _tx(mc, arr, "30", "egreso", banco="manual")  # el egreso es MANUAL
+    r = await api.post("/api/v1/meses/2026-07/cierre/conciliacion", headers=h)
+    d = r.json()
+    assert d["caja_libro"] == "120.00"  # 100 + 50 − 30 (manual cuenta en C_M)
+    assert d["consolidado_reportado"] == "118.00"  # manual no es banco reportado
+    assert d["diferencia"] == "-2.00"  # invariante: no se mueve por lo manual
+    assert "manual" not in d["sin_dato"]  # ya no exige saldo 'manual'
+    assert d["dentro_de_umbral"] is True
+    assert d["manual_neto"] == "-30.00"  # egreso manual = negativo
+    assert d["aviso_manual"] is False  # |30| < umbral 50000
+
+
+async def test_conciliacion_manual_neto_signo_ingreso(api):
+    h = await _token(api, "fin@roddos.com")
+    sb = SaldoBanco(
+        banco="bancolombia", saldo=Decimal("100"), fecha_reporte="2026-07-31"
+    )
+    mc = await _mes("2026-07-01", EstadoMes.EN_EJECUCION, "100", [sb])
+    arr = await _rubro("Arriendos")
+    await _tx(mc, arr, "30", "ingreso", banco="manual")
+    r = await api.post("/api/v1/meses/2026-07/cierre/conciliacion", headers=h)
+    assert r.json()["manual_neto"] == "30.00"  # ingreso manual = positivo
+
+
+async def test_conciliacion_manual_neto_grande_dispara_aviso(api):
+    # |manual_neto| > umbral → aviso_manual visible, aunque la diferencia cuadre.
+    h = await _token(api, "fin@roddos.com")
+    sb = SaldoBanco(
+        banco="bancolombia", saldo=Decimal("40000"), fecha_reporte="2026-07-31"
+    )
+    mc = await _mes("2026-07-01", EstadoMes.EN_EJECUCION, "100000", [sb])
+    arr = await _rubro("Arriendos")
+    await _tx(mc, arr, "60000", "egreso", banco="manual")
+    r = await api.post("/api/v1/meses/2026-07/cierre/conciliacion", headers=h)
+    d = r.json()
+    assert d["manual_neto"] == "-60000.00"
+    assert d["aviso_manual"] is True  # |60000| > 50000
+    assert d["dentro_de_umbral"] is True  # diff = 40000 − 40000 = 0
+
+
 async def test_conciliacion_no_en_ejecucion_409(api):
     h = await _token(api, "fin@roddos.com")
     await _mes("2026-07-01", EstadoMes.SUGERIDO)
