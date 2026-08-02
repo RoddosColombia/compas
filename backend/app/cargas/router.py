@@ -82,6 +82,7 @@ async def subir_extracto(
                 archivo_path=tmp,
                 archivo_nombre=nombre,
                 usuario_id=PydanticObjectId(user.id),
+                s3_bucket=settings.s3_bucket,
                 dir_originales=settings.originales_dir,
             )
         except service.CargaDuplicadaError as e:

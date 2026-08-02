@@ -114,6 +114,8 @@ async def procesar_carga(
     archivo_nombre: str,
     usuario_id: PydanticObjectId,
     archivo_s3_key: str | None = None,
+    s3_bucket: str | None = None,
+    s3_client=None,
     dir_originales: str | None = None,
     permitir_sin_preservar: bool = False,
 ) -> CargaBancaria:
@@ -123,10 +125,15 @@ async def procesar_carga(
         raise CargaError("una carga proviene de un banco real, no 'manual'")
 
     # M-04 (regla dura): el original debe quedar re-procesable.
-    if archivo_s3_key is None and dir_originales is None and not permitir_sin_preservar:
+    if (
+        archivo_s3_key is None
+        and s3_bucket is None
+        and dir_originales is None
+        and not permitir_sin_preservar
+    ):
         raise OriginalNoPreservableError(
             "sin S3 ni dir_originales no se puede preservar el original (Spec §1.6, "
-            "Kimi M-04). Provisionar S3 (bloque C), pasar dir_originales, o "
+            "Kimi M-04). Configurar S3_BUCKET (prod), pasar dir_originales (dev), o "
             "permitir_sin_preservar=True (solo dev)."
         )
 
@@ -148,12 +155,28 @@ async def procesar_carga(
             "falta el rubro de sistema 'Por clasificar' (correr semillas de rubros)"
         )
 
-    # Preservar el original localmente (interim S3, M-04).
-    if archivo_s3_key is None and dir_originales is not None:
+    # Preservar el original (M-04). S3 gana (prod, Object Lock COMPLIANCE);
+    # dir_originales es solo puente de DEV. La subida corre ANTES de insertar nada
+    # → un fallo de put_object aborta la carga sin persistir (fail-closed).
+    if archivo_s3_key is None:
         ext = Path(archivo_nombre).suffix or ".bin"
-        destino = Path(dir_originales) / f"{archivo_hash}{ext}"
-        await to_thread.run_sync(_preservar, archivo_path, destino)
-        archivo_s3_key = f"local://{destino}"
+        if s3_bucket is not None:
+            from app.cargas import storage
+
+            client = s3_client if s3_client is not None else storage.get_s3_client()
+            key = storage.clave_original(archivo_hash, ext)
+            archivo_s3_key = await to_thread.run_sync(
+                lambda: storage.subir_original(
+                    client=client,
+                    bucket=s3_bucket,
+                    key=key,
+                    archivo_path=archivo_path,
+                )
+            )
+        elif dir_originales is not None:
+            destino = Path(dir_originales) / f"{archivo_hash}{ext}"
+            await to_thread.run_sync(_preservar, archivo_path, destino)
+            archivo_s3_key = f"local://{destino}"
 
     carga = CargaBancaria(
         banco=banco,

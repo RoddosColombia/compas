@@ -129,6 +129,20 @@ def _crear_bbva(path, filas):
 # ── Servicio (Mongo real) ────────────────────────────────────────────────
 
 
+class _StubS3:
+    """Cliente S3 stub inyectado en procesar_carga (PR-S3): registra o falla."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.calls: list[dict] = []
+        self.fail = fail
+
+    def put_object(self, **kw) -> dict:
+        if self.fail:
+            raise RuntimeError("s3 caído")
+        self.calls.append(kw)
+        return {"ETag": "stub"}
+
+
 @pytest.mark.requires_real_mongo
 class TestServicioCarga:
     @pytest.fixture
@@ -294,6 +308,68 @@ class TestServicioCarga:
         carga = await self._procesar(tmp_path, [("15-03-2026", "X", -1000)])
         assert carga.archivo_s3_key.startswith("local://")
         assert await AsyncPath(carga.archivo_s3_key.removeprefix("local://")).exists()
+
+    # ── PR-S3: preservación del original en S3 (cliente stub inyectado) ──
+
+    async def _procesar_s3(self, tmp_path, filas, client, nombre="ext.xlsx"):
+        from app.cargas.service import procesar_carga
+
+        p = tmp_path / nombre
+        _crear_bbva(p, filas)
+        return await procesar_carga(
+            banco=Banco.BBVA,
+            archivo_path=str(p),
+            archivo_nombre=nombre,
+            usuario_id=PydanticObjectId(),
+            s3_bucket="compas-archivo",
+            s3_client=client,
+        )
+
+    async def test_s3_sube_original_y_persiste_key(self, entorno, tmp_path):
+        client = _StubS3()
+        carga = await self._procesar_s3(
+            tmp_path, [("15-03-2026", "COMPRA", -50000)], client
+        )
+        assert carga.estado is EstadoCarga.COMPLETADA
+        assert len(client.calls) == 1  # se subió una vez
+        call = client.calls[0]
+        assert call["Bucket"] == "compas-archivo"
+        assert call["Key"].startswith("originales/")
+        # la key persistida es la URI s3://, NO local ni el path temporal
+        assert carga.archivo_s3_key == f"s3://compas-archivo/{call['Key']}"
+
+    async def test_s3_fail_closed_no_persiste_nada(self, entorno, tmp_path):
+        # put_object falla → la carga aborta ANTES de insertar: ni Carga ni Transaccion.
+        from app.cargas.service import procesar_carga
+
+        p = tmp_path / "fc.xlsx"
+        _crear_bbva(p, [("15-03-2026", "COMPRA", -50000)])
+        client = _StubS3(fail=True)
+        with pytest.raises(RuntimeError):
+            await procesar_carga(
+                banco=Banco.BBVA,
+                archivo_path=str(p),
+                archivo_nombre="fc.xlsx",
+                usuario_id=PydanticObjectId(),
+                s3_bucket="compas-archivo",
+                s3_client=client,
+            )
+        assert await CargaBancaria.find_all().count() == 0
+        assert await Transaccion.find_all().count() == 0
+
+    async def test_s3_dedup_no_re_sube(self, entorno, tmp_path):
+        # F-02 intacto con S3: el mismo archivo (mismo hash) no vuelve a subirse.
+        from app.cargas.service import CargaDuplicadaError
+
+        client = _StubS3()
+        await self._procesar_s3(
+            tmp_path, [("15-03-2026", "COMPRA", -50000)], client, nombre="d.xlsx"
+        )
+        with pytest.raises(CargaDuplicadaError):
+            await self._procesar_s3(
+                tmp_path, [("15-03-2026", "COMPRA", -50000)], client, nombre="d.xlsx"
+            )
+        assert len(client.calls) == 1  # la segunda no subió (dedup antes de S3)
 
     # ── C3: auto-clasificación al cargar (GO Kimi PLAN-I 9.3, lista §5) ──
 
