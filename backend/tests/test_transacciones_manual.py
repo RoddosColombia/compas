@@ -16,6 +16,7 @@ Reglas cubiertas:
 from decimal import Decimal
 
 import httpx
+import pytest
 import pytest_asyncio
 from app.audit.service import configure_audit, reset_audit
 from app.auth import passwords, repository
@@ -260,3 +261,23 @@ async def test_clasificar_hacia_rubro_inactivo_422(api):
     ).insert()
     r = await _post(ac, h, _body(rubro_id=str(inactivo.id)))
     assert r.status_code == 422
+
+
+async def _boom(*a, **k):
+    raise RuntimeError("audit caído")
+
+
+async def test_fail_closed_crear_manual_compensa_y_no_duplica(api, monkeypatch):
+    # A-4 (P1-7): saga O1 — si el emit de auditoría falla tras insertar, la tx se
+    # compensa (tx.delete()); NADA persiste. El router entonces puede borrar la
+    # marca con seguridad y el retry con la misma key crea UNA sola tx (no duplica).
+    ac, _ = api
+    h = await _token(ac)
+    monkeypatch.setattr("app.transacciones.service.emit_audit", _boom)
+    with pytest.raises(RuntimeError):
+        await _post(ac, h, _body(), key="saga-1")
+    assert await Transaccion.find_one() is None  # compensado, sin dinero fantasma
+    monkeypatch.undo()
+    r = await _post(ac, h, _body(), key="saga-1")  # misma key, marca ya borrada
+    assert r.status_code == 201
+    assert await Transaccion.count() == 1  # una sola tx

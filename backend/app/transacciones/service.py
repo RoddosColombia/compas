@@ -20,9 +20,11 @@ emit falla). Con `proponer_regla` (+patrón), crea una ReglaClasificacion APREND
 inactiva (§1.9: nunca auto-activada; la validación de la propuesta corre ANTES de
 mutar — si la propuesta es inválida, nada cambia)."""
 
+import hashlib
 from decimal import Decimal
 
 from beanie import PydanticObjectId
+from pymongo.errors import DuplicateKeyError
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
@@ -51,7 +53,11 @@ async def crear_transaccion_manual(
     tipo_flujo: TipoFlujo,
     usuario_id: str,
     rubro_id: str | None = None,
-) -> Transaccion:
+    idempotency_key: str | None = None,
+    endpoint: str | None = None,
+) -> tuple[Transaccion, bool]:
+    """Devuelve (tx, replay). replay=True cuando la Idempotency-Key ya había
+    creado esta tx (colisión en el índice único tras expirar la marca)."""
     mes = fecha[:7] + "-01"
     mc = await MesControl.find_one(MesControl.mes == mes)
     if mc is None:
@@ -89,6 +95,18 @@ async def crear_transaccion_manual(
                 status=500,
             )
 
+    # A-4 (P1-9): id_banco determinista desde la Idempotency-Key → un replay tras
+    # expirar el TTL de la marca colisiona en el índice único (banco, id_banco) y
+    # NO duplica dinero (la unicidad vive en el índice, no en la marca). Sin key
+    # (no debería ocurrir por el endpoint): ULID aleatorio.
+    if idempotency_key is not None and endpoint is not None:
+        huella = hashlib.sha256(
+            f"{usuario_id}|{endpoint}|{idempotency_key}".encode()
+        ).hexdigest()
+        id_banco = f"MAN-{huella[:24]}"
+    else:
+        id_banco = f"MAN-{new_ulid()}"
+
     tx = Transaccion(
         fecha=fecha,
         descripcion=descripcion,
@@ -97,39 +115,53 @@ async def crear_transaccion_manual(
         rubro_id=rubro.id,
         mes_id=mc.id,
         banco=Banco.MANUAL,
-        id_banco=f"MAN-{new_ulid()}",
+        id_banco=id_banco,
         clasificada_por=usuario_id if clasificada else None,
         clasificada_at=now_utc() if clasificada else None,
     )
-    await tx.insert()
+    try:
+        await tx.insert()
+    except DuplicateKeyError:
+        existente = await Transaccion.find_one(
+            Transaccion.banco == Banco.MANUAL,
+            Transaccion.id_banco == id_banco,
+        )
+        if existente is not None:
+            return existente, True  # replay convergente, una sola tx
+        raise
 
-    # CR-S2 (Kimi M-1): TODA creación manual deja rastro forense permanente —
-    # es la única vía por la que entra dinero sin archivo de banco.
-    await emit_audit(
-        AuditEvento.transaccion_creada,
-        entidad="transaccion",
-        entidad_id=str(tx.id),
-        actor_id=usuario_id,
-        metadata={
-            "origen": "manual",
-            "valor": f"{valor:.2f}",
-            "tipo_flujo": tipo_flujo.value,
-        },
-    )
-
-    if clasificada:
+    # A-4 (P1-7): saga O1. CR-S2 (Kimi M-1) exige que TODA creación manual deje
+    # rastro forense — es la única vía por la que entra dinero sin archivo de banco.
+    # Sin rastro no hay creación: si el emit falla, se compensa borrando la tx
+    # (nada persiste) → el router puede borrar la marca y el retry no duplica.
+    try:
         await emit_audit(
-            AuditEvento.transaccion_clasificada,
+            AuditEvento.transaccion_creada,
             entidad="transaccion",
             entidad_id=str(tx.id),
             actor_id=usuario_id,
             metadata={
                 "origen": "manual",
-                "rubro_id": str(rubro.id),
                 "valor": f"{valor:.2f}",
+                "tipo_flujo": tipo_flujo.value,
             },
         )
-    return tx
+        if clasificada:
+            await emit_audit(
+                AuditEvento.transaccion_clasificada,
+                entidad="transaccion",
+                entidad_id=str(tx.id),
+                actor_id=usuario_id,
+                metadata={
+                    "origen": "manual",
+                    "rubro_id": str(rubro.id),
+                    "valor": f"{valor:.2f}",
+                },
+            )
+    except Exception:
+        await tx.delete()  # O1: compensación — sin dinero fantasma
+        raise
+    return tx, False
 
 
 async def reclasificar_transaccion(

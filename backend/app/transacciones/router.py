@@ -119,13 +119,15 @@ async def crear_manual(
         raise HTTPException(409, "petición con esta Idempotency-Key en curso") from None
 
     try:
-        tx = await service.crear_transaccion_manual(
+        tx, replay = await service.crear_transaccion_manual(
             fecha=body.fecha,
             descripcion=body.descripcion,
             valor=valor,
             tipo_flujo=body.tipo_flujo,
             usuario_id=user.id,
             rubro_id=body.rubro_id,
+            idempotency_key=idempotency_key,
+            endpoint=_ENDPOINT,
         )
     except service.TransaccionManualError as e:
         await marca.delete()  # una petición fallida no quema la key
@@ -134,11 +136,16 @@ async def crear_manual(
         await marca.delete()
         raise
 
+    # A-4 (P1-9): replay convergente tras TTL → 200 + replay:true (la unicidad la
+    # respaldó el índice, no la marca); creación normal → 201.
     respuesta = _serializar(tx)
-    marca.response_status = 201
+    status = 200 if replay else 201
+    if replay:
+        respuesta = {**respuesta, "replay": True}
+    marca.response_status = status
     marca.response_body = respuesta
     await marca.save()
-    return respuesta
+    return JSONResponse(respuesta, status_code=status)
 
 
 class ClasificarBody(BaseModel):
