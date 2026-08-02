@@ -106,7 +106,15 @@ async def confirmar_cierre(
             await marca.delete()
         raise HTTPException(e.status, e.detalle) from e
     except Exception:
-        if not es_huerfana:
+        # A-4.2 (cierre del residual): muerte durante la RE-EJECUCIÓN de una huérfana
+        # (excepción NO de negocio) → devolver la marca a 'en curso' (None), no
+        # dejarla clavada en el centinela -1 (la bloquearía las 24h del TTL). Su
+        # created_at ya es viejo → el próximo retry la readquiere y converge. En flujo
+        # normal (no huérfana) se borra como antes.
+        if es_huerfana:
+            marca.response_status = None
+            await marca.save()
+        else:
             await marca.delete()
         raise
 

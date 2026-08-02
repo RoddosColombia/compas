@@ -281,3 +281,37 @@ async def test_fail_closed_crear_manual_compensa_y_no_duplica(api, monkeypatch):
     r = await _post(ac, h, _body(), key="saga-1")  # misma key, marca ya borrada
     assert r.status_code == 201
     assert await Transaccion.count() == 1  # una sola tx
+
+
+async def test_muerte_en_reejecucion_de_huerfana_no_clava_la_marca(api, monkeypatch):
+    # A-4.2 (P1-10), cierre del residual (Kimi): si el proceso MUERE durante la
+    # RE-EJECUCIÓN de una marca huérfana (excepción genérica, no error de negocio),
+    # la marca NO puede quedar clavada en el centinela -1 → la bloquearía las 24h del
+    # TTL. El router la devuelve a 'en curso' (None); como su created_at ya es viejo,
+    # el siguiente retry la readquiere y converge. Sin el fix quedaría en -1.
+    from datetime import timedelta
+
+    from app.core.time import now_utc
+    from app.domain.idempotency import IdempotencyKey
+
+    ac, _ = api
+    h = await _token(ac)
+    # 1) fabricar una marca huérfana: en curso (None) y envejecida > _HUERFANA_MIN.
+    assert (await _post(ac, h, _body(), key="orph-crash")).status_code == 201
+    mk = await IdempotencyKey.find_one(IdempotencyKey.key == "orph-crash")
+    mk.response_status = None
+    mk.response_body = None
+    mk.created_at = now_utc() - timedelta(minutes=10)
+    await mk.save()
+
+    # 2) el servicio MUERE (excepción genérica) durante la re-ejecución de la huérfana.
+    async def _cae(*a, **k):
+        raise RuntimeError("proceso caído en re-ejecución")
+
+    monkeypatch.setattr("app.transacciones.service.crear_transaccion_manual", _cae)
+    with pytest.raises(RuntimeError):
+        await _post(ac, h, _body(), key="orph-crash")
+
+    # 3) la marca vuelve a ser adquirible (None), NO clavada en -1.
+    mk2 = await IdempotencyKey.find_one(IdempotencyKey.key == "orph-crash")
+    assert mk2.response_status is None

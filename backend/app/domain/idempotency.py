@@ -63,7 +63,7 @@ async def intentar_adquirir_huerfana(previa: IdempotencyKey) -> bool:
     re-ejecuta y persiste el resultado en `previa`); False si sigue fresca o ya la
     tomó otro (el caller responde 409). El centinela -1 se lee como 'en curso'."""
     umbral = now_utc() - timedelta(minutes=_HUERFANA_MIN)
-    res = await IdempotencyKey.get_motor_collection().update_one(
+    res = await IdempotencyKey.get_pymongo_collection().update_one(
         {
             "_id": previa.id,
             "response_status": None,
