@@ -44,3 +44,31 @@ class IdempotencyKey(Document):
             ),
             IndexModel([("expires_at", 1)], name="ttl", expireAfterSeconds=0),
         ]
+
+
+# A-4.2 (P1-10): recuperación de marca huérfana. Un proceso que muere ENTRE el commit
+# de la mutación y `marca.save()` deja la marca en curso (response_status=None) y
+# bloquea la key durante las 24 h del TTL: la mutación se aplicó pero el cliente
+# nunca obtuvo el resultado y el retry choca con 409. Pasados _HUERFANA_MIN se
+# considera huérfana y un retry puede ADQUIRIRLA atómicamente (centinela -1) y
+# re-ejecutar de forma convergente.
+_HUERFANA_MIN = 5
+_CENTINELA_REEJECUCION = -1
+
+
+async def intentar_adquirir_huerfana(previa: IdempotencyKey) -> bool:
+    """Adquiere atómicamente una marca en curso si lleva >_HUERFANA_MIN sin
+    completarse. El update exige `response_status=None`, así que en una carrera solo
+    UN request lo cambia a -1 y gana. Devuelve True si la adquirió (el caller
+    re-ejecuta y persiste el resultado en `previa`); False si sigue fresca o ya la
+    tomó otro (el caller responde 409). El centinela -1 se lee como 'en curso'."""
+    umbral = now_utc() - timedelta(minutes=_HUERFANA_MIN)
+    res = await IdempotencyKey.get_pymongo_collection().update_one(
+        {
+            "_id": previa.id,
+            "response_status": None,
+            "created_at": {"$lt": umbral},
+        },
+        {"$set": {"response_status": _CENTINELA_REEJECUCION}},
+    )
+    return res.modified_count == 1

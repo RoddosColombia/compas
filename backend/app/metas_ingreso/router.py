@@ -24,7 +24,10 @@ _MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 def _dec(s: str, campo: str) -> Decimal:
     try:
-        return Decimal(s)
+        v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
+        return v
     except (InvalidOperation, ValueError) as e:
         raise HTTPException(422, f"{campo} no es un decimal válido: {s}") from e
 

@@ -159,6 +159,58 @@ class TestAcotarReal:
         assert ln.monto_definido is None and len(ln.ajustes) == 0
         assert (await MesControl.get(mc.id)).estado is EstadoMes.SUGERIDO
 
+    async def test_acotar_aborta_si_mes_sale_de_acotable_en_la_sesion(
+        self, entorno, monkeypatch
+    ):
+        # A-6 (parte 1, TOCTOU): la guarda de estado corre FUERA de la transacción.
+        # Si entre esa guarda y la sesión otro proceso saca el mes de estado acotable
+        # (cierre/aprobación), el re-read DENTRO de la sesión aborta con 409 y NADA se
+        # escribe. Se simula: la lectura CON session devuelve el mes ya CERRADO.
+        _, _ = entorno
+        mc, rubro, ln0 = await self._sembrar()
+        orig = MesControl.find_one
+
+        async def _find_one(*a, **k):
+            doc = await orig(*a, **k)
+            if k.get("session") is not None and doc is not None:
+                doc.estado = EstadoMes.CERRADO  # cambio concurrente tras la guarda
+            return doc
+
+        monkeypatch.setattr(MesControl, "find_one", _find_one)
+        with pytest.raises(service.AcotarError) as ei:
+            await service.acotar_linea(
+                mes="2026-07-01",
+                rubro_id=str(rubro.id),
+                monto_definido=Decimal("1200000"),
+                comentario="x",
+                usuario_id="u1",
+            )
+        assert ei.value.status == 409
+        monkeypatch.undo()
+        # nada se escribió: la línea y el mes quedan intactos
+        ln = await PresupuestoLinea.get(ln0.id)
+        assert ln.monto_definido is None and len(ln.ajustes) == 0
+        assert (await MesControl.get(mc.id)).estado is EstadoMes.SUGERIDO
+
+    async def test_acotar_concurrente_no_pierde_ajustes(self, entorno):
+        # A-6 (parte 2): el $push posicional (no replace de la lista) hace que dos
+        # acotares concurrentes sobre la MISMA línea NO se pisen — ambos ajustes
+        # quedan. Con read-modify-write de la lista, uno habría clobbereado al otro.
+        import asyncio
+
+        ac, _ = entorno
+        h = await self._token(ac, "dir@roddos.com")
+        mc, rubro, _ = await self._sembrar()
+        url = f"/api/v1/meses/2026-07/presupuesto/{rubro.id}"
+        r1, r2 = await asyncio.gather(
+            ac.patch(url, json={"monto_definido": "1200000"}, headers=h),
+            ac.patch(url, json={"monto_definido": "1500000"}, headers=h),
+        )
+        assert r1.status_code == 200 and r2.status_code == 200
+        ln = await PresupuestoLinea.find_one(PresupuestoLinea.rubro_id == rubro.id)
+        assert len(ln.ajustes) == 2  # ninguno pisó al otro
+        assert (await MesControl.get(mc.id)).estado is EstadoMes.PROPUESTO
+
     async def test_acotar_compensa_si_falla_auditoria(self, entorno, monkeypatch):
         # M-2 (saga O1): commit OK pero el emit falla → compensación transaccional.
         ac, db = entorno

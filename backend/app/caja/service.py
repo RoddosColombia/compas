@@ -70,11 +70,33 @@ def _valida_fecha_formato(v: str) -> None:
 
 
 async def _upsert_saldo(col, mes: str, r: ReporteBanco) -> None:
-    """Update atómico posicional por banco (B-1): sin read-modify-write de la lista."""
+    """Update atómico posicional por banco (B-1) con no-retroceso y estado ATÓMICOS
+    (A-6, cierre del TOCTOU). Las guardas de `reportar_saldos` (estado en_ejecucion,
+    no-retroceso por banco) corren FUERA sobre un snapshot leído antes de escribir;
+    aquí se REAFIRMAN dentro de la propia escritura para que una carrera no cuele un
+    retroceso ni escriba sobre un mes que se cerró concurrentemente:
+
+    - `$set` posicional SOLO si el mes sigue `en_ejecucion` Y el elemento del banco
+      existe con `fecha_reporte <= la nueva` (mismo elemento, vía `$elemMatch` — el
+      `$` apunta al elemento que casó, no a otro banco).
+    - `$push` SOLO si el banco sigue ausente (`$ne`) y el mes sigue en ejecución.
+    Si ninguno casa, relee para DISTINGUIR la causa: retroceso real → 422; mes ya no
+    en ejecución → 409; contención transitoria (el banco apareció con fecha <= la
+    nueva) → reintenta el posicional."""
     dec = Decimal128(r.saldo)
+    en_ejec = EstadoMes.EN_EJECUCION.value
     for _ in range(_MAX_REINTENTOS):
         res = await col.update_one(
-            {"mes": mes, "saldos_banco.banco": r.banco.value},
+            {
+                "mes": mes,
+                "estado": en_ejec,
+                "saldos_banco": {
+                    "$elemMatch": {
+                        "banco": r.banco.value,
+                        "fecha_reporte": {"$lte": r.fecha_reporte},
+                    }
+                },
+            },
             {
                 "$set": {
                     "saldos_banco.$.saldo": dec,
@@ -84,9 +106,13 @@ async def _upsert_saldo(col, mes: str, r: ReporteBanco) -> None:
         )
         if res.matched_count == 1:
             return
-        # el banco no está aún → push SOLO si sigue ausente (filtro $ne)
+        # el banco no está aún → push SOLO si sigue ausente ($ne) y el mes en ejecución
         res2 = await col.update_one(
-            {"mes": mes, "saldos_banco.banco": {"$ne": r.banco.value}},
+            {
+                "mes": mes,
+                "estado": en_ejec,
+                "saldos_banco.banco": {"$ne": r.banco.value},
+            },
             {
                 "$push": {
                     "saldos_banco": {
@@ -99,7 +125,27 @@ async def _upsert_saldo(col, mes: str, r: ReporteBanco) -> None:
         )
         if res2.matched_count == 1:
             return
-        # matched_count==0: el banco apareció concurrentemente → reintentar posicional
+        # ni $set ni $push casaron → releer y distinguir la causa (no adivinar).
+        doc = await col.find_one({"mes": mes}, {"estado": 1, "saldos_banco": 1})
+        if doc is None:
+            raise CajaError(f"el mes {mes[:7]} no existe", 404)
+        if doc.get("estado") != en_ejec:
+            raise CajaError(
+                f"el mes {mes[:7]} dejó de estar en ejecución durante el reporte "
+                "(concurrencia); reintentar",
+                409,
+            )
+        actual = next(
+            (sb for sb in doc.get("saldos_banco", []) if sb["banco"] == r.banco.value),
+            None,
+        )
+        if actual is not None and actual["fecha_reporte"] > r.fecha_reporte:
+            raise CajaError(
+                f"no-retroceso: {r.banco.value} ya reportó {actual['fecha_reporte']}; "
+                f"{r.fecha_reporte} es anterior (regla 7)",
+                422,
+            )
+        # el banco apareció concurrentemente con fecha <= la nueva → reintentar $set
     raise CajaError(
         "no se pudo aplicar el reporte de saldo (contención); reintentar", 409
     )

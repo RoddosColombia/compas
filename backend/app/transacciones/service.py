@@ -20,9 +20,11 @@ emit falla). Con `proponer_regla` (+patrón), crea una ReglaClasificacion APREND
 inactiva (§1.9: nunca auto-activada; la validación de la propuesta corre ANTES de
 mutar — si la propuesta es inválida, nada cambia)."""
 
+import hashlib
 from decimal import Decimal
 
 from beanie import PydanticObjectId
+from pymongo.errors import DuplicateKeyError
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
@@ -30,7 +32,7 @@ from app.core.time import now_utc
 from app.core.ulid import new_ulid
 from app.domain.bancos import Banco
 from app.domain.mes_control import EstadoMes, MesControl
-from app.domain.rubro import Rubro, TipoFlujo
+from app.domain.rubro import Rubro, TipoFlujo, es_rubro_clasificable
 from app.domain.transaccion import Transaccion
 
 RUBRO_POR_CLASIFICAR = "Por clasificar"
@@ -51,7 +53,11 @@ async def crear_transaccion_manual(
     tipo_flujo: TipoFlujo,
     usuario_id: str,
     rubro_id: str | None = None,
-) -> Transaccion:
+    idempotency_key: str | None = None,
+    endpoint: str | None = None,
+) -> tuple[Transaccion, bool]:
+    """Devuelve (tx, replay). replay=True cuando la Idempotency-Key ya había
+    creado esta tx (colisión en el índice único tras expirar la marca)."""
     mes = fecha[:7] + "-01"
     mc = await MesControl.find_one(MesControl.mes == mes)
     if mc is None:
@@ -75,6 +81,12 @@ async def crear_transaccion_manual(
                 f"rubro '{rubro.nombre}' es {rubro.tipo_flujo.value}, "
                 f"incoherente con tipo_flujo={tipo_flujo.value}"
             )
+        if not es_rubro_clasificable(rubro):
+            raise TransaccionManualError(
+                f"el rubro '{rubro.nombre}' es de sistema y no admite "
+                "clasificación manual (P0-1)",
+                status=422,
+            )
     else:
         rubro = await Rubro.find_one(Rubro.nombre == RUBRO_POR_CLASIFICAR)
         if rubro is None:
@@ -82,6 +94,18 @@ async def crear_transaccion_manual(
                 "falta el rubro de sistema 'Por clasificar' (correr semillas)",
                 status=500,
             )
+
+    # A-4 (P1-9): id_banco determinista desde la Idempotency-Key → un replay tras
+    # expirar el TTL de la marca colisiona en el índice único (banco, id_banco) y
+    # NO duplica dinero (la unicidad vive en el índice, no en la marca). Sin key
+    # (no debería ocurrir por el endpoint): ULID aleatorio.
+    if idempotency_key is not None and endpoint is not None:
+        huella = hashlib.sha256(
+            f"{usuario_id}|{endpoint}|{idempotency_key}".encode()
+        ).hexdigest()
+        id_banco = f"MAN-{huella[:24]}"
+    else:
+        id_banco = f"MAN-{new_ulid()}"
 
     tx = Transaccion(
         fecha=fecha,
@@ -91,39 +115,53 @@ async def crear_transaccion_manual(
         rubro_id=rubro.id,
         mes_id=mc.id,
         banco=Banco.MANUAL,
-        id_banco=f"MAN-{new_ulid()}",
+        id_banco=id_banco,
         clasificada_por=usuario_id if clasificada else None,
         clasificada_at=now_utc() if clasificada else None,
     )
-    await tx.insert()
+    try:
+        await tx.insert()
+    except DuplicateKeyError:
+        existente = await Transaccion.find_one(
+            Transaccion.banco == Banco.MANUAL,
+            Transaccion.id_banco == id_banco,
+        )
+        if existente is not None:
+            return existente, True  # replay convergente, una sola tx
+        raise
 
-    # CR-S2 (Kimi M-1): TODA creación manual deja rastro forense permanente —
-    # es la única vía por la que entra dinero sin archivo de banco.
-    await emit_audit(
-        AuditEvento.transaccion_creada,
-        entidad="transaccion",
-        entidad_id=str(tx.id),
-        actor_id=usuario_id,
-        metadata={
-            "origen": "manual",
-            "valor": f"{valor:.2f}",
-            "tipo_flujo": tipo_flujo.value,
-        },
-    )
-
-    if clasificada:
+    # A-4 (P1-7): saga O1. CR-S2 (Kimi M-1) exige que TODA creación manual deje
+    # rastro forense — es la única vía por la que entra dinero sin archivo de banco.
+    # Sin rastro no hay creación: si el emit falla, se compensa borrando la tx
+    # (nada persiste) → el router puede borrar la marca y el retry no duplica.
+    try:
         await emit_audit(
-            AuditEvento.transaccion_clasificada,
+            AuditEvento.transaccion_creada,
             entidad="transaccion",
             entidad_id=str(tx.id),
             actor_id=usuario_id,
             metadata={
                 "origen": "manual",
-                "rubro_id": str(rubro.id),
                 "valor": f"{valor:.2f}",
+                "tipo_flujo": tipo_flujo.value,
             },
         )
-    return tx
+        if clasificada:
+            await emit_audit(
+                AuditEvento.transaccion_clasificada,
+                entidad="transaccion",
+                entidad_id=str(tx.id),
+                actor_id=usuario_id,
+                metadata={
+                    "origen": "manual",
+                    "rubro_id": str(rubro.id),
+                    "valor": f"{valor:.2f}",
+                },
+            )
+    except Exception:
+        await tx.delete()  # O1: compensación — sin dinero fantasma
+        raise
+    return tx, False
 
 
 async def reclasificar_transaccion(
@@ -165,6 +203,12 @@ async def reclasificar_transaccion(
             f"el rubro '{rubro.nombre}' es {rubro.tipo_flujo.value}, incoherente "
             f"con una transacción de {tx.tipo_flujo.value} (D1)",
             409,
+        )
+    if not es_rubro_clasificable(rubro):
+        raise TransaccionManualError(
+            f"el rubro '{rubro.nombre}' es de sistema y no admite "
+            "reclasificación manual (P0-1)",
+            422,
         )
     if proponer_regla:
         if patron is None or len(patron.strip()) < 3:

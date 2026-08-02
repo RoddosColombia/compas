@@ -203,6 +203,28 @@ async def test_manual_en_saldos_422(api):
     assert r.status_code == 422
 
 
+async def test_banco_repetido_en_apertura_422(api):
+    # A-6 (parte 4): dedup de banco en la apertura (espejo de reportar_saldos,
+    # caja/router.py). El mismo banco dos veces produciría un saldos_banco con
+    # duplicados → rompe el dict de conciliación y los updates posicionales por
+    # banco (uno se pisa en silencio). Fail-loud: 422 y no se crea el mes.
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.post(
+        "/api/v1/meses",
+        json=_body(
+            saldos_banco=[
+                {"banco": "bancolombia", "saldo": "1", "fecha_reporte": "2026-07-01"},
+                {"banco": "bancolombia", "saldo": "2", "fecha_reporte": "2026-07-01"},
+            ]
+        ),
+        headers=h,
+    )
+    assert r.status_code == 422
+    assert "repetido" in r.json()["detail"].lower()
+    assert await MesControl.find_all().count() == 0
+
+
 async def test_mes_no_normalizado_422(api):
     ac, _ = api
     h = await _token(ac)

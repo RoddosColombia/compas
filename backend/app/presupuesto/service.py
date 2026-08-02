@@ -31,7 +31,7 @@ from app.audit.service import emit_audit
 from app.core.money import money_str
 from app.core.time import now_utc
 from app.domain.mes_control import EstadoMes, MesControl
-from app.domain.presupuesto import Ajuste, PresupuestoLinea
+from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import Rubro, TipoFlujo
 from app.domain.transaccion import Transaccion
 from app.presupuesto.motor import calcular_sugerido_historico
@@ -189,29 +189,57 @@ async def acotar_linea(
 
     # Estado previo para la compensación (M-2).
     prev_monto = ln.monto_definido
-    prev_ajustes = len(ln.ajustes)
-    prev_estado = mc.estado
+    # A-6 (parte 2): el ajuste se persiste con $push POSICIONAL (no replace de la
+    # línea). `at` se trunca a milisegundos —la precisión de BSON— para que el $push
+    # y el $pull de la compensación usen EXACTAMENTE el mismo valor y casen.
+    _ahora = now_utc()
+    at = _ahora.replace(microsecond=(_ahora.microsecond // 1000) * 1000)
+    ajuste_doc = {
+        "valor_anterior": Decimal128(prev_monto) if prev_monto is not None else None,
+        "valor_nuevo": Decimal128(monto_definido),
+        "por": usuario_id,
+        "at": at,
+        "comentario": comentario,
+    }
+    col = PresupuestoLinea.get_pymongo_collection()
+    client = col.database.client
+    efecto = {"transiciono": False, "estado_previo": None}
 
-    ln.ajustes.append(
-        Ajuste(
-            valor_anterior=prev_monto,
-            valor_nuevo=monto_definido,
-            por=usuario_id,
-            at=now_utc(),
-            comentario=comentario,
-        )
-    )
-    ln.monto_definido = monto_definido
-    cambio_mes = mc.estado is EstadoMes.SUGERIDO  # M-1
-    client = PresupuestoLinea.get_pymongo_collection().database.client
-
-    # S4-00 (Kimi, higiene): línea + mes ATÓMICOS — una caída de proceso entre los
-    # dos save ya no deja el ajuste sin la transición de estado (o viceversa).
     async def _acotar(session):
-        await ln.save(session=session)
-        if cambio_mes:
-            mc.estado = EstadoMes.PROPUESTO
-            await mc.save(session=session)
+        # A-6 (parte 1, TOCTOU): las guardas de arriba corren FUERA de la transacción.
+        # Releer mc DENTRO de la sesión y abortar 409 si otro proceso cambió el mes
+        # (cierre / aprobación concurrente) — no acotar sobre un mes que ya no es
+        # acotable.
+        mc_f = await MesControl.find_one(MesControl.mes == mes, session=session)
+        if mc_f is None or mc_f.estado not in _ACOTABLE:
+            raise AcotarError(
+                "el mes cambió de estado durante el acotamiento (concurrencia); "
+                "reintentar",
+                409,
+            )
+        # A-6 (parte 2): $push del ajuste + $set del monto en un update ATÓMICO sobre
+        # la línea vigente (sin read-modify-write de toda la lista `ajustes` → dos
+        # acotares sobre la misma línea no pierden ajustes). El filtro {vigente:True}
+        # reafirma que sigue vigente; si fue versionada por otro → abortar.
+        res = await col.update_one(
+            {"_id": ln.id, "vigente": True},
+            {
+                "$push": {"ajustes": ajuste_doc},
+                "$set": {"monto_definido": Decimal128(monto_definido)},
+            },
+            session=session,
+        )
+        if res.matched_count != 1:
+            raise AcotarError(
+                "la línea de presupuesto cambió durante el acotamiento "
+                "(concurrencia); reintentar",
+                409,
+            )
+        if mc_f.estado is EstadoMes.SUGERIDO:  # M-1
+            efecto["estado_previo"] = mc_f.estado
+            mc_f.estado = EstadoMes.PROPUESTO
+            await mc_f.save(session=session)
+            efecto["transiciono"] = True
 
     async with await client.start_session() as session:
         await session.with_transaction(_acotar)
@@ -233,20 +261,33 @@ async def acotar_linea(
             },
         )
     except Exception:
-        # M-2 (saga O1): sin auditoría no hay decisión financiera → compensar
-        # (también atómico, como la reversión de aprobar).
+        # M-2 (saga O1): sin auditoría no hay decisión financiera → compensar. $pull
+        # del ajuste EXACTO por `at` (ms-alineado) + $set del monto previo — quirúrgico
+        # (no pisa un ajuste concurrente de otra petición).
         async def _revertir(session):
-            ln.ajustes = ln.ajustes[:prev_ajustes]
-            ln.monto_definido = prev_monto
-            await ln.save(session=session)
-            if cambio_mes:
-                mc.estado = prev_estado
-                await mc.save(session=session)
+            await col.update_one(
+                {"_id": ln.id},
+                {
+                    "$pull": {"ajustes": {"at": at}},
+                    "$set": {
+                        "monto_definido": (
+                            Decimal128(prev_monto) if prev_monto is not None else None
+                        )
+                    },
+                },
+                session=session,
+            )
+            if efecto["transiciono"]:
+                mc_r = await MesControl.find_one(MesControl.mes == mes, session=session)
+                if mc_r is not None and mc_r.estado is EstadoMes.PROPUESTO:
+                    mc_r.estado = efecto["estado_previo"]
+                    await mc_r.save(session=session)
 
         async with await client.start_session() as session:
             await session.with_transaction(_revertir)
         raise
-    return ln
+    # Releer la línea persistida (refleja el estado real, incl. ajustes concurrentes).
+    return await PresupuestoLinea.get(ln.id)
 
 
 async def aprobar_presupuesto(*, mes: str, usuario_id: str) -> dict:
@@ -270,23 +311,49 @@ async def aprobar_presupuesto(*, mes: str, usuario_id: str) -> dict:
     if not lineas:
         raise AprobarError("el mes no tiene líneas de presupuesto que aprobar", 409)
 
-    # Estado previo para compensar si el emit de auditoría falla (saga O1).
-    ids_null_previo = {ln.id for ln in lineas if ln.monto_definido is None}
-    estado_previo = mc.estado
     client = PresupuestoLinea.get_pymongo_collection().database.client
+    # Efectos capturados DENTRO de la transacción para una compensación quirúrgica.
+    efecto: dict = {"ids_puestos": [], "estado_previo": None, "n_lineas": 0}
 
     async def _aprobar(session):
-        for ln in lineas:
+        # A-6 (parte 1, TOCTOU): las guardas de arriba corren FUERA de la transacción.
+        # Releer mc + líneas DENTRO de la sesión y abortar 409 si otro proceso cambió
+        # el mes (cierre / segunda aprobación) o las líneas — no aprobar sobre un
+        # estado que ya cambió ni con un conjunto de líneas obsoleto.
+        mc_f = await MesControl.find_one(MesControl.mes == mes, session=session)
+        if (
+            mc_f is None
+            or mc_f.estado is EstadoMes.DEFINIDO
+            or mc_f.estado not in _ACOTABLE
+        ):
+            raise AprobarError(
+                "el mes cambió de estado durante la aprobación (concurrencia); "
+                "reintentar",
+                409,
+            )
+        lineas_f = await PresupuestoLinea.find(
+            PresupuestoLinea.mes_id == mc.id,
+            PresupuestoLinea.vigente == True,  # noqa: E712
+            session=session,
+        ).to_list()
+        if not lineas_f:
+            raise AprobarError("el mes no tiene líneas de presupuesto que aprobar", 409)
+        puestos = []
+        for ln in lineas_f:
             if ln.monto_definido is None:  # D2: aceptar la recomendación del motor
                 ln.monto_definido = ln.monto_sugerido
                 await ln.save(session=session)
+                puestos.append(ln.id)
+        efecto["ids_puestos"] = puestos
+        efecto["estado_previo"] = mc_f.estado
+        efecto["n_lineas"] = len(lineas_f)
         # M-1 (Kimi Sprint 4): la aprobación deja el mes en EN_EJECUCION (US-02: "el
         # mes pasa a en_ejecucion"). `definido_por/at` + el evento presupuesto.definido
         # son el registro de la aprobación; no se usa un estado 'definido' en reposo.
-        mc.estado = EstadoMes.EN_EJECUCION
-        mc.definido_por = usuario_id
-        mc.definido_at = now_utc()
-        await mc.save(session=session)
+        mc_f.estado = EstadoMes.EN_EJECUCION
+        mc_f.definido_por = usuario_id
+        mc_f.definido_at = now_utc()
+        await mc_f.save(session=session)
 
     # with_transaction REINTENTA solo TransientTransactionError / commit desconocido.
     async with await client.start_session() as session:
@@ -298,21 +365,34 @@ async def aprobar_presupuesto(*, mes: str, usuario_id: str) -> dict:
             entidad="mes",
             entidad_id=str(mc.id),
             actor_id=usuario_id,
-            metadata={"mes": mes, "lineas": len(lineas), "definido_por": usuario_id},
+            metadata={
+                "mes": mes,
+                "lineas": efecto["n_lineas"],
+                "definido_por": usuario_id,
+            },
         )
     except Exception:
 
         async def _revertir(session):
-            for ln in lineas:
-                if ln.id in ids_null_previo:
+            # Solo las líneas que ESTA aprobación puso (null→sugerido); no pisa un
+            # acotamiento concurrente de otra línea.
+            for lid in efecto["ids_puestos"]:
+                ln = await PresupuestoLinea.get(lid, session=session)
+                if ln is not None:
                     ln.monto_definido = None
                     await ln.save(session=session)
-            mc.estado = estado_previo
-            mc.definido_por = None
-            mc.definido_at = None
-            await mc.save(session=session)
+            mc_r = await MesControl.find_one(MesControl.mes == mes, session=session)
+            if mc_r is not None:
+                mc_r.estado = efecto["estado_previo"]
+                mc_r.definido_por = None
+                mc_r.definido_at = None
+                await mc_r.save(session=session)
 
         async with await client.start_session() as session:
             await session.with_transaction(_revertir)
         raise
-    return {"mes": mes, "estado": mc.estado.value, "lineas": len(lineas)}
+    return {
+        "mes": mes,
+        "estado": EstadoMes.EN_EJECUCION.value,
+        "lineas": efecto["n_lineas"],
+    }

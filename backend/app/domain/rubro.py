@@ -89,6 +89,29 @@ class Rubro(Document):
         return TipoRubro(v)
 
 
+# FIX-A / P0-1 — guard es_sistema (deny-by-default). Casi todos los rubros de
+# sistema son internos del motor de caja y clasificar dinero real hacia ellos lo
+# distorsiona en silencio — el caso letal es 'Ajuste de conciliación', LLAVE DE
+# EXCLUSIÓN de _caja_libro (un egreso enviado ahí desaparece de Vista Control y sube
+# la caja). La lista blanca son los ÚNICOS destinos de sistema legítimos:
+#   • 'Recaudo de cartera' — destino manual real de un abono de cuota.
+#   • 'Por clasificar'     — des-clasificar: devolver una tx a la bandeja (cuenta en
+#                            caja_libro y aparece como sin_presupuesto; inocuo).
+#   • 'Tránsito Wava mes anterior' — futuro (Fase 2 / CR-WAVA); nace en la lista para
+#                            no chocar cuando exista.
+# Cualquier OTRO rubro de sistema (presente o futuro) queda rechazado por defecto:
+# eso es lo que hace al guard estructural en vez de un parche puntual.
+RUBROS_SISTEMA_CLASIFICABLES: frozenset[str] = frozenset(
+    {"Recaudo de cartera", "Por clasificar", "Tránsito Wava mes anterior"}
+)
+
+
+def es_rubro_clasificable(rubro: "Rubro") -> bool:
+    """Destino válido de clasificación (crear manual / reclasificar / regla): un
+    rubro NO de sistema, o uno de sistema explícitamente en la lista blanca."""
+    return (not rubro.es_sistema) or rubro.nombre in RUBROS_SISTEMA_CLASIFICABLES
+
+
 def _seed() -> list[dict]:
     """Plan de cuentas de ARQUITECTURA_PRESUPUESTAL.md (estructura del archivo de
     Arquitectura + taxonomía real de 'Base real egresos'/'Proyeccion ingresos').

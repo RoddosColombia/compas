@@ -45,6 +45,8 @@ async def caja_diaria(
         raise HTTPException(422, "hasta no puede ser anterior a desde")
     try:
         inicial = Decimal(caja_inicial)
+        if not inicial.is_finite():
+            raise InvalidOperation
     except InvalidOperation:
         raise HTTPException(422, "caja_inicial no es un decimal válido") from None
     return await service.caja_diaria(desde=desde, hasta=hasta, caja_inicial=inicial)
@@ -93,6 +95,8 @@ async def reportar_saldos(
         vistos.add(banco)
         try:
             saldo = Decimal(s.saldo)
+            if not saldo.is_finite():
+                raise InvalidOperation
         except InvalidOperation:
             raise HTTPException(
                 422, f"saldo no es un decimal válido: {s.saldo}"

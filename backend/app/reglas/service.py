@@ -40,7 +40,7 @@ from app.domain.regla_clasificacion import (
     coincide,
     normalizar_texto,
 )
-from app.domain.rubro import Rubro, TipoFlujo
+from app.domain.rubro import Rubro, TipoFlujo, es_rubro_clasificable
 from app.domain.transaccion import Transaccion
 
 RUBRO_POR_CLASIFICAR = "Por clasificar"
@@ -120,6 +120,12 @@ async def _validar_rubro_destino(
             f"el rubro '{rubro.nombre}' es {rubro.tipo_flujo.value}, incoherente "
             f"con una regla de {tipo_flujo.value} (D1)",
             409,
+        )
+    if not es_rubro_clasificable(rubro):
+        raise ReglasError(
+            f"el rubro '{rubro.nombre}' es de sistema y no admite reglas de "
+            "clasificación (P0-1)",
+            422,
         )
     return rubro
 

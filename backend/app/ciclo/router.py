@@ -44,7 +44,10 @@ class AbrirMesBody(BaseModel):
 
 def _decimal(s: str, campo: str) -> Decimal:
     try:
-        return Decimal(s)
+        v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
+        return v
     except InvalidOperation:
         raise HTTPException(422, f"{campo} no es un decimal válido") from None
 
@@ -78,6 +81,7 @@ async def abrir_mes(
     _: None = Depends(verify_origin),
 ):
     saldos: list[SaldoBanco] = []
+    vistos: set[Banco] = set()  # A-6 (parte 4): dedup, espejo de reportar_saldos
     for s in body.saldos_banco:
         try:
             banco = Banco(s.banco)
@@ -85,6 +89,13 @@ async def abrir_mes(
             raise HTTPException(422, f"banco desconocido: {s.banco}") from None
         if banco is Banco.MANUAL:
             raise HTTPException(422, "'manual' no es un banco de saldos (§1.3)")
+        if banco in vistos:
+            # Un saldos_banco con banco duplicado rompe el dict de conciliación
+            # ({sb.banco: sb}) y los updates posicionales por banco. Fail-loud.
+            raise HTTPException(
+                422, f"banco repetido en la misma llamada: {banco.value}"
+            )
+        vistos.add(banco)
         try:
             saldos.append(
                 SaldoBanco(

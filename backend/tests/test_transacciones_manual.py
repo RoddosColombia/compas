@@ -16,6 +16,7 @@ Reglas cubiertas:
 from decimal import Decimal
 
 import httpx
+import pytest
 import pytest_asyncio
 from app.audit.service import configure_audit, reset_audit
 from app.auth import passwords, repository
@@ -59,7 +60,7 @@ async def api(monkeypatch):
     ).insert()
     await Rubro(
         grupo="otros",
-        nombre="Recaudo",
+        nombre="Recaudo de cartera",
         tipo_flujo="ingreso",
         orden=99,
         es_sistema=True,
@@ -222,7 +223,7 @@ async def test_carrera_idempotency_key_da_409(api, monkeypatch):
 async def test_rubro_explicito_emite_clasificada(api):
     ac, c = api
     h = await _token(ac)
-    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo")
+    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo de cartera")
     r = await _post(
         ac,
         h,
@@ -244,7 +245,7 @@ async def test_rubro_incoherente_con_tipo_422(api):
     # Recaudo es ingreso; declararlo egreso es ambigüedad → 422, no se adivina.
     ac, _ = api
     h = await _token(ac)
-    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo")
+    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo de cartera")
     r = await _post(ac, h, _body(tipo_flujo="egreso", rubro_id=str(recaudo.id)))
     assert r.status_code == 422
 
@@ -260,3 +261,57 @@ async def test_clasificar_hacia_rubro_inactivo_422(api):
     ).insert()
     r = await _post(ac, h, _body(rubro_id=str(inactivo.id)))
     assert r.status_code == 422
+
+
+async def _boom(*a, **k):
+    raise RuntimeError("audit caído")
+
+
+async def test_fail_closed_crear_manual_compensa_y_no_duplica(api, monkeypatch):
+    # A-4 (P1-7): saga O1 — si el emit de auditoría falla tras insertar, la tx se
+    # compensa (tx.delete()); NADA persiste. El router entonces puede borrar la
+    # marca con seguridad y el retry con la misma key crea UNA sola tx (no duplica).
+    ac, _ = api
+    h = await _token(ac)
+    monkeypatch.setattr("app.transacciones.service.emit_audit", _boom)
+    with pytest.raises(RuntimeError):
+        await _post(ac, h, _body(), key="saga-1")
+    assert await Transaccion.find_one() is None  # compensado, sin dinero fantasma
+    monkeypatch.undo()
+    r = await _post(ac, h, _body(), key="saga-1")  # misma key, marca ya borrada
+    assert r.status_code == 201
+    assert await Transaccion.count() == 1  # una sola tx
+
+
+async def test_muerte_en_reejecucion_de_huerfana_no_clava_la_marca(api, monkeypatch):
+    # A-4.2 (P1-10), cierre del residual (Kimi): si el proceso MUERE durante la
+    # RE-EJECUCIÓN de una marca huérfana (excepción genérica, no error de negocio),
+    # la marca NO puede quedar clavada en el centinela -1 → la bloquearía las 24h del
+    # TTL. El router la devuelve a 'en curso' (None); como su created_at ya es viejo,
+    # el siguiente retry la readquiere y converge. Sin el fix quedaría en -1.
+    from datetime import timedelta
+
+    from app.core.time import now_utc
+    from app.domain.idempotency import IdempotencyKey
+
+    ac, _ = api
+    h = await _token(ac)
+    # 1) fabricar una marca huérfana: en curso (None) y envejecida > _HUERFANA_MIN.
+    assert (await _post(ac, h, _body(), key="orph-crash")).status_code == 201
+    mk = await IdempotencyKey.find_one(IdempotencyKey.key == "orph-crash")
+    mk.response_status = None
+    mk.response_body = None
+    mk.created_at = now_utc() - timedelta(minutes=10)
+    await mk.save()
+
+    # 2) el servicio MUERE (excepción genérica) durante la re-ejecución de la huérfana.
+    async def _cae(*a, **k):
+        raise RuntimeError("proceso caído en re-ejecución")
+
+    monkeypatch.setattr("app.transacciones.service.crear_transaccion_manual", _cae)
+    with pytest.raises(RuntimeError):
+        await _post(ac, h, _body(), key="orph-crash")
+
+    # 3) la marca vuelve a ser adquirible (None), NO clavada en -1.
+    mk2 = await IdempotencyKey.find_one(IdempotencyKey.key == "orph-crash")
+    assert mk2.response_status is None
