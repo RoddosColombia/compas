@@ -11,6 +11,7 @@ en el índice → el servicio devuelve la tx existente con replay:true.
 """
 
 import os
+from datetime import timedelta
 from decimal import Decimal
 
 import httpx
@@ -21,6 +22,7 @@ from app.auth import passwords, repository
 from app.auth.models import User
 from app.auth.roles import Role
 from app.config import get_settings
+from app.core.time import now_utc
 from app.domain import DOMAIN_DOCUMENTS
 from app.domain.idempotency import IdempotencyKey
 from app.domain.mes_control import MesControl
@@ -121,3 +123,44 @@ async def test_replay_tras_ttl_payload_distinto_no_convergente(api):
     r = await _post(ac, h, "ttl-2", {**BODY, "valor": "99999"})
     assert r.status_code == 422
     assert await Transaccion.count() == 1
+
+
+async def _envejecer_marca(key: str, minutos: int, en_curso: bool = True) -> None:
+    """Simula la muerte del proceso ENTRE el commit y marca.save(): la marca queda
+    en curso (response_status=None) y su created_at se envejece `minutos`."""
+    mk = await IdempotencyKey.find_one(IdempotencyKey.key == key)
+    if en_curso:
+        mk.response_status = None
+        mk.response_body = None
+    mk.created_at = now_utc() - timedelta(minutes=minutos)
+    await mk.save()
+
+
+async def test_marca_huerfana_se_adquiere_y_reejecuta_convergente(api):
+    # A-4.2 (P1-10): proceso muerto tras crear la tx pero antes de completar la
+    # marca. Pasados >5 min, un retry la ADQUIERE y re-ejecuta convergente: como el
+    # id_banco es determinista, choca en el índice → devuelve la MISMA tx (replay),
+    # nunca una segunda. La marca queda completada (200).
+    ac, _ = api
+    h = await _token(ac)
+    assert (await _post(ac, h, "orph-1")).status_code == 201
+    await _envejecer_marca("orph-1", minutos=10)  # huérfana
+
+    r2 = await _post(ac, h, "orph-1")
+    assert r2.status_code == 200
+    assert r2.json()["replay"] is True
+    assert await Transaccion.count() == 1  # jamás una segunda
+    mk = await IdempotencyKey.find_one(IdempotencyKey.key == "orph-1")
+    assert mk.response_status == 200  # marca completada, ya no huérfana
+
+
+async def test_marca_fresca_en_curso_sigue_409(api):
+    # Una marca en curso pero FRESCA (<5 min) NO se adquiere: 409, no re-ejecuta.
+    ac, _ = api
+    h = await _token(ac)
+    assert (await _post(ac, h, "fresh-1")).status_code == 201
+    await _envejecer_marca("fresh-1", minutos=1)  # en curso pero fresca
+
+    r2 = await _post(ac, h, "fresh-1")
+    assert r2.status_code == 409
+    assert await Transaccion.count() == 1  # no se re-ejecutó

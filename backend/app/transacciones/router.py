@@ -22,7 +22,7 @@ from app.auth.deps import require_permission
 from app.auth.models import User
 from app.auth.router import verify_origin
 from app.core.money import money_str
-from app.domain.idempotency import IdempotencyKey
+from app.domain.idempotency import IdempotencyKey, intentar_adquirir_huerfana
 from app.domain.rubro import TipoFlujo
 from app.domain.transaccion import Transaccion
 from app.transacciones import service
@@ -97,26 +97,36 @@ async def crear_manual(
         IdempotencyKey.endpoint == _ENDPOINT,
         IdempotencyKey.key == idempotency_key,
     )
+    es_huerfana = False
     if previa is not None:
         if previa.request_hash != req_hash:
             raise HTTPException(422, "Idempotency-Key ya usada con un payload distinto")
-        if previa.response_status is None:
+        estado = previa.response_status
+        if estado is not None and estado > 0:
+            # Replay: la respuesta ORIGINAL, con su status original (§1.12).
+            return JSONResponse(previa.response_body, status_code=estado)
+        # A-4.2 (P1-10): en curso (None) o re-ejecutándose (-1). Si la marca es
+        # huérfana (>5 min) se adquiere y se re-ejecuta convergente; si no, 409.
+        if estado is None and await intentar_adquirir_huerfana(previa):
+            marca = previa
+            es_huerfana = True
+        else:
             raise HTTPException(409, "petición con esta Idempotency-Key en curso")
-        # Replay: la respuesta ORIGINAL, con su status original (§1.12).
-        return JSONResponse(previa.response_body, status_code=previa.response_status)
-
-    marca = IdempotencyKey(
-        usuario_id=user.id,
-        endpoint=_ENDPOINT,
-        key=idempotency_key,
-        request_hash=req_hash,
-    )
-    try:
-        await marca.insert()
-    except DuplicateKeyError:
-        # Kimi B-1: doble-clic real (2 requests concurrentes) — el índice único
-        # `scope_unico` atrapa al 2º → 409, no 500.
-        raise HTTPException(409, "petición con esta Idempotency-Key en curso") from None
+    else:
+        marca = IdempotencyKey(
+            usuario_id=user.id,
+            endpoint=_ENDPOINT,
+            key=idempotency_key,
+            request_hash=req_hash,
+        )
+        try:
+            await marca.insert()
+        except DuplicateKeyError:
+            # Kimi B-1: doble-clic real (2 requests concurrentes) — el índice único
+            # `scope_unico` atrapa al 2º → 409, no 500.
+            raise HTTPException(
+                409, "petición con esta Idempotency-Key en curso"
+            ) from None
 
     try:
         tx, replay = await service.crear_transaccion_manual(
@@ -130,10 +140,18 @@ async def crear_manual(
             endpoint=_ENDPOINT,
         )
     except service.TransaccionManualError as e:
-        await marca.delete()  # una petición fallida no quema la key
+        # A-4.2: en re-ejecución de huérfana el error de negocio ES la respuesta
+        # convergente (se persiste); en flujo normal, no quemar la key (se borra).
+        if es_huerfana:
+            marca.response_status = e.status
+            marca.response_body = {"detail": e.detalle}
+            await marca.save()
+        else:
+            await marca.delete()
         raise HTTPException(e.status, e.detalle) from e
     except Exception:
-        await marca.delete()
+        if not es_huerfana:
+            await marca.delete()
         raise
 
     # A-4 (P1-9): replay convergente tras TTL → 200 + replay:true (la unicidad la
