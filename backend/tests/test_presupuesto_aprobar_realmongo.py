@@ -144,6 +144,34 @@ class TestAprobarReal:
         n = await db["audit_log"].count_documents({"evento": "presupuesto.definido"})
         assert n == 1
 
+    async def test_aprobar_aborta_si_mes_cambia_en_la_sesion(
+        self, entorno, monkeypatch
+    ):
+        # A-6 (parte 1, TOCTOU): la guarda de estado corre FUERA de la transacción.
+        # Si entre esa guarda y la sesión otro proceso cierra/define el mes, el
+        # re-read DENTRO de la sesión aborta con 409 y NADA se escribe. Se simula: la
+        # lectura CON session devuelve el mes ya CERRADO.
+        from app.presupuesto import service
+
+        _, _ = entorno
+        mc, _acotada, sin_acotar = await self._sembrar()
+        orig = MesControl.find_one
+
+        async def _find_one(*a, **k):
+            doc = await orig(*a, **k)
+            if k.get("session") is not None and doc is not None:
+                doc.estado = EstadoMes.CERRADO
+            return doc
+
+        monkeypatch.setattr(MesControl, "find_one", _find_one)
+        with pytest.raises(service.AprobarError) as ei:
+            await service.aprobar_presupuesto(mes="2026-07-01", usuario_id="u1")
+        assert ei.value.status == 409
+        monkeypatch.undo()
+        # nada se escribió: el mes sigue propuesto y la línea null sigue null
+        assert (await MesControl.get(mc.id)).estado is EstadoMes.PROPUESTO
+        assert (await PresupuestoLinea.get(sin_acotar.id)).monto_definido is None
+
     async def test_convergencia_abort_datos(self, entorno, monkeypatch):
         # (a) Falla la última escritura de la transacción → abort → rollback TOTAL
         # (las líneas guardadas dentro de la sesión se revierten). Luego CONVERGE.
