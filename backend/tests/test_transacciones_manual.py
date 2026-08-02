@@ -59,7 +59,7 @@ async def api(monkeypatch):
     ).insert()
     await Rubro(
         grupo="otros",
-        nombre="Recaudo",
+        nombre="Recaudo de cartera",
         tipo_flujo="ingreso",
         orden=99,
         es_sistema=True,
@@ -222,7 +222,7 @@ async def test_carrera_idempotency_key_da_409(api, monkeypatch):
 async def test_rubro_explicito_emite_clasificada(api):
     ac, c = api
     h = await _token(ac)
-    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo")
+    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo de cartera")
     r = await _post(
         ac,
         h,
@@ -244,7 +244,7 @@ async def test_rubro_incoherente_con_tipo_422(api):
     # Recaudo es ingreso; declararlo egreso es ambigüedad → 422, no se adivina.
     ac, _ = api
     h = await _token(ac)
-    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo")
+    recaudo = await Rubro.find_one(Rubro.nombre == "Recaudo de cartera")
     r = await _post(ac, h, _body(tipo_flujo="egreso", rubro_id=str(recaudo.id)))
     assert r.status_code == 422
 

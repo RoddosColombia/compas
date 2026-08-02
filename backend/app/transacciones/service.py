@@ -30,7 +30,7 @@ from app.core.time import now_utc
 from app.core.ulid import new_ulid
 from app.domain.bancos import Banco
 from app.domain.mes_control import EstadoMes, MesControl
-from app.domain.rubro import Rubro, TipoFlujo
+from app.domain.rubro import Rubro, TipoFlujo, es_rubro_clasificable
 from app.domain.transaccion import Transaccion
 
 RUBRO_POR_CLASIFICAR = "Por clasificar"
@@ -74,6 +74,12 @@ async def crear_transaccion_manual(
             raise TransaccionManualError(
                 f"rubro '{rubro.nombre}' es {rubro.tipo_flujo.value}, "
                 f"incoherente con tipo_flujo={tipo_flujo.value}"
+            )
+        if not es_rubro_clasificable(rubro):
+            raise TransaccionManualError(
+                f"el rubro '{rubro.nombre}' es de sistema y no admite "
+                "clasificación manual (P0-1)",
+                status=422,
             )
     else:
         rubro = await Rubro.find_one(Rubro.nombre == RUBRO_POR_CLASIFICAR)
@@ -165,6 +171,12 @@ async def reclasificar_transaccion(
             f"el rubro '{rubro.nombre}' es {rubro.tipo_flujo.value}, incoherente "
             f"con una transacción de {tx.tipo_flujo.value} (D1)",
             409,
+        )
+    if not es_rubro_clasificable(rubro):
+        raise TransaccionManualError(
+            f"el rubro '{rubro.nombre}' es de sistema y no admite "
+            "reclasificación manual (P0-1)",
+            422,
         )
     if proponer_regla:
         if patron is None or len(patron.strip()) < 3:
