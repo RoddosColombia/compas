@@ -44,7 +44,10 @@ class AbrirMesBody(BaseModel):
 
 def _decimal(s: str, campo: str) -> Decimal:
     try:
-        return Decimal(s)
+        v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
+        return v
     except InvalidOperation:
         raise HTTPException(422, f"{campo} no es un decimal válido") from None
 

@@ -101,6 +101,8 @@ def parsear_campos(body: ParametrosCampos) -> dict:
     for c in _MONEY:
         try:
             campos[c] = Decimal(getattr(body, c))
+            if not campos[c].is_finite():
+                raise InvalidOperation
         except (InvalidOperation, ValueError):
             raise HTTPException(422, f"{c} debe ser un decimal en string") from None
     for c in _INT:
@@ -110,6 +112,8 @@ def parsear_campos(body: ParametrosCampos) -> dict:
         for cb in body.componentes_alistamiento:
             try:
                 valor = Decimal(cb.valor)
+                if not valor.is_finite():
+                    raise InvalidOperation
             except (InvalidOperation, ValueError):
                 raise HTTPException(
                     422,

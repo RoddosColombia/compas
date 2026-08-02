@@ -170,7 +170,10 @@ class ResolverBody(BaseModel):
 
 def _a_decimal(s: str, campo: str) -> Decimal:
     try:
-        return Decimal(s)
+        v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
+        return v
     except (InvalidOperation, ValueError) as e:
         raise HTTPException(422, f"{campo} no es un decimal válido: {s}") from e
 

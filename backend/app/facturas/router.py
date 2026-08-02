@@ -36,7 +36,10 @@ router = APIRouter(prefix="/facturas", tags=["facturas"])
 
 def _dec(valor: str, campo: str) -> Decimal:
     try:
-        return Decimal(valor)
+        v = Decimal(valor)
+        if not v.is_finite():
+            raise InvalidOperation
+        return v
     except (InvalidOperation, ValueError):
         raise HTTPException(422, f"{campo} debe ser un decimal en string") from None
 

@@ -27,6 +27,8 @@ router = APIRouter(prefix="/gastos-recurrentes", tags=["gastos-recurrentes"])
 def _parse_monto(s: str) -> Decimal:
     try:
         v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
     except InvalidOperation:
         raise HTTPException(422, "monto no es un decimal válido") from None
     if v < 0:

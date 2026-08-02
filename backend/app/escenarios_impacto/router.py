@@ -59,6 +59,8 @@ def _a_embebido(a: AjusteBody) -> AjusteEmbebido:
         raise HTTPException(422, "mes_fin debe ser 'YYYY-MM' o null")
     try:
         valor = Decimal(a.valor)
+        if not valor.is_finite():
+            raise InvalidOperation
     except (InvalidOperation, ValueError) as e:
         raise HTTPException(422, f"valor no es un decimal válido: {a.valor}") from e
     return AjusteEmbebido(

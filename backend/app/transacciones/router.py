@@ -52,6 +52,8 @@ class TransaccionManualBody(BaseModel):
 def _parse_valor(s: str) -> Decimal:
     try:
         v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
     except InvalidOperation:
         raise HTTPException(422, "valor no es un decimal válido") from None
     if v <= 0:

@@ -20,15 +20,23 @@ _CENTAVO = Decimal("0.01")
 
 def _coerce_decimal(v: object) -> Decimal:
     if isinstance(v, Decimal):
-        return v
-    if isinstance(v, Decimal128):  # lo que devuelve BSON/Motor al releer
-        return v.to_decimal()
+        d = v
+    elif isinstance(v, Decimal128):  # lo que devuelve BSON/Motor al releer
+        d = v.to_decimal()
     # bool es subclase de int: hay que descartarlo explícitamente.
-    if isinstance(v, bool) or isinstance(v, float):
+    elif isinstance(v, bool) or isinstance(v, float):
         raise ValueError("dinero debe ser Decimal, nunca float/bool (regla 1)")
-    raise ValueError(
-        f"dinero debe ser Decimal (o Decimal128 al leer); recibido {type(v).__name__}"
-    )
+    else:
+        raise ValueError(
+            "dinero debe ser Decimal (o Decimal128 al leer); "
+            f"recibido {type(v).__name__}"
+        )
+    # P1-8: Infinity/-Infinity/NaN envenenan el mes (Inf<=0 es False → pasan las
+    # guardas; quedan en BSON; toda lectura posterior revienta). Defensa de dominio
+    # explícita, no dependemos del allow_inf_nan por defecto de pydantic.
+    if not d.is_finite():
+        raise ValueError("dinero debe ser finito, no Infinity/NaN (P1-8)")
+    return d
 
 
 # Decimal con coerción Decimal128→Decimal en la entrada. Úsese en todo campo COP.

@@ -35,6 +35,8 @@ def _mes_key(mes: str) -> str:
 def _monto(s: str) -> Decimal:
     try:
         v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
     except InvalidOperation:
         raise HTTPException(422, f"monto no es un decimal válido: {s}") from None
     if v <= 0:

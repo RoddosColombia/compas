@@ -79,6 +79,8 @@ async def generar_sugerido(
 ):
     try:
         crec = Decimal(body.crec_pct)
+        if not crec.is_finite():
+            raise InvalidOperation
     except InvalidOperation:
         raise HTTPException(422, "crec_pct no es un decimal válido") from None
     if crec < 0:
@@ -110,6 +112,8 @@ async def listar_presupuesto(
 def _parse_monto(s: str) -> Decimal:
     try:
         v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
     except InvalidOperation:
         raise HTTPException(422, "monto_definido no es un decimal válido") from None
     if v < 0:
