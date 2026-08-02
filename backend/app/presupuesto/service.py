@@ -337,9 +337,7 @@ async def aprobar_presupuesto(*, mes: str, usuario_id: str) -> dict:
             session=session,
         ).to_list()
         if not lineas_f:
-            raise AprobarError(
-                "el mes no tiene líneas de presupuesto que aprobar", 409
-            )
+            raise AprobarError("el mes no tiene líneas de presupuesto que aprobar", 409)
         puestos = []
         for ln in lineas_f:
             if ln.monto_definido is None:  # D2: aceptar la recomendación del motor
