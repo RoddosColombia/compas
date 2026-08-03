@@ -28,14 +28,24 @@ export interface ResultadoCierre {
   diferencia: string;
   ajuste_tx_id: string | null;
   saldo_inicial_siguiente: string;
+  // CR-WAVA: caja en dos líneas + total (nunca sumado dentro de un banco).
+  bancos: string;
+  transito_wava: string;
+  caja_total: string;
+  aviso_transito: string | null;
 }
 
 export async function confirmarCierre(
   mes: string,
   idempotencyKey: string, // crypto.randomUUID() — UNA por intento (patrón C1)
+  transitoWava = "0", // CR-WAVA: dinero en tránsito (Wava) declarado al cerrar
 ): Promise<ResultadoCierre> {
   return apiJson(`/meses/${mes}/cierre/confirmar`, {
     method: "POST",
-    headers: { "Idempotency-Key": idempotencyKey },
+    headers: {
+      "Idempotency-Key": idempotencyKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ transito_wava: transitoWava }),
   });
 }

@@ -11,15 +11,18 @@ MARCADO PARA AUDITORÍA KIMI (regla 8 + §2.4).
 import hashlib
 import json
 import re
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 from pymongo.errors import DuplicateKeyError
 
 from app.auth.deps import require_permission, require_step_up
 from app.auth.models import User
 from app.auth.router import verify_origin
 from app.cierre import service
+from app.core.money import money_str
 from app.domain.idempotency import IdempotencyKey, intentar_adquirir_huerfana
 
 router = APIRouter(prefix="/meses", tags=["cierre"])
@@ -28,10 +31,31 @@ _MES = re.compile(r"^\d{4}-\d{2}$")
 _ENDPOINT_CONFIRMAR = "POST /meses/{mes}/cierre/confirmar"
 
 
+class ConfirmarCierreBody(BaseModel):
+    """CR-WAVA: el cierre acepta el dinero en tránsito (Wava) declarado. Aditivo:
+    default '0' → el cierre se comporta como antes cuando no se envía body."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    transito_wava: str = Field(default="0", max_length=32)
+
+
 def _mes_key(mes: str) -> str:
     if not _MES.match(mes):
         raise HTTPException(422, "mes debe ser 'YYYY-MM'")
     return f"{mes}-01"
+
+
+def _parse_transito(s: str) -> Decimal:
+    try:
+        v = Decimal(s)
+        if not v.is_finite():
+            raise InvalidOperation
+    except InvalidOperation:
+        raise HTTPException(422, "transito_wava no es un decimal válido") from None
+    if v < 0:
+        raise HTTPException(422, "transito_wava no puede ser negativo")
+    return v
 
 
 @router.post("/{mes}/cierre/conciliacion")
@@ -49,14 +73,20 @@ async def cierre_operativo(
 @router.post("/{mes}/cierre/confirmar")
 async def confirmar_cierre(
     mes: str,
+    body: ConfirmarCierreBody | None = None,
     idempotency_key: str = Header(
         alias="Idempotency-Key", min_length=1, max_length=128
     ),
     user: User = Depends(require_permission("ciclo:confirmar_cierre")),
     _: None = Depends(verify_origin),
 ):
+    transito = _parse_transito((body or ConfirmarCierreBody()).transito_wava)
+    # CR-WAVA: el hash cubre el body completo (monto canónico) → misma key con otro
+    # tránsito = 422; mismo monto = replay. money_str da la misma clave a "0"/"0.00".
     req_hash = hashlib.sha256(
-        json.dumps({"mes": mes}, sort_keys=True).encode()
+        json.dumps(
+            {"mes": mes, "transito_wava": money_str(transito)}, sort_keys=True
+        ).encode()
     ).hexdigest()
     previa = await IdempotencyKey.find_one(
         IdempotencyKey.usuario_id == user.id,
@@ -93,7 +123,7 @@ async def confirmar_cierre(
 
     try:
         resultado = await service.confirmar_cierre(
-            mes=_mes_key(mes), usuario_id=user.id
+            mes=_mes_key(mes), usuario_id=user.id, transito_wava=transito
         )
     except service.CierreError as e:
         # A-4.2: en re-ejecución de huérfana el error de negocio ES la respuesta

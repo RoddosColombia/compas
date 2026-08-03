@@ -19,6 +19,10 @@ export interface Mes {
   saldo_inicial_caja: string;
   saldos_banco: SaldoBanco[];
   ingresos_esperados_semana: string | null;
+  // CR-WAVA (aditivo, opcional para compat): tránsito heredado del mes anterior
+  // y caja inicial total (saldo_inicial + heredado).
+  transito_heredado?: string;
+  caja_inicial_total?: string;
 }
 
 export const BANCOS = ["bancolombia", "bbva", "global66"] as const;

@@ -7,7 +7,11 @@ mongomock NO soporta transacciones → @requires_real_mongo (CI: replica set). C
   1. dorado numérico (cuadra a 118 por ambas vías) · 2. exclusión del rubro en la
   disponible · 3. contra-asiento + ancla restaurada al reabrir · 4. doble cierre
   abortado · 5. replay Idempotency-Key sin duplicar · 6-7. convergencia en los 2
-  puntos de fallo (abort de datos / fallo de emit) · 8. ajuste omitido si dif==0."""
+  puntos de fallo (abort de datos / fallo de emit) · 8. ajuste omitido si dif==0.
+
+CR-WAVA §8 (tránsito Wava en el cierre): la trampa (llegada no infla recaudo ni cambia
+la caja total) · hash 422/replay canónico · O1 del cierre y de la reapertura revierten/
+restauran transito_wava · cierre con 3 líneas + heredado · heredado 0 inocuo."""
 
 import os
 from decimal import Decimal
@@ -347,3 +351,170 @@ class TestCierreReal:
         monkeypatch.undo()
         assert (await MesControl.get(jun.id)).estado is EstadoMes.EN_EJECUCION
         assert await Transaccion.find(Transaccion.mes_id == jul.id).count() == 0
+
+    # ── CR-WAVA §8: tránsito (Wava) en el cierre ──
+
+    async def _confirmar_t(self, ac, h, transito, key="ct"):
+        return await ac.post(
+            "/api/v1/meses/2026-06/cierre/confirmar",
+            headers={**h, "Idempotency-Key": key},
+            json={"transito_wava": transito},
+        )
+
+    async def _rubro_transito(self):
+        return await Rubro(
+            grupo="otros",
+            nombre="Tránsito Wava mes anterior",
+            tipo_flujo="ingreso",
+            orden=97,
+            es_sistema=True,
+        ).insert()
+
+    async def test_wava_cierre_persiste_y_tres_lineas(self, entorno):
+        # §8.7: el cierre con tránsito persiste en MesControl, la metadata de
+        # mes.cerrado lo lleva, la respuesta trae las 3 líneas y el mes siguiente
+        # deriva el heredado.
+        from app.cierre.transito import transito_heredado
+
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+        r = await self._confirmar_t(ac, h, "37280415", "cw1")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["bancos"] == "118.00"
+        assert body["transito_wava"] == "37280415.00"
+        assert body["caja_total"] == "37280533.00"  # 118 + 37.280.415
+        assert (await MesControl.get(jun.id)).transito_wava == Decimal("37280415")
+        doc = await db["audit_log"].find_one({"evento": "mes.cerrado"})
+        assert doc["metadata"]["transito_wava"] == "37280415.00"
+        assert await transito_heredado("2026-07-01") == Decimal("37280415")
+
+    async def test_wava_hash_distinto_422_y_replay_canonico(self, entorno):
+        # §8.3: misma key + otro monto → 422; mismo payload (canónico "100"≡"100.00")
+        # → replay idéntico.
+        ac, db = entorno
+        h = await self._token(ac)
+        await self._sembrar("118")
+        r1 = await self._confirmar_t(ac, h, "100", "kh")
+        assert r1.status_code == 200
+        r2 = await self._confirmar_t(ac, h, "100.00", "kh")  # canónico → replay
+        assert r2.status_code == 200
+        assert r2.json() == r1.json()
+        r3 = await self._confirmar_t(ac, h, "200", "kh")  # otro monto → 422
+        assert r3.status_code == 422
+
+    async def test_wava_reabrir_revierte_transito(self, entorno):
+        # §8.4: la reapertura pone transito_wava a 0 y el heredado desaparece.
+        from app.cierre.transito import transito_heredado
+
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+        await self._confirmar_t(ac, h, "100", "kr")
+        assert (await MesControl.get(jun.id)).transito_wava == Decimal("100")
+        await service.reabrir_mes(mes="2026-06-01", usuario_id="admin")
+        assert (await MesControl.get(jun.id)).transito_wava == Decimal("0")
+        assert await transito_heredado("2026-07-01") == Decimal("0")
+
+    async def test_wava_o1_emit_fail_revierte_transito(self, entorno, monkeypatch):
+        # §8.4: fallo del emit del cierre → transito_wava revertido al previo (0).
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+
+        async def boom(*a, **k):
+            raise RuntimeError("auditoría caída")
+
+        monkeypatch.setattr("app.cierre.service.emit_audit", boom)
+        with pytest.raises(RuntimeError):
+            await self._confirmar_t(ac, h, "100", "kf")
+        jun2 = await MesControl.get(jun.id)
+        assert jun2.estado is EstadoMes.EN_EJECUCION
+        assert jun2.transito_wava == Decimal("0")  # revertido
+        monkeypatch.undo()
+        r = await self._confirmar_t(ac, h, "100", "kf2")
+        assert r.status_code == 200
+        assert (await MesControl.get(jun.id)).transito_wava == Decimal("100")
+
+    async def test_wava_reabrir_o1_emit_fail_restaura_transito(
+        self, entorno, monkeypatch
+    ):
+        # §8.4 (candado del F841): fallo del emit de la REAPERTURA → compensación O1
+        # restaura el cierre CON su transito_wava declarado (no lo pierde).
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+        await self._confirmar_t(ac, h, "100", "kc")
+
+        async def boom(*a, **k):
+            raise RuntimeError("auditoría caída")
+
+        monkeypatch.setattr("app.cierre.service.emit_audit", boom)
+        with pytest.raises(RuntimeError):
+            await service.reabrir_mes(mes="2026-06-01", usuario_id="admin")
+        monkeypatch.undo()
+        jun2 = await MesControl.get(jun.id)
+        assert jun2.estado is EstadoMes.CERRADO
+        assert jun2.transito_wava == Decimal("100")  # restaurado
+
+    async def test_wava_trampa_llegada_no_infla_ni_cambia_total(self, entorno):
+        # §8.1 LA TRAMPA: con jun declarando 100, la llegada de un depósito W al rubro
+        # tránsito NO infla el recaudo (ingreso_real inmóvil) NI cambia la caja total
+        # (bancos suben W, remanente baja W, total igual).
+        import app.core.ulid as u
+        from app.metas_ingreso.service import ingreso_real
+
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+        transito = await self._rubro_transito()
+        await self._confirmar_t(ac, h, "100", "kt")  # jun declara 100 en tránsito
+        # jul en ejecución para leer su Vista Control (aplica a en_ejecución/cerrado)
+        await db["meses_control"].update_one(
+            {"mes": "2026-07-01"}, {"$set": {"estado": "en_ejecucion"}}
+        )
+
+        before = (await ac.get("/api/v1/meses/2026-07/control", headers=h)).json()
+        i0 = await ingreso_real("2026-07")
+        # llega un depósito Wava de 60 (clasificado al rubro tránsito, banco real)
+        await Transaccion(
+            fecha="2026-07-15",
+            descripcion="deposito wava",
+            valor=Decimal("60"),
+            tipo_flujo="ingreso",
+            rubro_id=transito.id,
+            mes_id=jul.id,
+            banco="bancolombia",
+            id_banco=f"MAN-{u.new_ulid()}",
+        ).insert()
+        after = (await ac.get("/api/v1/meses/2026-07/control", headers=h)).json()
+        i1 = await ingreso_real("2026-07")
+
+        # ingreso_real INMÓVIL (el tránsito no es recaudo)
+        assert i0 == i1
+        # caja total INVARIANTE
+        assert before["caja_disponible_total"] == after["caja_disponible_total"]
+        # bancos +60, remanente −60
+        assert Decimal(after["caja_disponible_bancos"]) - Decimal(
+            before["caja_disponible_bancos"]
+        ) == Decimal("60")
+        assert Decimal(before["transito_remanente"]) == Decimal("100")
+        assert Decimal(after["transito_remanente"]) == Decimal("40")
+
+    async def test_wava_heredado_cero_inocuo(self, entorno):
+        # §8.6: cerrar SIN declarar tránsito → respuestas idénticas a pre-módulo
+        # (transito_wava 0, caja_total == bancos, sin aviso, heredado/remanente 0).
+        from app.cierre.transito import transito_heredado, transito_remanente
+
+        ac, db = entorno
+        h = await self._token(ac)
+        jun, jul, arr = await self._sembrar("118")
+        r = await self._confirmar(ac, h)  # sin body → default 0
+        assert r.status_code == 200
+        body = r.json()
+        assert body["transito_wava"] == "0.00"
+        assert body["caja_total"] == body["bancos"]
+        assert body["aviso_transito"] is None
+        assert await transito_heredado("2026-07-01") == Decimal("0")
+        assert await transito_remanente("2026-07-01") == Decimal("0")

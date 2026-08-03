@@ -358,8 +358,11 @@ function TarjetaCierre({
   // Cierre con Idempotency-Key generada UNA vez al abrir el diálogo (patrón C1).
   const [cerrarKey, setCerrarKey] = useState<string | null>(null);
   const [cerrarError, setCerrarError] = useState<string | null>(null);
+  // CR-WAVA: dinero en tránsito (Wava) declarado al cerrar (default 0).
+  const [transito, setTransito] = useState("0");
   const cerrar = useMutation({
-    mutationFn: () => confirmarCierre(mes7, cerrarKey as string),
+    mutationFn: () =>
+      confirmarCierre(mes7, cerrarKey as string, transito.trim()),
     onSuccess: (r) => {
       setCerrarKey(null);
       onCerrado(
@@ -457,6 +460,7 @@ function TarjetaCierre({
             disabled={!siguienteAbierto}
             onClick={() => {
               setCerrarError(null);
+              setTransito("0");
               setCerrarKey(crypto.randomUUID());
             }}
           >
@@ -469,9 +473,19 @@ function TarjetaCierre({
         <CerrarDialog
           mes={mes7}
           conc={conc}
+          transito={transito}
+          onTransito={setTransito}
           pendiente={cerrar.isPending}
           error={cerrarError}
-          alConfirmar={() => cerrar.mutate()}
+          alConfirmar={() => {
+            if (!/^\d+(\.\d{1,2})?$/.test(transito.trim())) {
+              setCerrarError(
+                "El dinero en tránsito debe ser un número positivo (COP).",
+              );
+              return;
+            }
+            cerrar.mutate();
+          }}
           alCerrar={() => {
             setCerrarKey(null);
             setCerrarError(null);
@@ -495,6 +509,8 @@ function Precondicion({ ok }: { ok: boolean | null }) {
 function CerrarDialog({
   mes,
   conc,
+  transito,
+  onTransito,
   pendiente,
   error,
   alConfirmar,
@@ -502,11 +518,21 @@ function CerrarDialog({
 }: {
   mes: string;
   conc: ConciliacionCierre | null;
+  transito: string;
+  onTransito: (v: string) => void;
   pendiente: boolean;
   error: string | null;
   alConfirmar: () => void;
   alCerrar: () => void;
 }) {
+  // CR-WAVA: total = bancos + tránsito (nunca sumado dentro de un banco). Preview con
+  // Decimal (regla 1); si el input aún no es válido, el total muestra solo bancos.
+  const transitoOk = /^\d+(\.\d{1,2})?$/.test(transito.trim());
+  const bancos = conc !== null ? parseMonto(conc.consolidado_reportado) : null;
+  const total =
+    bancos !== null && transitoOk
+      ? bancos.plus(parseMonto(transito.trim()))
+      : bancos;
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
       <dialog
@@ -540,6 +566,41 @@ function CerrarDialog({
               <dt className="text-ink-soft">Diferencia</dt>
               <dd className="tabular font-medium text-ink">
                 {formatCOP(conc.diferencia)}
+              </dd>
+            </div>
+          </dl>
+        )}
+
+        {/* CR-WAVA: dinero en tránsito (Wava) + caja en tres líneas nombradas */}
+        <label className="mb-3 flex flex-col gap-1 font-sans text-sm">
+          <span className="text-ink-soft">Dinero en tránsito (Wava)</span>
+          <input
+            aria-label="Dinero en tránsito (Wava)"
+            inputMode="decimal"
+            placeholder="0"
+            className="tabular w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-right text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            value={transito}
+            onChange={(e) => onTransito(e.target.value)}
+          />
+        </label>
+        {bancos !== null && (
+          <dl className="mb-4 flex flex-col gap-1.5 border-t border-hairline pt-3 font-sans text-sm">
+            <div className="flex justify-between">
+              <dt className="text-ink-soft">Consolidado bancos</dt>
+              <dd className="tabular font-medium text-ink">
+                {formatCOP(bancos)}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-ink-soft">En tránsito</dt>
+              <dd className="tabular font-medium text-ink">
+                {transitoOk ? formatCOP(parseMonto(transito.trim())) : "—"}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="font-semibold text-ink">Total caja</dt>
+              <dd className="tabular font-semibold text-ink">
+                {total !== null ? formatCOP(total) : "—"}
               </dd>
             </div>
           </dl>

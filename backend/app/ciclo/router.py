@@ -16,6 +16,7 @@ from app.auth.deps import require_permission
 from app.auth.models import User
 from app.auth.router import verify_origin
 from app.ciclo import service
+from app.cierre.transito import transito_heredado
 from app.core.money import money_str
 from app.domain.bancos import Banco
 from app.domain.mes_control import MesControl, SaldoBanco
@@ -137,4 +138,13 @@ async def listar_meses(
     user: User = Depends(require_permission("dashboard:leer")),
 ):
     filas = await MesControl.find_all().sort(-MesControl.mes).to_list()
-    return {"items": [_serializar(m) for m in filas]}
+    items = []
+    for m in filas:
+        d = _serializar(m)
+        # CR-WAVA: tránsito de apertura (heredado del mes anterior) + caja inicial.
+        # Aditivo: 0 sin declaración → respuesta idéntica a pre-módulo.
+        heredado = await transito_heredado(m.mes)
+        d["transito_heredado"] = money_str(heredado)
+        d["caja_inicial_total"] = money_str(m.saldo_inicial_caja + heredado)
+        items.append(d)
+    return {"items": items}

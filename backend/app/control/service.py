@@ -18,6 +18,7 @@ from beanie import PydanticObjectId
 from bson.decimal128 import Decimal128
 
 from app.cierre.service import _caja_libro, _rubro_ajuste
+from app.cierre.transito import transito_remanente
 from app.core.money import money_str
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
@@ -278,6 +279,9 @@ async def control(mes: str) -> dict:
         sin_presupuesto.append({"rubro": r.nombre, "ejecutado": money_str(total)})
 
     caja = await _caja_libro(mc.id, rubro_aj.id, mc.saldo_inicial_caja)
+    # CR-WAVA: caja en dos líneas (bancos + tránsito remanente). Aditivo: remanente 0 →
+    # caja_disponible_total == caja_disponible, respuesta idéntica a pre-módulo.
+    remanente = await transito_remanente(mc.mes)
     return {
         "mes": mes[:7],
         "estado": mc.estado.value,
@@ -288,5 +292,8 @@ async def control(mes: str) -> dict:
             "disponible": money_str(tot_disp),
         },
         "caja_disponible": money_str(caja),
+        "caja_disponible_bancos": money_str(caja),
+        "transito_remanente": money_str(remanente),
+        "caja_disponible_total": money_str(caja + remanente),
         "sin_presupuesto": sin_presupuesto,
     }

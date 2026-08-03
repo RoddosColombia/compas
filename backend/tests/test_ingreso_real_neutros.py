@@ -78,3 +78,30 @@ async def test_recaudo_solo_cuenta_completo(db):
 @pytest.mark.asyncio
 async def test_sin_mes_control_es_none(db):
     assert await ingreso_real("2099-01") is None
+
+
+# ── CR-WAVA §2 (P-1): el set neutro crece con 'Tránsito Wava mes anterior' y
+# 'Ajuste de conciliación' (contra-asiento INGRESO de reapertura). Exclusión por
+# rubro_id, nunca por grupo ni por es_sistema. ──
+
+
+@pytest.mark.asyncio
+async def test_transito_wava_no_suma_ingreso_real(db):
+    mc = await _mes()
+    recaudo = await _rubro(RubroGrupo.INGRESOS_OPERATIVOS, "Recaudo de cartera")
+    transito = await _rubro(RubroGrupo.OTROS, "Tránsito Wava mes anterior")
+    await _tx(mc, recaudo, "100", 1)
+    await _tx(mc, transito, "37", 2)  # depósito Wava del mes anterior que aterrizó
+    # el depósito de tránsito NO es recaudo del mes → excluido
+    assert await ingreso_real(MES) == Decimal("100")
+
+
+@pytest.mark.asyncio
+async def test_ajuste_conciliacion_no_suma_ingreso_real(db):
+    mc = await _mes()
+    recaudo = await _rubro(RubroGrupo.INGRESOS_OPERATIVOS, "Recaudo de cartera")
+    ajuste = await _rubro(RubroGrupo.OTROS, "Ajuste de conciliación")
+    await _tx(mc, recaudo, "200", 1)
+    await _tx(mc, ajuste, "15", 2)  # contra-asiento INGRESO de reapertura
+    # el contra-asiento de reapertura no es ingreso real → excluido
+    assert await ingreso_real(MES) == Decimal("200")

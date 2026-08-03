@@ -25,7 +25,7 @@ import {
   vistaControlPorCuenta,
 } from "@/lib/control";
 import { listarMeses } from "@/lib/meses";
-import { formatCOPEntero } from "@/lib/money";
+import { formatCOPEntero, parseMonto } from "@/lib/money";
 
 type Vista = "categoria" | "cuenta" | "decisiones";
 
@@ -178,11 +178,30 @@ export default function ControlPage() {
           />
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiTileV2
-              label="Caja disponible"
-              valor={control.data.caja_disponible}
-              contexto="caja del libro a hoy"
-            />
+            {/* CR-WAVA: con tránsito remanente, la caja se muestra en dos líneas
+                (bancos + tránsito) y el total; sin tránsito, idéntica a antes. */}
+            {control.data.transito_remanente &&
+            parseMonto(control.data.transito_remanente).greaterThan(0) ? (
+              <KpiTileV2
+                label="Caja disponible (total)"
+                valor={
+                  control.data.caja_disponible_total ??
+                  control.data.caja_disponible
+                }
+                contexto={`bancos ${formatCOPEntero(
+                  control.data.caja_disponible_bancos ??
+                    control.data.caja_disponible,
+                )} + tránsito ${formatCOPEntero(
+                  control.data.transito_remanente,
+                )}`}
+              />
+            ) : (
+              <KpiTileV2
+                label="Caja disponible"
+                valor={control.data.caja_disponible}
+                contexto="caja del libro a hoy"
+              />
+            )}
             <KpiTileV2
               label="Presupuesto definido"
               valor={control.data.total.definido}
