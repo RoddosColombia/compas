@@ -19,12 +19,19 @@ from app.domain.obligacion import LineaMeta, MetaIngreso
 from app.domain.rubro import Rubro
 from app.domain.transaccion import TipoFlujo, Transaccion
 
-# FIX-B — rubros "neutros" para el ingreso real: dinero que entró a la cuenta pero NO
-# es recaudo operativo (reversas de GMF, devoluciones, reembolsos). Contarlos inflaría
-# el cumplimiento de la meta. El set NACE con 'Reversas y devoluciones'; CR-WAVA lo
-# EXTENDERÁ con 'Tránsito Wava mes anterior' y 'Ajuste de conciliación' — agregar el
-# nombre aquí, sin duplicar la lógica de exclusión.
-RUBROS_NEUTROS_INGRESO_REAL: frozenset[str] = frozenset({"Reversas y devoluciones"})
+# Rubros "neutros" para el ingreso real: dinero que entró a la cuenta pero NO es
+# recaudo operativo. Contarlos inflaría el cumplimiento de la meta. Exclusión por
+# rubro_id (nunca por grupo ni por es_sistema). El set:
+#   • 'Reversas y devoluciones'    — FIX-B: reversas GMF, devoluciones, reembolsos.
+#   • 'Tránsito Wava mes anterior' — CR-WAVA: depósito Wava del mes previo que llega.
+#   • 'Ajuste de conciliación'     — CR-WAVA: contra-asiento INGRESO de una reapertura.
+RUBROS_NEUTROS_INGRESO_REAL: frozenset[str] = frozenset(
+    {
+        "Reversas y devoluciones",
+        "Tránsito Wava mes anterior",
+        "Ajuste de conciliación",
+    }
+)
 
 
 class MetasError(Exception):

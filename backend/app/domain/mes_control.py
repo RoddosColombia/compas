@@ -9,6 +9,7 @@ schema strict y arrastraría zona horaria. El string es inequívoco y estable.
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from beanie import Document
@@ -85,6 +86,10 @@ class MesControl(Document):
     mes: str  # 'YYYY-MM-01', llave de negocio (única)
     estado: EstadoMes = EstadoMes.SUGERIDO
     saldo_inicial_caja: Money
+    # CR-WAVA: dinero en tránsito (Wava) declarado AL CERRAR el mes — capa aditiva. Los
+    # docs previos leen 0 por defecto (no-op de datos). El "heredado" de M+1 se DERIVA
+    # de aquí (compute-only), nunca se copia. `mes.cerrado` lo pliega en su metadata.
+    transito_wava: Money = Decimal("0")
     saldos_banco: list[SaldoBanco] = Field(default_factory=list)
     ingresos_esperados_semana: Money | None = None
     definido_por: str | None = None

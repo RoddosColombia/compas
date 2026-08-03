@@ -26,6 +26,7 @@ from beanie import PydanticObjectId
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
 from app.ciclo.service import _mes_siguiente
+from app.cierre.transito import aviso_transito
 from app.core.money import money_str
 from app.core.time import now_utc
 from app.core.ulid import new_ulid
@@ -173,8 +174,15 @@ async def conciliacion(mes: str) -> dict:
     }
 
 
-async def confirmar_cierre(*, mes: str, usuario_id: str) -> dict:
-    """Confirmar cierre (solo Admin). Transacción multi-doc (regla 8) + saga O1."""
+async def confirmar_cierre(
+    *, mes: str, usuario_id: str, transito_wava: Decimal = Decimal("0")
+) -> dict:
+    """Confirmar cierre (solo Admin). Transacción multi-doc (regla 8) + saga O1.
+
+    CR-WAVA: `transito_wava` es el dinero en tránsito (Wava) declarado AL CERRAR —
+    capa aditiva. Se persiste en `MesControl` DENTRO de la transacción y se pliega en
+    la metadata de `mes.cerrado`. La matemática certificada (R_M/C_M/diferencia/ajuste/
+    LIFO) NO cambia; el tránsito nunca se suma dentro de un banco."""
     mc = await _mes(mes)
     if mc.estado is EstadoMes.CERRADO:
         raise CierreError(f"el mes {mes[:7]} ya está cerrado", 409)
@@ -208,6 +216,7 @@ async def confirmar_cierre(*, mes: str, usuario_id: str) -> dict:
     r_m = recon["consolidado_reportado"]
     diferencia = recon["diferencia"]
     ancla_prev = siguiente.saldo_inicial_caja
+    transito_prev = mc.transito_wava  # CR-WAVA: para la compensación O1
     client = MesControl.get_pymongo_collection().database.client
     creado = {"ajuste_id": None}
 
@@ -249,6 +258,7 @@ async def confirmar_cierre(*, mes: str, usuario_id: str) -> dict:
             await aj.insert(session=session)
             aj_id = str(aj.id)
         creado["ajuste_id"] = aj_id
+        mc.transito_wava = transito_wava  # CR-WAVA: declaración plegada en el mes
         mc.estado = EstadoMes.CERRADO
         mc.cerrado_por = usuario_id
         mc.cerrado_at = now_utc()
@@ -274,6 +284,7 @@ async def confirmar_cierre(*, mes: str, usuario_id: str) -> dict:
                 "caja_libro": money_str(recon["caja_libro"]),
                 "diferencia": money_str(diferencia),
                 "ajuste_tx_id": creado["ajuste_id"],
+                "transito_wava": money_str(transito_wava),  # CR-WAVA
             },
         )
     except Exception:
@@ -288,6 +299,7 @@ async def confirmar_cierre(*, mes: str, usuario_id: str) -> dict:
             siguiente.saldo_inicial_caja = ancla_prev
             await siguiente.save(session=session)
             mc.estado = EstadoMes.EN_EJECUCION
+            mc.transito_wava = transito_prev  # CR-WAVA: revertir la declaración
             mc.cerrado_por = None
             mc.cerrado_at = None
             mc.cierre_info = None
@@ -296,12 +308,27 @@ async def confirmar_cierre(*, mes: str, usuario_id: str) -> dict:
         async with await client.start_session() as session:
             await session.with_transaction(_revertir)
         raise
+    # CR-WAVA: aviso informativo si aún queda remanente del tránsito declarado en un mes
+    # anterior (llegó menos de lo declarado). No bloquea.
+    aviso = await aviso_transito(mc.mes)
+    aviso_txt = (
+        f"declaraste {money_str(aviso['declarado'])} en tránsito (cierre "
+        f"{aviso['mes_declaracion']}) y solo llegaron {money_str(aviso['llegado'])} "
+        f"(remanente {money_str(aviso['remanente'])})"
+        if aviso is not None
+        else None
+    )
     return {
         "mes": mes[:7],
         "estado": mc.estado.value,
         "diferencia": money_str(diferencia),
         "ajuste_tx_id": creado["ajuste_id"],
         "saldo_inicial_siguiente": money_str(r_m),
+        # CR-WAVA: caja en dos líneas nombradas (nunca sumado dentro de un banco).
+        "bancos": money_str(r_m),
+        "transito_wava": money_str(transito_wava),
+        "caja_total": money_str(r_m + transito_wava),
+        "aviso_transito": aviso_txt,
     }
 
 
@@ -320,6 +347,7 @@ async def reabrir_mes(*, mes: str, usuario_id: str) -> dict:
         )
     ci = mc.cierre_info
     ancla_restaurar = ci.ancla_anterior_siguiente if ci else None
+    transito_prev = mc.transito_wava  # CR-WAVA: la declaración muere con el cierre
     # saldo de M+1 ANTES de reabrir (= R_M re-anclado en el cierre) — para compensar.
     saldo_sig_previo = siguiente.saldo_inicial_caja if siguiente is not None else None
     client = MesControl.get_pymongo_collection().database.client
@@ -370,6 +398,7 @@ async def reabrir_mes(*, mes: str, usuario_id: str) -> dict:
             siguiente.saldo_inicial_caja = ancla_restaurar
             await siguiente.save(session=session)
         mc.estado = EstadoMes.EN_EJECUCION
+        mc.transito_wava = Decimal("0")  # CR-WAVA: la declaración muere al reabrir
         mc.cerrado_por = None
         mc.cerrado_at = None
         mc.cierre_info = None
@@ -397,6 +426,7 @@ async def reabrir_mes(*, mes: str, usuario_id: str) -> dict:
                 siguiente.saldo_inicial_caja = saldo_sig_previo
                 await siguiente.save(session=session)
             mc.estado = EstadoMes.CERRADO
+            mc.transito_wava = transito_prev  # CR-WAVA: restaurar la declaración
             mc.cerrado_por = usuario_id
             mc.cerrado_at = now_utc()
             mc.cierre_info = ci
