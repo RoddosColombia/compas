@@ -29,6 +29,7 @@ from pathlib import Path
 from anyio import to_thread
 from beanie import PydanticObjectId
 from beanie.operators import In
+from pymongo.read_concern import ReadConcern
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
@@ -139,14 +140,25 @@ async def procesar_carga(
 
     archivo_hash = await to_thread.run_sync(_hash_archivo, archivo_path)
 
-    # F-02: solo bloquea una carga PREVIA COMPLETADA con el mismo hash.
-    previa = await CargaBancaria.find_one(
-        CargaBancaria.archivo_hash == archivo_hash,
-        CargaBancaria.estado == EstadoCarga.COMPLETADA,
+    # F-02: solo bloquea una carga PREVIA COMPLETADA con el mismo hash. La lectura va
+    # con read concern 'majority' (FIX-I): la carga previa se persiste con estado
+    # COMPLETADA DENTRO de una transacción (commit w:majority); una lectura 'local' en
+    # una sesión nueva puede no ver aún esa escritura (read-after-write causal gap del
+    # replica set) → el dedup se saltaría. 'majority' lee el snapshot ya confirmado, así
+    # el guard es determinista contra dos cargas del mismo archivo muy seguidas.
+    _dedup_col = CargaBancaria.get_pymongo_collection().with_options(
+        read_concern=ReadConcern("majority")
+    )
+    previa = await _dedup_col.find_one(
+        {
+            "archivo_hash": archivo_hash,
+            "estado": EstadoCarga.COMPLETADA.value,
+        }
     )
     if previa is not None:
         raise CargaDuplicadaError(
-            f"el archivo ya fue cargado (hash {archivo_hash[:8]}…, carga {previa.id})"
+            f"el archivo ya fue cargado (hash {archivo_hash[:8]}…, "
+            f"carga {previa['_id']})"
         )
 
     rubro = await Rubro.find_one(Rubro.nombre == RUBRO_POR_CLASIFICAR)
