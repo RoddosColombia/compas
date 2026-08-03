@@ -56,8 +56,13 @@ export default function PresupuestoMesPage() {
   });
   const rubros = useQuery({ queryKey: ["rubros"], queryFn: listarRubros });
 
-  const editable =
-    mesCtl?.estado === "sugerido" || mesCtl?.estado === "propuesto";
+  // FIX-G1: el presupuesto se acota en sugerido/propuesto (pre-aprobación) Y en
+  // ejecución (re-acotación de un presupuesto ya aprobado, con comentario obligatorio).
+  // Solo cerrado —y el legado definido— quedan de solo lectura.
+  const estado = mesCtl?.estado;
+  const preAprobacion = estado === "sugerido" || estado === "propuesto";
+  const enEjecucion = estado === "en_ejecucion";
+  const acotable = preAprobacion || enEjecucion;
   const lineas = presupuesto.data?.lineas ?? [];
   const sinLineas = lineas.length === 0;
 
@@ -153,7 +158,7 @@ export default function PresupuestoMesPage() {
       </Card>
 
       {/* Estado sugerido sin líneas → CTA generar */}
-      {editable && sinLineas && !presupuesto.isLoading && (
+      {preAprobacion && sinLineas && !presupuesto.isLoading && (
         <GenerarSugeridoCard
           mes={mes as string}
           puedeGenerar={puede("ciclo:abrir")}
@@ -164,11 +169,22 @@ export default function PresupuestoMesPage() {
         />
       )}
 
-      {!editable && (
+      {!acotable && (
         <AlertBanner variant="ok">
-          {mesCtl?.estado === "cerrado"
+          {estado === "cerrado"
             ? "El mes está cerrado: el presupuesto es inmutable."
             : "El presupuesto ya fue aprobado: solo lectura."}{" "}
+          <Link to="/control" className="font-semibold underline">
+            Ver el control del mes →
+          </Link>
+        </AlertBanner>
+      )}
+
+      {/* FIX-G1: en ejecución la re-acotación está permitida, pero justificada. */}
+      {enEjecucion && (
+        <AlertBanner variant="warn">
+          El presupuesto está en ejecución: puedes ajustar montos, pero cada
+          cambio requiere un comentario que lo justifique.{" "}
           <Link to="/control" className="font-semibold underline">
             Ver el control del mes →
           </Link>
@@ -207,7 +223,8 @@ export default function PresupuestoMesPage() {
                     grupo={g.grupo}
                     filas={g.filas}
                     mes={mes as string}
-                    acotable={editable && puede("presupuesto:acotar")}
+                    acotable={acotable && puede("presupuesto:acotar")}
+                    comentarioRequerido={enEjecucion}
                   />
                 ))}
               </tbody>
@@ -225,7 +242,7 @@ export default function PresupuestoMesPage() {
               <Resumen label="Total definido" valor={totales.definido} />
               <Resumen label="Diferencia" valor={totales.diferencia} conSigno />
             </div>
-            {editable && puede("ciclo:aprobar") && (
+            {preAprobacion && puede("ciclo:aprobar") && (
               <Button
                 variant="green"
                 onClick={() => {
@@ -357,11 +374,13 @@ function GrupoLineas({
   filas,
   mes,
   acotable,
+  comentarioRequerido,
 }: {
   grupo: string;
   filas: { linea: LineaPresupuesto; rubro?: Rubro }[];
   mes: string;
   acotable: boolean;
+  comentarioRequerido: boolean;
 }) {
   return (
     <>
@@ -380,6 +399,7 @@ function GrupoLineas({
           nombre={rubro?.nombre ?? linea.rubro_id}
           mes={mes}
           acotable={acotable}
+          comentarioRequerido={comentarioRequerido}
         />
       ))}
     </>
@@ -391,11 +411,13 @@ function FilaLinea({
   nombre,
   mes,
   acotable,
+  comentarioRequerido,
 }: {
   linea: LineaPresupuesto;
   nombre: string;
   mes: string;
   acotable: boolean;
+  comentarioRequerido: boolean;
 }) {
   const qc = useQueryClient();
   const [expandida, setExpandida] = useState(false);
@@ -429,6 +451,13 @@ function FilaLinea({
     setError(null);
     if (!/^\d+(\.\d{1,2})?$/.test(monto.trim())) {
       setError("El monto definido debe ser un número positivo (COP).");
+      return;
+    }
+    // FIX-G1: en ejecución el backend exige comentario (422). Se valida aquí antes de
+    // llamar y se abre la fila para que el campo sea visible.
+    if (comentarioRequerido && !comentario.trim()) {
+      setError("En ejecución, describe el motivo del ajuste en el comentario.");
+      setExpandida(true);
       return;
     }
     acotar.mutate();
@@ -522,11 +551,17 @@ function FilaLinea({
             </div>
             {acotable && (
               <label className="mt-2 flex items-center gap-2 font-sans text-apoyo">
-                <span className="text-ink-soft">Comentario</span>
+                <span className="text-ink-soft">
+                  Comentario{comentarioRequerido ? " *" : ""}
+                </span>
                 <input
                   aria-label={`Comentario ${nombre}`}
                   maxLength={300}
-                  placeholder="opcional (se guarda al acotar)"
+                  placeholder={
+                    comentarioRequerido
+                      ? "obligatorio: motivo del ajuste"
+                      : "opcional (se guarda al acotar)"
+                  }
                   className="w-full max-w-md rounded-md border border-hairline bg-surface px-2 py-1 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
                   value={comentario}
                   onChange={(e) => setComentario(e.target.value)}

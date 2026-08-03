@@ -211,6 +211,54 @@ class TestAcotarReal:
         assert len(ln.ajustes) == 2  # ninguno pisó al otro
         assert (await MesControl.get(mc.id)).estado is EstadoMes.PROPUESTO
 
+    async def test_reacotar_en_ejecucion_con_comentario_no_transiciona(self, entorno):
+        # FIX-G1: con el presupuesto ya aprobado (en_ejecucion) el CEO corrige un
+        # monto_definido. Requiere comentario (justificación), fija el monto, registra
+        # el ajuste y NO cambia el estado del mes (sigue en ejecución).
+        ac, _ = entorno
+        h = await self._token(ac, "dir@roddos.com")
+        mc, rubro, _ = await self._sembrar(
+            estado=EstadoMes.EN_EJECUCION, definido="1000000"
+        )
+        r = await ac.patch(
+            f"/api/v1/meses/2026-07/presupuesto/{rubro.id}",
+            json={"monto_definido": "1300000", "comentario": "recorte por caja julio"},
+            headers=h,
+        )
+        assert r.status_code == 200
+        assert r.json()["monto_definido"] == "1300000.00"
+        # NO transiciona: sigue en ejecución (regla FIX-G1)
+        assert (await MesControl.get(mc.id)).estado is EstadoMes.EN_EJECUCION
+        ln = await PresupuestoLinea.find_one(PresupuestoLinea.rubro_id == rubro.id)
+        assert len(ln.ajustes) == 1
+        assert ln.ajustes[-1].comentario == "recorte por caja julio"
+        assert ln.ajustes[-1].valor_anterior == Decimal("1000000")
+        assert ln.ajustes[-1].valor_nuevo == Decimal("1300000")
+
+    async def test_reacotar_en_ejecucion_concurrente_no_pierde_ajustes(self, entorno):
+        # FIX-G1 + A-6: dos re-acotaciones concurrentes en ejecución no se pisan
+        # (mismo $push posicional) y el mes NO transiciona.
+        import asyncio
+
+        ac, _ = entorno
+        h = await self._token(ac, "dir@roddos.com")
+        mc, rubro, _ = await self._sembrar(
+            estado=EstadoMes.EN_EJECUCION, definido="1000000"
+        )
+        url = f"/api/v1/meses/2026-07/presupuesto/{rubro.id}"
+        r1, r2 = await asyncio.gather(
+            ac.patch(
+                url, json={"monto_definido": "1200000", "comentario": "a"}, headers=h
+            ),
+            ac.patch(
+                url, json={"monto_definido": "1500000", "comentario": "b"}, headers=h
+            ),
+        )
+        assert r1.status_code == 200 and r2.status_code == 200
+        ln = await PresupuestoLinea.find_one(PresupuestoLinea.rubro_id == rubro.id)
+        assert len(ln.ajustes) == 2  # ninguno pisó al otro
+        assert (await MesControl.get(mc.id)).estado is EstadoMes.EN_EJECUCION
+
     async def test_acotar_compensa_si_falla_auditoria(self, entorno, monkeypatch):
         # M-2 (saga O1): commit OK pero el emit falla → compensación transaccional.
         ac, db = entorno
