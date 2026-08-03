@@ -1,41 +1,49 @@
-# Nota — Tránsito Wava al cierre de julio 2026 (ajuste conocido)
+# Nota — Tránsito Wava al cierre de julio 2026
 
-**Fecha:** 2026-08-01 · **Autor de la decisión:** Andrés San Juan (CEO) · **Registra:** Claude Code
-**Relacionado:** `docs/COMPAS_CR-Wava_Transito_Cierre.md`
+> **⚠️ ENMENDADA (2026-08-03) — CR-WAVA se construyó ANTES de E1 (reorden CEO 2026-08-02).**
+> Julio **YA NO cierra "sin Wava"**: cierra **CON el tránsito declarado** (`transito_wava = 37.280.415`),
+> porque el módulo CR-WAVA está en producción. Los depósitos Wava-por-julio que aterricen en agosto se
+> **clasifican contra el rubro `Tránsito Wava mes anterior`** (NO son recaudo de agosto). La versión previa
+> de esta nota (julio sin tránsito, depósitos = ingreso de agosto "esta única vez") queda **superada**.
 
-## Qué pasó
+**Fecha original:** 2026-08-01 · **Enmienda:** 2026-08-03 · **Decisión:** Andrés San Juan (CEO)
+· **Registra:** Claude Code · **Relacionado:** `docs/COMPAS_CR-Wava_Transito_Cierre.md`,
+`docs/COMPAS_IPLAN_CR-WAVA.md`
 
-Julio 2026 **se cerró sin la funcionalidad de tránsito Wava** (aún no construida; ver CR-WAVA, que va
-después de E1). Por tanto, la **caja de cierre de julio refleja solo los bancos** (`R_julio` = Σ saldos
-bancarios reportados y conciliados). El recaudo de julio que a la fecha de cierre **seguía en Wava por
-tiempos de settlement NO está incluido** en esa caja bancaria.
+## Qué pasó (vigente tras la enmienda)
 
-## Monto del tránsito conocido
+Julio 2026 **se cierra CON la funcionalidad de tránsito Wava** (CR-WAVA en producción). La caja de cierre
+de julio se muestra en **dos líneas nombradas**: `Bancos` (= `R_julio`, Σ saldos bancarios conciliados) y
+`Tránsito Wava` (= `$37.280.415`, declarado al confirmar el cierre), con el `Total` = Bancos + Tránsito.
+El tránsito **nunca se suma dentro de un banco**.
 
-- **Dinero en tránsito Wava al cierre de julio 2026:** **$ ______________** *(pendiente: lo declara
-  Andrés)*.
-- **Caja bancaria de cierre de julio (`R_julio`):** la que arroja la conciliación al confirmar el cierre.
-- **Caja total "económica" de julio (informativa, fuera del sistema):** `R_julio + $______` = caja
-  bancaria + tránsito.
+## Monto del tránsito declarado
 
-> Este monto es un **ajuste conocido documentado**, no un dato dentro del sistema: la caja del sistema
-> para julio es la bancaria. Cuando exista CR-WAVA, el tránsito pasa a ser una línea propia del cierre.
+- **Dinero en tránsito Wava al cierre de julio 2026:** **$ 37.280.415** *(cifra real del CEO, se declara en
+  el diálogo de cierre)*.
+- **Caja bancaria de cierre de julio (`Bancos` = `R_julio`):** la que arroja la conciliación al confirmar.
+- **Caja total de julio:** `R_julio + 37.280.415` — **ahora es un dato dentro del sistema** (línea propia
+  del cierre), no un ajuste informativo externo.
 
 ## Precisión de transición (crítica — no doble contar)
 
-Como **julio no contó el tránsito**, los depósitos de Wava que aterricen en el banco a **inicios de
-agosto SÍ son ingreso de agosto, esta única vez** — es **reconocimiento tardío, no doble conteo**.
+Como **julio SÍ declara el tránsito**, los depósitos de Wava que aterricen en agosto son la **llegada** de
+ese tránsito declarado:
 
-- **NO** clasificar esos depósitos de agosto contra un "tránsito" (no existe tránsito declarado para
-  julio en el sistema).
-- La regla *"clasificar los depósitos Wava contra el tránsito del mes anterior"* **empieza a regir con
-  el PRIMER cierre que declare tránsito** — es decir, **el cierre de agosto en adelante**, ya con
-  CR-WAVA en producción.
+- **SÍ** clasificar esos depósitos contra el rubro **`Tránsito Wava mes anterior`** (la whitelist del guard
+  `es_sistema` lo permite; sin patrón automático, la clasificación es manual en agosto — pendiente del CEO
+  el patrón real del depósito Wava en Global66).
+- Cada llegada **NO infla el recaudo** (`ingreso_real` los excluye por `rubro_id`) y **NO cambia la caja
+  total** (bancos suben, remanente de tránsito baja, total igual). Es **reconocimiento del tránsito**, no
+  recaudo de agosto ni doble conteo.
+- El **remanente** (`declarado − Σ llegadas`, roll-forward, clamp en 0) rueda hasta agotarse; si al cerrar
+  agosto queda remanente, la app muestra el **aviso** informativo.
 
 ## Acción
 
-1. Andrés cierra julio en la app (Admin + confirmación) con la caja bancaria conciliada.
-2. Andrés completa el monto `$______` de esta nota.
-3. Los depósitos Wava-por-julio que lleguen en agosto se dejan como **ingreso normal de agosto**
-   (esta única vez).
-4. CR-WAVA se construye después de E1; desde el cierre de agosto el tránsito ya se declara en el sistema.
+1. Merge de CR-WAVA + correr la migración `20260803_wava_transito.py` en PROD (DRY-RUN → visto → APPLY).
+2. Andrés cierra julio en la app (Admin + confirmación) declarando **`transito_wava = 37.280.415`** en el
+   diálogo de cierre.
+3. Agosto muestra: **Bancos 665.715.578 · Tránsito 37.280.415 · Total 702.995.993**.
+4. Los depósitos Wava-por-julio que lleguen en agosto se **clasifican al rubro `Tránsito Wava mes
+   anterior`** (manual mientras no exista la regla automática).
