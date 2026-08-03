@@ -470,6 +470,10 @@ class TestCierreReal:
         jun, jul, arr = await self._sembrar("118")
         transito = await self._rubro_transito()
         await self._confirmar_t(ac, h, "100", "kt")  # jun declara 100 en tránsito
+        # jul en ejecución para leer su Vista Control (aplica a en_ejecución/cerrado)
+        await db["meses_control"].update_one(
+            {"mes": "2026-07-01"}, {"$set": {"estado": "en_ejecucion"}}
+        )
 
         before = (await ac.get("/api/v1/meses/2026-07/control", headers=h)).json()
         i0 = await ingreso_real("2026-07")
