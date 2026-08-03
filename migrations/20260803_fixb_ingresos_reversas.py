@@ -54,7 +54,9 @@ MES = "2026-07-01"
 PRIORIDAD = 100
 ACTOR = "system:fixb-ingresos-reversas"
 RUBRO_REVERSAS = "Reversas y devoluciones"
-RUBRO_RECAUDO = "Recaudo"  # nombre real en prod (0110); el CEO lo llamó 'Recaudo de cartera'
+RUBRO_RECAUDO = (
+    "Recaudo"  # nombre real en prod (0110); el CEO lo llamó 'Recaudo de cartera'
+)
 _RECAUDO_ALIAS = ("Recaudo de cartera", "Recaudo")
 
 # Reglas INGRESO (patrón contains sin-tildes/case → rubro_nombre) — decisión CEO
