@@ -8,6 +8,7 @@ meta activa por mes."""
 from decimal import Decimal
 
 from beanie import PydanticObjectId
+from beanie.operators import In
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
@@ -15,7 +16,15 @@ from app.core.money import Money
 from app.core.time import now_bogota
 from app.domain.mes_control import MesControl
 from app.domain.obligacion import LineaMeta, MetaIngreso
+from app.domain.rubro import Rubro
 from app.domain.transaccion import TipoFlujo, Transaccion
+
+# FIX-B — rubros "neutros" para el ingreso real: dinero que entró a la cuenta pero NO
+# es recaudo operativo (reversas de GMF, devoluciones, reembolsos). Contarlos inflaría
+# el cumplimiento de la meta. El set NACE con 'Reversas y devoluciones'; CR-WAVA lo
+# EXTENDERÁ con 'Tránsito Wava mes anterior' y 'Ajuste de conciliación' — agregar el
+# nombre aquí, sin duplicar la lógica de exclusión.
+RUBROS_NEUTROS_INGRESO_REAL: frozenset[str] = frozenset({"Reversas y devoluciones"})
 
 
 class MetasError(Exception):
@@ -134,14 +143,25 @@ async def eliminar_meta(*, meta_id: str, usuario_id: str) -> None:
         raise
 
 
+async def _ids_rubros_neutros() -> set[PydanticObjectId]:
+    """IDs de los rubros neutros (por nombre) presentes en la BD. Vacío si ninguno
+    existe todavía (p. ej. antes de FIX-B) → la exclusión es inocua."""
+    return {
+        r.id
+        async for r in Rubro.find(In(Rubro.nombre, list(RUBROS_NEUTROS_INGRESO_REAL)))
+    }
+
+
 async def ingreso_real(mes: str) -> Decimal | None:
-    """Ingreso ejecutado del mes = Σ de las transacciones de INGRESO. None si el mes no
-    tiene MesControl (aún no se abrió el ciclo)."""
+    """Ingreso ejecutado del mes = Σ de las transacciones de INGRESO, EXCLUIDOS los
+    rubros neutros (reversas/devoluciones; a futuro tránsito Wava y ajuste). None si el
+    mes no tiene MesControl (aún no se abrió el ciclo)."""
     mc = await MesControl.find_one(MesControl.mes == f"{mes[:7]}-01")
     if mc is None:
         return None
+    neutros = await _ids_rubros_neutros()
     total = Decimal("0")
     async for t in Transaccion.find(Transaccion.mes_id == mc.id):
-        if t.tipo_flujo is TipoFlujo.INGRESO:
+        if t.tipo_flujo is TipoFlujo.INGRESO and t.rubro_id not in neutros:
             total += t.valor
     return total
