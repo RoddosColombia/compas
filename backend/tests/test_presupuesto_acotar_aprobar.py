@@ -162,6 +162,37 @@ async def test_acotar_monto_negativo_422(api):
     assert r.status_code == 422
 
 
+# FIX-G1: re-acotación en ejecución. El mes en_ejecucion ES acotable (ajuste del
+# presupuesto ya aprobado), pero SOLO con comentario que lo justifique (todo cambio
+# post-aprobación queda auditado). Sin comentario → 422 (guarda, antes de la sesión).
+
+
+async def test_acotar_en_ejecucion_sin_comentario_422(api):
+    h = await _token(api)
+    mc = await _mes("2026-07-01", EstadoMes.EN_EJECUCION)
+    rubro = await _rubro("Arriendos", 4)
+    await _linea(mc.id, rubro.id, definido="1000000")
+    r = await api.patch(
+        f"/api/v1/meses/2026-07/presupuesto/{rubro.id}",
+        json={"monto_definido": "1200000"},  # sin comentario
+        headers=h,
+    )
+    assert r.status_code == 422
+
+
+async def test_acotar_en_ejecucion_comentario_en_blanco_422(api):
+    h = await _token(api)
+    mc = await _mes("2026-07-01", EstadoMes.EN_EJECUCION)
+    rubro = await _rubro("Arriendos", 4)
+    await _linea(mc.id, rubro.id, definido="1000000")
+    r = await api.patch(
+        f"/api/v1/meses/2026-07/presupuesto/{rubro.id}",
+        json={"monto_definido": "1200000", "comentario": "   "},  # solo espacios
+        headers=h,
+    )
+    assert r.status_code == 422
+
+
 # La compensación O1 del acotar (emit falla → revierte) migró a
 # test_presupuesto_acotar_realmongo.py: S4-00 volvió transaccional el acotar y
 # mongomock no soporta sesiones.

@@ -179,17 +179,33 @@ describe("PresupuestoMesPage — render por estado (§5.1)", () => {
     expect(screen.getByText("Nómina")).toBeInTheDocument();
   });
 
-  it("en_ejecucion: solo lectura con enlace a Control", async () => {
+  it("en_ejecucion: edición habilitada con comentario obligatorio (FIX-G1)", async () => {
     mocks.listarMeses.mockResolvedValue({ items: [mes("en_ejecucion")] });
     renderPage();
-    expect(await screen.findByText(/solo lectura/)).toBeInTheDocument();
+    // el presupuesto YA aprobado se puede re-acotar en ejecución
     expect(
-      screen.getByRole("link", { name: /Ver el control del mes/ }),
+      await screen.findByLabelText("Definido Arriendos"),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Definido Arriendos")).toBeNull();
+    // ya NO es solo lectura
+    expect(screen.queryByText(/solo lectura/)).toBeNull();
+    // sin botón de aprobar (el mes ya está en ejecución)
     expect(
       screen.queryByRole("button", { name: "Aprobar presupuesto" }),
     ).toBeNull();
+    // el aviso explica que cada ajuste requiere justificación
+    expect(
+      screen.getByText(/requiere un comentario que lo justifique/i),
+    ).toBeInTheDocument();
+  });
+
+  it("en_ejecucion: Guardar sin comentario avisa antes de llamar al backend (FIX-G1)", async () => {
+    mocks.listarMeses.mockResolvedValue({ items: [mes("en_ejecucion")] });
+    renderPage();
+    const input = await screen.findByLabelText("Definido Arriendos");
+    fireEvent.change(input, { target: { value: "1300000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    expect(await screen.findByText(/motivo del ajuste/i)).toBeInTheDocument();
+    expect(mocks.acotarLinea).not.toHaveBeenCalled();
   });
 
   it("cerrado: aviso de inmutable, sin edición", async () => {

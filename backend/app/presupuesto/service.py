@@ -36,7 +36,7 @@ from app.domain.rubro import Rubro, TipoFlujo
 from app.domain.transaccion import Transaccion
 from app.presupuesto.motor import calcular_sugerido_historico
 
-_ACOTABLE = (EstadoMes.SUGERIDO, EstadoMes.PROPUESTO)
+_ACOTABLE = (EstadoMes.SUGERIDO, EstadoMes.PROPUESTO, EstadoMes.EN_EJECUCION)
 
 
 class SugeridoError(Exception):
@@ -172,8 +172,19 @@ async def acotar_linea(
         raise AcotarError("el mes está cerrado y es inmutable (regla 4)", 409)
     if mc.estado not in _ACOTABLE:
         raise AcotarError(
-            f"el mes está en '{mc.estado.value}'; solo se acota en sugerido/propuesto",
+            f"el mes está en '{mc.estado.value}'; solo se acota en "
+            "sugerido/propuesto/ejecución",
             409,
+        )
+    # FIX-G1: en ejecución (presupuesto YA aprobado) el ajuste es una re-acotación que
+    # debe venir justificada — todo cambio post-aprobación queda auditado. En
+    # sugerido/propuesto el comentario sigue opcional (aún no hay decisión firme).
+    comentario = comentario.strip() if comentario else None
+    if mc.estado is EstadoMes.EN_EJECUCION and not comentario:
+        raise AcotarError(
+            "en ejecución, el ajuste del presupuesto requiere un comentario que lo "
+            "justifique",
+            422,
         )
     try:
         rid = PydanticObjectId(rubro_id)
@@ -215,6 +226,14 @@ async def acotar_linea(
             raise AcotarError(
                 "el mes cambió de estado durante el acotamiento (concurrencia); "
                 "reintentar",
+                409,
+            )
+        # FIX-G1 (TOCTOU): si el mes pasó a ejecución entre la guarda externa y la
+        # sesión (aprobación concurrente), un acotar SIN comentario ya no es válido.
+        if mc_f.estado is EstadoMes.EN_EJECUCION and not comentario:
+            raise AcotarError(
+                "el mes pasó a ejecución durante el acotamiento; reintente con un "
+                "comentario que justifique el ajuste",
                 409,
             )
         # A-6 (parte 2): $push del ajuste + $set del monto en un update ATÓMICO sobre
