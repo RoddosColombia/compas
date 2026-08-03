@@ -111,8 +111,9 @@ async def seed_configuracion(db: Any) -> int:
 # seguro): movimientos de socios (Andrés/Iván → CXC, nunca gasto — regla de
 # negocio), 'Débito' pelado (sin comercio), reembolsos/reversas y 'Conversión de
 # divisas' (transferencia FX, no gasto). Los nombres de rubro deben EXISTIR y ser
-# únicos (el seed hace fail-loud). El rubro de recaudo hoy se llama 'Recaudo'
-# (renombrado desde 'Recaudo de cartera'); las reglas guardan rubro_id, no nombre.
+# únicos (el seed hace fail-loud). El rubro de recaudo se llama 'Recaudo de cartera'
+# (FIX-H 2026-08-03 revirtió un rename previo a 'Recaudo' que dejaba el rubro fuera de
+# la whitelist del guard es_sistema); las reglas guardan rubro_id, no nombre.
 SEMILLA_REGLAS: list[dict] = [
     # Solo las genéricas de INGRESO (PRD M7 / MODELO §C3). Las de egreso se
     # RETIRARON (decisión CEO 2026-07-26): la clasificación de egresos viene curada
