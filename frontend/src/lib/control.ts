@@ -41,6 +41,10 @@ export interface VistaControl {
   grupos: ControlGrupo[];
   total: ControlSubtotal;
   caja_disponible: string;
+  // CR-WAVA (aditivo, opcional para compat): caja en dos líneas + total.
+  caja_disponible_bancos?: string;
+  transito_remanente?: string;
+  caja_disponible_total?: string;
   sin_presupuesto: SinPresupuesto[];
 }
 

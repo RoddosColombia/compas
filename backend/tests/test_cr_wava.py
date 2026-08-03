@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from app.cierre.transito import transito_heredado, transito_remanente
+from app.cierre.transito import aviso_transito, transito_heredado, transito_remanente
 from app.domain import DOMAIN_DOCUMENTS
 from app.domain.bancos import Banco
 from app.domain.mes_control import EstadoMes, MesControl
@@ -133,3 +133,24 @@ async def test_remanente_roll_forward_en_m2(db):
 @pytest.mark.asyncio
 async def test_remanente_sin_declaracion_es_cero(db):
     assert await transito_remanente("2026-08-01") == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_aviso_transito_con_remanente(db):
+    await _mes_cerrado("2026-07-01", "100")
+    r = await _rubro_transito()
+    await _llegada(r, "2026-08-10", "60", 1)
+    av = await aviso_transito("2026-08-01")
+    assert av is not None
+    assert av["declarado"] == Decimal("100")
+    assert av["llegado"] == Decimal("60")
+    assert av["remanente"] == Decimal("40")
+    assert av["mes_declaracion"] == "2026-07"
+
+
+@pytest.mark.asyncio
+async def test_aviso_transito_none_si_llegada_completa(db):
+    await _mes_cerrado("2026-07-01", "100")
+    r = await _rubro_transito()
+    await _llegada(r, "2026-08-10", "100", 1)
+    assert await aviso_transito("2026-08-01") is None

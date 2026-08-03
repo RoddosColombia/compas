@@ -23,7 +23,7 @@ import {
   abrirMes,
   listarMeses,
 } from "@/lib/meses";
-import { formatCOP } from "@/lib/money";
+import { formatCOP, parseMonto } from "@/lib/money";
 
 export default function MesesPage() {
   const { puede } = useAuth();
@@ -100,6 +100,17 @@ export default function MesesPage() {
                     </td>
                     <td className="tabular px-4 py-2 text-right text-ink-soft">
                       {formatCOP(m.saldo_inicial_caja)}
+                      {/* CR-WAVA: tránsito heredado (solo cuando > 0) */}
+                      {m.transito_heredado &&
+                        parseMonto(m.transito_heredado).greaterThan(0) && (
+                          <span className="block text-apoyo text-ink-faint">
+                            Tránsito Wava: {formatCOP(m.transito_heredado)} ·
+                            Total:{" "}
+                            {formatCOP(
+                              m.caja_inicial_total ?? m.saldo_inicial_caja,
+                            )}
+                          </span>
+                        )}
                     </td>
                     <td className="px-4 py-2 text-ink-soft">
                       {m.saldos_banco.length === 0

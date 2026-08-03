@@ -264,4 +264,36 @@ describe("CabinaMesPage — cierre real (§7.6)", () => {
     expect(boton).toBeDisabled();
     expect(screen.getByText("✗")).toBeInTheDocument();
   });
+
+  it("CR-WAVA: el dinero en tránsito (Wava) viaja a confirmarCierre", async () => {
+    mocks.confirmarCierre.mockResolvedValue({
+      mes: "2026-08",
+      estado: "cerrado",
+      diferencia: "0.00",
+      ajuste_tx_id: null,
+      saldo_inicial_siguiente: "5000000.00",
+      bancos: "5000000.00",
+      transito_wava: "37280415.00",
+      caja_total: "42280415.00",
+      aviso_transito: null,
+    });
+    mocks.listarMeses.mockResolvedValue({
+      items: [mes("en_ejecucion"), mes("sugerido", "2026-09-01", "m2")],
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Cerrar mes" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Cerrar mes" });
+    const input = await screen.findByLabelText("Dinero en tránsito (Wava)");
+    fireEvent.change(input, { target: { value: "37280415" } });
+    const confirmar = screen
+      .getAllByRole("button", { name: "Cerrar mes" })
+      .find((b) => dialogo.contains(b)) as HTMLElement;
+    fireEvent.click(confirmar);
+    expect(await screen.findByText(/Mes 2026-08 cerrado/)).toBeInTheDocument();
+    expect(mocks.confirmarCierre).toHaveBeenCalledWith(
+      "2026-08",
+      expect.any(String),
+      "37280415",
+    );
+  });
 });
