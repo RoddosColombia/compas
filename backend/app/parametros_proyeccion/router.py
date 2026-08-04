@@ -4,6 +4,7 @@
 GET con `dashboard:leer` (todos ven la config vigente); PUT con `proyeccion:gestionar`
 + `verify_origin`. Montos como string (regla 1). El PUT versiona por `vigente_desde`."""
 
+import re
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +21,8 @@ from app.domain.parametros_proyeccion import (
 from app.parametros_proyeccion import service
 
 router = APIRouter(prefix="/parametros-proyeccion", tags=["parametros-proyeccion"])
+
+_MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")  # FIX-L: clave de rampa_unidades
 
 _MONEY = (
     "caja_inicial",
@@ -75,6 +78,8 @@ class ParametrosCampos(BaseModel):
     pct_provision: str
     # CR-002: desglose configurable del alistamiento (opcional; None = costo plano)
     componentes_alistamiento: list["ComponenteBody"] | None = None
+    # FIX-L: rampa de colocación por mes (YYYY-MM → unidades enteras ≥0). Default {}.
+    rampa_unidades: dict[str, int] = Field(default_factory=dict)
 
 
 class ComponenteBody(BaseModel):
@@ -135,6 +140,13 @@ def parsear_campos(body: ParametrosCampos) -> dict:
             )
     else:
         campos["componentes_alistamiento"] = None
+    # FIX-L: rampa por mes (YYYY-MM → unidades enteras ≥0). 422 fail-loud.
+    for mes, unidades in body.rampa_unidades.items():
+        if not _MES.match(mes):
+            raise HTTPException(422, f"rampa_unidades: mes inválido '{mes}' (YYYY-MM)")
+        if unidades < 0:
+            raise HTTPException(422, f"rampa_unidades: unidades negativas en {mes}")
+    campos["rampa_unidades"] = dict(body.rampa_unidades)
     return campos
 
 
@@ -157,6 +169,7 @@ def _serializar(p: ParametrosProyeccion) -> dict:
         if p.componentes_alistamiento
         else None
     )
+    out["rampa_unidades"] = dict(p.rampa_unidades)  # FIX-L
     out["modificado_por"] = p.modificado_por
     return out
 

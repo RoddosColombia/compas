@@ -66,6 +66,23 @@ def _modelo_a_motor(m: ModeloMoto) -> ModeloProyeccion:
     )
 
 
+def _rampa_a_lista(
+    rampa_unidades: dict[str, int], mes_inicio: tuple[int, int]
+) -> list[int] | None:
+    """FIX-L: mapea la rampa por mes (YYYY-MM → unidades) al `rampa` nativo del motor
+    (lista posicional de los PRIMEROS meses desde `mes_inicio`). Toma el prefijo
+    CONTIGUO desde mes_inicio; el primer mes ausente corta la rampa (el motor reinicia
+    ahí en motos_base). {} o sin prefijo → None (sin rampa, comportamiento de hoy)."""
+    if not rampa_unidades:
+        return None
+    y, m = mes_inicio
+    out: list[int] = []
+    while (ym := f"{y:04d}-{m:02d}") in rampa_unidades:
+        out.append(rampa_unidades[ym])
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out or None
+
+
 def _armar_parametros(
     params: ParametrosProyeccion,
     modelos: list[ModeloMoto],
@@ -88,7 +105,7 @@ def _armar_parametros(
         modelos=[_modelo_a_motor(m) for m in modelos],
         motos_base=params.motos_base,
         crec_pct_mensual=params.crec_pct_mensual,
-        rampa=None,
+        rampa=_rampa_a_lista(params.rampa_unidades, mes_inicio),
         adelanto_auteco=params.adelanto_auteco,
         plazo_auteco_dias=params.plazo_auteco_dias,
         base_auteco_dias=params.base_auteco_dias,
