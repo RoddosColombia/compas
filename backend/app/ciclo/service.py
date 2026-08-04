@@ -24,7 +24,8 @@ from pymongo.errors import DuplicateKeyError
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
-from app.domain.mes_control import MesControl, SaldoBanco
+from app.core.money import money_str
+from app.domain.mes_control import EstadoMes, MesControl, SaldoBanco
 
 
 class MesYaAbiertoError(Exception):
@@ -39,6 +40,15 @@ class AperturaInvalidaError(Exception):
     def __init__(self, detalle: str) -> None:
         super().__init__(detalle)
         self.detalle = detalle
+
+
+class SaldoInicialError(Exception):
+    """FIX-F: error al editar el saldo inicial (mes 404 / no editable 409)."""
+
+    def __init__(self, detalle: str, status: int) -> None:
+        super().__init__(detalle)
+        self.detalle = detalle
+        self.status = status
 
 
 def _mes_siguiente(mes: str) -> str:
@@ -116,5 +126,45 @@ async def abrir_mes(
     except Exception:
         # O1: sin auditoría no hay operación de ciclo → compensar y propagar.
         await mc.delete()
+        raise
+    return mc
+
+
+async def editar_saldo_inicial(
+    *, mes: str, saldo_inicial_caja: Decimal, motivo: str, usuario_id: str
+) -> MesControl:
+    """FIX-F: edita el saldo inicial de un mes EN EJECUCIÓN (ciclo:config + step-up en
+    el router). Emite `saldo_inicial.editado` (anterior→nuevo + motivo); saga O1: si el
+    emit falla, revierte el saldo. El histórico (mes cerrado) es inmutable (regla 4) →
+    409. `saldo`/`motivo` llegan ya validados por el router (finito, no vacío)."""
+    mc = await MesControl.find_one(MesControl.mes == mes)
+    if mc is None:
+        raise SaldoInicialError(f"el mes {mes[:7]} no existe", 404)
+    if mc.estado is not EstadoMes.EN_EJECUCION:
+        raise SaldoInicialError(
+            f"solo se edita el saldo de un mes en ejecución (está en "
+            f"'{mc.estado.value}'); el histórico es inmutable (regla 4)",
+            409,
+        )
+    anterior = mc.saldo_inicial_caja
+    mc.saldo_inicial_caja = saldo_inicial_caja
+    await mc.save()
+    try:
+        await emit_audit(
+            AuditEvento.saldo_inicial_editado,
+            entidad="mes",
+            entidad_id=str(mc.id),
+            actor_id=usuario_id,
+            metadata={
+                "mes": mes[:7],
+                "anterior": money_str(anterior),
+                "nuevo": money_str(saldo_inicial_caja),
+                "motivo": motivo,
+            },
+        )
+    except Exception:
+        # O1 (mismo criterio que la apertura): sin rastro no hay edición → revertir.
+        mc.saldo_inicial_caja = anterior
+        await mc.save()
         raise
     return mc

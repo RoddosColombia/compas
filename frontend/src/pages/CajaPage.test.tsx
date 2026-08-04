@@ -5,11 +5,13 @@
 // capacidad. El "¿cuadra?" y los cálculos vienen del backend.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Mes } from "@/lib/meses";
 import CajaPage from "@/pages/CajaPage";
+
+const editarMock = vi.hoisted(() => vi.fn());
 
 const MESES: { items: Mes[] } = {
   items: [
@@ -45,6 +47,11 @@ vi.mock("@/lib/meses", async (importOriginal) => {
   return { ...real, listarMeses: () => Promise.resolve(MESES) };
 });
 
+vi.mock("@/lib/caja", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/caja")>();
+  return { ...real, editarSaldoInicial: editarMock };
+});
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -76,5 +83,68 @@ describe("CajaPage", () => {
     expect(await screen.findByText("Global66")).toBeInTheDocument();
     expect(screen.queryByText("Reportar saldo")).toBeNull();
     expect(screen.queryByRole("button", { name: "Reportar" })).toBeNull();
+  });
+});
+
+describe("CajaPage — FIX-F: editar saldo inicial (ciclo:config)", () => {
+  beforeEach(() => editarMock.mockReset());
+
+  it("admin abre el diálogo y guarda con mes/saldo/motivo", async () => {
+    puedeMock.mockImplementation(() => true);
+    editarMock.mockResolvedValue({
+      mes: "2026-07-01",
+      estado: "en_ejecucion",
+      saldo_inicial_caja: "5000000.00",
+    });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Editar saldo inicial" }),
+    );
+    const dialogo = await screen.findByRole("dialog", {
+      name: "Editar saldo inicial",
+    });
+    fireEvent.change(within(dialogo).getByLabelText(/nuevo saldo/i), {
+      target: { value: "5000000" },
+    });
+    fireEvent.change(within(dialogo).getByLabelText("Motivo"), {
+      target: { value: "corrección de apertura" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Guardar" }));
+    expect(await screen.findByText(/actualizado a/i)).toBeInTheDocument();
+    expect(editarMock).toHaveBeenCalledWith(
+      "2026-07",
+      "5000000",
+      "corrección de apertura",
+    );
+  });
+
+  it("valida saldo y motivo antes de llamar al backend", async () => {
+    puedeMock.mockImplementation(() => true);
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Editar saldo inicial" }),
+    );
+    const dialogo = await screen.findByRole("dialog", {
+      name: "Editar saldo inicial",
+    });
+    // saldo válido pero motivo vacío → no se llama
+    fireEvent.change(within(dialogo).getByLabelText(/nuevo saldo/i), {
+      target: { value: "5000000" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Guardar" }));
+    expect(editarMock).not.toHaveBeenCalled();
+    expect(
+      within(dialogo).getByText(/motivo es obligatorio/i),
+    ).toBeInTheDocument();
+  });
+
+  it("sin ciclo:config no muestra el botón (regla 9)", async () => {
+    puedeMock.mockImplementation((cap: string) => cap !== "ciclo:config");
+    renderPage();
+    // caja:reportar sigue activo → el form de reporte carga (ancla única)
+    expect(await screen.findByText("Reportar saldo")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Editar saldo inicial" }),
+    ).toBeNull();
   });
 });

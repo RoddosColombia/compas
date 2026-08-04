@@ -7,12 +7,13 @@ RBAC §2.4: `ciclo:abrir` (financiero/directivo/admin). Regla 1: montos como
 STRING. El saldo inicial NO se edita por aquí después (eso es `ciclo:config`
 + step-up MFA, incremento futuro)."""
 
+import re
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.auth.deps import require_permission
+from app.auth.deps import require_permission, require_step_up
 from app.auth.models import User
 from app.auth.router import verify_origin
 from app.ciclo import service
@@ -130,6 +131,44 @@ async def abrir_mes(
         raise HTTPException(422, e.detalle) from e
     except ValueError as e:  # validación del Document (mes no normalizado, etc.)
         raise HTTPException(422, str(e)) from e
+    return _serializar(mc)
+
+
+class SaldoInicialBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    saldo_inicial_caja: str  # string (regla 1)
+    motivo: str = Field(min_length=1, max_length=500)
+
+
+_MES_PATH = re.compile(r"^\d{4}-\d{2}$")
+
+
+@router.patch("/{mes}/saldo-inicial")
+async def editar_saldo_inicial(
+    mes: str,
+    body: SaldoInicialBody,
+    user: User = Depends(require_permission("ciclo:config")),
+    _step_up: User = Depends(require_step_up()),  # Admin + MFA reciente (§2.4)
+    _: None = Depends(verify_origin),
+):
+    """FIX-F: override del saldo inicial de un mes en ejecución. ciclo:config + step-up
+    (dinero: cambio sensible), motivo obligatorio, evento auditado + saga O1."""
+    if not _MES_PATH.match(mes):
+        raise HTTPException(422, "mes debe ser 'YYYY-MM'")
+    saldo = _decimal(body.saldo_inicial_caja, "saldo_inicial_caja")
+    motivo = body.motivo.strip()
+    if not motivo:
+        raise HTTPException(422, "motivo es obligatorio")
+    try:
+        mc = await service.editar_saldo_inicial(
+            mes=f"{mes}-01",
+            saldo_inicial_caja=saldo,
+            motivo=motivo,
+            usuario_id=user.id,
+        )
+    except service.SaldoInicialError as e:
+        raise HTTPException(e.status, e.detalle) from e
     return _serializar(mc)
 
 

@@ -49,6 +49,27 @@ export async function reportarSaldos(
   });
 }
 
+// ── FIX-F: editar el saldo inicial de caja de un mes en ejecución ────────────
+// PATCH /meses/{mes}/saldo-inicial (ciclo:config + step-up MFA en el backend). Cambio
+// sensible de dinero → exige motivo; queda auditado (saldo_inicial.editado + saga O1).
+export interface SaldoInicialResultado {
+  mes: string;
+  estado: string;
+  saldo_inicial_caja: string;
+}
+
+export async function editarSaldoInicial(
+  mes: string, // YYYY-MM
+  saldoInicialCaja: string,
+  motivo: string,
+): Promise<SaldoInicialResultado> {
+  return apiJson(`/meses/${mes}/saldo-inicial`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ saldo_inicial_caja: saldoInicialCaja, motivo }),
+  });
+}
+
 // ── Flujo de caja DIARIO (GET /api/v1/caja/diaria) ──────────────────────────
 // Evolución día a día del dinero para administrar el flujo de caja. Lee las
 // transacciones reales (no depende del motor ni del ciclo presupuestal). Montos
