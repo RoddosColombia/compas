@@ -23,6 +23,7 @@ import {
   Receipt,
   Repeat,
   Tags,
+  Target,
   Wallet,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -83,6 +84,12 @@ export const NAVEGACION: GrupoNav[] = [
         cap: "dashboard:leer",
       },
       { label: "IVA", path: "/iva", icon: Receipt, cap: "dashboard:leer" },
+      {
+        label: "Metas de ingreso",
+        path: "/metas",
+        icon: Target,
+        cap: "dashboard:leer",
+      },
     ],
   },
   {
