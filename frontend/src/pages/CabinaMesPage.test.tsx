@@ -297,3 +297,80 @@ describe("CabinaMesPage — cierre real (§7.6)", () => {
     );
   });
 });
+
+describe("CabinaMesPage — FIX-J: cierre en orden con selector de mes objetivo", () => {
+  // Escenario real de PROD: julio Y agosto ambos en ejecución; septiembre abierto.
+  const dosEnEjecucion = () => ({
+    items: [
+      mes("en_ejecucion", "2026-07-01", "m7"),
+      mes("en_ejecucion", "2026-08-01", "m8"),
+      mes("sugerido", "2026-09-01", "m9"),
+    ],
+  });
+
+  it("selector lista los meses en ejecución (default: el más antiguo)", async () => {
+    mocks.listarMeses.mockResolvedValue(dosEnEjecucion());
+    renderPage();
+    const selector = (await screen.findByLabelText(
+      "Mes a cerrar",
+    )) as HTMLSelectElement;
+    const opciones = Array.from(selector.options).map((o) => o.textContent);
+    expect(opciones).toEqual(["2026-07", "2026-08"]);
+    expect(selector.value).toBe("2026-07-01"); // el más antiguo por defecto
+  });
+
+  it("objetivo 2026-07 con 2026-08 abierto → Cerrar habilitado y concilia el objetivo", async () => {
+    mocks.listarMeses.mockResolvedValue(dosEnEjecucion());
+    renderPage();
+    const boton = await screen.findByRole("button", { name: "Cerrar mes" });
+    expect(boton).toBeEnabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Verificar conciliación" }),
+    );
+    expect(await screen.findByText(/Diferencia/)).toBeInTheDocument();
+    expect(mocks.cierreConciliacion).toHaveBeenCalledWith("2026-07");
+  });
+
+  it("confirmar cierra el OBJETIVO 2026-07 con el tránsito en el body", async () => {
+    mocks.confirmarCierre.mockResolvedValue({
+      mes: "2026-07",
+      estado: "cerrado",
+      diferencia: "0.00",
+      ajuste_tx_id: null,
+      saldo_inicial_siguiente: "5000000.00",
+      bancos: "665715578.00",
+      transito_wava: "37280415.00",
+      caja_total: "702995993.00",
+      aviso_transito: null,
+    });
+    mocks.listarMeses.mockResolvedValue(dosEnEjecucion());
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Cerrar mes" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Cerrar mes" });
+    expect(dialogo).toHaveTextContent("Cerrar mes 2026-07");
+    fireEvent.change(screen.getByLabelText("Dinero en tránsito (Wava)"), {
+      target: { value: "37280415" },
+    });
+    const confirmar = screen
+      .getAllByRole("button", { name: "Cerrar mes" })
+      .find((b) => dialogo.contains(b)) as HTMLElement;
+    fireEvent.click(confirmar);
+    expect(await screen.findByText(/Mes 2026-07 cerrado/)).toBeInTheDocument();
+    expect(mocks.confirmarCierre).toHaveBeenCalledWith(
+      "2026-07",
+      expect.any(String),
+      "37280415",
+    );
+  });
+
+  it("objetivo agosto con julio en ejecución → nota 'cierra primero' y sin botón Cerrar", async () => {
+    mocks.listarMeses.mockResolvedValue(dosEnEjecucion());
+    renderPage();
+    const selector = await screen.findByLabelText("Mes a cerrar");
+    fireEvent.change(selector, { target: { value: "2026-08-01" } });
+    expect(
+      await screen.findByText(/Cierra primero 2026-07/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cerrar mes" })).toBeNull();
+  });
+});

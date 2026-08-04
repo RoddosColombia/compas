@@ -70,3 +70,18 @@ export function mesSiguiente(mes: string): string {
   const m2 = m === 12 ? 1 : m + 1;
   return `${y2}-${String(m2).padStart(2, "0")}-01`;
 }
+
+/** Mes inmediatamente anterior a `mes` (YYYY-MM-01). FIX-J: guarda de orden de cierre. */
+export function mesAnterior(mes: string): string {
+  const [y, m] = mes.split("-").map(Number);
+  const y2 = m === 1 ? y - 1 : y;
+  const m2 = m === 1 ? 12 : m - 1;
+  return `${y2}-${String(m2).padStart(2, "0")}-01`;
+}
+
+/** Meses EN EJECUCIÓN, del más antiguo al más nuevo (candidatos a cerrar, en orden). */
+export function mesesEnEjecucion(items: Mes[]): Mes[] {
+  return items
+    .filter((m) => m.estado === "en_ejecucion")
+    .sort((a, b) => a.mes.localeCompare(b.mes));
+}

@@ -173,6 +173,24 @@ class TestCierreReal:
         assert r1.status_code == 200 and r2.status_code == 200
         assert r1.json() == r2.json()
 
+    async def test_fixj_predecesor_sugerido_no_bloquea_cierre(self, entorno):
+        # FIX-J caso (b) — el caso REAL de PROD: un predecesor en SUGERIDO (borrador
+        # nunca iniciado, como junio) NO bloquea el cierre del mes en ejecución. La
+        # guarda de orden solo frena un predecesor EN_EJECUCION.
+        ac, db = entorno
+        h = await self._token(ac)
+        await self._sembrar("118")
+        # mayo 2026 en SUGERIDO, predecesor inmediato de junio (el que se cierra).
+        await MesControl(
+            mes="2026-05-01",
+            saldo_inicial_caja=Decimal("0"),
+            estado=EstadoMes.SUGERIDO,
+        ).insert()
+        r = await self._confirmar(ac, h)
+        assert r.status_code == 200  # pasa: sugerido no bloquea (no es 409 de orden)
+        jun2 = await MesControl.find_one(MesControl.mes == "2026-06-01")
+        assert jun2.estado is EstadoMes.CERRADO
+
     async def test_mes_con_tx_manual_cierra_y_sobrevive_reapertura(self, entorno):
         # A-2 / P1-5 end-to-end: ANTES de A-2 el mes NO cerraba jamás (una tx manual
         # dejaba sin_dato=['manual'] → 409 permanente). Ahora cierra y el dinero

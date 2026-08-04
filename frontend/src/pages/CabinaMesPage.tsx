@@ -35,9 +35,11 @@ import { vistaControl } from "@/lib/control";
 import {
   type Mes,
   listarMeses,
+  mesAnterior,
   mesEnEjecucion,
   mesPendiente,
   mesSiguiente,
+  mesesEnEjecucion,
 } from "@/lib/meses";
 import { formatCOP, formatCOPCompact, parseMonto } from "@/lib/money";
 import { listarPresupuesto } from "@/lib/presupuesto";
@@ -341,12 +343,21 @@ function TarjetaCierre({
 }) {
   const { puede } = useAuth();
   const qc = useQueryClient();
-  const mes7 = mes.mes.slice(0, 7);
+
+  // FIX-J: el cierre opera sobre un MES OBJETIVO elegible entre los que están en
+  // ejecución (default: el más antiguo, el que toca cerrar en orden). Todo —
+  // conciliación, diálogo, confirmar, la precondición del siguiente y la guarda de
+  // orden — se evalúa contra el objetivo, no contra el mes de cabina.
+  const candidatos = mesesEnEjecucion(meses);
+  const [objetivoIso, setObjetivoIso] = useState<string | null>(null);
+  const objetivo =
+    candidatos.find((c) => c.mes === objetivoIso) ?? candidatos[0];
+  const objetivo7 = objetivo?.mes.slice(0, 7) ?? "";
 
   const [conc, setConc] = useState<ConciliacionCierre | null>(null);
   const [concError, setConcError] = useState<string | null>(null);
   const verificar = useMutation({
-    mutationFn: () => cierreConciliacion(mes7),
+    mutationFn: () => cierreConciliacion(objetivo7),
     onSuccess: (r) => {
       setConcError(null);
       setConc(r);
@@ -362,7 +373,7 @@ function TarjetaCierre({
   const [transito, setTransito] = useState("0");
   const cerrar = useMutation({
     mutationFn: () =>
-      confirmarCierre(mes7, cerrarKey as string, transito.trim()),
+      confirmarCierre(objetivo7, cerrarKey as string, transito.trim()),
     onSuccess: (r) => {
       setCerrarKey(null);
       onCerrado(
@@ -374,18 +385,19 @@ function TarjetaCierre({
       setCerrarError(e instanceof Error ? e.message : "Error al cerrar"),
   });
 
-  if (mes.estado === "cerrado") {
-    return (
-      <Card className="flex flex-col gap-2">
-        <CardTitle>Cierre</CardTitle>
-        <p className="font-sans text-sm text-ink-soft">
-          El mes {mes7} está cerrado: el histórico es inmutable (regla 4).
-        </p>
-      </Card>
-    );
-  }
-
-  if (mes.estado !== "en_ejecucion") {
+  // Sin meses en ejecución: estados vacíos según el mes de cabina (cerrado vs. resto).
+  if (candidatos.length === 0) {
+    const mes7 = mes.mes.slice(0, 7);
+    if (mes.estado === "cerrado") {
+      return (
+        <Card className="flex flex-col gap-2">
+          <CardTitle>Cierre</CardTitle>
+          <p className="font-sans text-sm text-ink-soft">
+            El mes {mes7} está cerrado: el histórico es inmutable (regla 4).
+          </p>
+        </Card>
+      );
+    }
     return (
       <Card className="flex flex-col gap-2">
         <CardTitle>Cierre</CardTitle>
@@ -400,78 +412,120 @@ function TarjetaCierre({
     );
   }
 
-  const siguienteAbierto = meses.some((m) => m.mes === mesSiguiente(mes.mes));
+  // Guarda de orden (espejo del 409 del backend): un predecesor inmediato EN
+  // EJECUCIÓN está, por definición, entre los candidatos.
+  const predecesorEnEjecucion = candidatos.find(
+    (c) => c.mes === mesAnterior(objetivo.mes),
+  );
+  const siguienteAbierto = meses.some(
+    (m) => m.mes === mesSiguiente(objetivo.mes),
+  );
   const concOk = conc?.dentro_de_umbral ?? false;
+
+  const cambiarObjetivo = (iso: string) => {
+    setObjetivoIso(iso);
+    setConc(null); // la conciliación del objetivo anterior ya no aplica
+    setConcError(null);
+  };
 
   return (
     <Card className="flex flex-col gap-3">
       <CardTitle>Cierre</CardTitle>
 
-      <ul className="flex flex-col gap-1.5 font-sans text-sm">
-        <li className="flex items-start gap-2">
-          <Precondicion ok={siguienteAbierto} />
-          <span className="text-ink">
-            Mes siguiente abierto ({mesSiguiente(mes.mes).slice(0, 7)}) — el
-            ajuste de conciliación se imputa al mes que abre.{" "}
-            {!siguienteAbierto && (
-              <Link
-                to="/meses"
-                className="font-medium text-cyan hover:underline"
-              >
-                Abrir mes →
-              </Link>
-            )}
-          </span>
-        </li>
-        <li className="flex items-start gap-2">
-          <Precondicion ok={conc === null ? null : concOk} />
-          <span className="text-ink">
-            Conciliación dentro del umbral y sin bancos sin dato.
-            {conc !== null && (
-              <span className="text-ink-soft">
-                {" "}
-                Diferencia {formatCOP(conc.diferencia)} (umbral{" "}
-                {formatCOP(conc.umbral)})
-                {conc.sin_dato.length > 0 &&
-                  ` · sin dato: ${conc.sin_dato.join(", ")}`}
+      {candidatos.length > 1 && (
+        <label className="flex flex-col gap-1 font-sans text-sm">
+          <span className="text-ink-soft">Mes a cerrar</span>
+          <select
+            aria-label="Mes a cerrar"
+            className="w-40 rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            value={objetivo.mes}
+            onChange={(e) => cambiarObjetivo(e.target.value)}
+          >
+            {candidatos.map((c) => (
+              <option key={c.mes} value={c.mes}>
+                {c.mes.slice(0, 7)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {predecesorEnEjecucion ? (
+        <AlertBanner variant="warn">
+          Cierra primero {predecesorEnEjecucion.mes.slice(0, 7)}: los meses se
+          cierran en orden.
+        </AlertBanner>
+      ) : (
+        <>
+          <ul className="flex flex-col gap-1.5 font-sans text-sm">
+            <li className="flex items-start gap-2">
+              <Precondicion ok={siguienteAbierto} />
+              <span className="text-ink">
+                Mes siguiente abierto ({mesSiguiente(objetivo.mes).slice(0, 7)})
+                — el ajuste de conciliación se imputa al mes que abre.{" "}
+                {!siguienteAbierto && (
+                  <Link
+                    to="/meses"
+                    className="font-medium text-cyan hover:underline"
+                  >
+                    Abrir mes →
+                  </Link>
+                )}
               </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Precondicion ok={conc === null ? null : concOk} />
+              <span className="text-ink">
+                Conciliación dentro del umbral y sin bancos sin dato.
+                {conc !== null && (
+                  <span className="text-ink-soft">
+                    {" "}
+                    Diferencia {formatCOP(conc.diferencia)} (umbral{" "}
+                    {formatCOP(conc.umbral)})
+                    {conc.sin_dato.length > 0 &&
+                      ` · sin dato: ${conc.sin_dato.join(", ")}`}
+                  </span>
+                )}
+              </span>
+            </li>
+          </ul>
+
+          {concError && <AlertBanner variant="danger">{concError}</AlertBanner>}
+
+          <div className="flex flex-wrap gap-2">
+            {puede("ciclo:cierre_operativo") && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={verificar.isPending}
+                onClick={() => verificar.mutate()}
+              >
+                {verificar.isPending
+                  ? "Verificando…"
+                  : "Verificar conciliación"}
+              </Button>
             )}
-          </span>
-        </li>
-      </ul>
-
-      {concError && <AlertBanner variant="danger">{concError}</AlertBanner>}
-
-      <div className="flex flex-wrap gap-2">
-        {puede("ciclo:cierre_operativo") && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={verificar.isPending}
-            onClick={() => verificar.mutate()}
-          >
-            {verificar.isPending ? "Verificando…" : "Verificar conciliación"}
-          </Button>
-        )}
-        {puede("ciclo:confirmar_cierre") && (
-          <Button
-            variant="cyan"
-            size="sm"
-            disabled={!siguienteAbierto}
-            onClick={() => {
-              setCerrarError(null);
-              setTransito("0");
-              setCerrarKey(crypto.randomUUID());
-            }}
-          >
-            Cerrar mes
-          </Button>
-        )}
-      </div>
+            {puede("ciclo:confirmar_cierre") && (
+              <Button
+                variant="cyan"
+                size="sm"
+                disabled={!siguienteAbierto}
+                onClick={() => {
+                  setCerrarError(null);
+                  setTransito("0");
+                  setCerrarKey(crypto.randomUUID());
+                }}
+              >
+                Cerrar mes
+              </Button>
+            )}
+          </div>
+        </>
+      )}
 
       {cerrarKey && (
         <CerrarDialog
-          mes={mes7}
+          mes={objetivo7}
           conc={conc}
           transito={transito}
           onTransito={setTransito}
@@ -541,7 +595,7 @@ function CerrarDialog({
         className="static w-full max-w-md rounded-lg border border-hairline bg-surface p-6 text-inherit shadow-lg"
       >
         <h3 className="mb-1 font-display text-lg font-semibold text-ink">
-          Cerrar el mes {mes}
+          Cerrar mes {mes}
         </h3>
         <p className="mb-4 font-sans text-apoyo text-ink-faint">
           El mes queda inmutable y el saldo inicial del siguiente se ancla al
