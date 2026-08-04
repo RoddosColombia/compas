@@ -32,6 +32,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
+from app.cierre.transito import RUBRO_TRANSITO, AsignadorTransito
 from app.core.time import now_utc
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.regla_clasificacion import (
@@ -423,11 +424,19 @@ async def aplicar_pendientes(*, usuario_id: str) -> dict:
         raise ReglasError(
             "falta el rubro de sistema 'Por clasificar' (correr semillas)", 500
         )
-    meses_abiertos = [
-        mc.id async for mc in MesControl.find(MesControl.estado != EstadoMes.CERRADO)
-    ]
+    mes_por_id = {
+        mc.id: mc.mes
+        async for mc in MesControl.find(MesControl.estado != EstadoMes.CERRADO)
+    }
+    meses_abiertos = list(mes_por_id.keys())
     por_tipo = await reglas_activas_por_tipo()
     activos = await rubros_activos_ids()
+
+    # CR-WAVA-2: hook estado-dependiente (mismo criterio que la carga). Un depósito
+    # Wava pendiente con remanente vivo se reclasifica al rubro tránsito ANTES de las
+    # reglas; fail-safe si el rubro no existe. El asignador descuenta en batch.
+    rubro_transito = await Rubro.find_one(Rubro.nombre == RUBRO_TRANSITO)
+    asignador = AsignadorTransito()
 
     clasificadas = 0
     sin_match = 0
@@ -436,6 +445,19 @@ async def aplicar_pendientes(*, usuario_id: str) -> dict:
         Transaccion.rubro_id == pc.id,
         {"mes_id": {"$in": meses_abiertos}},
     ):
+        if rubro_transito is not None and await asignador.asigna(
+            descripcion=tx.descripcion,
+            mes=mes_por_id[tx.mes_id],
+            tipo_flujo=tx.tipo_flujo,
+            valor=tx.valor,
+        ):
+            tx.rubro_id = rubro_transito.id
+            tx.regla_id = None  # sello de sistema, no de regla
+            tx.clasificada_por = usuario_id  # B-2: quién disparó el lote
+            tx.clasificada_at = ahora  # B-2: cuándo
+            await tx.save()
+            clasificadas += 1
+            continue
         regla = elegir_regla(tx.descripcion, por_tipo[tx.tipo_flujo], activos)
         if regla is None:
             sin_match += 1

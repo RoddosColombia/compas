@@ -16,10 +16,54 @@ lo hereda de forma DERIVADA:
 from decimal import Decimal
 
 from app.domain.mes_control import EstadoMes, MesControl
+from app.domain.regla_clasificacion import normalizar_texto
 from app.domain.rubro import Rubro, TipoFlujo
 from app.domain.transaccion import Transaccion
 
 RUBRO_TRANSITO = "Tránsito Wava mes anterior"
+
+# CR-WAVA-2 (decisión CEO 2026-08-03): patrón real del depósito Wava en Global66.
+# Ya normalizados (lower, sin tildes); match por *contains* → cubre
+# "Recibido de WAVA Technologie…". Es la ÚNICA vía automática hacia el rubro
+# tránsito (que es es_sistema → ninguna ReglaClasificacion puede apuntarle).
+PATRONES_TRANSITO: tuple[str, ...] = ("recibido de wava",)
+
+
+def es_transito_wava(descripcion: str) -> bool:
+    """¿La descripción de un movimiento es un depósito Wava? Usa la MISMA
+    `normalizar_texto` que el motor de reglas (sin divergencia silenciosa)."""
+    norm = normalizar_texto(descripcion)
+    return any(p in norm for p in PATRONES_TRANSITO)
+
+
+class AsignadorTransito:
+    """Decide, movimiento a movimiento dentro de UNA corrida (una carga o un
+    `aplicar_pendientes`), si un depósito Wava debe clasificarse al rubro tránsito.
+
+    Cache + descuento en batch: calcula `transito_remanente(mes)` una sola vez por
+    mes y le resta el valor de cada depósito que manda a tránsito. Así el
+    comportamiento dentro de un archivo == cargas secuenciales (el 2º depósito ve el
+    remanente ya reducido por el 1º) y nunca sobre-asigna más que lo declarado.
+    """
+
+    def __init__(self) -> None:
+        self._rem: dict[str, Decimal] = {}
+
+    async def asigna(
+        self, *, descripcion: str, mes: str, tipo_flujo: TipoFlujo, valor: Decimal
+    ) -> bool:
+        """True (→ rubro tránsito, sello de sistema) solo si es INGRESO, matchea el
+        patrón Wava y aún hay remanente vivo para `mes`; descuenta el valor."""
+        if tipo_flujo is not TipoFlujo.INGRESO:
+            return False
+        if not es_transito_wava(descripcion):
+            return False
+        if mes not in self._rem:
+            self._rem[mes] = await transito_remanente(mes)
+        if self._rem[mes] > 0:
+            self._rem[mes] -= valor
+            return True
+        return False
 
 
 def _mes_anterior(mes: str) -> str:
