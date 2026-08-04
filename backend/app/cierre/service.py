@@ -26,7 +26,7 @@ from beanie import PydanticObjectId
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
 from app.ciclo.service import _mes_siguiente
-from app.cierre.transito import aviso_transito
+from app.cierre.transito import _mes_anterior, aviso_transito
 from app.core.money import money_str
 from app.core.time import now_utc
 from app.core.ulid import new_ulid
@@ -189,6 +189,15 @@ async def confirmar_cierre(
     if mc.estado is not EstadoMes.EN_EJECUCION:
         raise CierreError(
             f"solo se cierra un mes en ejecución (está en '{mc.estado.value}')", 409
+        )
+    # FIX-J: guarda de ORDEN (aditiva). No cerrar un mes cuyo predecesor inmediato siga
+    # EN EJECUCIÓN — quedaría irrecuperable (su sucesor ya cerrado y re-anclado). Un
+    # predecesor en sugerido/propuesto/definido (borrador nunca iniciado) NO bloquea:
+    # solo bloquea el que entró a ejecución. La matemática certificada no se toca.
+    anterior = await MesControl.find_one(MesControl.mes == _mes_anterior(mc.mes))
+    if anterior is not None and anterior.estado is EstadoMes.EN_EJECUCION:
+        raise CierreError(
+            f"cierra los meses en orden: {anterior.mes[:7]} sigue en ejecución", 409
         )
     siguiente = await MesControl.find_one(MesControl.mes == _mes_siguiente(mc.mes))
     if siguiente is None:  # D2
