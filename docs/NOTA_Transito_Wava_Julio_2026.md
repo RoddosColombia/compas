@@ -30,9 +30,11 @@ El tránsito **nunca se suma dentro de un banco**.
 Como **julio SÍ declara el tránsito**, los depósitos de Wava que aterricen en agosto son la **llegada** de
 ese tránsito declarado:
 
-- **SÍ** clasificar esos depósitos contra el rubro **`Tránsito Wava mes anterior`** (la whitelist del guard
-  `es_sistema` lo permite; sin patrón automático, la clasificación es manual en agosto — pendiente del CEO
-  el patrón real del depósito Wava en Global66).
+- **SÍ** clasificar esos depósitos contra el rubro **`Tránsito Wava mes anterior`**. Con **CR-WAVA-2**
+  (patrón real `"recibido de wava"`, decisión CEO 2026-08-03) la clasificación es **automática** en la carga y
+  en `aplicar_pendientes`: un depósito Wava con remanente vivo va al rubro tránsito antes que cualquier regla.
+  Antes del despliegue de CR-WAVA-2, o para depósitos que no matcheen el patrón, la whitelist del guard
+  `es_sistema` permite la clasificación **manual**.
 - Cada llegada **NO infla el recaudo** (`ingreso_real` los excluye por `rubro_id`) y **NO cambia la caja
   total** (bancos suben, remanente de tránsito baja, total igual). Es **reconocimiento del tránsito**, no
   recaudo de agosto ni doble conteo.
@@ -46,4 +48,4 @@ ese tránsito declarado:
    diálogo de cierre.
 3. Agosto muestra: **Bancos 665.715.578 · Tránsito 37.280.415 · Total 702.995.993**.
 4. Los depósitos Wava-por-julio que lleguen en agosto se **clasifican al rubro `Tránsito Wava mes
-   anterior`** (manual mientras no exista la regla automática).
+   anterior`** — **automático** con CR-WAVA-2 desplegado (patrón `"recibido de wava"`); manual como respaldo.

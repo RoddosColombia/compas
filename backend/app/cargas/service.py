@@ -34,6 +34,7 @@ from pymongo.read_concern import ReadConcern
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
 from app.cargas.mapper import _TIPO_A_FLUJO, movimiento_a_transaccion
+from app.cierre.transito import RUBRO_TRANSITO, AsignadorTransito
 from app.domain.bancos import Banco
 from app.domain.carga import CargaBancaria, ErrorCarga, EstadoCarga
 from app.domain.mes_control import MesControl
@@ -218,6 +219,13 @@ async def procesar_carga(
             if r.rubro_id not in activos
         )
 
+        # CR-WAVA-2: hook estado-dependiente. Un depósito Wava con remanente vivo va al
+        # rubro tránsito (sello de sistema, ANTES de elegir_regla → la regla de recaudo
+        # no se lo lleva). Si el rubro no existe (migración sin correr), el asignador
+        # nunca dispara (fail-safe). `asignador` descuenta el remanente en batch.
+        rubro_transito = await Rubro.find_one(Rubro.nombre == RUBRO_TRANSITO)
+        asignador = AsignadorTransito()
+
         docs: list[Transaccion] = []
         mes_cache: dict[str, object] = {}  # M-03: 1 lookup por mes, no por fila
         conteo: dict[tuple, int] = {}  # A-01: ordinal de ocurrencia por huella
@@ -236,11 +244,29 @@ async def procesar_carga(
                 continue
             clave = _clave_ocurrencia(mov)
             conteo[clave] = conteo.get(clave, 0) + 1
+            tipo_flujo_mov = _TIPO_A_FLUJO[mov.tipo]
+            # CR-WAVA-2: tránsito ANTES de las reglas (si no, la regla de recaudo
+            # se llevaría el depósito Wava). Sello de sistema: regla_id=None.
+            if rubro_transito is not None and await asignador.asigna(
+                descripcion=mov.descripcion,
+                mes=mes,
+                tipo_flujo=tipo_flujo_mov,
+                valor=mov.monto,
+            ):
+                docs.append(
+                    movimiento_a_transaccion(
+                        mov,
+                        rubro_id=rubro_transito.id,
+                        mes_id=mc.id,
+                        carga_id=carga.id,
+                        ocurrencia=conteo[clave],
+                        regla_id=None,
+                    )
+                )
+                continue
             # C3: primera regla que matchea (prioridad asc, _id) clasifica;
             # sin match → 'Por clasificar' (regla 7: jamás se adivina).
-            regla = elegir_regla(
-                mov.descripcion, por_tipo[_TIPO_A_FLUJO[mov.tipo]], activos
-            )
+            regla = elegir_regla(mov.descripcion, por_tipo[tipo_flujo_mov], activos)
             docs.append(
                 movimiento_a_transaccion(
                     mov,
