@@ -164,6 +164,103 @@ async def crear_transaccion_manual(
     return tx, False
 
 
+async def listar_transacciones(
+    *, mes: str, banco: str | None = None
+) -> tuple[list[Transaccion], set[str]]:
+    """FIX-G2: lista las transacciones de un mes (YYYY-MM) para el panel de manuales.
+    Devuelve (txs ordenadas por fecha, ids_anuladas) donde ids_anuladas = ids que ya
+    tienen un contra-asiento (algún tx.revierte_id apunta a ellas). `banco` opcional
+    filtra por banco (p. ej. 'manual')."""
+    mc = await MesControl.find_one(MesControl.mes == f"{mes}-01")
+    if mc is None:
+        return [], set()
+    filtros = [Transaccion.mes_id == mc.id]
+    if banco is not None:
+        filtros.append(Transaccion.banco == Banco(banco))
+    txs = await Transaccion.find(*filtros).sort(+Transaccion.fecha).to_list()
+    anuladas = {str(t.revierte_id) for t in txs if t.revierte_id is not None}
+    return txs, anuladas
+
+
+async def anular_transaccion_manual(
+    *,
+    tx_id: str,
+    motivo: str,
+    usuario_id: str,
+) -> Transaccion:
+    """FIX-G2: anula una transacción MANUAL creando su CONTRA-ASIENTO (la Transaccion
+    es inmutable, §2.2.2: nunca se borra). Mismo valor/fecha/rubro, tipo_flujo
+    invertido, banco=MANUAL, id_banco MAN-+ULID nuevo, revierte_id=original → neto 0 (2
+    patas cuentan en libro/caja). Espeja el contra-asiento del reverso de conciliación
+    (cierre/service.py). Guardas: solo MANUAL (422 — las bancarias se corrigen
+    re-cargando con dedup), solo mes abierto (409, regla 4), no dos veces (409 si ya
+    tiene reverso). Evento `transaccion.creada` (existente) con via='contra_asiento'.
+    Saga O1: si el emit falla, se borra el reverso (sin dinero fantasma)."""
+    try:
+        tid = PydanticObjectId(tx_id)
+    except Exception:
+        raise TransaccionManualError("transaccion_id inválido", 422) from None
+    orig = await Transaccion.get(tid)
+    if orig is None:
+        raise TransaccionManualError("la transacción no existe", 404)
+
+    if orig.banco is not Banco.MANUAL:
+        raise TransaccionManualError(
+            "solo se anulan transacciones manuales; una bancaria se corrige "
+            "re-cargando el extracto (la dedup evita duplicados)",
+            422,
+        )
+
+    mc = await MesControl.get(orig.mes_id)
+    if mc is not None and mc.estado is EstadoMes.CERRADO:
+        raise TransaccionManualError(
+            "el mes está cerrado y su histórico es inmutable (regla 4)", 409
+        )
+
+    ya = await Transaccion.find_one(Transaccion.revierte_id == orig.id)
+    if ya is not None:
+        raise TransaccionManualError(
+            "esta transacción ya fue anulada (ya tiene su contra-asiento)", 409
+        )
+
+    inv = (
+        TipoFlujo.EGRESO if orig.tipo_flujo is TipoFlujo.INGRESO else TipoFlujo.INGRESO
+    )
+    desc = f"Anulación de «{orig.descripcion}»: {motivo}"[:300]
+    contra = Transaccion(
+        fecha=orig.fecha,
+        descripcion=desc,
+        valor=orig.valor,
+        tipo_flujo=inv,
+        rubro_id=orig.rubro_id,
+        mes_id=orig.mes_id,
+        banco=Banco.MANUAL,
+        id_banco=f"MAN-{new_ulid()}",
+        revierte_id=orig.id,
+    )
+    await contra.insert()
+
+    try:
+        await emit_audit(
+            AuditEvento.transaccion_creada,
+            entidad="transaccion",
+            entidad_id=str(contra.id),
+            actor_id=usuario_id,
+            metadata={
+                "origen": "manual",
+                "via": "contra_asiento",
+                "revierte_id": str(orig.id),
+                "motivo": motivo,
+                "valor": f"{orig.valor:.2f}",
+                "tipo_flujo": inv.value,
+            },
+        )
+    except Exception:
+        await contra.delete()  # O1: sin rastro no hay reverso
+        raise
+    return contra
+
+
 async def reclasificar_transaccion(
     *,
     tx_id: str,

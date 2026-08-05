@@ -16,9 +16,12 @@ import { Card } from "@/components/ui/card";
 import {
   type Carga,
   type TransaccionManualInput,
+  type TransaccionMovimiento,
+  anularTransaccion,
   crearTransaccionManual,
   detalleCarga,
   listarCargas,
+  listarTransaccionesManuales,
   subirExtracto,
   validarArchivo,
 } from "@/lib/cargas";
@@ -233,6 +236,8 @@ export default function CargasPage() {
         </Card>
       )}
 
+      <PanelManuales gestor={gestor} />
+
       {manualAbierto && (
         <ManualDialog
           alCerrar={() => setManualAbierto(false)}
@@ -242,6 +247,232 @@ export default function CargasPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function mesCalendarioActual(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// FIX-G2: movimientos manuales del mes con anulación por contra-asiento. El original
+// anulado y su reverso quedan ambos visibles, enlazados por revierte_id (nada se borra).
+function PanelManuales({ gestor }: { gestor: boolean }) {
+  const qc = useQueryClient();
+  const [mes, setMes] = useState(mesCalendarioActual());
+  const [aAnular, setAAnular] = useState<TransaccionMovimiento | null>(null);
+
+  const movs = useQuery({
+    queryKey: ["transacciones-manuales", mes],
+    queryFn: () => listarTransaccionesManuales(mes),
+  });
+  const items = movs.data?.items ?? [];
+  const numeroDe = new Map(items.map((m, i) => [m.id, i + 1]));
+
+  const invalidar = () => {
+    void qc.invalidateQueries({ queryKey: ["transacciones-manuales"] });
+    void qc.invalidateQueries({ queryKey: ["caja"] });
+    void qc.invalidateQueries({ queryKey: ["control"] });
+  };
+
+  return (
+    <Card className="flex flex-col gap-3 p-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5">
+        <h3 className="font-display text-base font-semibold text-ink">
+          Movimientos manuales del mes
+        </h3>
+        <label className="flex items-center gap-2 font-sans text-sm text-ink-soft">
+          Mes
+          <input
+            type="month"
+            value={mes}
+            onChange={(e) => setMes(e.target.value)}
+            className="rounded-md border border-hairline bg-surface px-2 py-1 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+          />
+        </label>
+      </div>
+
+      {movs.isLoading ? (
+        <p className="px-5 pb-5 font-sans text-sm text-ink-soft">Cargando…</p>
+      ) : items.length === 0 ? (
+        <p className="px-5 pb-5 font-sans text-sm text-ink-soft">
+          Sin transacciones manuales en {mes}.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full font-sans text-sm">
+            <thead>
+              <tr className="border-b border-hairline text-left text-ink-faint">
+                <th className="px-5 py-2.5 font-semibold">Fecha</th>
+                <th className="px-5 py-2.5 font-semibold">Descripción</th>
+                <th className="px-5 py-2.5 text-right font-semibold">Valor</th>
+                <th className="px-5 py-2.5 font-semibold">Tipo</th>
+                <th className="px-5 py-2.5 font-semibold">Estado</th>
+                {gestor && (
+                  <th className="px-5 py-2.5 text-right font-semibold">
+                    <span className="sr-only">Acciones</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((m) => (
+                <tr
+                  key={m.id}
+                  className="border-b border-hairline/60 last:border-0"
+                  data-testid={`mov-${m.id}`}
+                >
+                  <td className="px-5 py-2 whitespace-nowrap text-ink-soft">
+                    {formatFecha(m.fecha)}
+                  </td>
+                  <td className="px-5 py-2 text-ink">
+                    {m.descripcion}
+                    {m.es_reverso && m.revierte_id && (
+                      <span className="ml-1 text-apoyo text-ink-faint">
+                        (↩ reversa de #{numeroDe.get(m.revierte_id) ?? "?"})
+                      </span>
+                    )}
+                  </td>
+                  <td className="tabular px-5 py-2 text-right text-ink-soft">
+                    {formatCOP(m.valor)}
+                  </td>
+                  <td className="px-5 py-2 capitalize text-ink-soft">
+                    {m.tipo_flujo}
+                  </td>
+                  <td className="px-5 py-2">
+                    <EstadoMov mov={m} />
+                  </td>
+                  {gestor && (
+                    <td className="px-5 py-2 text-right whitespace-nowrap">
+                      {!m.es_reverso && !m.anulada && (
+                        <button
+                          type="button"
+                          className="font-medium text-critico hover:underline"
+                          onClick={() => setAAnular(m)}
+                        >
+                          Anular
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {aAnular && (
+        <AnularDialog
+          mov={aAnular}
+          onAnular={async (motivo) => {
+            await anularTransaccion(aAnular.id, motivo);
+            setAAnular(null);
+            invalidar();
+          }}
+          onCerrar={() => setAAnular(null)}
+        />
+      )}
+    </Card>
+  );
+}
+
+function EstadoMov({ mov }: { mov: TransaccionMovimiento }) {
+  if (mov.es_reverso) {
+    return (
+      <span className="rounded-full bg-cyan/15 px-2 py-0.5 text-apoyo font-medium text-cyan">
+        Contra-asiento
+      </span>
+    );
+  }
+  if (mov.anulada) {
+    return (
+      <span className="rounded-full bg-surface-muted px-2 py-0.5 text-apoyo font-medium text-ink-faint">
+        Anulada
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-positivo/10 px-2 py-0.5 text-apoyo font-medium text-positivo">
+      Activa
+    </span>
+  );
+}
+
+function AnularDialog({
+  mov,
+  onAnular,
+  onCerrar,
+}: {
+  mov: TransaccionMovimiento;
+  onAnular: (motivo: string) => Promise<void>;
+  onCerrar: () => void;
+}) {
+  const [motivo, setMotivo] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pendiente, setPendiente] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!motivo.trim()) {
+      setError("El motivo de la anulación es obligatorio.");
+      return;
+    }
+    setPendiente(true);
+    try {
+      await onAnular(motivo.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo anular");
+      setPendiente(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
+      <Card className="w-full max-w-md shadow-lg">
+        <h3 className="mb-2 font-display text-lg font-semibold text-ink">
+          Anular transacción manual
+        </h3>
+        <p className="mb-3 font-sans text-sm text-ink-soft">
+          Se creará un <strong>contra-asiento</strong> por{" "}
+          {formatCOP(mov.valor)} ({mov.tipo_flujo}) que revierte «
+          {mov.descripcion}». Nada se borra: el original y su reverso quedan
+          ambos en el histórico. Efecto neto 0.
+        </p>
+        <form
+          onSubmit={onSubmit}
+          className="flex flex-col gap-3 font-sans text-sm"
+        >
+          <label className="font-medium text-ink" htmlFor="a-motivo">
+            Motivo (obligatorio)
+          </label>
+          <input
+            id="a-motivo"
+            required
+            maxLength={500}
+            placeholder="digitación errada, duplicado, …"
+            className="rounded-md border border-hairline bg-surface px-3 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+          />
+          {error && <AlertBanner variant="danger">{error}</AlertBanner>}
+          <div className="mt-2 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCerrar}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="outline"
+              className="border-critico/40 text-critico hover:bg-critico/10"
+              disabled={pendiente}
+            >
+              {pendiente ? "Anulando…" : "Anular"}
+            </Button>
+          </div>
+        </form>
+      </Card>
     </div>
   );
 }
