@@ -17,21 +17,13 @@ from app.core.time import now_bogota
 from app.domain.mes_control import MesControl
 from app.domain.obligacion import LineaMeta, MetaIngreso
 from app.domain.rubro import Rubro
-from app.domain.transaccion import TipoFlujo, Transaccion
 
-# Rubros "neutros" para el ingreso real: dinero que entró a la cuenta pero NO es
-# recaudo operativo. Contarlos inflaría el cumplimiento de la meta. Exclusión por
-# rubro_id (nunca por grupo ni por es_sistema). El set:
-#   • 'Reversas y devoluciones'    — FIX-B: reversas GMF, devoluciones, reembolsos.
-#   • 'Tránsito Wava mes anterior' — CR-WAVA: depósito Wava del mes previo que llega.
-#   • 'Ajuste de conciliación'     — CR-WAVA: contra-asiento INGRESO de una reapertura.
-RUBROS_NEUTROS_INGRESO_REAL: frozenset[str] = frozenset(
-    {
-        "Reversas y devoluciones",
-        "Tránsito Wava mes anterior",
-        "Ajuste de conciliación",
-    }
+# El set de neutros vive en `app.domain.rubros_neutros` (E1 lo comparte — una verdad,
+# un lugar); se re-exporta aquí para no romper los importadores existentes.
+from app.domain.rubros_neutros import (
+    RUBROS_NEUTROS_INGRESO_REAL as RUBROS_NEUTROS_INGRESO_REAL,
 )
+from app.domain.transaccion import TipoFlujo, Transaccion
 
 
 class MetasError(Exception):
