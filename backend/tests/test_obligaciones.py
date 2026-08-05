@@ -232,3 +232,190 @@ async def test_rbac_consulta_no_crea(api):
     r = await ac.post("/api/v1/obligaciones", json=_facturacion(), headers=h)
     assert r.status_code == 403
     assert (await ac.get("/api/v1/obligaciones", headers=h)).status_code == 200
+
+
+# ── D2 §7: número + dedup, pago por origen, reconciliación ──────────────────────
+
+
+async def _oblig_con_factura(ac, h, **fover) -> tuple[str, str]:
+    """Crea una obligación de facturación + 1 factura; devuelve (obligacion_id,
+    factura_id)."""
+    oid = (
+        await ac.post("/api/v1/obligaciones", json=_facturacion(), headers=h)
+    ).json()["id"]
+    body = {
+        "numero": "F-001",
+        "fecha_factura": "2026-08-15",
+        "valor": "180000000",
+        "plazo_elegido_dias": 150,
+    }
+    body.update(fover)
+    fid = (
+        await ac.post(f"/api/v1/obligaciones/{oid}/facturas", json=body, headers=h)
+    ).json()["id"]
+    return oid, fid
+
+
+@pytest.mark.asyncio
+async def test_registrar_factura_con_numero_dedup(api):
+    ac, _ = api
+    h = await _token(ac)
+    oid, _fid = await _oblig_con_factura(ac, h)
+    # mismo numero en la misma obligación => 409
+    dup = await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas",
+        json={
+            "numero": "F-001",
+            "fecha_factura": "2026-09-01",
+            "valor": "1",
+            "plazo_elegido_dias": 150,
+        },
+        headers=h,
+    )
+    assert dup.status_code == 409, dup.text
+    # otro numero => OK
+    ok = await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas",
+        json={
+            "numero": "F-002",
+            "fecha_factura": "2026-09-01",
+            "valor": "1",
+            "plazo_elegido_dias": 150,
+        },
+        headers=h,
+    )
+    assert ok.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_pagar_factura_marca_pagada_y_serializa(api):
+    ac, _ = api
+    h = await _token(ac)
+    oid, fid = await _oblig_con_factura(ac, h)
+    r = await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar",
+        json={
+            "fecha": "2026-09-10",
+            "valor": "180000000",
+            "pagada_desde": "roddos",
+            "nota": "pago propio",
+        },
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["estado"] == "pagada"
+    assert r.json()["pagada_desde"] == "roddos"
+    # aparece en el listado con el origen
+    f = (await ac.get(f"/api/v1/obligaciones/{oid}/facturas", headers=h)).json()[
+        "items"
+    ][0]
+    assert f["pagada_desde"] == "roddos"
+    assert f["estado"] == "pagada"
+
+
+@pytest.mark.asyncio
+async def test_pago_tercero_no_toca_caja_pero_baja_deuda(api):
+    ac, c = api
+    h = await _token(ac)
+    oid, fid = await _oblig_con_factura(ac, h)
+    # saldo pendiente inicial = valor de la factura
+    o0 = (await ac.get("/api/v1/obligaciones", headers=h)).json()["items"][0]
+    assert o0["saldo_pendiente"] == "180000000.00"
+    # pago de tercero (Fabián): baja la deuda, NO sale de caja
+    r = await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar",
+        json={"fecha": "2026-09-10", "valor": "180000000", "pagada_desde": "tercero"},
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    # la deuda bajó a 0
+    o1 = (await ac.get("/api/v1/obligaciones", headers=h)).json()["items"][0]
+    assert o1["saldo_pendiente"] == "0.00"
+    # y la reconciliación de caja YA NO la incluye (tercero excluido)
+    from app.proyeccion.service import _facturas_reconciliar
+
+    assert await _facturas_reconciliar() == []
+
+
+@pytest.mark.asyncio
+async def test_pago_roddos_si_toca_caja(api):
+    ac, _ = api
+    h = await _token(ac)
+    oid, fid = await _oblig_con_factura(ac, h)
+    await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar",
+        json={"fecha": "2026-09-10", "valor": "180000000", "pagada_desde": "roddos"},
+        headers=h,
+    )
+    # pagada por roddos: sigue pegándole a la caja (no se excluye)
+    from app.proyeccion.service import _facturas_reconciliar
+
+    assert len(await _facturas_reconciliar()) == 1
+
+
+@pytest.mark.asyncio
+async def test_anular_pago_revierte_a_pendiente(api):
+    ac, _ = api
+    h = await _token(ac)
+    oid, fid = await _oblig_con_factura(ac, h)
+    await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar",
+        json={"fecha": "2026-09-10", "valor": "180000000", "pagada_desde": "tercero"},
+        headers=h,
+    )
+    d = await ac.delete(f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar", headers=h)
+    assert d.status_code == 200, d.text
+    assert d.json()["estado"] == "pendiente"
+    assert d.json()["pagada_desde"] is None
+    # la deuda vuelve a estar pendiente
+    o = (await ac.get("/api/v1/obligaciones", headers=h)).json()["items"][0]
+    assert o["saldo_pendiente"] == "180000000.00"
+
+
+@pytest.mark.asyncio
+async def test_pago_y_anulacion_emiten_evento(api):
+    ac, c = api
+    h = await _token(ac)
+    oid, fid = await _oblig_con_factura(ac, h)
+    await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar",
+        json={"fecha": "2026-09-10", "valor": "1", "pagada_desde": "roddos"},
+        headers=h,
+    )
+    ev = await c["compas_test"]["audit_log"].find_one(
+        {"evento": "factura_obligacion.pagada"}
+    )
+    assert ev is not None
+    await ac.delete(f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar", headers=h)
+    # la anulación reutiliza el mismo evento con via='anulacion' (regla 11)
+    anul = await c["compas_test"]["audit_log"].find_one(
+        {"evento": "factura_obligacion.pagada", "metadata.via": "anulacion"}
+    )
+    assert anul is not None
+
+
+@pytest.mark.asyncio
+async def test_rbac_consulta_no_paga(api):
+    ac, _ = api
+    hfin = await _token(ac)
+    oid, fid = await _oblig_con_factura(ac, hfin)
+    hcon = await _token(ac, "consulta@roddos.com")
+    r = await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar",
+        json={"fecha": "2026-09-10", "valor": "1", "pagada_desde": "roddos"},
+        headers=hcon,
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_pago_origen_invalido_es_422(api):
+    ac, _ = api
+    h = await _token(ac)
+    oid, fid = await _oblig_con_factura(ac, h)
+    r = await ac.post(
+        f"/api/v1/obligaciones/{oid}/facturas/{fid}/pagar",
+        json={"fecha": "2026-09-10", "valor": "1", "pagada_desde": "banco"},
+        headers=h,
+    )
+    assert r.status_code == 422

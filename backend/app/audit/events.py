@@ -115,6 +115,11 @@ class AuditEvento(StrEnum):
     obligacion_eliminada = "obligacion.eliminada"
     factura_obligacion_registrada = "factura_obligacion.registrada"
     factura_obligacion_anulada = "factura_obligacion.anulada"
+    # D2 §7 (GO CEO 2026-08-04): pago de una factura con distinción de origen
+    # (roddos = sale de caja / tercero = baja deuda sin tocar caja). La anulación del
+    # pago REUSA este evento con metadata {via: 'anulacion'} (espejo de regla.editada),
+    # sin evento extra. Catálogo 59 -> 60.
+    factura_obligacion_pagada = "factura_obligacion.pagada"
     meta_ingreso_creada = "meta_ingreso.creada"
     meta_ingreso_editada = "meta_ingreso.editada"
     meta_ingreso_eliminada = "meta_ingreso.eliminada"

@@ -272,8 +272,11 @@ async def _iva_plan(
 
 async def _facturas_reconciliar() -> list[FacturaReconciliar]:
     """Facturas activas + los términos de su obligación (facturación activa) aplanados
-    para la reconciliación §4. Sin facturas → []."""
+    para la reconciliación §4. Sin facturas → []. D2 §7: las pagadas por un TERCERO se
+    excluyen — bajan la deuda pero NO tocan la caja de RODDOS; pendientes y las pagadas
+    por roddos sí pesan en la caja."""
     facturas = await FacturaObligacion.find({"activo": True}).to_list()
+    facturas = [f for f in facturas if f.pagada_desde != "tercero"]
     if not facturas:
         return []
     ids = list({f.obligacion_id for f in facturas})

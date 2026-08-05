@@ -18,6 +18,7 @@ from app.domain.obligacion import (
     FacturaObligacion,
     NaturalezaObligacion,
     Obligacion,
+    OrigenPago,
 )
 from app.obligaciones import service
 
@@ -73,9 +74,19 @@ class ObligacionEditarBody(BaseModel):
 class FacturaCrearBody(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
+    numero: str | None = Field(default=None, max_length=60)
     fecha_factura: str
     valor: str
     plazo_elegido_dias: int = Field(ge=0)
+    nota: str | None = Field(default=None, max_length=500)
+
+
+class PagarBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    fecha: str
+    valor: str
+    pagada_desde: OrigenPago
     nota: str | None = Field(default=None, max_length=500)
 
 
@@ -95,7 +106,7 @@ def _campos(body: BaseModel) -> dict:
     return out
 
 
-def _ser_obligacion(o: Obligacion) -> dict:
+def _ser_obligacion(o: Obligacion, saldo: object = None) -> dict:
     d = {
         "id": str(o.id),
         "nombre": o.nombre,
@@ -104,6 +115,7 @@ def _ser_obligacion(o: Obligacion) -> dict:
         "activo": o.activo,
         "es_sistema": o.es_sistema,
         "actualizado_at": o.actualizado_at.isoformat(),
+        "saldo_pendiente": money_str(saldo) if saldo is not None else None,
     }
     if o.naturaleza == "cuotas":
         d.update(
@@ -131,11 +143,19 @@ def _ser_factura(f: FacturaObligacion) -> dict:
     return {
         "id": str(f.id),
         "obligacion_id": str(f.obligacion_id),
+        "numero": f.numero,
         "fecha_factura": f.fecha_factura,
         "valor": money_str(f.valor),
         "plazo_elegido_dias": f.plazo_elegido_dias,
         "nota": f.nota,
         "activo": f.activo,
+        "estado": "pendiente" if f.pagada_desde is None else "pagada",
+        "pagada_desde": f.pagada_desde,
+        "pagada_at": f.pagada_at,
+        "pagada_valor": (
+            money_str(f.pagada_valor) if f.pagada_valor is not None else None
+        ),
+        "pagada_nota": f.pagada_nota,
     }
 
 
@@ -144,8 +164,23 @@ async def listar(
     activo: bool | None = Query(default=None),
     _: User = Depends(require_permission("dashboard:leer")),
 ):
+    from decimal import Decimal
+
     obligaciones = await service.listar_obligaciones(activo=activo)
-    return {"items": [_ser_obligacion(o) for o in obligaciones]}
+    saldos = await service.saldos_pendientes()
+    # facturación: saldo = pendiente (0.00 si no hay); cuotas: no aplica (None).
+    items = [
+        _ser_obligacion(
+            o,
+            saldo=(
+                saldos.get(str(o.id), Decimal("0"))
+                if o.naturaleza == "facturacion"
+                else None
+            ),
+        )
+        for o in obligaciones
+    ]
+    return {"items": items}
 
 
 @router.post("", status_code=201)
@@ -231,6 +266,7 @@ async def registrar_factura(
     try:
         f = await service.registrar_factura(
             obligacion_id=obligacion_id,
+            numero=body.numero,
             fecha_factura=body.fecha_factura,
             valor=_dec(body.valor, "valor"),
             plazo_elegido_dias=body.plazo_elegido_dias,
@@ -252,3 +288,39 @@ async def anular_factura(
         await service.anular_factura(factura_id=factura_id, usuario_id=user.id)
     except service.ObligacionesError as e:
         raise HTTPException(e.status, e.detalle) from e
+
+
+@router.post("/{obligacion_id}/facturas/{factura_id}/pagar")
+async def pagar_factura(
+    obligacion_id: str,  # noqa: ARG001 (ruta anidada por claridad; la factura basta)
+    factura_id: str,
+    body: PagarBody,
+    user: User = Depends(require_permission("proyeccion:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    try:
+        f = await service.registrar_pago(
+            factura_id=factura_id,
+            fecha=body.fecha,
+            valor=_dec(body.valor, "valor"),
+            pagada_desde=body.pagada_desde,
+            nota=body.nota,
+            usuario_id=user.id,
+        )
+    except service.ObligacionesError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _ser_factura(f)
+
+
+@router.delete("/{obligacion_id}/facturas/{factura_id}/pagar")
+async def anular_pago(
+    obligacion_id: str,  # noqa: ARG001
+    factura_id: str,
+    user: User = Depends(require_permission("proyeccion:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    try:
+        f = await service.anular_pago(factura_id=factura_id, usuario_id=user.id)
+    except service.ObligacionesError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _ser_factura(f)
