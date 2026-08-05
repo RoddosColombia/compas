@@ -15,11 +15,12 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_59_eventos():
-    # 58 + factura.actualizada (CR-E2-EDITAR, PR2).
-    assert len(AuditEvento) == 59
-    assert len(CATALOGO_EVENTOS) == 59
+def test_catalogo_tiene_exactamente_60_eventos():
+    # 59 + factura_obligacion.pagada (D2 §7, GO CEO 2026-08-04).
+    assert len(AuditEvento) == 60
+    assert len(CATALOGO_EVENTOS) == 60
     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
+    assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():

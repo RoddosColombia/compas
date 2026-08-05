@@ -90,6 +90,9 @@ class Obligacion(Document):
         return self
 
 
+OrigenPago = Literal["roddos", "tercero"]
+
+
 class FacturaObligacion(Document):
     obligacion_id: PydanticObjectId
     # FIX-K: número de factura (trazabilidad + clave de idempotencia de la semilla).
@@ -101,6 +104,14 @@ class FacturaObligacion(Document):
     activo: bool = True
     registrada_por: str
     registrada_at: datetime
+    # D2 §7: pago con distinción de origen. `roddos` = sale de caja de RODDOS;
+    # `tercero` = lo pagó un tercero (baja la deuda, NO toca la caja de RODDOS ->
+    # la reconciliación la excluye). None = pendiente. Modelo full: un pago marca la
+    # factura pagada (los campos son escalares, no hay abonos parciales).
+    pagada_desde: OrigenPago | None = None
+    pagada_at: str | None = None  # 'YYYY-MM-DD'
+    pagada_valor: Money | None = None
+    pagada_nota: str | None = Field(default=None, max_length=500)
 
     class Settings:
         name = "facturas_obligacion"
@@ -109,6 +120,11 @@ class FacturaObligacion(Document):
     @classmethod
     def _fecha(cls, v: str) -> str:
         return _valida_fecha(v)
+
+    @field_validator("pagada_at")
+    @classmethod
+    def _fecha_pago(cls, v: str | None) -> str | None:
+        return _valida_fecha(v) if v is not None else None
 
 
 class LineaMeta(BaseModel):

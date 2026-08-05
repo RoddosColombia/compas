@@ -24,6 +24,7 @@ import IvaPage from "@/pages/IvaPage";
 import LoginPage from "@/pages/LoginPage";
 import MesesPage from "@/pages/MesesPage";
 import MetasPage from "@/pages/MetasPage";
+import ObligacionesPage from "@/pages/ObligacionesPage";
 import PresupuestoMesPage from "@/pages/PresupuestoMesPage";
 import ProyeccionPage from "@/pages/ProyeccionPage";
 import ReglasPage from "@/pages/ReglasPage";
@@ -119,6 +120,14 @@ export default function App() {
               element={
                 <Cockpit>
                   <MetasPage />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/obligaciones"
+              element={
+                <Cockpit>
+                  <ObligacionesPage />
                 </Cockpit>
               }
             />

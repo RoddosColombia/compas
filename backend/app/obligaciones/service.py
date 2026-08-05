@@ -186,6 +186,7 @@ async def registrar_factura(
     plazo_elegido_dias: int,
     nota: str | None,
     usuario_id: str,
+    numero: str | None = None,
 ) -> FacturaObligacion:
     obligacion = await _obtener(obligacion_id)
     if obligacion.naturaleza != "facturacion":
@@ -198,8 +199,19 @@ async def registrar_factura(
         raise ObligacionesError(
             f"plazo_elegido_dias debe estar en [{base}, {maximo}]", 422
         )
+    # dedup por numero dentro de la obligación (mismo criterio que la semilla FIX-K).
+    if numero is not None:
+        ya = await FacturaObligacion.find_one(
+            FacturaObligacion.obligacion_id == obligacion.id,
+            FacturaObligacion.numero == numero,
+        )
+        if ya is not None:
+            raise ObligacionesError(
+                f"ya existe una factura con el número {numero} en esta obligación", 409
+            )
     factura = FacturaObligacion(
         obligacion_id=obligacion.id,
+        numero=numero,
         fecha_factura=fecha_factura,
         valor=valor,
         plazo_elegido_dias=plazo_elegido_dias,
@@ -217,6 +229,7 @@ async def registrar_factura(
             actor_id=usuario_id,
             metadata={
                 "obligacion_id": str(obligacion.id),
+                "numero": numero,
                 "fecha_factura": fecha_factura,
                 "plazo_elegido_dias": plazo_elegido_dias,
             },
@@ -243,7 +256,7 @@ async def listar_facturas(
     return await FacturaObligacion.find(*filtros).to_list()
 
 
-async def anular_factura(*, factura_id: str, usuario_id: str) -> None:
+async def _obtener_factura(factura_id: str) -> FacturaObligacion:
     try:
         fid = PydanticObjectId(factura_id)
     except Exception:
@@ -251,6 +264,11 @@ async def anular_factura(*, factura_id: str, usuario_id: str) -> None:
     factura = await FacturaObligacion.get(fid)
     if factura is None:
         raise ObligacionesError("la factura no existe", 404)
+    return factura
+
+
+async def anular_factura(*, factura_id: str, usuario_id: str) -> None:
+    factura = await _obtener_factura(factura_id)
     if not factura.activo:
         raise ObligacionesError("la factura ya está anulada", 409)
     factura.activo = False
@@ -267,3 +285,108 @@ async def anular_factura(*, factura_id: str, usuario_id: str) -> None:
         factura.activo = True
         await factura.save()
         raise
+
+
+# ── Pagos por factura (D2 §7) — origen roddos|tercero, modelo full ─────────────
+
+
+async def registrar_pago(
+    *,
+    factura_id: str,
+    fecha: str,
+    valor: Money,
+    pagada_desde: str,
+    nota: str | None,
+    usuario_id: str,
+) -> FacturaObligacion:
+    """Marca la factura pagada (full). `roddos` sale de caja; `tercero` baja la deuda
+    sin tocar la caja (la reconciliación excluye tercero). Saga O1: si el emit falla,
+    revierte a pendiente."""
+    factura = await _obtener_factura(factura_id)
+    if not factura.activo:
+        raise ObligacionesError("la factura está anulada", 409)
+    if factura.pagada_desde is not None:
+        raise ObligacionesError(
+            f"la factura ya está pagada (desde {factura.pagada_desde})", 409
+        )
+    factura.pagada_desde = pagada_desde  # type: ignore[assignment]
+    factura.pagada_at = fecha
+    factura.pagada_valor = valor
+    factura.pagada_nota = nota
+    try:
+        await factura.save()
+    except ValidationError as e:
+        raise ObligacionesError(f"pago inválido: {e.errors()[0]['msg']}", 422) from e
+    try:
+        await emit_audit(
+            AuditEvento.factura_obligacion_pagada,
+            entidad="factura_obligacion",
+            entidad_id=str(factura.id),
+            actor_id=usuario_id,
+            metadata={
+                "obligacion_id": str(factura.obligacion_id),
+                "pagada_desde": pagada_desde,
+                "fecha": fecha,
+            },
+        )
+    except Exception:
+        factura.pagada_desde = None
+        factura.pagada_at = None
+        factura.pagada_valor = None
+        factura.pagada_nota = None
+        await factura.save()
+        raise
+    return factura
+
+
+async def anular_pago(*, factura_id: str, usuario_id: str) -> FacturaObligacion:
+    """Desmarca el pago con rastro (evento reutiliza factura_obligacion.pagada con
+    via='anulacion', regla 11). Vuelve a pendiente. Saga O1."""
+    factura = await _obtener_factura(factura_id)
+    if factura.pagada_desde is None:
+        raise ObligacionesError("la factura no tiene un pago que anular", 409)
+    previo = {
+        "pagada_desde": factura.pagada_desde,
+        "pagada_at": factura.pagada_at,
+        "pagada_valor": factura.pagada_valor,
+        "pagada_nota": factura.pagada_nota,
+    }
+    factura.pagada_desde = None
+    factura.pagada_at = None
+    factura.pagada_valor = None
+    factura.pagada_nota = None
+    await factura.save()
+    try:
+        await emit_audit(
+            AuditEvento.factura_obligacion_pagada,
+            entidad="factura_obligacion",
+            entidad_id=str(factura.id),
+            actor_id=usuario_id,
+            metadata={
+                "obligacion_id": str(factura.obligacion_id),
+                "via": "anulacion",
+                "pagada_desde_anterior": previo["pagada_desde"],
+            },
+        )
+    except Exception:
+        for campo, val in previo.items():
+            setattr(factura, campo, val)
+        await factura.save()
+        raise
+    return factura
+
+
+async def saldos_pendientes() -> dict[str, Money]:
+    """Saldo pendiente por obligación = Σ valor de facturas activas SIN pagar
+    (pagada_desde is None). roddos y tercero bajan la deuda. Una sola consulta."""
+    from decimal import Decimal
+
+    facturas = await FacturaObligacion.find(
+        FacturaObligacion.activo == True,  # noqa: E712  (Beanie exige == para el filtro)
+        FacturaObligacion.pagada_desde == None,  # noqa: E711
+    ).to_list()
+    out: dict[str, Money] = {}
+    for f in facturas:
+        k = str(f.obligacion_id)
+        out[k] = out.get(k, Decimal("0")) + f.valor
+    return out
