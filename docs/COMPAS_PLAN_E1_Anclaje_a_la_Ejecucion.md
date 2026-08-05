@@ -184,11 +184,11 @@ anclados por E1. Documentar la composición con COCK-09 (§3) en los docstrings.
 Guarda anti-mes-mal-cargado: un mes cerrado con ejecutado anómalamente bajo respecto al definido se marca
 y **no se ancla sin confirmación**. PASO 0: verificar cero txs a rubros de sistema en los meses a anclar.
 - **Tests:** B10 (mes anómalo no se ancla; se reporta), A2 (tx a rubro de sistema → detiene y reporta).
-- **⚠ Punto abierto de diseño (para el gate):** ¿la confirmación de B10 **es** el cierre del mes (el CEO
+- **✅ Punto de diseño ZANJADO (CEO, 2026-08-05):** la confirmación de B10 **es el cierre del mes** (el CEO
   ya validó la conciliación ≈0 al cerrar, FIX-J) + una marca de sospecha `cerrado_sospechoso` en
-  `meses_anclados` para la UI; o se requiere una **confirmación explícita adicional** (flag nuevo en
-  `MesControl`)? Propuesta: **cierre = confirmación** + marca de sospecha visible (sin flag ni evento
-  nuevo). Necesita 1 línea del CEO/Kimi antes de construir P4.
+  `meses_anclados` para la UI cuando el ejecutado sea anómalamente bajo respecto al definido. **Sin flag
+  nuevo en `MesControl` ni evento nuevo.** Descartada la confirmación explícita adicional. P4 se construye
+  sobre esta decisión.
 
 ### P5 — Exposición `meses_anclados` + shape de respuesta
 `meses_anclados: {mes: "cerrado" | "en_ejecucion" | "presupuesto" | "cerrado_sospechoso"}` +
@@ -238,6 +238,8 @@ meses cerrados), F4/D3/F6/F7, y **cualquier cambio al motor**. La Regla B queda 
 ## 9. Qué necesito del gate antes de codificar
 
 1. **GO al plan** (Kimi ≥ 9.0 + CEO).
-2. **1 línea sobre B10/P4:** ¿cierre = confirmación (propuesta) o confirmación explícita adicional?
+2. ~~**1 línea sobre B10/P4:** ¿cierre = confirmación (propuesta) o confirmación explícita adicional?~~
+   **RESUELTO (CEO, 2026-08-05):** cierre = confirmación + marca `cerrado_sospechoso` visible; sin flag ni
+   evento nuevo (ver §6-P4).
 3. (Opcional, no bloquea) R-1/R-2: si el CEO ya quiere zanjarlos, entran al mapeo; si no, salen en
    `sin_mapear` y se reportan.
