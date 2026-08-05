@@ -4,15 +4,26 @@
 
 import { Menu, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { useLocation } from "react-router-dom";
 
 import { useAuth } from "@/auth/AuthContext";
 import { MesStatusBar } from "@/components/layout/MesStatusBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 
+// FIX-UI-1: Proyecciones es la vista-cockpit del CEO (tabla ancha + gráfica) y debe
+// caber como una foto sin scroll lateral a su resolución (~1918px). Ahí el lienzo usa
+// el ancho completo del viewport; el resto del cockpit sigue centrado a max-w-6xl para
+// no volver ilegibles las vistas de formulario. El sticky del header/1ª columna vive en
+// TablaEgreso, no aquí.
+export function anchoContenido(pathname: string): string {
+  return pathname.startsWith("/proyeccion") ? "w-full" : "mx-auto max-w-6xl";
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { rol, puede, cerrarSesion } = useAuth();
   const [menuAbierto, setMenuAbierto] = useState(false);
   const cerrar = () => void cerrarSesion();
+  const { pathname } = useLocation();
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface-muted">
@@ -60,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <MesStatusBar />
 
         <main className="flex-1 overflow-y-auto px-6 py-6 md:px-8 md:py-8">
-          <div className="mx-auto max-w-6xl">{children}</div>
+          <div className={anchoContenido(pathname)}>{children}</div>
         </main>
       </div>
     </div>
