@@ -11,9 +11,10 @@ La reclasificación NO lleva Idempotency-Key: es idempotente por naturaleza
 
 import hashlib
 import json
+import re
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo.errors import DuplicateKeyError
@@ -73,7 +74,37 @@ def _serializar(tx: Transaccion) -> dict:
         "banco": tx.banco.value,
         "id_banco": tx.id_banco,
         "tardia": tx.tardia,
+        # FIX-G2: vínculo del contra-asiento (None en una tx normal). La Vista Control
+        # muestra el original y su reverso enlazados por este campo.
+        "revierte_id": str(tx.revierte_id) if tx.revierte_id is not None else None,
     }
+
+
+_MES_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+@router.get("")
+async def listar(
+    mes: str = Query(..., description="YYYY-MM"),
+    banco: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """Lista las transacciones del mes (panel de manuales de /cargas, FIX-G2). Cada
+    ítem trae `anulada` (ya tiene contra-asiento) y `es_reverso` (es un contra-asiento),
+    para que la UI muestre original+reverso enlazados y deshabilite el botón donde toca.
+    """
+    if not _MES_RE.match(mes):
+        raise HTTPException(422, "mes debe ser 'YYYY-MM'")
+    txs, anuladas = await service.listar_transacciones(mes=mes, banco=banco)
+    items = [
+        {
+            **_serializar(tx),
+            "anulada": str(tx.id) in anuladas,
+            "es_reverso": tx.revierte_id is not None,
+        }
+        for tx in txs
+    ]
+    return {"items": items}
 
 
 @router.post("", status_code=201)
@@ -180,6 +211,38 @@ class ClasificarBody(BaseModel):
     rubro_id: str
     proponer_regla: bool = False  # §1.9/D5: crea propuesta APRENDIDA inactiva
     patron: str | None = Field(default=None, min_length=3, max_length=120)
+
+
+class AnularBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    motivo: str = Field(min_length=1, max_length=500)
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo_no_vacio(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("el motivo es obligatorio")
+        return s
+
+
+@router.post("/{transaccion_id}/anular")
+async def anular(
+    transaccion_id: str,
+    body: AnularBody,
+    user: User = Depends(require_permission("cargas:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    try:
+        contra = await service.anular_transaccion_manual(
+            tx_id=transaccion_id,
+            motivo=body.motivo,
+            usuario_id=user.id,
+        )
+    except service.TransaccionManualError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _serializar(contra)
 
 
 @router.patch("/{transaccion_id}/clasificar")

@@ -88,3 +88,37 @@ export async function crearTransaccionManual(
     body: JSON.stringify(input),
   });
 }
+
+// FIX-G2: transacciones del mes (panel de manuales). `anulada` = ya tiene su
+// contra-asiento; `es_reverso` = es un contra-asiento (enlaza al original por
+// revierte_id). Montos string (regla 1).
+export interface TransaccionMovimiento {
+  id: string;
+  fecha: string;
+  descripcion: string;
+  valor: string;
+  tipo_flujo: "egreso" | "ingreso";
+  rubro_id: string;
+  banco: string;
+  id_banco: string;
+  revierte_id: string | null;
+  anulada: boolean;
+  es_reverso: boolean;
+}
+
+export async function listarTransaccionesManuales(
+  mes: string,
+): Promise<{ items: TransaccionMovimiento[] }> {
+  return apiJson(`/transacciones?banco=manual&mes=${encodeURIComponent(mes)}`);
+}
+
+export async function anularTransaccion(
+  id: string,
+  motivo: string,
+): Promise<TransaccionMovimiento> {
+  return apiJson(`/transacciones/${id}/anular`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ motivo }),
+  });
+}
