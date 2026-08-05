@@ -23,6 +23,7 @@ from app.core.money import Money
 PARAMETROS_PROYECCION_COLLECTION = "parametros_proyeccion"
 
 _FECHA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")  # FIX-L: clave de rampa_unidades
 
 
 class ComponenteAlistamiento(BaseModel):
@@ -63,6 +64,10 @@ class ParametrosProyeccion(Document):
     motos_base: int = Field(ge=0)
     crec_pct_mensual: Money  # fracción mensual encadenada
     horizonte_meses: int = Field(gt=0, le=180)  # tope 15 años
+    # FIX-L: rampa de colocación REAL por mes (YYYY-MM → unidades enteras ≥0). Aditivo:
+    # {} → sin rampa (comportamiento de hoy). El servicio la mapea al `rampa` nativo del
+    # motor (prefijo contiguo desde mes_inicio; el post-rampa reinicia en motos_base).
+    rampa_unidades: dict[str, int] = Field(default_factory=dict)
     # inventario Auteco
     adelanto_auteco: Money
     plazo_auteco_dias: int = Field(ge=0)
@@ -93,6 +98,16 @@ class ParametrosProyeccion(Document):
         indexes = [
             IndexModel([("vigente_desde", 1)], name="vigencia_unica", unique=True)
         ]
+
+    @field_validator("rampa_unidades")
+    @classmethod
+    def _rampa(cls, v: dict[str, int]) -> dict[str, int]:
+        for mes, unidades in v.items():
+            if not _MES.match(mes):
+                raise ValueError(f"rampa_unidades: mes inválido '{mes}' (usa YYYY-MM)")
+            if unidades < 0:
+                raise ValueError(f"rampa_unidades: unidades negativas en {mes}")
+        return v
 
     @field_validator("vigente_desde")
     @classmethod

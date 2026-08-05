@@ -14,7 +14,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Decimal from "decimal.js-light";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -363,10 +363,15 @@ function Editor({
   const [comps, setComps] = useState<ComponenteAlistamiento[]>(() =>
     compsDe(vigente),
   );
+  // FIX-L: rampa de colocación por mes (YYYY-MM → unidades). Editable en Supuestos.
+  const [rampa, setRampa] = useState<Record<string, number>>(
+    () => vigente.rampa_unidades ?? {},
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-sincronizar SOLO cuando cambia la vigencia
   useEffect(() => {
     setBorr(humanoDe(vigente));
     setComps(compsDe(vigente));
+    setRampa(vigente.rampa_unidades ?? {});
   }, [vigente.id, vigente.modificado_por]);
 
   const modelos = useQuery({
@@ -385,11 +390,11 @@ function Editor({
   const canon = useMemo<CamposParametros | null>(() => {
     if (!sinErrores) return null;
     try {
-      return canonicalizar(borr, comps, ref);
+      return canonicalizar(borr, comps, rampa, ref);
     } catch {
       return null;
     }
-  }, [borr, comps, ref, sinErrores]);
+  }, [borr, comps, rampa, ref, sinErrores]);
 
   const canonVigente = useMemo(() => aCampos(vigente), [vigente]);
   const canonJson = canon ? JSON.stringify(canon) : null;
@@ -455,6 +460,7 @@ function Editor({
   const descartar = () => {
     setBorr(humanoDe(vigente));
     setComps(compsDe(vigente));
+    setRampa(vigente.rampa_unidades ?? {});
   };
 
   const set = (k: string, v: string) => setBorr((f) => ({ ...f, [k]: v }));
@@ -539,6 +545,13 @@ function Editor({
             costoPlano={vigente.costo_moto_nueva}
           />
 
+          {/* ⑧ FIX-L: rampa de unidades por mes */}
+          <RampaCard
+            rampa={rampa}
+            setRampa={setRampa}
+            disabled={!puedeGestionar}
+          />
+
           {hayCambios && validacion.advertencias.length > 0 && (
             <AlertBanner variant="warn">
               <ul className="list-inside list-disc">
@@ -610,6 +623,7 @@ function montoSeguro(humano: string): Decimal | null {
 function canonicalizar(
   borr: Record<string, string>,
   comps: ComponenteAlistamiento[],
+  rampa: Record<string, number>,
   ref: string,
 ): CamposParametros {
   const out: Record<string, string | number | unknown> = {};
@@ -632,6 +646,10 @@ function canonicalizar(
     }
     out.costo_moto_nueva = suma.toString();
   }
+  // FIX-L: rampa canónica al FINAL (mismo orden de claves que aCampos → diff estable).
+  out.rampa_unidades = Object.fromEntries(
+    Object.entries(rampa).sort(([a], [b]) => a.localeCompare(b)),
+  );
   return out as unknown as CamposParametros;
 }
 
@@ -657,6 +675,11 @@ function aCampos(p: Parametros): CamposParametros {
   if (p.componentes_alistamiento && p.componentes_alistamiento.length > 0) {
     out.costo_moto_nueva = new Decimal(p.costo_moto_nueva).toString();
   }
+  out.rampa_unidades = Object.fromEntries(
+    Object.entries(p.rampa_unidades ?? {}).sort(([a], [b]) =>
+      a.localeCompare(b),
+    ),
+  );
   return out as unknown as CamposParametros;
 }
 
@@ -673,6 +696,8 @@ function contarCambios(a: CamposParametros, b: CamposParametros): number {
     JSON.stringify(a.componentes_alistamiento) !==
     JSON.stringify(b.componentes_alistamiento)
   )
+    n++;
+  if (JSON.stringify(a.rampa_unidades) !== JSON.stringify(b.rampa_unidades))
     n++;
   return n;
 }
@@ -710,7 +735,25 @@ function diffCampos(
       despues: resumenComps(canon.componentes_alistamiento),
     });
   }
+  if (
+    JSON.stringify(canon.rampa_unidades) !==
+    JSON.stringify(vigente.rampa_unidades)
+  ) {
+    filas.push({
+      label: "Rampa de unidades (por mes)",
+      antes: resumenRampa(vigente.rampa_unidades),
+      despues: resumenRampa(canon.rampa_unidades),
+    });
+  }
   return filas;
+}
+
+function resumenRampa(r: Record<string, number> | undefined): string {
+  const entradas = Object.entries(r ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  if (entradas.length === 0) return "sin rampa";
+  return entradas.map(([mes, u]) => `${mes}: ${u}`).join(" · ");
 }
 
 function presentar(unidad: Unidad, canonico: string, ref: string): string {
@@ -970,6 +1013,120 @@ function reformatearMonto(v: string): string {
 }
 
 // ── ⑦ CR-002: componentes de alistamiento ────────────────────────────────────
+
+const _MES_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function _seedRampa(
+  rampa: Record<string, number>,
+): { mes: string; unidades: string }[] {
+  return Object.entries(rampa)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([mes, u]) => ({ mes, unidades: String(u) }));
+}
+
+function RampaCard({
+  rampa,
+  setRampa,
+  disabled,
+}: {
+  rampa: Record<string, number>;
+  setRampa: (r: Record<string, number>) => void;
+  disabled: boolean;
+}) {
+  const [filas, setFilas] = useState(() => _seedRampa(rampa));
+  const lastEmit = useRef(JSON.stringify(rampa));
+  // Re-sincroniza SOLO ante un cambio EXTERNO (descartar / nueva vigencia): si el prop
+  // difiere de lo último que emitimos, re-seed (sin borrar filas en edición).
+  useEffect(() => {
+    const inc = JSON.stringify(rampa);
+    if (inc !== lastEmit.current) {
+      setFilas(_seedRampa(rampa));
+      lastEmit.current = inc;
+    }
+  }, [rampa]);
+
+  const emitir = (nuevas: { mes: string; unidades: string }[]) => {
+    setFilas(nuevas);
+    const rec: Record<string, number> = {};
+    for (const f of nuevas) {
+      const u = Number(f.unidades);
+      if (
+        _MES_RE.test(f.mes) &&
+        f.unidades.trim() !== "" &&
+        Number.isInteger(u) &&
+        u >= 0
+      ) {
+        rec[f.mes] = u;
+      }
+    }
+    lastEmit.current = JSON.stringify(rec);
+    setRampa(rec);
+  };
+
+  const set = (i: number, cambio: Partial<{ mes: string; unidades: string }>) =>
+    emitir(filas.map((f, j) => (j === i ? { ...f, ...cambio } : f)));
+
+  return (
+    <Card className="flex flex-col gap-3 p-5">
+      <div>
+        <CardTitle>⑧ Rampa de unidades por mes</CardTitle>
+        <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
+          Colocación REAL de los primeros meses (override). El primer mes sin
+          dato reinicia la cadena en “motos base” y de ahí crece encadenado.
+          Vacío = sin rampa (comportamiento por defecto).
+        </p>
+      </div>
+      {filas.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {filas.map((f, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: filas de editor efímeras (el mes puede estar vacío/duplicado mientras se edita)
+            <div key={`rampa-${i}`} className="flex items-center gap-2">
+              <input
+                type="month"
+                aria-label={`Mes rampa ${i + 1}`}
+                disabled={disabled}
+                className="rounded-md border border-hairline bg-surface px-2 py-1 font-sans text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+                value={f.mes}
+                onChange={(e) => set(i, { mes: e.target.value })}
+              />
+              <input
+                type="number"
+                min={0}
+                step={1}
+                aria-label={`Unidades rampa ${i + 1}`}
+                disabled={disabled}
+                placeholder="unidades"
+                className="tabular w-28 rounded-md border border-hairline bg-surface px-2 py-1 text-right font-sans text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+                value={f.unidades}
+                onChange={(e) => set(i, { unidades: e.target.value })}
+              />
+              {!disabled && (
+                <button
+                  type="button"
+                  className="font-sans text-sm font-medium text-critico hover:underline"
+                  onClick={() => emitir(filas.filter((_, j) => j !== i))}
+                >
+                  Quitar
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {!disabled && (
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => emitir([...filas, { mes: "", unidades: "" }])}
+          >
+            Agregar mes
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function ComponentesCard({
   comps,

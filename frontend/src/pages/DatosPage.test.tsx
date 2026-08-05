@@ -88,6 +88,7 @@ const VIGENTE: Parametros = {
     { nombre: "SOAT", valor: "363300", activo: true, orden: 3 },
     { nombre: "Colchón/otros", valor: "17905", activo: true, orden: 4 },
   ],
+  rampa_unidades: {},
 };
 
 const MODELO = {
@@ -311,6 +312,27 @@ describe("Supuestos — CR-002 (§6.6)", () => {
         (c: { nombre: string }) => c.nombre === "Colchón/otros",
       ).activo,
     ).toBe(false);
+  });
+});
+
+describe("Supuestos — FIX-L: rampa de unidades por mes", () => {
+  it("agregar un mes de rampa lo manda al preview con rampa_unidades", async () => {
+    renderPage();
+    await esperarEditor();
+    fireEvent.click(screen.getByRole("button", { name: "Agregar mes" }));
+    fireEvent.change(screen.getByLabelText("Mes rampa 1"), {
+      target: { value: "2026-08" },
+    });
+    fireEvent.change(screen.getByLabelText("Unidades rampa 1"), {
+      target: { value: "75" },
+    });
+    await waitFor(
+      () => {
+        const call = mocks.previewProyeccion.mock.calls.at(-1);
+        expect(call?.[0].rampa_unidades).toEqual({ "2026-08": 75 });
+      },
+      { timeout: 3000 },
+    );
   });
 });
 

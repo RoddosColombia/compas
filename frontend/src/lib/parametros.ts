@@ -47,7 +47,10 @@ export interface ComponenteAlistamiento {
 
 export type CamposParametros = { [K in MoneyKey]: string } & {
   [K in IntKey]: number;
-} & { componentes_alistamiento: ComponenteAlistamiento[] | null };
+} & { componentes_alistamiento: ComponenteAlistamiento[] | null } & {
+  /** FIX-L: rampa de colocación por mes (YYYY-MM → unidades enteras ≥0). Default {}. */
+  rampa_unidades: Record<string, number>;
+};
 
 export type Parametros = {
   id: string;
