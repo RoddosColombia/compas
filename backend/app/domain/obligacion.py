@@ -92,6 +92,8 @@ class Obligacion(Document):
 
 class FacturaObligacion(Document):
     obligacion_id: PydanticObjectId
+    # FIX-K: número de factura (trazabilidad + clave de idempotencia de la semilla).
+    numero: str | None = Field(default=None, max_length=60)
     fecha_factura: str  # 'YYYY-MM-DD'
     valor: Money
     plazo_elegido_dias: int = Field(ge=0)
