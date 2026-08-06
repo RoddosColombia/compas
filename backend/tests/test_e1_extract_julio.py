@@ -39,16 +39,29 @@ def test_verificar_controles_falla_ruidoso_si_no_cuadra():
 
 def test_construir_fixture_shape_y_montos_string():
     rubros = [
-        {"id": "a", "codigo": "0110", "grupo": "ingresos_operativos",
-         "nombre": "Recaudo de cartera", "es_sistema": True},
-        {"id": "b", "codigo": "1010", "grupo": "costo_producto",
-         "nombre": "Producto", "es_sistema": False},
+        {
+            "id": "a",
+            "codigo": "0110",
+            "grupo": "ingresos_operativos",
+            "nombre": "Recaudo de cartera",
+            "es_sistema": True,
+        },
+        {
+            "id": "b",
+            "codigo": "1010",
+            "grupo": "costo_producto",
+            "nombre": "Producto",
+            "es_sistema": False,
+        },
     ]
     egresos = {"b": Decimal("100.00")}
     ingresos = {"a": Decimal("50.00")}
     fx = m.construir_fixture(
-        rubros=rubros, egresos=egresos, ingresos=ingresos,
-        neutros_ids=set(), extraccion_iso="2026-08-05T00:00:00-05:00",
+        rubros=rubros,
+        egresos=egresos,
+        ingresos=ingresos,
+        neutros_ids=set(),
+        extraccion_iso="2026-08-05T00:00:00-05:00",
         comando="python scripts/extract_e1_julio_2026.py",
     )
     # cabecera y controles
@@ -65,15 +78,29 @@ def test_construir_fixture_shape_y_montos_string():
 def test_construir_fixture_ingreso_real_excluye_neutros():
     # 'rev' es neutro (grupo otros, NO sistema): NO debe entrar al ingreso_real.
     rubros = [
-        {"id": "cuo", "codigo": "0120", "grupo": "ingresos_operativos",
-         "nombre": "Cuotas iniciales", "es_sistema": False},
-        {"id": "rev", "codigo": None, "grupo": "otros",
-         "nombre": "Reversas y devoluciones", "es_sistema": False},
+        {
+            "id": "cuo",
+            "codigo": "0120",
+            "grupo": "ingresos_operativos",
+            "nombre": "Cuotas iniciales",
+            "es_sistema": False,
+        },
+        {
+            "id": "rev",
+            "codigo": None,
+            "grupo": "otros",
+            "nombre": "Reversas y devoluciones",
+            "es_sistema": False,
+        },
     ]
     ingresos = {"cuo": Decimal("30000"), "rev": Decimal("9999")}
     fx = m.construir_fixture(
-        rubros=rubros, egresos={}, ingresos=ingresos, neutros_ids={"rev"},
-        extraccion_iso="2026-08-05T00:00:00-05:00", comando="cmd",
+        rubros=rubros,
+        egresos={},
+        ingresos=ingresos,
+        neutros_ids={"rev"},
+        extraccion_iso="2026-08-05T00:00:00-05:00",
+        comando="cmd",
     )
     # ingreso_real excluye 'rev'
     assert fx["_meta"]["controles"]["ingreso_real"] == "30000"

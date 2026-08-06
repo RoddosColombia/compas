@@ -21,6 +21,7 @@ El test A3 (P2) lee el JSON congelado — hermético, nunca toca PROD.
 Los imports de `app`/Mongo son perezosos (dentro de la extracción) para que la lógica
 pura sea testeable sin Mongo.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -58,7 +59,9 @@ def verificar_controles(egresos_total: Decimal, ingreso_real_val: Decimal) -> No
             f"(dif {ingreso_real_val - CTRL_INGRESO_REAL})"
         )
     if errores:
-        raise SystemExit("[FALLA regla 7] no se escribe nada:\n  - " + "\n  - ".join(errores))
+        raise SystemExit(
+            "[FALLA regla 7] no se escribe nada:\n  - " + "\n  - ".join(errores)
+        )
 
 
 def construir_fixture(
@@ -110,11 +113,15 @@ async def _ingresos_por_rubro(mes_id) -> dict[str, Decimal]:
     out: dict[str, Decimal] = {}
     async for d in col.aggregate(pipeline):
         t = d["total"]
-        out[str(d["_id"])] = t.to_decimal() if isinstance(t, Decimal128) else Decimal(str(t))
+        out[str(d["_id"])] = (
+            t.to_decimal() if isinstance(t, Decimal128) else Decimal(str(t))
+        )
     return out
 
 
-async def _extraer(uri: str, db: str) -> tuple[list[dict], dict[str, Decimal], dict[str, Decimal], set[str]]:
+async def _extraer(
+    uri: str, db: str
+) -> tuple[list[dict], dict[str, Decimal], dict[str, Decimal], set[str]]:
     """Conecta a PROD (solo lecturas) y devuelve rubros/egresos/ingresos/neutros."""
     sys.path.insert(0, "backend")
     from app.control.service import _egresos_por_rubro  # noqa: E402
@@ -128,7 +135,9 @@ async def _extraer(uri: str, db: str) -> tuple[list[dict], dict[str, Decimal], d
 
     mc = await MesControl.find_one(MesControl.mes == MES_ID_STR)
     if mc is None:
-        raise SystemExit(f"[FALLA] no existe MesControl {MES_ID_STR} en la base '{db}'.")
+        raise SystemExit(
+            f"[FALLA] no existe MesControl {MES_ID_STR} en la base '{db}'."
+        )
 
     egresos = await _egresos_por_rubro(mc.id)
     ingresos = await _ingresos_por_rubro(mc.id)
@@ -149,18 +158,26 @@ async def _extraer(uri: str, db: str) -> tuple[list[dict], dict[str, Decimal], d
 def main() -> None:
     uri = os.environ.get("MONGODB_URI_COMPAS")
     if not uri:
-        raise SystemExit("[FALLA] falta la variable de entorno MONGODB_URI_COMPAS (read-only).")
+        raise SystemExit(
+            "[FALLA] falta la variable de entorno MONGODB_URI_COMPAS (read-only)."
+        )
     db = os.environ.get("MONGODB_DB", "compas")
 
     rubros, egresos, ingresos, neutros = asyncio.run(_extraer(uri, db))
 
     egresos_total = sum(egresos.values(), Decimal("0"))
-    ingreso_real_val = sum((v for rid, v in ingresos.items() if rid not in neutros), Decimal("0"))
-    verificar_controles(egresos_total, ingreso_real_val)  # aborta si no cuadra (regla 7)
+    ingreso_real_val = sum(
+        (v for rid, v in ingresos.items() if rid not in neutros), Decimal("0")
+    )
+    verificar_controles(
+        egresos_total, ingreso_real_val
+    )  # aborta si no cuadra (regla 7)
 
     from datetime import datetime, timezone  # local: no lo necesita el test puro
 
-    extraccion_iso = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    extraccion_iso = (
+        datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    )
     fixture = construir_fixture(
         rubros=rubros,
         egresos=egresos,
@@ -170,11 +187,15 @@ def main() -> None:
         comando=COMANDO,
     )
     FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    FIXTURE_PATH.write_text(json.dumps(fixture, ensure_ascii=False, indent=2), encoding="utf-8")
+    FIXTURE_PATH.write_text(
+        json.dumps(fixture, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(f"[OK] fixture escrito: {FIXTURE_PATH}")
     print(f"     Sigma egresos     = {egresos_total}  (control {CTRL_EGRESOS})")
     print(f"     ingreso_real      = {ingreso_real_val}  (control {CTRL_INGRESO_REAL})")
-    print(f"     rubros: {len(rubros)} · egresos: {len(egresos)} · ingresos: {len(ingresos)} · neutros: {len(neutros)}")
+    print(
+        f"     rubros: {len(rubros)} · egresos: {len(egresos)} · ingresos: {len(ingresos)} · neutros: {len(neutros)}"
+    )
 
 
 if __name__ == "__main__":
