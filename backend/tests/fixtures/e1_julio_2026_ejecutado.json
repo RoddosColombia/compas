@@ -1,0 +1,379 @@
+{
+  "_meta": {
+    "descripcion": "E1 Paso 0 — ejecutado real de julio 2026 (fixture congelado, read-only de PROD)",
+    "mes": "2026-07",
+    "extraccion": "2026-08-06T08:46:40-05:00",
+    "comando": "MONGODB_URI_COMPAS=*** MONGODB_DB=compas PYTHONUTF8=1 python scripts/extract_e1_julio_2026.py",
+    "controles": {
+      "egresos_total": "372200776.84",
+      "ingreso_real": "179710080.31",
+      "egresos_total_esperado": "372200776.84",
+      "ingreso_real_esperado": "179710080.31"
+    }
+  },
+  "rubros": [
+    {
+      "id": "6a5edaaade90904d0daaa3ca",
+      "codigo": "1010",
+      "grupo": "costo_producto",
+      "nombre": "Producto",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaabde90904d0daaa3cb",
+      "codigo": "1020",
+      "grupo": "costo_producto",
+      "nombre": "SOAT/Matrículas",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaabde90904d0daaa3cc",
+      "codigo": "1030",
+      "grupo": "costo_producto",
+      "nombre": "Seguros (Hunter)",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaabde90904d0daaa3cd",
+      "codigo": "2010",
+      "grupo": "operacion",
+      "nombre": "Arriendos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaabde90904d0daaa3ce",
+      "codigo": "2020",
+      "grupo": "operacion",
+      "nombre": "Tecnología y software",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaabde90904d0daaa3cf",
+      "codigo": "2030",
+      "grupo": "operacion",
+      "nombre": "Mobiliario/planta/equipo",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaabde90904d0daaa3d0",
+      "codigo": "2040",
+      "grupo": "operacion",
+      "nombre": "Servicios públicos y telecom",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaabde90904d0daaa3d1",
+      "codigo": "2050",
+      "grupo": "operacion",
+      "nombre": "Mercado y aseo",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaacde90904d0daaa3d2",
+      "codigo": "2060",
+      "grupo": "operacion",
+      "nombre": "Cafetería",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaacde90904d0daaa3d3",
+      "codigo": "2070",
+      "grupo": "operacion",
+      "nombre": "Transporte/peajes/combustible/parqueo",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaacde90904d0daaa3d4",
+      "codigo": "2080",
+      "grupo": "operacion",
+      "nombre": "Papelería",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaacde90904d0daaa3d5",
+      "codigo": "2090",
+      "grupo": "operacion",
+      "nombre": "Marketing y publicidad",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaacde90904d0daaa3d6",
+      "codigo": "2100",
+      "grupo": "operacion",
+      "nombre": "Gastos de representación",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaacde90904d0daaa3d7",
+      "codigo": "2120",
+      "grupo": "operacion",
+      "nombre": "Renting",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaacde90904d0daaa3d8",
+      "codigo": "3010",
+      "grupo": "nomina",
+      "nombre": "Sueldos empleados",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaacde90904d0daaa3d9",
+      "codigo": "3020",
+      "grupo": "nomina",
+      "nombre": "Sueldos directivos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaadde90904d0daaa3da",
+      "codigo": "3030",
+      "grupo": "nomina",
+      "nombre": "Bonificaciones",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaadde90904d0daaa3db",
+      "codigo": "3040",
+      "grupo": "nomina",
+      "nombre": "Beneficios Heads",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaadde90904d0daaa3dc",
+      "codigo": "3060",
+      "grupo": "nomina",
+      "nombre": "Planillas nuevas",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaadde90904d0daaa3dd",
+      "codigo": "3070",
+      "grupo": "nomina",
+      "nombre": "Planillas anteriores",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaadde90904d0daaa3de",
+      "codigo": "4010",
+      "grupo": "deudas_obligaciones",
+      "nombre": "Préstamos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaadde90904d0daaa3df",
+      "codigo": "4020",
+      "grupo": "deudas_obligaciones",
+      "nombre": "Deudas tarjetas de crédito",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaadde90904d0daaa3e0",
+      "codigo": "4030",
+      "grupo": "deudas_obligaciones",
+      "nombre": "Garantía cupo",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaaede90904d0daaa3e1",
+      "codigo": "4040",
+      "grupo": "deudas_obligaciones",
+      "nombre": "Deudas impuestos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaaede90904d0daaa3e2",
+      "codigo": "4050",
+      "grupo": "deudas_obligaciones",
+      "nombre": "Deudas proveedores anteriores",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaaede90904d0daaa3e3",
+      "codigo": "5010",
+      "grupo": "otros",
+      "nombre": "Otros gastos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaaede90904d0daaa3e4",
+      "codigo": "5020",
+      "grupo": "otros",
+      "nombre": "Gastos notariales",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaaede90904d0daaa3e5",
+      "codigo": "5040",
+      "grupo": "otros",
+      "nombre": "Gastos bancarios",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaaede90904d0daaa3e6",
+      "codigo": "5050",
+      "grupo": "otros",
+      "nombre": "Gastos financieros",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaaede90904d0daaa3e7",
+      "codigo": "5060",
+      "grupo": "otros",
+      "nombre": "Impuestos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a5edaafde90904d0daaa3e8",
+      "codigo": "5070",
+      "grupo": "otros",
+      "nombre": "Por clasificar",
+      "es_sistema": true
+    },
+    {
+      "id": "6a5edaafde90904d0daaa3e9",
+      "codigo": null,
+      "grupo": "otros",
+      "nombre": "Ajuste de conciliación",
+      "es_sistema": true
+    },
+    {
+      "id": "6a5ee39ade90904d0daaa3ed",
+      "codigo": "0110",
+      "grupo": "ingresos_operativos",
+      "nombre": "Recaudo de cartera",
+      "es_sistema": true
+    },
+    {
+      "id": "6a6165903893bb86c32a205c",
+      "codigo": "2110",
+      "grupo": "operacion",
+      "nombre": "Viajes corporativos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a6165903893bb86c32a205d",
+      "codigo": "2130",
+      "grupo": "operacion",
+      "nombre": "Grúas y traslados",
+      "es_sistema": false
+    },
+    {
+      "id": "6a6165903893bb86c32a205e",
+      "codigo": "3050",
+      "grupo": "nomina",
+      "nombre": "Dotación empleados",
+      "es_sistema": false
+    },
+    {
+      "id": "6a6165903893bb86c32a205f",
+      "codigo": "2140",
+      "grupo": "operacion",
+      "nombre": "Freelance",
+      "es_sistema": false
+    },
+    {
+      "id": "6a6165933893bb86c32a2060",
+      "codigo": "5030",
+      "grupo": "otros",
+      "nombre": "Asuntos legales",
+      "es_sistema": false
+    },
+    {
+      "id": "6a6165933893bb86c32a2061",
+      "codigo": null,
+      "grupo": "otros",
+      "nombre": "Arriendos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a665875dcb531f981a16847",
+      "codigo": null,
+      "grupo": "otros",
+      "nombre": "Aportes de capital",
+      "es_sistema": false
+    },
+    {
+      "id": "6a66b3701f492eb845bb286a",
+      "codigo": "3080",
+      "grupo": "nomina",
+      "nombre": "Parafiscales",
+      "es_sistema": false
+    },
+    {
+      "id": "6a66b3701f492eb845bb286b",
+      "codigo": "2150",
+      "grupo": "operacion",
+      "nombre": "Contingencia",
+      "es_sistema": false
+    },
+    {
+      "id": "6a6fff9a019561c47fef5e3e",
+      "codigo": null,
+      "grupo": "costo_producto",
+      "nombre": "Combustible motos",
+      "es_sistema": false
+    },
+    {
+      "id": "6a6fff9a019561c47fef5e3f",
+      "codigo": null,
+      "grupo": "operacion",
+      "nombre": "Comisiones externas",
+      "es_sistema": false
+    },
+    {
+      "id": "6a7003d312ba5ac9e981a9d5",
+      "codigo": null,
+      "grupo": "otros",
+      "nombre": "Reversas y devoluciones",
+      "es_sistema": false
+    },
+    {
+      "id": "6a71f2ab0d3803ddca891524",
+      "codigo": null,
+      "grupo": "otros",
+      "nombre": "Tránsito Wava mes anterior",
+      "es_sistema": true
+    }
+  ],
+  "egresos_por_rubro_id": {
+    "6a5edaaede90904d0daaa3e4": "3986812.2",
+    "6a5edaabde90904d0daaa3d0": "1206406.68",
+    "6a5edaacde90904d0daaa3d2": "390100",
+    "6a5edaacde90904d0daaa3d9": "37661949.93",
+    "6a5edaadde90904d0daaa3da": "80964900.81",
+    "6a6165903893bb86c32a205f": "350000",
+    "6a5edaabde90904d0daaa3cd": "12628608",
+    "6a5edaabde90904d0daaa3cc": "8250130.33",
+    "6a5edaaede90904d0daaa3e2": "17533399.36",
+    "6a5edaabde90904d0daaa3ce": "5924050.83",
+    "6a5edaabde90904d0daaa3cf": "1071099.3",
+    "6a6fff9a019561c47fef5e3e": "82000",
+    "6a5edaacde90904d0daaa3d3": "2196565.96",
+    "6a5edaadde90904d0daaa3df": "9200000",
+    "6a5edaaede90904d0daaa3e7": "4614018.41",
+    "6a6165933893bb86c32a2060": "2883199.92",
+    "6a5edaacde90904d0daaa3d8": "10556272.12",
+    "6a5edaaede90904d0daaa3e3": "8199245.06",
+    "6a5edaaede90904d0daaa3e5": "74062",
+    "6a5edaaade90904d0daaa3ca": "14503249.06",
+    "6a5edaabde90904d0daaa3cb": "33136677.74",
+    "6a6165903893bb86c32a205d": "599998.66",
+    "6a5edaadde90904d0daaa3dd": "77958400",
+    "6a5edaabde90904d0daaa3d1": "784178",
+    "6a5edaafde90904d0daaa3e8": "288000",
+    "6a5edaadde90904d0daaa3de": "24728783.55",
+    "6a5edaacde90904d0daaa3d5": "203219",
+    "6a5edaacde90904d0daaa3d7": "10799999.92",
+    "6a6165903893bb86c32a205e": "255450",
+    "6a6fff9a019561c47fef5e3f": "1170000"
+  },
+  "ingresos_por_rubro_id": {
+    "6a5ee39ade90904d0daaa3ed": "179710080.31",
+    "6a7003d312ba5ac9e981a9d5": "43410148.73"
+  },
+  "neutros_ids": [
+    "6a5edaafde90904d0daaa3e9",
+    "6a7003d312ba5ac9e981a9d5",
+    "6a71f2ab0d3803ddca891524"
+  ]
+}

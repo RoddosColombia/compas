@@ -32,7 +32,12 @@ from pathlib import Path
 
 MES = "2026-07"
 MES_ID_STR = "2026-07-01"
-CTRL_EGRESOS = Decimal("372200786.62")
+# Ejecutado real del libro (Σ egresos de las 505 tx de julio en PROD), verificado por 2
+# métodos. El Control del CEO traía 372.200.786,62 (de su Excel Flujo de pagos deudas.xlsx);
+# la diferencia de $9,78 no cae en ningún rubro (ruido de centavos del Excel). Decisión CEO
+# 2026-08-06: la verdad es Mongo — E1 ancla las transacciones reales, no el Excel. El
+# ingreso_real cuadra al peso exacto, lo que confirma que la data de julio está bien.
+CTRL_EGRESOS = Decimal("372200776.84")
 CTRL_INGRESO_REAL = Decimal("179710080.31")
 FIXTURE_PATH = Path("backend/tests/fixtures/e1_julio_2026_ejecutado.json")
 COMANDO = "MONGODB_URI_COMPAS=*** MONGODB_DB=compas PYTHONUTF8=1 python scripts/extract_e1_julio_2026.py"
