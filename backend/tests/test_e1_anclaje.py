@@ -10,7 +10,6 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 from app.proyeccion.ejecucion.lectura import RubroInfo, mapear_a_conceptos
 from app.proyeccion.ejecucion.service import (
     CERRADO,
@@ -222,12 +221,6 @@ def test_b5_futuro_sin_presupuesto_es_el_motor():
 
 
 # ─────────────────────────────── B6 + A3 ───────────────────────────────
-@pytest.mark.skip(
-    reason="BLOQUEADO: divergencia semilla<->PROD. La taxonomía de PROD no tiene los "
-    "rubros 0120/0130/0140/4060 (sí están en la semilla rubro.py) → B12 de P1 dispara "
-    "ValueError. Pendiente decisión del CEO (sembrar vía C1 o ajustar el mapeo P1). "
-    "Ver memoria compas-punto-retomar."
-)
 def test_a3_fixture_julio_real_b2_y_b6():
     fx = json.loads(
         (Path(__file__).resolve().parent / "fixtures"

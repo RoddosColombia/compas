@@ -4,14 +4,20 @@
 Traduce el ejecutado por rubro (la verdad del libro) a los conceptos que el motor
 proyecta, usando el mapeo del Plan de Cuentas (I-PLAN §10, decisiones del CEO):
 
-    neto (ingreso)   ← 0110 Recaudo · 0120 Cuotas iniciales · 0130 RODANTE · 0140 Otros
-    pago_inventario  ← 1010 Producto + 4060 Inventario Auteco (150d)   [coexisten, R-1]
+    neto (ingreso)   ← 0110 Recaudo de cartera   [único rubro de ingreso real de RODDOS]
+    pago_inventario  ← 1010 Producto                        [R-1: 1010 entero]
     fondeo           ← 4030 Garantía cupo (Auteco)          [REEMPLAZA el paramétrico]
     costo_nueva      ← 1020 SOAT/Matrículas                 [R-1: 1010 no entra aquí]
     gps              ← 1030 Seguros (Hunter)
     gastos_fijos     ← TODO OPERACIÓN + NÓMINA + OTROS (menos 5060 y menos sistema)
     int_deuda        ← 4010 Préstamos · 4020 Tarjetas · 4050 Proveedores
     iva              ← 5060 Impuestos
+
+NOTA (E1-P2, decisión CEO 2026-08-06): se quitaron del mapeo 0120 (Cuotas iniciales),
+0130 (RODANTE), 0140 (Otros ingresos) y 4060 (Inventario Auteco) — están en la semilla
+pero NO en la taxonomía de PROD (rubros "dormidos": los ingresos van todos a 0110 y
+Auteco va por D2). Con ellos en el mapeo, B12 disparaba ValueError en producción. Los 9
+códigos restantes existen todos en PROD. Si algún día se siembran, se re-agregan aquí.
 
 FUNCIÓN PURA (sin Mongo): recibe el snapshot de rubros + el valor ejecutado por
 rubro_id + los ids de los rubros neutros, y devuelve {concepto: Decimal} + sin_mapear.
@@ -46,14 +52,11 @@ CONCEPTOS = (
     "iva",
 )
 
-# Mapeo explícito por código (los específicos del §10).
+# Mapeo explícito por código (los específicos del §10). Solo códigos presentes en la
+# taxonomía de PROD — 0120/0130/0140/4060 quitados (ver NOTA del docstring).
 _CONCEPTO_POR_CODIGO: dict[str, str] = {
-    "0110": "neto",
-    "0120": "neto",
-    "0130": "neto",
-    "0140": "neto",
+    "0110": "neto",  # único rubro de ingreso real; E1 ancla el neto vía ingreso_real
     "1010": "pago_inventario",  # R-1: entero a pago_inventario
-    "4060": "pago_inventario",
     "4030": "fondeo",
     "1020": "costo_nueva",
     "1030": "gps",
