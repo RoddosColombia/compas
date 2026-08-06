@@ -64,10 +64,9 @@ def test_b9_suma_rubros_igual_concepto():
     rubros = _rubros()
     valores = _valores(
         **{
-            "Cuotas iniciales": "10000",
-            "Otros ingresos": "5000",
-            "Producto": "70000",  # → pago_inventario
-            "Inventario Auteco (150 días)": "30000",  # → pago_inventario
+            "Recaudo de cartera": "15000",  # 0110 → neto (único ingreso real; el resto
+            #                                  de rubros de ingreso no existe en PROD)
+            "Producto": "70000",  # → pago_inventario (1010 entero)
             "Garantía cupo (Auteco)": "1600",  # → fondeo
             "SOAT/Matrículas": "2000",  # → costo_nueva
             "Seguros (Hunter)": "800",  # → gps
@@ -83,8 +82,8 @@ def test_b9_suma_rubros_igual_concepto():
     )
     r = mapear_a_conceptos(rubros=rubros, valor_por_rubro_id=valores, neutros_ids=set())
     c = r.conceptos
-    assert c["neto"] == Decimal("15000")  # 10000 + 5000
-    assert c["pago_inventario"] == Decimal("100000")  # 70000 + 30000
+    assert c["neto"] == Decimal("15000")  # 0110 Recaudo
+    assert c["pago_inventario"] == Decimal("70000")  # 1010 entero (4060 ya no mapea)
     assert c["fondeo"] == Decimal("1600")
     assert c["costo_nueva"] == Decimal("2000")
     assert c["gps"] == Decimal("800")
@@ -135,7 +134,7 @@ def test_a1_neutros_excluidos_por_id():
 
 
 def test_b12_codigo_del_mapeo_ausente_es_ruidoso():
-    # Quitar 4060 de la taxonomía → el mapeo lo referencia → error ruidoso.
-    rubros = [r for r in _rubros() if r.codigo != "4060"]
+    # Quitar 1010 de la taxonomía → el mapeo lo referencia → error ruidoso.
+    rubros = [r for r in _rubros() if r.codigo != "1010"]
     with pytest.raises(ValueError, match="B12"):
         mapear_a_conceptos(rubros=rubros, valor_por_rubro_id={}, neutros_ids=set())
