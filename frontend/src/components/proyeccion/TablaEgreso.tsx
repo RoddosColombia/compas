@@ -8,6 +8,7 @@
 
 import { Fragment, type ReactNode, useState } from "react";
 
+import { MarcaOrigen } from "@/components/proyeccion/MarcaOrigen";
 import { Card } from "@/components/ui/card";
 import { autecoDeMes, bucketsMes, nuevaDeMes, totales } from "@/lib/egreso";
 import { formatCOPEntero, formatMesCorto } from "@/lib/money";
@@ -15,6 +16,7 @@ import {
   ESTADO_LABEL,
   type EstadoMes,
   type MesProyeccion,
+  type MarcaOrigen as TMarca,
 } from "@/lib/proyeccion";
 import { cn } from "@/lib/utils";
 import Decimal from "decimal.js-light";
@@ -44,6 +46,11 @@ interface TablaEgresoProps {
   mesCritico: string;
   perforada: boolean;
   ventanaReconciliada: [string, string] | null;
+  // E1·P6 — origen de cada mes (marca) + rubros sin clasificar. Opcionales: sin ciclo
+  // no se renderiza nada nuevo (candado). La marca va en la 1ª columna (sin columna
+  // nueva → sin scroll lateral).
+  mesesAnclados?: Record<string, TMarca>;
+  sinMapear?: string[];
 }
 
 function esReconciliado(
@@ -73,6 +80,8 @@ export function TablaEgreso({
   mesCritico,
   perforada,
   ventanaReconciliada,
+  mesesAnclados = {},
+  sinMapear = [],
 }: TablaEgresoProps) {
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   const t = totales(filas);
@@ -138,12 +147,15 @@ export function TablaEgreso({
                         type="button"
                         onClick={() => toggle(m.mes)}
                         aria-expanded={abierto}
-                        className="flex w-full items-center px-4 py-2 text-left hover:underline"
+                        className="flex w-full flex-col items-start px-4 py-2 text-left hover:underline"
                       >
-                        <span className="mr-1.5 inline-block text-ink-faint">
-                          {abierto ? "▾" : "▸"}
+                        <span className="flex items-center">
+                          <span className="mr-1.5 inline-block text-ink-faint">
+                            {abierto ? "▾" : "▸"}
+                          </span>
+                          {formatMesCorto(m.mes)}
                         </span>
-                        {formatMesCorto(m.mes)}
+                        <MarcaOrigen marca={mesesAnclados[m.mes]} />
                       </button>
                     </td>
                     <Monto
@@ -215,6 +227,16 @@ export function TablaEgreso({
           </tfoot>
         </table>
       </div>
+      {sinMapear.length > 0 && (
+        <div className="border-t border-hairline px-4 py-3 text-apoyo text-ink-soft">
+          <span className="font-semibold text-ink">
+            {sinMapear.length} rubro{sinMapear.length > 1 ? "s" : ""} con
+            movimiento sin clasificar:
+          </span>{" "}
+          {sinMapear.map((r) => `«${r}»`).join(", ")}. No suman a ningún total
+          del motor — revísalos.
+        </div>
+      )}
     </Card>
   );
 }

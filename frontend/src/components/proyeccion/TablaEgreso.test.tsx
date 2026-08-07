@@ -113,4 +113,44 @@ describe("TablaEgreso — V1 §3", () => {
     fireEvent.click(screen.getByRole("button", { name: /ene-27/ }));
     expect(screen.getByText(/Lote · real/)).toBeInTheDocument();
   });
+
+  // E1·P6 — marca de ORIGEN en la 1ª columna (sin columna nueva) + aviso sin_mapear.
+  it("muestra la marca de origen de cada mes bajo el nombre", () => {
+    render(
+      <TablaEgreso
+        filas={[PROYECTADO, RECONCILIADO]}
+        mesCritico="2026-10"
+        perforada={true}
+        ventanaReconciliada={["2027-01", "2027-01"]}
+        mesesAnclados={{ "2027-01": "cerrado" }}
+      />,
+    );
+    expect(screen.getByText("Real")).toBeInTheDocument(); // 2027-01 = cerrado
+    // 2026-10 sin marca → "Proyección"
+    expect(screen.getAllByText("Proyección").length).toBeGreaterThan(0);
+  });
+
+  it("muestra el aviso de sin_mapear solo si hay rubros", () => {
+    const { rerender } = render(
+      <TablaEgreso
+        filas={[PROYECTADO]}
+        mesCritico="2026-10"
+        perforada={true}
+        ventanaReconciliada={null}
+        sinMapear={["Ajuste raro 4040"]}
+      />,
+    );
+    expect(screen.getByText(/sin clasificar/i)).toBeInTheDocument();
+    expect(screen.getByText(/Ajuste raro 4040/)).toBeInTheDocument();
+    rerender(
+      <TablaEgreso
+        filas={[PROYECTADO]}
+        mesCritico="2026-10"
+        perforada={true}
+        ventanaReconciliada={null}
+        sinMapear={[]}
+      />,
+    );
+    expect(screen.queryByText(/sin clasificar/i)).not.toBeInTheDocument();
+  });
 });
