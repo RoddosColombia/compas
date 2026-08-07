@@ -17,7 +17,10 @@ from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import Rubro, RubroGrupo, TipoFlujo
 from app.domain.transaccion import Transaccion
-from app.proyeccion.ejecucion.loader import cargar_anclas
+from app.proyeccion.ejecucion.loader import (
+    cargar_anclas,
+    cargar_completitud_mes_en_curso,
+)
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -155,3 +158,35 @@ class TestLoaderReal:
 
         anclas, _rubros, _neutros = await cargar_anclas((2026, 7), 1)
         assert "2026-07" not in anclas  # PASO 0 lo sacó (cae al motor)
+
+    @pytest.mark.asyncio
+    async def test_completitud_fecha_maxima_real(self, db):
+        """P5/B13 contra Mongo real: sort(-fecha).limit(1) devuelve la fecha máxima de
+        transacción del mes en ejecución (fecha ISO ordena cronológicamente)."""
+        rubro = await Rubro(
+            grupo=RubroGrupo.OPERACION,
+            nombre="Arriendos",
+            tipo_flujo=TipoFlujo.EGRESO,
+            orden=1,
+            codigo="2010",
+        ).insert()
+        ago = await MesControl(
+            mes="2026-08-01",
+            saldo_inicial_caja=Decimal("0"),
+            estado=EstadoMes.EN_EJECUCION,
+        ).insert()
+        for f in ("2026-08-02", "2026-08-09", "2026-08-05"):
+            await Transaccion(
+                fecha=f,
+                descripcion="x",
+                valor=Decimal("1"),
+                tipo_flujo=TipoFlujo.EGRESO,
+                rubro_id=rubro.id,
+                mes_id=ago.id,
+                banco=Banco.GLOBAL66,
+                id_banco=f"REF-{f}|1",
+            ).insert()
+
+        comp = await cargar_completitud_mes_en_curso((2026, 8), 1)
+        assert comp["cargado_hasta"] == "2026-08-09"
+        assert comp["dia"] == 9

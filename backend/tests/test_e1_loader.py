@@ -21,7 +21,10 @@ from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import Rubro, RubroGrupo, TipoFlujo
 from app.domain.transaccion import Transaccion
 from app.proyeccion.ejecucion.lectura import RubroInfo
-from app.proyeccion.ejecucion.loader import cargar_anclas
+from app.proyeccion.ejecucion.loader import (
+    cargar_anclas,
+    cargar_completitud_mes_en_curso,
+)
 from beanie import init_beanie
 from mongomock_motor import AsyncMongoMockClient
 
@@ -223,3 +226,35 @@ async def test_cerrado_trae_definido_para_la_marca(db):
     anclas, _, _ = await cargar_anclas(_MES_INICIO, _HORIZONTE)
     # el loader trae el definido también para cerrado (alimenta la marca B10)
     assert anclas["2026-07"].definido_por_rubro_id == {str(gasto.id): Decimal("12000")}
+
+
+@pytest.mark.asyncio
+async def test_completitud_mes_en_curso_toma_la_fecha_maxima(db):
+    """P5/B13: para el mes EN_EJECUCION, completitud = fecha máxima de tx + fórmula."""
+    ago = await _mes("2026-08", EstadoMes.EN_EJECUCION)
+    gasto = await _rubro(RubroGrupo.OPERACION, "Arriendos", TipoFlujo.EGRESO, "2010")
+    for f in ("2026-08-03", "2026-08-06", "2026-08-01"):
+        await Transaccion(
+            fecha=f,
+            descripcion="x",
+            valor=Decimal("1"),
+            tipo_flujo=TipoFlujo.EGRESO,
+            rubro_id=gasto.id,
+            mes_id=ago.id,
+            banco=Banco.GLOBAL66,
+            id_banco=f"REF-{f}|1",
+        ).insert()
+
+    comp = await cargar_completitud_mes_en_curso((2026, 8), 1)
+    assert comp == {
+        "mes": "2026-08",
+        "cargado_hasta": "2026-08-06",
+        "dia": 6,
+        "formula": "ejecutado + max(0, definido - ejecutado) por concepto",
+    }
+
+
+@pytest.mark.asyncio
+async def test_completitud_none_sin_mes_en_ejecucion(db):
+    await _mes("2026-08", EstadoMes.CERRADO)
+    assert await cargar_completitud_mes_en_curso((2026, 8), 1) is None
