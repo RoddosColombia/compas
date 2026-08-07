@@ -6,6 +6,7 @@ Carga los parámetros VIGENTES + el catálogo de modelos ACTIVOS, arma un
 `motor.proyectar()`. Serializa a JSON con montos como string (regla 1). No escribe
 estado: es una lectura pura sobre la configuración vigente."""
 
+import logging
 from dataclasses import replace
 from decimal import Decimal
 
@@ -30,6 +31,7 @@ from app.obligaciones.reconciliacion import (
     reconciliar,
 )
 from app.parametros_proyeccion import service as parametros_service
+from app.proyeccion.ejecucion.guarda import marcas_origen
 from app.proyeccion.ejecucion.lectura import RubroInfo
 from app.proyeccion.ejecucion.loader import cargar_anclas
 from app.proyeccion.ejecucion.service import CERRADO, AnclaMes, anclar
@@ -49,6 +51,7 @@ from app.proyeccion.solvers import goal_seek, punto_de_quiebre, techo_gasto
 from app.proyeccion.valles import Valle, detectar_valles
 
 HORIZONTE_MAX = 180  # 15 años (tope de infraestructura)
+_log = logging.getLogger(__name__)
 
 
 class ProyeccionError(Exception):
@@ -370,6 +373,21 @@ async def _resultado_con(
         # (campos disjuntos, deltas aditivos). El set completo de anclados queda como
         # `frozenset(anclas)` para las marcas de origen de la UI en P5 — no se da a D2.
         meses_anclados = frozenset(m for m, a in anclas.items() if a.estado == CERRADO)
+        # B10 (P4): marca de origen por mes + log de los cerrados sospechosos (ejecutado
+        # << definido). Solo observabilidad — la exposición en la respuesta es P5, y la
+        # marca NUNCA cambia el régimen (un sospechoso sigue anclado y excluido de D2).
+        sospechosos = sorted(
+            m
+            for m, marca in marcas_origen(
+                anclas, rubros=rubros_e1, neutros_ids=neutros_e1
+            ).items()
+            if marca == "cerrado_sospechoso"
+        )
+        if sospechosos:
+            _log.warning(
+                "E1 B10: mes(es) cerrado(s) sospechoso(s) (ejecutado << definido): %s",
+                sospechosos,
+            )
 
     facturas = (
         facturas_override

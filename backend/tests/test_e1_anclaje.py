@@ -373,3 +373,40 @@ def test_a3_fixture_julio_real_b2_y_b6():
     # B6: invariante al peso sobre la realidad.
     assert jul.neto + jul.egresos == jul.flujo
     assert _invariante_ok(out)
+
+
+# ───────── P4: inercia — anclar IGNORA el definido en régimen cerrado ─────────
+def test_cerrado_ignora_definido_inercia():
+    """P4: el loader ahora trae `definido` también para meses cerrados (alimenta la
+    marca B10), pero `anclar` lo IGNORA en cerrado (ancla el ejecutado real). La salida
+    debe ser idéntica con definido {} o poblado — protege el contrato de P2."""
+    res = _serie_coherente(
+        Decimal("1000000.00"),
+        [("2026-09", {"neto": Decimal("500000.00")})],
+    )
+    base = dict(
+        estado=CERRADO,
+        ejecutado_por_rubro_id={"2010": Decimal("350000")},
+        ingreso_real=Decimal("300000"),
+    )
+    sin_def = anclar(
+        resultado=res,
+        caja_minima=_CAJA_MIN,
+        anclas={"2026-09": AnclaMes(definido_por_rubro_id={}, **base)},
+        rubros=_rubros(),
+        neutros_ids=set(),
+    )
+    con_def = anclar(
+        resultado=res,
+        caja_minima=_CAJA_MIN,
+        anclas={
+            "2026-09": AnclaMes(
+                definido_por_rubro_id={"2010": Decimal("999999")}, **base
+            )
+        },
+        rubros=_rubros(),
+        neutros_ids=set(),
+    )
+    assert (
+        con_def.meses == sin_def.meses
+    )  # el definido no cambia el anclaje del cerrado

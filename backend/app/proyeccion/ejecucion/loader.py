@@ -18,6 +18,7 @@ reinventar agregaciones.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from beanie import PydanticObjectId
@@ -26,8 +27,9 @@ from beanie.operators import In
 from app.control.service import _egresos_por_rubro
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
-from app.domain.rubro import Rubro
+from app.domain.rubro import RUBROS_SISTEMA_CLASIFICABLES, Rubro
 from app.domain.rubros_neutros import _ids_rubros_neutros
+from app.domain.transaccion import Transaccion
 from app.metas_ingreso.service import ingreso_real
 from app.proyeccion.ejecucion.lectura import RubroInfo
 from app.proyeccion.ejecucion.service import (
@@ -39,6 +41,7 @@ from app.proyeccion.ejecucion.service import (
 from app.proyeccion.motor import _meses_del_horizonte
 
 _CERO = Decimal("0")
+_log = logging.getLogger(__name__)
 
 
 async def _rubros_info() -> list[RubroInfo]:
@@ -69,14 +72,39 @@ async def _definido_por_rubro(mes_id: PydanticObjectId) -> dict[str, Decimal]:
     }
 
 
+async def _rubros_ofensores(
+    mes_id: PydanticObjectId, dirty_ids: frozenset[str]
+) -> list[str]:
+    """PASO 0 (A2): rubros de sistema "sucios" (ids en `dirty_ids`) con al menos una
+    transacción en el mes. `[]` si el mes está limpio."""
+    oids = [PydanticObjectId(x) for x in dirty_ids]
+    txs = await Transaccion.find(
+        Transaccion.mes_id == mes_id, In(Transaccion.rubro_id, oids)
+    ).to_list()
+    return sorted({str(t.rubro_id) for t in txs})
+
+
 async def cargar_anclas(
     mes_inicio: tuple[int, int], horizonte: int
 ) -> tuple[dict[str, AnclaMes], list[RubroInfo], set[str]]:
-    """Arma `(anclas, rubros, neutros_ids)` para `anclar`. Los meses sin MesControl o
-    futuros sin presupuesto definido quedan fuera de `anclas` (el motor los cubre)."""
+    """Arma `(anclas, rubros, neutros_ids)` para `anclar`. Los meses sin MesControl,
+    futuros sin presupuesto definido, o con higiene sucia (PASO 0/A2) quedan fuera de
+    `anclas` (el motor los cubre). El `definido` se trae también para los cerrados: no
+    lo usa `anclar` (lo ignora en cerrado), solo alimenta la marca B10 (`guarda`)."""
     meses = [f"{a:04d}-{m:02d}" for a, m in _meses_del_horizonte(mes_inicio, horizonte)]
     rubros = await _rubros_info()
     neutros_ids = {str(i) for i in await _ids_rubros_neutros()}
+
+    # PASO 0 (higiene A2): rubros de SISTEMA que no deberían mover dinero en un mes
+    # anclable (es_sistema, NO clasificable, NO neutro). Si aparecen en un mes → ese mes
+    # no se ancla (cae al motor). Set derivado de la taxonomía ya cargada (sin query).
+    dirty_ids = frozenset(
+        r.id
+        for r in rubros
+        if r.es_sistema
+        and r.nombre not in RUBROS_SISTEMA_CLASIFICABLES
+        and r.id not in neutros_ids
+    )
 
     # un solo query para los MesControl del horizonte
     claves = [f"{m}-01" for m in meses]
@@ -90,11 +118,22 @@ async def cargar_anclas(
         mc = por_mes.get(m)
         if mc is None:
             continue  # sin ciclo → motor intacto
+        ofensores = await _rubros_ofensores(mc.id, dirty_ids) if dirty_ids else []
+        if ofensores:
+            # A2: mes mal higienizado → no se ancla (por-mes, no tumba los demás).
+            _log.warning(
+                "E1 PASO 0: el mes %s no se ancla (cae al motor): %d rubro(s) de "
+                "sistema no clasificables con movimiento: %s",
+                m,
+                len(ofensores),
+                ofensores,
+            )
+            continue
         if mc.estado == EstadoMes.CERRADO:
             anclas[m] = AnclaMes(
                 estado=CERRADO,
                 ejecutado_por_rubro_id=await _egresos_por_rubro(mc.id),
-                definido_por_rubro_id={},
+                definido_por_rubro_id=await _definido_por_rubro(mc.id),
                 ingreso_real=await ingreso_real(m),
             )
         elif mc.estado == EstadoMes.EN_EJECUCION:
