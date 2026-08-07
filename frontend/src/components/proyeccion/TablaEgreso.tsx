@@ -91,6 +91,10 @@ export function TablaEgreso({
   const tActivacion = sumaCol(filas, nuevaDeMes);
   const tAuteco = sumaCol(filas, autecoDeMes);
 
+  // Candado: la marca de origen solo se pinta cuando hay ciclo (algún mes anclado);
+  // sin anclaje la tabla queda idéntica a hoy (sin línea de marca bajo el mes).
+  const hayCiclo = Object.keys(mesesAnclados).length > 0;
+
   const toggle = (mes: string) =>
     setAbiertos((prev) => {
       const next = new Set(prev);
@@ -155,7 +159,7 @@ export function TablaEgreso({
                           </span>
                           {formatMesCorto(m.mes)}
                         </span>
-                        <MarcaOrigen marca={mesesAnclados[m.mes]} />
+                        {hayCiclo && <MarcaOrigen marca={mesesAnclados[m.mes]} />}
                       </button>
                     </td>
                     <Monto

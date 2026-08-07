@@ -130,6 +130,20 @@ describe("TablaEgreso — V1 §3", () => {
     expect(screen.getAllByText("Proyección").length).toBeGreaterThan(0);
   });
 
+  it("candado: sin ciclo (sin meses anclados) NO pinta marca de origen", () => {
+    render(
+      <TablaEgreso
+        filas={[PROYECTADO, RECONCILIADO]}
+        mesCritico="2026-10"
+        perforada={true}
+        ventanaReconciliada={null}
+      />,
+    );
+    // sin mesesAnclados la tabla queda como hoy: ninguna etiqueta de origen
+    expect(screen.queryByText("Proyección")).not.toBeInTheDocument();
+    expect(screen.queryByText("Real")).not.toBeInTheDocument();
+  });
+
   it("muestra el aviso de sin_mapear solo si hay rubros", () => {
     const { rerender } = render(
       <TablaEgreso
