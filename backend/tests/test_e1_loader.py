@@ -42,8 +42,15 @@ async def _mes(mes7: str, estado: EstadoMes) -> MesControl:
     return mc
 
 
-async def _rubro(grupo, nombre, flujo, codigo=None) -> Rubro:
-    r = Rubro(grupo=grupo, nombre=nombre, tipo_flujo=flujo, orden=1, codigo=codigo)
+async def _rubro(grupo, nombre, flujo, codigo=None, es_sistema=False) -> Rubro:
+    r = Rubro(
+        grupo=grupo,
+        nombre=nombre,
+        tipo_flujo=flujo,
+        orden=1,
+        codigo=codigo,
+        es_sistema=es_sistema,
+    )
     await r.insert()
     return r
 
@@ -169,3 +176,50 @@ async def test_rubros_info_y_neutros_ids_se_arman(escenario):
     assert {"Arriendos", "Producto", "Recaudo de cartera"} <= nombres
     # el único neutro presente es la reversa
     assert neutros_ids == {str(escenario["neutro"].id)}
+
+
+# ── P4 · PASO 0 (higiene A2): un mes con tx a rubro de SISTEMA "sucio" (es_sistema, no
+# clasificable, no neutro) no se ancla — cae al motor. Alcance por-mes. ──
+
+
+@pytest.mark.asyncio
+async def test_paso0_mes_con_rubro_sistema_sucio_no_se_ancla(db):
+    gasto = await _rubro(RubroGrupo.OPERACION, "Arriendos", TipoFlujo.EGRESO, "2010")
+    sucio = await _rubro(
+        RubroGrupo.OTROS, "Sistema no clasificable", TipoFlujo.EGRESO, es_sistema=True
+    )
+    jul = await _mes("2026-07", EstadoMes.CERRADO)
+    await _tx(jul, gasto, "5000", TipoFlujo.EGRESO, 1)
+    await _tx(
+        jul, sucio, "9", TipoFlujo.EGRESO, 2
+    )  # 1 tx sucia → PASO 0 excluye el mes
+    anclas, _, _ = await cargar_anclas(_MES_INICIO, _HORIZONTE)
+    assert "2026-07" not in anclas  # cae al motor
+
+
+@pytest.mark.asyncio
+async def test_paso0_clasificables_y_neutros_no_disparan(db):
+    gasto = await _rubro(RubroGrupo.OPERACION, "Arriendos", TipoFlujo.EGRESO, "2010")
+    porclas = await _rubro(
+        RubroGrupo.OTROS, "Por clasificar", TipoFlujo.EGRESO, es_sistema=True
+    )
+    neutro = await _rubro(
+        RubroGrupo.OTROS, "Reversas y devoluciones", TipoFlujo.INGRESO, es_sistema=True
+    )
+    jul = await _mes("2026-07", EstadoMes.CERRADO)
+    await _tx(jul, gasto, "5000", TipoFlujo.EGRESO, 1)
+    await _tx(jul, porclas, "3", TipoFlujo.EGRESO, 2)  # clasificable → NO dispara
+    await _tx(jul, neutro, "7", TipoFlujo.INGRESO, 3)  # neutro → NO dispara
+    anclas, _, _ = await cargar_anclas(_MES_INICIO, _HORIZONTE)
+    assert "2026-07" in anclas  # el mes se ancla igual
+
+
+@pytest.mark.asyncio
+async def test_cerrado_trae_definido_para_la_marca(db):
+    gasto = await _rubro(RubroGrupo.OPERACION, "Arriendos", TipoFlujo.EGRESO, "2010")
+    jul = await _mes("2026-07", EstadoMes.CERRADO)
+    await _tx(jul, gasto, "5000", TipoFlujo.EGRESO, 1)
+    await _linea(jul, gasto, Decimal("12000"))  # presupuesto definido del mes cerrado
+    anclas, _, _ = await cargar_anclas(_MES_INICIO, _HORIZONTE)
+    # el loader trae el definido también para cerrado (alimenta la marca B10)
+    assert anclas["2026-07"].definido_por_rubro_id == {str(gasto.id): Decimal("12000")}

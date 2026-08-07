@@ -243,3 +243,24 @@ async def test_c1_d2_aplica_pago_real_en_mes_anclado_no_cerrado(db, estado):
 
     # 2026-12 (no anclado) reconcilia normal.
     assert a["2026-12"].pago_inventario == Decimal(f"-{cap_dic.capital}")
+
+
+@pytest.mark.asyncio
+async def test_b10_loguea_mes_cerrado_sospechoso(db, caplog):
+    """P4/B10: un mes CERRADO con ejecutado << definido se ancla igual (no se bloquea)
+    pero se registra en log estructurado. La marca no cambia el régimen (sigue anclado y
+    excluido de D2 por ser cerrado)."""
+    import logging
+
+    anclas = {
+        "2026-10": AnclaMes(
+            estado="cerrado",
+            ejecutado_por_rubro_id={"4010": Decimal("40")},  # E=40
+            definido_por_rubro_id={"4010": Decimal("100")},  # D=100 → 40<50 sospechoso
+            ingreso_real=Decimal("0"),
+        )
+    }
+    with caplog.at_level(logging.WARNING):
+        res = await _correr((anclas, _rubros(), set()), [])
+    assert "2026-10" in res  # se ancla igual (no se bloquea)
+    assert any("B10" in r.getMessage() for r in caplog.records)

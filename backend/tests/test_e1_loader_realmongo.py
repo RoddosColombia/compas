@@ -110,3 +110,48 @@ class TestLoaderReal:
         assert anclas["2026-08"].definido_por_rubro_id == {
             str(gasto.id): Decimal("6000")
         }
+
+    @pytest.mark.asyncio
+    async def test_paso0_rubro_sistema_sucio_excluye_el_mes_real(self, db):
+        """P4/A2 contra Mongo real: la query de PASO 0 (find In sobre rubro_id) detecta
+        la tx a un rubro de sistema no clasificable → el mes cae al motor."""
+        gasto = await Rubro(
+            grupo=RubroGrupo.OPERACION,
+            nombre="Arriendos",
+            tipo_flujo=TipoFlujo.EGRESO,
+            orden=1,
+            codigo="2010",
+        ).insert()
+        sucio = await Rubro(
+            grupo=RubroGrupo.OTROS,
+            nombre="Sistema no clasificable",
+            tipo_flujo=TipoFlujo.EGRESO,
+            orden=2,
+            es_sistema=True,
+        ).insert()
+        jul = await MesControl(
+            mes="2026-07-01", saldo_inicial_caja=Decimal("0"), estado=EstadoMes.CERRADO
+        ).insert()
+        await Transaccion(
+            fecha="2026-07-10",
+            descripcion="ok",
+            valor=Decimal("5000"),
+            tipo_flujo=TipoFlujo.EGRESO,
+            rubro_id=gasto.id,
+            mes_id=jul.id,
+            banco=Banco.GLOBAL66,
+            id_banco="REF-OK|1",
+        ).insert()
+        await Transaccion(
+            fecha="2026-07-11",
+            descripcion="sucia",
+            valor=Decimal("9"),
+            tipo_flujo=TipoFlujo.EGRESO,
+            rubro_id=sucio.id,
+            mes_id=jul.id,
+            banco=Banco.GLOBAL66,
+            id_banco="REF-SUCIA|1",
+        ).insert()
+
+        anclas, _rubros, _neutros = await cargar_anclas((2026, 7), 1)
+        assert "2026-07" not in anclas  # PASO 0 lo sacó (cae al motor)
