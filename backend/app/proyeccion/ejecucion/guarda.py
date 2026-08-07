@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.proyeccion.ejecucion.lectura import RubroInfo
+from app.proyeccion.ejecucion.lectura import RubroInfo, mapear_a_conceptos
 from app.proyeccion.ejecucion.service import CERRADO, AnclaMes, _conceptos_egreso
 
 UMBRAL_SOSPECHA_EJECUTADO = Decimal("0.5")
@@ -66,3 +66,26 @@ def marcas_origen(
         else:
             marcas[mes] = a.estado
     return marcas
+
+
+def rubros_sin_mapear(
+    anclas: dict[str, AnclaMes],
+    *,
+    rubros: list[RubroInfo],
+    neutros_ids: set[str],
+) -> list[str]:
+    """Nombres de rubro con movimiento REAL y sin concepto del motor (unión ordenada y
+    deduplicada sobre los meses con ejecutado). Reusa `mapear_a_conceptos` sobre el
+    snapshot del ejecutado —aquí afloran R-1/R-2 parqueados—; función PURA (sin Mongo).
+    `[]` si todo mapea. NO altera el anclaje: solo lectura para exponer en el shape."""
+    nombres: set[str] = set()
+    for a in anclas.values():
+        if not a.ejecutado_por_rubro_id:
+            continue
+        res = mapear_a_conceptos(
+            rubros=rubros,
+            valor_por_rubro_id=a.ejecutado_por_rubro_id,
+            neutros_ids=neutros_ids,
+        )
+        nombres.update(res.sin_mapear)
+    return sorted(nombres)

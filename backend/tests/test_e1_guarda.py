@@ -15,6 +15,7 @@ from app.proyeccion.ejecucion.guarda import (
     UMBRAL_SOSPECHA_EJECUTADO,
     es_ejecutado_anomalo,
     marcas_origen,
+    rubros_sin_mapear,
 )
 from app.proyeccion.ejecucion.lectura import RubroInfo
 from app.proyeccion.ejecucion.service import AnclaMes
@@ -108,3 +109,56 @@ def test_marcas_origen_marca_solo_cerrado_anomalo():
         "2026-07": "en_ejecucion",
         "2026-08": "presupuesto",
     }
+
+
+def _rubros_con_4040():
+    # los 9 del mapeo + un rubro no-sistema sin concepto (4040 = R-2, grupo
+    # deudas_obligaciones no está en _GRUPOS_GASTOS_FIJOS → _concepto_de = None)
+    return _rubros() + [
+        RubroInfo(
+            id="4040",
+            codigo="4040",
+            grupo="deudas_obligaciones",
+            nombre="Ajuste raro 4040",
+            es_sistema=False,
+        )
+    ]
+
+
+def test_rubros_sin_mapear_reporta_rubro_con_movimiento_sin_concepto():
+    anclas = {
+        "2026-05": AnclaMes(
+            estado="cerrado",
+            ejecutado_por_rubro_id={"4010": Decimal("100"), "4040": Decimal("500")},
+            definido_por_rubro_id={},
+            ingreso_real=Decimal("0"),
+        ),
+    }
+    assert rubros_sin_mapear(anclas, rubros=_rubros_con_4040(), neutros_ids=set()) == [
+        "Ajuste raro 4040"
+    ]
+
+
+def test_rubros_sin_mapear_vacio_cuando_todo_mapea():
+    anclas = {
+        "2026-05": AnclaMes(
+            estado="cerrado",
+            ejecutado_por_rubro_id={"4010": Decimal("100")},
+            definido_por_rubro_id={},
+            ingreso_real=Decimal("0"),
+        ),
+    }
+    assert rubros_sin_mapear(anclas, rubros=_rubros(), neutros_ids=set()) == []
+
+
+def test_rubros_sin_mapear_dedup_y_ordena_entre_meses():
+    a = AnclaMes(
+        estado="cerrado",
+        ejecutado_por_rubro_id={"4040": Decimal("500")},
+        definido_por_rubro_id={},
+        ingreso_real=Decimal("0"),
+    )
+    anclas = {"2026-05": a, "2026-06": a}  # mismo rubro en dos meses → una entrada
+    assert rubros_sin_mapear(anclas, rubros=_rubros_con_4040(), neutros_ids=set()) == [
+        "Ajuste raro 4040"
+    ]
