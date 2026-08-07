@@ -25,7 +25,7 @@ from app.obligaciones.calculadora import pago_factura
 from app.obligaciones.reconciliacion import FacturaReconciliar
 from app.proyeccion.ejecucion.lectura import RubroInfo
 from app.proyeccion.ejecucion.service import AnclaMes
-from app.proyeccion.service import _resultado_con
+from app.proyeccion.service import AnclajeMeta, _resultado_con
 from beanie import init_beanie
 from mongomock_motor import AsyncMongoMockClient
 
@@ -137,8 +137,8 @@ async def db():
     yield c
 
 
-async def _correr(anclas_override, facturas_override):
-    r, _cm, _fondo, _rec = await _resultado_con(
+async def _correr(anclas_override, facturas_override, *, con_meta=False):
+    r, _cm, _fondo, _rec, meta = await _resultado_con(
         _params(),
         _modelos(),
         escenario="base",
@@ -147,7 +147,8 @@ async def _correr(anclas_override, facturas_override):
         anclas_override=anclas_override,
         facturas_override=facturas_override,
     )
-    return {m.mes: m for m in r.meses}
+    filas = {m.mes: m for m in r.meses}
+    return (filas, meta) if con_meta else filas
 
 
 @pytest.mark.asyncio
@@ -264,3 +265,40 @@ async def test_b10_loguea_mes_cerrado_sospechoso(db, caplog):
         res = await _correr((anclas, _rubros(), set()), [])
     assert "2026-10" in res  # se ancla igual (no se bloquea)
     assert any("B10" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_meta_marcas_y_sin_mapear(db):
+    """P5: _resultado_con expone AnclajeMeta — meses_anclados (marcas) y sin_mapear
+    (rubro con movimiento sin concepto). mes_en_curso es None (db vacía, sin ciclo)."""
+    rubros_4040 = _rubros() + [
+        RubroInfo(
+            id="4040",
+            codigo="4040",
+            grupo="deudas_obligaciones",
+            nombre="Ajuste raro 4040",
+            es_sistema=False,
+        )
+    ]
+    anclas = {
+        "2026-10": AnclaMes(
+            estado="cerrado",
+            ejecutado_por_rubro_id={"4010": Decimal("40"), "4040": Decimal("9")},
+            definido_por_rubro_id={"4010": Decimal("100")},  # 40<50 → sospechoso
+            ingreso_real=Decimal("0"),
+        )
+    }
+    _filas, meta = await _correr((anclas, rubros_4040, set()), [], con_meta=True)
+    assert isinstance(meta, AnclajeMeta)
+    assert meta.meses_anclados == {"2026-10": "cerrado_sospechoso"}
+    assert meta.sin_mapear == ["Ajuste raro 4040"]
+    assert meta.mes_en_curso is None
+
+
+@pytest.mark.asyncio
+async def test_meta_vacia_sin_anclaje(db):
+    """Candado 'foto sin ciclo': sin anclas la meta queda totalmente vacía."""
+    _filas, meta = await _correr(({}, [], set()), [], con_meta=True)
+    assert meta.meses_anclados == {}
+    assert meta.sin_mapear == []
+    assert meta.mes_en_curso is None

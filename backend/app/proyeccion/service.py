@@ -7,7 +7,7 @@ Carga los parámetros VIGENTES + el catálogo de modelos ACTIVOS, arma un
 estado: es una lectura pura sobre la configuración vigente."""
 
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from app.cartera_previa import service as cartera_previa_service
@@ -31,9 +31,12 @@ from app.obligaciones.reconciliacion import (
     reconciliar,
 )
 from app.parametros_proyeccion import service as parametros_service
-from app.proyeccion.ejecucion.guarda import marcas_origen
+from app.proyeccion.ejecucion.guarda import marcas_origen, rubros_sin_mapear
 from app.proyeccion.ejecucion.lectura import RubroInfo
-from app.proyeccion.ejecucion.loader import cargar_anclas
+from app.proyeccion.ejecucion.loader import (
+    cargar_anclas,
+    cargar_completitud_mes_en_curso,
+)
 from app.proyeccion.ejecucion.service import CERRADO, AnclaMes, anclar
 from app.proyeccion.impactos import Ajuste, aplicar_impactos
 from app.proyeccion.motor import (
@@ -145,16 +148,34 @@ def _armar_parametros(
     )
 
 
+@dataclass(frozen=True)
+class AnclajeMeta:
+    """Metadato de origen de la proyección para el shape de P5 (aditivo). Vacío cuando
+    no hay anclaje → la respuesta queda byte-idéntica a la de antes de P5."""
+
+    meses_anclados: dict[str, str] = field(default_factory=dict)
+    sin_mapear: list[str] = field(default_factory=list)
+    mes_en_curso: dict | None = None
+
+
 def _serializar(
     r: ResultadoProyeccion,
     escenario: str,
     caja_minima,
     fondo: list,
     rec: ResultadoReconciliado | None = None,
+    *,
+    meta: "AnclajeMeta | None" = None,
 ) -> dict:
     meses_ym = [f.mes for f in r.meses]
+    meta = meta or AnclajeMeta()
     return {
         "escenario": escenario,
+        # P5 — origen de cada cifra (aditivo): marcas por mes, rubros sin concepto del
+        # motor, y completitud del mes en curso (B13). Vacíos si no hay anclaje.
+        "meses_anclados": dict(meta.meses_anclados),
+        "sin_mapear": list(meta.sin_mapear),
+        "mes_en_curso": meta.mes_en_curso,
         # D2 §4: ventana donde las facturas reales netean el Auteco paramétrico + el
         # interés de obligaciones separado por mes (None/{} si no hay facturas activas).
         "ventana_reconciliada": (
@@ -315,7 +336,9 @@ async def _resultado_con(
     facturas_override: list[FacturaReconciliar] | None = None,
     anclas_override: tuple[dict[str, AnclaMes], list[RubroInfo], set[str]]
     | None = None,
-) -> tuple[ResultadoProyeccion, object, list, ResultadoReconciliado | None]:
+) -> tuple[
+    ResultadoProyeccion, object, list, ResultadoReconciliado | None, AnclajeMeta
+]:
     """La tubería completa sobre un set de parámetros DADO, en el orden de precedencia
     `motor → EJECUCIÓN (E1) → OBLIGACIONES (D2) → IMPACTOS (D1)`:
 
@@ -358,6 +381,8 @@ async def _resultado_con(
         else await cargar_anclas(mes_inicio, horizonte)
     )
     meses_anclados: frozenset[str] = frozenset()
+    marcas: dict[str, str] = {}
+    sin_mapear: list[str] = []
     if anclas:
         aj = anclar(
             resultado=r,
@@ -370,24 +395,30 @@ async def _resultado_con(
         # D2 solo excluye los meses CERRADOS (el pasado es del libro; su factura ya no
         # está pendiente). E1 NO ancla Auteco (sus 5 conceptos no incluyen el Auteco),
         # así que en meses no-cerrados D2 SÍ aplica el pago real, sin doble conteo
-        # (campos disjuntos, deltas aditivos). El set completo de anclados queda como
-        # `frozenset(anclas)` para las marcas de origen de la UI en P5 — no se da a D2.
+        # (campos disjuntos, deltas aditivos).
         meses_anclados = frozenset(m for m, a in anclas.items() if a.estado == CERRADO)
-        # B10 (P4): marca de origen por mes + log de los cerrados sospechosos (ejecutado
-        # << definido). Solo observabilidad — la exposición en la respuesta es P5, y la
-        # marca NUNCA cambia el régimen (un sospechoso sigue anclado y excluido de D2).
+        # P5 — marcas de origen (todas) + rubros sin concepto, para el shape aditivo.
+        marcas = marcas_origen(anclas, rubros=rubros_e1, neutros_ids=neutros_e1)
+        sin_mapear = rubros_sin_mapear(anclas, rubros=rubros_e1, neutros_ids=neutros_e1)
+        # B10 (P4): log de los cerrados sospechosos (ejecutado << definido). Solo
+        # observabilidad — la marca NUNCA cambia el régimen (un sospechoso sigue anclado
+        # y excluido de D2, protege C-1).
         sospechosos = sorted(
-            m
-            for m, marca in marcas_origen(
-                anclas, rubros=rubros_e1, neutros_ids=neutros_e1
-            ).items()
-            if marca == "cerrado_sospechoso"
+            m for m, mk in marcas.items() if mk == "cerrado_sospechoso"
         )
         if sospechosos:
             _log.warning(
                 "E1 B10: mes(es) cerrado(s) sospechoso(s) (ejecutado << definido): %s",
                 sospechosos,
             )
+
+    # P5/B13 — completitud del mes en curso (Mongo). None con anclas_override (tests) o
+    # cuando ningún mes del horizonte está en ejecución. Independiente del anclaje.
+    completitud = (
+        None
+        if anclas_override is not None
+        else await cargar_completitud_mes_en_curso(mes_inicio, horizonte)
+    )
 
     facturas = (
         facturas_override
@@ -400,7 +431,10 @@ async def _resultado_con(
             r, facturas, params.caja_minima, meses_anclados=meses_anclados
         )
         r = _kpis_a_resultado(rec.ajustado)
-    return r, params.caja_minima, fondo, rec
+    meta = AnclajeMeta(
+        meses_anclados=marcas, sin_mapear=sin_mapear, mes_en_curso=completitud
+    )
+    return r, params.caja_minima, fondo, rec, meta
 
 
 async def _proyectar_con(
@@ -414,7 +448,7 @@ async def _proyectar_con(
 ) -> dict:
     """Serializa la proyección de `_resultado_con` (mismo shape que GET /proyeccion),
     marcando la ventana reconciliada y el interés de obligaciones (§4)."""
-    r, caja_min, fondo, rec = await _resultado_con(
+    r, caja_min, fondo, rec, meta = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -422,7 +456,7 @@ async def _proyectar_con(
         horizonte_meses=horizonte_meses,
         caja_inicial_override=caja_inicial_override,
     )
-    return _serializar(r, escenario, caja_min, fondo, rec)
+    return _serializar(r, escenario, caja_min, fondo, rec, meta=meta)
 
 
 async def proyectar_vigente(
@@ -511,7 +545,7 @@ async def valles_vigente(
     """D1 §3 — los valles (hitos) de la proyección vigente: mínimos de caja relevantes
     con sus causas. Lectura pura sobre la config vigente."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, _, _ = await _resultado_con(
+    r, caja_min, _, _, _ = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -537,7 +571,7 @@ async def proyectar_impactos(
     ESCRIBE). Devuelve ambas series con el shape de GET /proyeccion, los valles de cada
     una y el delta de flujo por mes. Con `ajustes` vacío, ajustada == base bit a bit."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, fondo, _ = await _resultado_con(
+    r, caja_min, fondo, _, meta = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -548,8 +582,8 @@ async def proyectar_impactos(
     r_aj = _kpis_a_resultado(ajustado)
     return {
         "escenario": escenario,
-        "base": _serializar(r, escenario, caja_min, fondo),
-        "ajustada": _serializar(r_aj, escenario, caja_min, fondo),
+        "base": _serializar(r, escenario, caja_min, fondo, meta=meta),
+        "ajustada": _serializar(r_aj, escenario, caja_min, fondo, meta=meta),
         "valles_base": [
             _serializar_valle(v) for v in detectar_valles(r.meses, caja_min)
         ],
@@ -574,7 +608,7 @@ async def resolver(
     """D1 §5 — solvers por bisección sobre la proyección vigente + los `ajustes` en
     pantalla. Compute-only. `objetivo` ∈ {techo_gasto, goal_seek, punto_quiebre}."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, _, _ = await _resultado_con(
+    r, caja_min, _, _, _ = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -644,7 +678,7 @@ async def simular_plazo(
         replace(f, plazo_elegido_dias=max(plazo_dias, f.plazo_base_dias))
         for f in reales
     ]
-    r, _caja, _fondo, rec = await _resultado_con(
+    r, _caja, _fondo, rec, _ = await _resultado_con(
         params,
         modelos,
         escenario=escenario,

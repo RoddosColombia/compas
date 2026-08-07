@@ -42,6 +42,7 @@ from app.proyeccion.motor import _meses_del_horizonte
 
 _CERO = Decimal("0")
 _log = logging.getLogger(__name__)
+_FORMULA_MES_EN_CURSO = "ejecutado + max(0, definido - ejecutado) por concepto"
 
 
 async def _rubros_info() -> list[RubroInfo]:
@@ -154,3 +155,35 @@ async def cargar_anclas(
                 )
             # futuro sin definido → omitido (motor)
     return anclas, rubros, neutros_ids
+
+
+async def cargar_completitud_mes_en_curso(
+    mes_inicio: tuple[int, int], horizonte: int
+) -> dict | None:
+    """B13 — completitud del mes EN EJECUCIÓN del horizonte: hasta qué día está cargado
+    (fecha máxima de transacción) y con qué fórmula se arma (Regla A/D-08). `None` si
+    ningún mes del horizonte está en ejecución. `cargado_hasta`/`dia` son `None` si el
+    mes existe pero aún no tiene transacciones. Consulta aparte de `cargar_anclas` (no
+    altera su contrato); corre 1× por request (ver B-1)."""
+    meses = [f"{a:04d}-{m:02d}" for a, m in _meses_del_horizonte(mes_inicio, horizonte)]
+    claves = [f"{m}-01" for m in meses]
+    en_curso = await MesControl.find(
+        In(MesControl.mes, claves),
+        MesControl.estado == EstadoMes.EN_EJECUCION,
+    ).to_list()
+    if not en_curso:
+        return None
+    mc = min(en_curso, key=lambda x: x.mes)  # el más temprano, por determinismo
+    ultima = (
+        await Transaccion.find(Transaccion.mes_id == mc.id)
+        .sort(-Transaccion.fecha)
+        .limit(1)
+        .to_list()
+    )
+    cargado_hasta = ultima[0].fecha if ultima else None
+    return {
+        "mes": mc.mes[:7],
+        "cargado_hasta": cargado_hasta,
+        "dia": int(cargado_hasta[8:10]) if cargado_hasta else None,
+        "formula": _FORMULA_MES_EN_CURSO,
+    }
