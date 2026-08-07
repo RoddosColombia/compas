@@ -16,12 +16,14 @@ export type MarcaOrigen =
   | "en_ejecucion"
   | "presupuesto";
 
-// B13 — completitud del mes en ejecución.
+// B13 — completitud del mes en ejecución + comparación (P6-b).
 export interface MesEnCurso {
   mes: string; // 'YYYY-MM'
   cargado_hasta: string | null; // 'YYYY-MM-DD' | null si aún sin tx
   dia: number | null;
   formula: string; // fórmula técnica del backend (Regla A)
+  ejecutado: string; // Σ egresos reales del mes a la fecha (COP)
+  proyectado: string; // Σ presupuesto definido del mes (COP)
 }
 
 export interface MesProyeccion {
