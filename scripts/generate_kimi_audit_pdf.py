@@ -23,6 +23,7 @@ la ronda: planning/phases/<fase>/auditorias/<RONDA>/PAQUETE.pdf).
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -39,10 +40,29 @@ TRACKER = REPO_ROOT / "docs" / "COMPAS_Control_Desarrollo.xlsx"
 
 # fpdf2 con fuentes core codifica latin-1. Mapear lo que no es latin-1 a ASCII.
 _REPLACEMENTS = {
-    "—": "-", "–": "-", "→": "->", "←": "<-", "≥": ">=", "≤": "<=",
-    "•": "-", "·": "-", "…": "...", "“": '"', "”": '"', "‘": "'", "’": "'",
-    "✅": "[OK]", "❌": "[X]", "⚠": "[!]", "🟢": "[VER]", "🟡": "[AMA]",
-    "🔴": "[ROJ]", "✔": "[OK]", "✖": "[X]", "≡": "=", "×": "x",
+    "—": "-",
+    "–": "-",
+    "→": "->",
+    "←": "<-",
+    "≥": ">=",
+    "≤": "<=",
+    "•": "-",
+    "·": "-",
+    "…": "...",
+    "“": '"',
+    "”": '"',
+    "‘": "'",
+    "’": "'",
+    "✅": "[OK]",
+    "❌": "[X]",
+    "⚠": "[!]",
+    "🟢": "[VER]",
+    "🟡": "[AMA]",
+    "🔴": "[ROJ]",
+    "✔": "[OK]",
+    "✖": "[X]",
+    "≡": "=",
+    "×": "x",
 }
 
 
@@ -82,8 +102,22 @@ class PDF(FPDF):
         self.set_text_color(0)
 
 
-def _write_markdown(pdf: PDF, text: str) -> None:
+_IMG_RE = re.compile(r"^!\[[^\]]*\]\(([^)]+)\)\s*$")
+
+
+def _write_markdown(pdf: PDF, text: str, base: Path | None = None) -> None:
     for raw in text.splitlines():
+        # Imagen embebida ![alt](ruta) — ruta relativa a la carpeta del .md. Se centra y
+        # se ajusta al ancho útil (evidencia visual auto-contenida en el PDF).
+        m = _IMG_RE.match(raw.strip())
+        if m and base is not None:
+            img = (base / m.group(1)).resolve()
+            if img.exists():
+                w = pdf.w - pdf.l_margin - pdf.r_margin
+                x = pdf.l_margin
+                pdf.image(str(img), x=x, w=w)
+                pdf.ln(3)
+                continue
         line = sanitize(raw.rstrip())
         if not line:
             pdf.ln(3)
@@ -128,7 +162,9 @@ def _append_tracker_extract(pdf: PDF) -> None:
 def main() -> None:
     args = sys.argv[1:]
     if not args:
-        sys.exit("Uso: python scripts/generate_kimi_audit_pdf.py <SOLICITUD.md> [más.md ...] [salida.pdf]")
+        sys.exit(
+            "Uso: python scripts/generate_kimi_audit_pdf.py <SOLICITUD.md> [más.md ...] [salida.pdf]"
+        )
 
     out_arg = args[-1] if args[-1].lower().endswith(".pdf") else None
     md_args = args[:-1] if out_arg else args
@@ -149,7 +185,7 @@ def main() -> None:
     pdf.set_auto_page_break(auto=True, margin=15)
     for i, md in enumerate(md_files):
         pdf.add_page()
-        _write_markdown(pdf, md.read_text(encoding="utf-8"))
+        _write_markdown(pdf, md.read_text(encoding="utf-8"), base=md.parent)
     _append_tracker_extract(pdf)
 
     # Rúbrica
@@ -158,14 +194,18 @@ def main() -> None:
     pdf.multi_cell(0, 7, "Rubrica", **_NL)
     pdf.set_font("helvetica", "", 10)
     pdf.multi_cell(
-        0, 5,
-        _fit(pdf, sanitize(
-            "Umbral de aprobacion: >= 9.0 (plan y codigo). "
-            "Kimi es auditor adversarial: no genera codigo. "
-            "Auditar con lupa los 'puntos a auditar', el cumplimiento de las reglas "
-            "innegociables de CLAUDE.md y del DoD (Spec 5). "
-            "Veredicto: APROBADO (>= 9.0, sin P0/P1) o RECHAZADO con hallazgos accionables."
-        )),
+        0,
+        5,
+        _fit(
+            pdf,
+            sanitize(
+                "Umbral de aprobacion: >= 9.0 (plan y codigo). "
+                "Kimi es auditor adversarial: no genera codigo. "
+                "Auditar con lupa los 'puntos a auditar', el cumplimiento de las reglas "
+                "innegociables de CLAUDE.md y del DoD (Spec 5). "
+                "Veredicto: APROBADO (>= 9.0, sin P0/P1) o RECHAZADO con hallazgos accionables."
+            ),
+        ),
     )
 
     pdf.output(str(out))
