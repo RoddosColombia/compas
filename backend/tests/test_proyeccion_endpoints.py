@@ -185,6 +185,23 @@ async def _seed_mes_cerrado_con_ingreso():
     porclas = await Rubro(
         grupo="otros", nombre="Por clasificar", orden=97, es_sistema=True
     ).insert()
+    # E1·P3: al anclar el mes cerrado, la taxonomía debe traer los 9 códigos del mapeo
+    # (B12 fail-loud; en PROD existen por C1). Sin esto la proyección anclada rompería.
+    _plan = [
+        ("0110", "ingresos_operativos", TipoFlujo.INGRESO),
+        ("1010", "costo_producto", TipoFlujo.EGRESO),
+        ("1020", "costo_producto", TipoFlujo.EGRESO),
+        ("1030", "costo_producto", TipoFlujo.EGRESO),
+        ("4010", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4020", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4030", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4050", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("5060", "otros", TipoFlujo.EGRESO),
+    ]
+    for i, (cod, grupo, flujo) in enumerate(_plan):
+        await Rubro(
+            grupo=grupo, nombre=f"Rubro {cod}", codigo=cod, tipo_flujo=flujo, orden=i
+        ).insert()
     mc = await MesControl(
         mes="2026-06-01",
         estado="cerrado",

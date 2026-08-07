@@ -30,6 +30,9 @@ from app.obligaciones.reconciliacion import (
     reconciliar,
 )
 from app.parametros_proyeccion import service as parametros_service
+from app.proyeccion.ejecucion.lectura import RubroInfo
+from app.proyeccion.ejecucion.loader import cargar_anclas
+from app.proyeccion.ejecucion.service import AnclaMes, anclar
 from app.proyeccion.impactos import Ajuste, aplicar_impactos
 from app.proyeccion.motor import (
     PRESETS_ESCENARIO,
@@ -307,12 +310,24 @@ async def _resultado_con(
     horizonte_meses: int | None,
     caja_inicial_override: object | None = None,
     facturas_override: list[FacturaReconciliar] | None = None,
+    anclas_override: tuple[dict[str, AnclaMes], list[RubroInfo], set[str]]
+    | None = None,
 ) -> tuple[ResultadoProyeccion, object, list, ResultadoReconciliado | None]:
-    """La tubería completa (cartera previa + IVA + motor + reconciliación D2) sobre un
-    set de parámetros DADO. Devuelve el ResultadoProyeccion CRUDO ya RECONCILIADO (las
-    facturas reales netean el Auteco paramétrico, §4) + umbral + fondo + la meta de
-    reconciliación (ventana/interés). Sin facturas activas la reconciliación es no-op
-    (base bit a bit): preview/vigente siguen idénticos por test."""
+    """La tubería completa sobre un set de parámetros DADO, en el orden de precedencia
+    `motor → EJECUCIÓN (E1) → OBLIGACIONES (D2) → IMPACTOS (D1)`:
+
+    1. `proyectar` — el motor paramétrico (R0, nunca se toca).
+    2. **E1 (anclaje):** sobre-escribe las líneas de los meses cerrados/en ejecución con
+       la ejecución real y re-acumula la caja (`ejecucion.service.anclar`). Composición
+       con COCK-09: COCK-09 ancla la caja inicial; E1 ancla las LÍNEAS y re-acumula
+       desde ahí — no hay doble anclaje. Con `anclas` vacío, la base bit a bit.
+    3. **D2 (reconciliación):** netea el Auteco paramétrico contra las facturas reales,
+       EXCLUYENDO los meses que E1 ya ancló (`meses_anclados`) para no contar dos veces.
+
+    Devuelve el ResultadoProyeccion crudo (anclado + reconciliado) + umbral + fondo + la
+    meta de reconciliación. Sin anclaje ni facturas es la base bit a bit (preview y
+    vigente idénticos por test). `anclas_override`/`facturas_override` inyectan insumos
+    deterministas en los tests (evitan Mongo)."""
     horizonte = horizonte_meses or params.horizonte_meses
     if horizonte < 1 or horizonte > HORIZONTE_MAX:
         raise ProyeccionError(
@@ -332,6 +347,25 @@ async def _resultado_con(
         caja_inicial_override,
     )
     r = proyectar(pm)
+
+    # E1 (P3) — anclar a la ejecución real ANTES de la reconciliación D2.
+    anclas, rubros_e1, neutros_e1 = (
+        anclas_override
+        if anclas_override is not None
+        else await cargar_anclas(mes_inicio, horizonte)
+    )
+    meses_anclados: frozenset[str] = frozenset()
+    if anclas:
+        aj = anclar(
+            resultado=r,
+            caja_minima=params.caja_minima,
+            anclas=anclas,
+            rubros=rubros_e1,
+            neutros_ids=neutros_e1,
+        )
+        r = _kpis_a_resultado(aj)
+        meses_anclados = frozenset(anclas)
+
     facturas = (
         facturas_override
         if facturas_override is not None
@@ -339,7 +373,9 @@ async def _resultado_con(
     )
     rec: ResultadoReconciliado | None = None
     if facturas:
-        rec = reconciliar(r, facturas, params.caja_minima)
+        rec = reconciliar(
+            r, facturas, params.caja_minima, meses_anclados=meses_anclados
+        )
         r = _kpis_a_resultado(rec.ajustado)
     return r, params.caja_minima, fondo, rec
 
