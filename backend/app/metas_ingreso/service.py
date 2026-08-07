@@ -8,7 +8,6 @@ meta activa por mes."""
 from decimal import Decimal
 
 from beanie import PydanticObjectId
-from beanie.operators import In
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
@@ -16,12 +15,15 @@ from app.core.money import Money
 from app.core.time import now_bogota
 from app.domain.mes_control import MesControl
 from app.domain.obligacion import LineaMeta, MetaIngreso
-from app.domain.rubro import Rubro
 
-# El set de neutros vive en `app.domain.rubros_neutros` (E1 lo comparte — una verdad,
-# un lugar); se re-exporta aquí para no romper los importadores existentes.
+# El set de neutros Y su resolver nombre→id viven en `app.domain.rubros_neutros` (E1 lo
+# comparte — una verdad, un lugar); se re-exportan aquí para no romper los importadores
+# existentes (metas_ingreso.service._ids_rubros_neutros sigue disponible).
 from app.domain.rubros_neutros import (
     RUBROS_NEUTROS_INGRESO_REAL as RUBROS_NEUTROS_INGRESO_REAL,
+)
+from app.domain.rubros_neutros import (
+    _ids_rubros_neutros as _ids_rubros_neutros,
 )
 from app.domain.transaccion import TipoFlujo, Transaccion
 
@@ -140,15 +142,6 @@ async def eliminar_meta(*, meta_id: str, usuario_id: str) -> None:
         meta.activo = True
         await meta.save()
         raise
-
-
-async def _ids_rubros_neutros() -> set[PydanticObjectId]:
-    """IDs de los rubros neutros (por nombre) presentes en la BD. Vacío si ninguno
-    existe todavía (p. ej. antes de FIX-B) → la exclusión es inocua."""
-    return {
-        r.id
-        async for r in Rubro.find(In(Rubro.nombre, list(RUBROS_NEUTROS_INGRESO_REAL)))
-    }
 
 
 async def ingreso_real(mes: str) -> Decimal | None:

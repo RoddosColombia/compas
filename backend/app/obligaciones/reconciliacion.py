@@ -54,7 +54,17 @@ def reconciliar(
     resultado: ResultadoProyeccion,
     facturas: list[FacturaReconciliar],
     caja_minima: Decimal,
+    *,
+    meses_anclados: frozenset[str] = frozenset(),
 ) -> ResultadoReconciliado:
+    """`meses_anclados` (E1·P3): SOLO los meses CERRADOS quedan fuera de esta
+    reconciliación — el pasado es del libro (sus facturas ya no están pendientes). En
+    los meses NO cerrados D2 SÍ aplica el pago real: E1 no ancla Auteco (sus 5
+    conceptos excluyen pago_inventario/fondeo y en su delta el paramétrico se cancela),
+    así que aplicar la factura ahí compone limpio, sin doble conteo (campos disjuntos,
+    deltas aditivos). Por eso el llamador solo pasa los meses cerrados, no todos los
+    anclados. Precedencia `motor → EJECUCIÓN (E1) → OBLIGACIONES (D2) → IMPACTOS (D1)`.
+    Con `meses_anclados` vacío la serie es idéntica a hoy (candado de no-regresión)."""
     base = resultado.meses
     n = len(base)
     idx = {fila.mes: i for i, fila in enumerate(base)}
@@ -73,8 +83,8 @@ def reconciliar(
         cap[p.mes] = _cop(cap.get(p.mes, _CERO) + p.capital)
         interes[p.mes] = _cop(interes.get(p.mes, _CERO) + p.interes)
 
-    # solo los pagos que caen DENTRO del horizonte proyectado cuentan para la ventana
-    meses_pago = sorted(m for m in cap if m in idx)
+    # solo los pagos DENTRO del horizonte y NO anclados por E1 cuentan para la ventana
+    meses_pago = sorted(m for m in cap if m in idx and m not in meses_anclados)
     if not meses_pago:
         return ResultadoReconciliado(
             ajustado=reacumular(resultado, [_CERO] * n, caja_minima),
@@ -90,6 +100,8 @@ def reconciliar(
     deltas = [_CERO] * n
     for m in range(i_desde, i_hasta + 1):
         fila = base[m]
+        if fila.mes in meses_anclados:
+            continue  # anclado por E1 → D2 no lo toca (evita doble conteo)
         # pago_inventario y fondeo son NEGATIVOS (egresos); netearlos = sumar su opuesto
         deltas[m] = _cop(deltas[m] - fila.pago_inventario - fila.fondeo)
     for mes in meses_pago:
@@ -109,6 +121,8 @@ def reconciliar(
     filas = list(ajustado.meses)
     for m in range(i_desde, i_hasta + 1):
         mes = base[m].mes
+        if mes in meses_anclados:
+            continue  # anclado por E1 → conserva lo que E1 escribió, D2 no reescribe
         filas[m] = replace(
             filas[m],
             pago_inventario=_cop(-cap.get(mes, _CERO)),
