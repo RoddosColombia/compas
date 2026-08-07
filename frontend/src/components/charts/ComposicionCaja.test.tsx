@@ -110,4 +110,35 @@ describe("ComposicionCaja — V1 §2", () => {
     expect(linea.textContent).not.toMatch(/proyectado/);
     expect(screen.getByText("Moto nueva")).toBeInTheDocument();
   });
+
+  // E1·P6 — la línea de caja se parte: sólida (real/en curso) → punteada (proyección).
+  it("sin anclaje dibuja una sola línea de caja (candado, como hoy)", () => {
+    const { container } = renderChart();
+    expect(container.querySelectorAll("polyline[data-caja]").length).toBe(1);
+  });
+
+  it("con meses anclados parte la línea en sólida + punteada", () => {
+    const { container } = render(
+      <ComposicionCaja
+        meses={MESES}
+        umbral="125000000.00"
+        ventanaReconciliada={null}
+        mesesAnclados={{ "2026-10": "cerrado" }}
+      />,
+    );
+    // sólida (anclado hasta 2026-10) + punteada (2027-01 proyección) = 2 tramos
+    expect(container.querySelectorAll("polyline[data-caja]").length).toBe(2);
+  });
+
+  it("marca con un punto de alerta el mes cerrado_sospechoso", () => {
+    const { container } = render(
+      <ComposicionCaja
+        meses={MESES}
+        umbral="125000000.00"
+        ventanaReconciliada={null}
+        mesesAnclados={{ "2026-10": "cerrado_sospechoso" }}
+      />,
+    );
+    expect(container.querySelector("circle[data-sospechoso]")).not.toBeNull();
+  });
 });

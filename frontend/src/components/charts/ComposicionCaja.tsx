@@ -19,13 +19,22 @@ import {
   puntosComposicion,
 } from "@/lib/egreso";
 import { formatCOPCompact, formatCOPEntero, parseMonto } from "@/lib/money";
-import type { MesProyeccion } from "@/lib/proyeccion";
+import type { MarcaOrigen, MesProyeccion } from "@/lib/proyeccion";
 import { cn } from "@/lib/utils";
+
+// E1·P6 — marcas que representan cifra ANCLADA (real o mes en curso): la línea de caja
+// va SÓLIDA hasta el último de estos meses y PUNTEADA (proyección) de ahí en adelante.
+const MARCAS_ANCLADAS = new Set<MarcaOrigen>([
+  "cerrado",
+  "cerrado_sospechoso",
+  "en_ejecucion",
+]);
 
 interface ComposicionCajaProps {
   meses: MesProyeccion[];
   umbral: string;
   ventanaReconciliada: [string, string] | null;
+  mesesAnclados?: Record<string, MarcaOrigen>;
 }
 
 const W = 900;
@@ -40,6 +49,7 @@ export function ComposicionCaja({
   meses,
   umbral,
   ventanaReconciliada,
+  mesesAnclados = {},
 }: ComposicionCajaProps) {
   const [hover, setHover] = useState<number | null>(null);
   if (meses.length < 1) return null;
@@ -83,7 +93,27 @@ export function ComposicionCaja({
   const cMax = hi + margen;
   const spanCaja = cMax - cMin || 1;
   const yCaja = (v: number) => cajaY1 - ((v - cMin) / spanCaja) * cajaH;
-  const lineaCaja = cajas.map((v, i) => `${cx(i)},${yCaja(v)}`).join(" ");
+  const puntosCaja = cajas.map((v, i) => `${cx(i)},${yCaja(v)}`);
+  // E1·P6 — partir la línea: sólida hasta el último mes anclado (real/en curso),
+  // punteada de ahí en adelante (proyección). Sin anclaje → una sola línea (candado).
+  let corte = -1;
+  for (let i = 0; i < meses.length; i++) {
+    if (MARCAS_ANCLADAS.has(mesesAnclados[meses[i].mes] as MarcaOrigen))
+      corte = i;
+  }
+  const cajaSolida =
+    corte >= 0
+      ? puntosCaja.slice(0, corte + 1).join(" ")
+      : puntosCaja.join(" ");
+  const cajaPunteada =
+    corte >= 0 && corte < puntosCaja.length - 1
+      ? puntosCaja
+          .slice(corte)
+          .join(" ") // solapa en el corte para continuidad
+      : "";
+  const sospIdx = meses.findIndex(
+    (m) => mesesAnclados[m.mes] === "cerrado_sospechoso",
+  );
 
   const ticksBar = [maxBar, maxBar / 2, 0];
   const ticksCaja = [cMin, (cMin + cMax) / 2, cMax];
@@ -256,14 +286,35 @@ export function ComposicionCaja({
           umbral
         </text>
 
-        {/* línea de caja acumulada */}
+        {/* línea de caja acumulada — sólida (real/en curso) → punteada (proyección) */}
         <polyline
-          points={lineaCaja}
+          data-caja
+          points={cajaSolida}
           fill="none"
           className="stroke-cyan"
           strokeWidth={2.5}
           vectorEffect="non-scaling-stroke"
         />
+        {cajaPunteada && (
+          <polyline
+            data-caja
+            points={cajaPunteada}
+            fill="none"
+            className="stroke-ink-decor"
+            strokeWidth={2}
+            strokeDasharray="7 5"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {sospIdx >= 0 && (
+          <circle
+            data-sospechoso
+            cx={cx(sospIdx)}
+            cy={yCaja(cajas[sospIdx])}
+            r={5}
+            className="fill-atencion"
+          />
+        )}
 
         {/* anotación: mes de MENOR caja (A4) — siempre existe */}
         <g>
