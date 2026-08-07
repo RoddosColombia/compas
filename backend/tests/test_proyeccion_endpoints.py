@@ -287,3 +287,90 @@ async def test_modelo_baja_logica_y_reactivar(api):
         f"/api/v1/modelos-moto/{mid}", json={"activo": False}, headers=h
     )
     assert r.status_code == 422
+
+
+async def _seed_mes_en_ejecucion():
+    # E1·P5/B13: un mes EN_EJECUCION con transacciones cargadas hasta el día 6.
+    # Trae los 9 códigos del mapeo (B12 fail-loud al anclar) + un rubro de gasto.
+    from decimal import Decimal
+
+    from app.domain.bancos import Banco
+    from app.domain.mes_control import MesControl
+    from app.domain.rubro import Rubro, TipoFlujo
+    from app.domain.transaccion import Transaccion
+
+    _plan = [
+        ("0110", "ingresos_operativos", TipoFlujo.INGRESO),
+        ("1010", "costo_producto", TipoFlujo.EGRESO),
+        ("1020", "costo_producto", TipoFlujo.EGRESO),
+        ("1030", "costo_producto", TipoFlujo.EGRESO),
+        ("4010", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4020", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4030", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4050", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("5060", "otros", TipoFlujo.EGRESO),
+    ]
+    for i, (cod, grupo, flujo) in enumerate(_plan):
+        await Rubro(
+            grupo=grupo, nombre=f"Rubro {cod}", codigo=cod, tipo_flujo=flujo, orden=i
+        ).insert()
+    arriendos = await Rubro(
+        grupo="operacion",
+        nombre="Arriendos",
+        codigo="2010",
+        tipo_flujo=TipoFlujo.EGRESO,
+        orden=99,
+    ).insert()
+    mc = await MesControl(
+        mes="2026-08-01",
+        estado="en_ejecucion",
+        saldo_inicial_caja=Decimal("10000000"),
+    ).insert()
+    for j, f in enumerate(("2026-08-02", "2026-08-06", "2026-08-04")):
+        await Transaccion(
+            fecha=f,
+            descripcion="gasto",
+            valor=Decimal("100000"),
+            tipo_flujo=TipoFlujo.EGRESO,
+            rubro_id=arriendos.id,
+            mes_id=mc.id,
+            banco=Banco.MANUAL,
+            id_banco=f"MAN-P5B13TEST0000000000000000{j}",
+        ).insert()
+
+
+@pytest.mark.asyncio
+async def test_proyeccion_expone_claves_aditivas_sin_ciclo(api):
+    """Foto sin ciclo: las 3 claves nuevas salen en su forma vacía; el resto del payload
+    conserva sus claves (aditivo, no rompe consumidores)."""
+    await _setup_config(api)
+    h = await _token(api, "consulta@roddos.com")
+    r = await api.get("/api/v1/proyeccion", headers=h)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["meses_anclados"] == {}
+    assert data["sin_mapear"] == []
+    assert data["mes_en_curso"] is None
+    for k in ("escenario", "meses", "caja_final", "caja_minima", "piso_caja"):
+        assert k in data
+
+
+@pytest.mark.asyncio
+async def test_proyeccion_mes_en_curso_b13(api):
+    """B13: con un mes EN_EJECUCION cargado, mes_en_curso trae completitud + fórmula, y
+    meses_anclados lo marca 'en_ejecucion'."""
+    await _setup_config(api)
+    await _seed_mes_en_ejecucion()
+    h = await _token(api, "consulta@roddos.com")
+    r = await api.get(
+        "/api/v1/proyeccion?mes_inicio=2026-08&horizonte_meses=3", headers=h
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["meses_anclados"]["2026-08"] == "en_ejecucion"
+    mec = data["mes_en_curso"]
+    assert mec is not None
+    assert mec["mes"] == "2026-08"
+    assert mec["cargado_hasta"] == "2026-08-06"
+    assert mec["dia"] == 6
+    assert mec["formula"] == "ejecutado + max(0, definido - ejecutado) por concepto"
