@@ -32,7 +32,7 @@ from app.obligaciones.reconciliacion import (
 from app.parametros_proyeccion import service as parametros_service
 from app.proyeccion.ejecucion.lectura import RubroInfo
 from app.proyeccion.ejecucion.loader import cargar_anclas
-from app.proyeccion.ejecucion.service import AnclaMes, anclar
+from app.proyeccion.ejecucion.service import CERRADO, AnclaMes, anclar
 from app.proyeccion.impactos import Ajuste, aplicar_impactos
 from app.proyeccion.motor import (
     PRESETS_ESCENARIO,
@@ -364,7 +364,12 @@ async def _resultado_con(
             neutros_ids=neutros_e1,
         )
         r = _kpis_a_resultado(aj)
-        meses_anclados = frozenset(anclas)
+        # D2 solo excluye los meses CERRADOS (el pasado es del libro; su factura ya no
+        # está pendiente). E1 NO ancla Auteco (sus 5 conceptos no incluyen el Auteco),
+        # así que en meses no-cerrados D2 SÍ aplica el pago real, sin doble conteo
+        # (campos disjuntos, deltas aditivos). El set completo de anclados queda como
+        # `frozenset(anclas)` para las marcas de origen de la UI en P5 — no se da a D2.
+        meses_anclados = frozenset(m for m, a in anclas.items() if a.estado == CERRADO)
 
     facturas = (
         facturas_override

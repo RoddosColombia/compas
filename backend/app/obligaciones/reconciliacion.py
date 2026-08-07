@@ -57,13 +57,14 @@ def reconciliar(
     *,
     meses_anclados: frozenset[str] = frozenset(),
 ) -> ResultadoReconciliado:
-    """`meses_anclados` (E1·P3): los meses que la capa de anclaje ya fijó a la ejecución
-    real quedan FUERA de esta reconciliación — ni se netea su Auteco paramétrico ni se
-    aplican sus pagos reales aquí (esa realidad ya la puso E1; tocarla sería doble
-    conteo). Precedencia `motor → EJECUCIÓN (E1) → OBLIGACIONES (D2) → IMPACTOS (D1)`.
-    Composición con COCK-09: COCK-09 ancla la caja inicial; E1 ancla las líneas de los
-    meses cerrados/en ejecución y re-acumula desde ahí — no hay doble anclaje. Con
-    `meses_anclados` vacío la serie es idéntica a hoy (candado de no-regresión)."""
+    """`meses_anclados` (E1·P3): SOLO los meses CERRADOS quedan fuera de esta
+    reconciliación — el pasado es del libro (sus facturas ya no están pendientes). En
+    los meses NO cerrados D2 SÍ aplica el pago real: E1 no ancla Auteco (sus 5
+    conceptos excluyen pago_inventario/fondeo y en su delta el paramétrico se cancela),
+    así que aplicar la factura ahí compone limpio, sin doble conteo (campos disjuntos,
+    deltas aditivos). Por eso el llamador solo pasa los meses cerrados, no todos los
+    anclados. Precedencia `motor → EJECUCIÓN (E1) → OBLIGACIONES (D2) → IMPACTOS (D1)`.
+    Con `meses_anclados` vacío la serie es idéntica a hoy (candado de no-regresión)."""
     base = resultado.meses
     n = len(base)
     idx = {fila.mes: i for i, fila in enumerate(base)}

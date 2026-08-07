@@ -186,3 +186,60 @@ async def test_b8_b11_candado_composicion(db):
 
     # E1 corrió: el mes anclado tomó el ingreso real anclado.
     assert a["2026-10"].neto == Decimal("123456.00")
+
+
+def _anclas_no_cerrado(estado):
+    """Ancla 2026-10 en un régimen NO cerrado con un egreso NO-Auteco (int_deuda vía
+    4010). en_ejecucion usa Regla A (ejec+max(0,def-ejec)); presupuesto solo definido.
+    Ambos → int_deuda anclado = 800 (→ -800.00). E1 NO toca Auteco en ningún caso."""
+    if estado == "en_ejecucion":
+        ancla = AnclaMes(
+            estado="en_ejecucion",
+            ejecutado_por_rubro_id={"4010": Decimal("500")},
+            definido_por_rubro_id={"4010": Decimal("800")},
+            ingreso_real=None,
+        )
+    else:  # presupuesto
+        ancla = AnclaMes(
+            estado="presupuesto",
+            ejecutado_por_rubro_id={},
+            definido_por_rubro_id={"4010": Decimal("800")},
+            ingreso_real=None,
+        )
+    return {"2026-10": ancla}, _rubros(), set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("estado", ["en_ejecucion", "presupuesto"])
+async def test_c1_d2_aplica_pago_real_en_mes_anclado_no_cerrado(db, estado):
+    """C-1 (gate PR3-I): E1 no ancla Auteco, así que en un mes anclado NO cerrado D2 SÍ
+    debe aplicar el pago real de la factura (sin doble conteo — campos disjuntos) y
+    conservar los campos que E1 ancló. Antes del fix, meses_anclados=frozenset(anclas)
+    excluía estos meses y el pago real de FIX-K desaparecía de la proyección."""
+    a = await _correr(_anclas_no_cerrado(estado), _facturas())  # con facturas
+    b = await _correr(_anclas_no_cerrado(estado), [])  # sin facturas (referencia)
+    cap_oct = pago_factura(
+        fecha_factura="2026-08-15",
+        valor=Decimal("1000000"),
+        plazo_elegido_dias=60,
+        plazo_base_dias=30,
+        tasa_excedente_mensual=Decimal("0.016"),
+    )
+    cap_dic = pago_factura(
+        fecha_factura="2026-08-15",
+        valor=Decimal("2000000"),
+        plazo_elegido_dias=120,
+        plazo_base_dias=30,
+        tasa_excedente_mensual=Decimal("0.016"),
+    )
+
+    # EL FIX — D2 aplica el pago REAL en el mes anclado no-cerrado (antes: excluido).
+    assert a["2026-10"].pago_inventario == Decimal(f"-{cap_oct.capital}")
+    assert a["2026-10"].fondeo == Decimal(f"-{cap_oct.interes}")
+
+    # E1 ancló int_deuda (=800 → -800.00) y D2 NO lo tocó (campos disjuntos).
+    assert a["2026-10"].int_deuda == Decimal("-800.00")
+    assert a["2026-10"].int_deuda == b["2026-10"].int_deuda
+
+    # 2026-12 (no anclado) reconcilia normal.
+    assert a["2026-12"].pago_inventario == Decimal(f"-{cap_dic.capital}")
