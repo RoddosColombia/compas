@@ -1,14 +1,57 @@
-# EVIDENCIA — E1 PR3-I (código real + salidas de tests)
+# EVIDENCIA — E1 PR3-I + P3.1 (código real + salidas de tests)
 
-Acompaña a `SOLICITUD.md`. Contiene el **diff completo** contra `origin/main` y las
-**salidas reales** de tests, ruff y la prueba R0. PR #70 · commit `f8e21d1`.
+Acompaña a `SOLICITUD.md` y `ADDENDUM-P3.1.md`. Incluye el **diff completo** contra
+`origin/main` (ya con la corrección C-1) y las **salidas reales** de tests/ruff/R0.
+PR #70 · commits `f8e21d1` (P3) + `18cbdb0` (C-1/P3.1).
 
-## 1. Resumen de verificación
+## 1. Resumen de verificación (P3.1)
 
-- **pytest E1 + relacionados:** 43 passed, 1 skipped (variante real-mongo del loader).
-- **Regresión completa del backend:** 888 passed, 92 skipped, 0 fallos (7m48s).
-- **ruff:** `All checks passed!` + `format --check` limpio (244 archivos).
+- **pytest E1 + relacionados:** 45 passed, 1 skipped (variante real-mongo del loader).
+- **Regresión completa del backend:** 890 passed, 93 skipped, 0 fallos (12m12s).
+- **ruff:** `All checks passed!` + `format --check` limpio.
 - **R0:** `git diff origin/main -- backend/app/proyeccion/motor.py` → 0 líneas.
+- **Test C-1 (nuevo):** `test_c1_d2_aplica_pago_real_en_mes_anclado_no_cerrado`
+  [en_ejecucion, presupuesto] — RED (−10.000 paramétrico) → GREEN (−1.000.000 real).
+
+---
+
+# ADDENDUM P3.1 — corrección del hallazgo C-1 (re-gate)
+
+**Gate previo:** Kimi 8.7/10 NO-GO (2026-08-07) · **Hallazgo:** C-1 (bloqueante, arquitectónico — del plan §3/B7 aprobado por el propio auditor, no de la implementación) · **Este addendum:** aplica C-1 con TDD y re-pide gate.
+
+## Qué encontró C-1
+
+`_resultado_con` pasaba a D2 `meses_anclados = frozenset(anclas)` (TODOS los regímenes: `cerrado`, `en_ejecucion`, `presupuesto`). Como E1 **nunca ancla Auteco** (sus 5 conceptos son `gastos_fijos/gps/costo_nueva/int_deuda/iva`; en el delta de flujo el `pago_inventario`/`fondeo` paramétrico se cancela), excluir de D2 los meses **no cerrados** no evitaba ningún doble conteo — solo hacía **desaparecer** los pagos reales de FIX-K de esos meses (p. ej. al acotar el presupuesto de septiembre, sus $123.392.031 reales quedaban reemplazados por el paramétrico). Regresión de FIX-K sobre la exigencia #1 del CEO.
+
+## El fix (quirúrgico, Regla B — NO refactor)
+
+1. **`backend/app/proyeccion/service.py` `_resultado_con`:**
+   ```python
+   meses_anclados = frozenset(m for m, a in anclas.items() if a.estado == CERRADO)
+   ```
+   Solo los meses **cerrados** se excluyen de D2 (el pasado es del libro; sus facturas ya no están pendientes). En `en_ejecucion`/`presupuesto`, D2 aplica el pago real — compone limpio con E1 (campos disjuntos: E1 escribe los 5 conceptos no-Auteco, D2 escribe `pago_inventario`/`fondeo`; deltas aditivos vía `reacumular`). El conjunto completo (`frozenset(anclas)`) se reserva para las marcas de origen de la UI en **P5** — NO se alimenta a D2. `CERRADO` se importa de `ejecucion.service`.
+
+2. **`backend/app/obligaciones/reconciliacion.py`:** corregido el docstring — la exclusión aplica SOLO a meses cerrados; en no-cerrados D2 aplica el pago real sin doble conteo. (El paréntesis previo "esa realidad ya la puso E1" era falso para Auteco.)
+
+3. **Test de regresión NUEVO** (`test_e1_pipeline.py::test_c1_d2_aplica_pago_real_en_mes_anclado_no_cerrado`, parametrizado `en_ejecucion` + `presupuesto`): mes anclado no-cerrado con factura que paga ahí → D2 aplica el pago real (`pago_inventario == −capital`, `fondeo == −interés`) Y el concepto que E1 ancló por Regla A (`int_deuda == −800.00`) se conserva en la misma fila; el mes no anclado (2026-12) reconcilia normal. **Rojo antes del fix** (daba el Auteco paramétrico `−10.000,00` en vez del real `−1.000.000,00`), **verde después**.
+
+## Lo que NO se tocó (por exigencia del re-gate)
+
+`motor.py` (R0), `ejecucion/service.py`, `lectura.py`, `loader.py`, y `reconciliacion.py` salvo el docstring del punto 2. Los tests existentes (pipeline con 2026-10 `cerrado`, B7 puro con set explícito) siguen **verdes sin modificarlos** — la capa de reconciliación y el candado no cambian.
+
+## Baja B-1 (diferida a P4, con visto de Kimi)
+
+`cargar_anclas` corre dentro de `_resultado_con`, que se invoca por escenario (base/optimista/pesimista) → el mismo trabajo Mongo (depende solo de `mes_inicio`/`horizonte`) se repite hasta 3× por carga de página. Correctitud intacta. Kimi la dejó a criterio ("puede ir en P4"); se difiere a P4 para mantener este re-gate quirúrgico.
+
+## Evidencia (ver EVIDENCIA.md actualizada)
+
+- Test C-1 nuevo: **2 passed** (en_ejecucion + presupuesto). Pipeline existente + B7 puro: verdes sin cambios.
+- Regresión completa del backend: ver EVIDENCIA.md (§1).
+- ruff check + format: limpios. R0: `motor.py` 0 diffs.
+- Diff del fix: `_resultado_con` (1 línea efectiva + comentario), docstring de `reconciliar`, y el test nuevo.
+
+
+---
 
 ## 2. Diff completo (`git diff origin/main...HEAD -- backend/`)
 
@@ -96,27 +139,28 @@ index a61121d..44f7495 100644
      """Ingreso ejecutado del mes = Σ de las transacciones de INGRESO, EXCLUIDOS los
      rubros neutros (reversas/devoluciones; a futuro tránsito Wava y ajuste). None si el
 diff --git a/backend/app/obligaciones/reconciliacion.py b/backend/app/obligaciones/reconciliacion.py
-index 000c6ea..da0f684 100644
+index 000c6ea..0bac75d 100644
 --- a/backend/app/obligaciones/reconciliacion.py
 +++ b/backend/app/obligaciones/reconciliacion.py
-@@ -54,7 +54,16 @@ def reconciliar(
+@@ -54,7 +54,17 @@ def reconciliar(
      resultado: ResultadoProyeccion,
      facturas: list[FacturaReconciliar],
      caja_minima: Decimal,
 +    *,
 +    meses_anclados: frozenset[str] = frozenset(),
  ) -> ResultadoReconciliado:
-+    """`meses_anclados` (E1·P3): los meses que la capa de anclaje ya fijó a la ejecución
-+    real quedan FUERA de esta reconciliación — ni se netea su Auteco paramétrico ni se
-+    aplican sus pagos reales aquí (esa realidad ya la puso E1; tocarla sería doble
-+    conteo). Precedencia `motor → EJECUCIÓN (E1) → OBLIGACIONES (D2) → IMPACTOS (D1)`.
-+    Composición con COCK-09: COCK-09 ancla la caja inicial; E1 ancla las líneas de los
-+    meses cerrados/en ejecución y re-acumula desde ahí — no hay doble anclaje. Con
-+    `meses_anclados` vacío la serie es idéntica a hoy (candado de no-regresión)."""
++    """`meses_anclados` (E1·P3): SOLO los meses CERRADOS quedan fuera de esta
++    reconciliación — el pasado es del libro (sus facturas ya no están pendientes). En
++    los meses NO cerrados D2 SÍ aplica el pago real: E1 no ancla Auteco (sus 5
++    conceptos excluyen pago_inventario/fondeo y en su delta el paramétrico se cancela),
++    así que aplicar la factura ahí compone limpio, sin doble conteo (campos disjuntos,
++    deltas aditivos). Por eso el llamador solo pasa los meses cerrados, no todos los
++    anclados. Precedencia `motor → EJECUCIÓN (E1) → OBLIGACIONES (D2) → IMPACTOS (D1)`.
++    Con `meses_anclados` vacío la serie es idéntica a hoy (candado de no-regresión)."""
      base = resultado.meses
      n = len(base)
      idx = {fila.mes: i for i, fila in enumerate(base)}
-@@ -73,8 +82,8 @@ def reconciliar(
+@@ -73,8 +83,8 @@ def reconciliar(
          cap[p.mes] = _cop(cap.get(p.mes, _CERO) + p.capital)
          interes[p.mes] = _cop(interes.get(p.mes, _CERO) + p.interes)
  
@@ -127,7 +171,7 @@ index 000c6ea..da0f684 100644
      if not meses_pago:
          return ResultadoReconciliado(
              ajustado=reacumular(resultado, [_CERO] * n, caja_minima),
-@@ -90,6 +99,8 @@ def reconciliar(
+@@ -90,6 +100,8 @@ def reconciliar(
      deltas = [_CERO] * n
      for m in range(i_desde, i_hasta + 1):
          fila = base[m]
@@ -136,7 +180,7 @@ index 000c6ea..da0f684 100644
          # pago_inventario y fondeo son NEGATIVOS (egresos); netearlos = sumar su opuesto
          deltas[m] = _cop(deltas[m] - fila.pago_inventario - fila.fondeo)
      for mes in meses_pago:
-@@ -109,6 +120,8 @@ def reconciliar(
+@@ -109,6 +121,8 @@ def reconciliar(
      filas = list(ajustado.meses)
      for m in range(i_desde, i_hasta + 1):
          mes = base[m].mes
@@ -269,7 +313,7 @@ index 0000000..ee4fc76
 +            # futuro sin definido → omitido (motor)
 +    return anclas, rubros, neutros_ids
 diff --git a/backend/app/proyeccion/service.py b/backend/app/proyeccion/service.py
-index 6500821..2b71125 100644
+index 6500821..714e0bd 100644
 --- a/backend/app/proyeccion/service.py
 +++ b/backend/app/proyeccion/service.py
 @@ -30,6 +30,9 @@ from app.obligaciones.reconciliacion import (
@@ -278,7 +322,7 @@ index 6500821..2b71125 100644
  from app.parametros_proyeccion import service as parametros_service
 +from app.proyeccion.ejecucion.lectura import RubroInfo
 +from app.proyeccion.ejecucion.loader import cargar_anclas
-+from app.proyeccion.ejecucion.service import AnclaMes, anclar
++from app.proyeccion.ejecucion.service import CERRADO, AnclaMes, anclar
  from app.proyeccion.impactos import Ajuste, aplicar_impactos
  from app.proyeccion.motor import (
      PRESETS_ESCENARIO,
@@ -312,7 +356,7 @@ index 6500821..2b71125 100644
      horizonte = horizonte_meses or params.horizonte_meses
      if horizonte < 1 or horizonte > HORIZONTE_MAX:
          raise ProyeccionError(
-@@ -332,6 +347,25 @@ async def _resultado_con(
+@@ -332,6 +347,30 @@ async def _resultado_con(
          caja_inicial_override,
      )
      r = proyectar(pm)
@@ -333,12 +377,17 @@ index 6500821..2b71125 100644
 +            neutros_ids=neutros_e1,
 +        )
 +        r = _kpis_a_resultado(aj)
-+        meses_anclados = frozenset(anclas)
++        # D2 solo excluye los meses CERRADOS (el pasado es del libro; su factura ya no
++        # está pendiente). E1 NO ancla Auteco (sus 5 conceptos no incluyen el Auteco),
++        # así que en meses no-cerrados D2 SÍ aplica el pago real, sin doble conteo
++        # (campos disjuntos, deltas aditivos). El set completo de anclados queda como
++        # `frozenset(anclas)` para las marcas de origen de la UI en P5 — no se da a D2.
++        meses_anclados = frozenset(m for m, a in anclas.items() if a.estado == CERRADO)
 +
      facturas = (
          facturas_override
          if facturas_override is not None
-@@ -339,7 +373,9 @@ async def _resultado_con(
+@@ -339,7 +378,9 @@ async def _resultado_con(
      )
      rec: ResultadoReconciliado | None = None
      if facturas:
@@ -646,10 +695,10 @@ index 0000000..2ee0c33
 +        }
 diff --git a/backend/tests/test_e1_pipeline.py b/backend/tests/test_e1_pipeline.py
 new file mode 100644
-index 0000000..9472d50
+index 0000000..4eca849
 --- /dev/null
 +++ b/backend/tests/test_e1_pipeline.py
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,245 @@
 +# backend/tests/test_e1_pipeline.py
 +"""E1 · P3 — composición en `_resultado_con` (integración: motor → E1 → D2 → IMPACTOS).
 +
@@ -838,6 +887,63 @@ index 0000000..9472d50
 +
 +    # E1 corrió: el mes anclado tomó el ingreso real anclado.
 +    assert a["2026-10"].neto == Decimal("123456.00")
++
++
++def _anclas_no_cerrado(estado):
++    """Ancla 2026-10 en un régimen NO cerrado con un egreso NO-Auteco (int_deuda vía
++    4010). en_ejecucion usa Regla A (ejec+max(0,def-ejec)); presupuesto solo definido.
++    Ambos → int_deuda anclado = 800 (→ -800.00). E1 NO toca Auteco en ningún caso."""
++    if estado == "en_ejecucion":
++        ancla = AnclaMes(
++            estado="en_ejecucion",
++            ejecutado_por_rubro_id={"4010": Decimal("500")},
++            definido_por_rubro_id={"4010": Decimal("800")},
++            ingreso_real=None,
++        )
++    else:  # presupuesto
++        ancla = AnclaMes(
++            estado="presupuesto",
++            ejecutado_por_rubro_id={},
++            definido_por_rubro_id={"4010": Decimal("800")},
++            ingreso_real=None,
++        )
++    return {"2026-10": ancla}, _rubros(), set()
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("estado", ["en_ejecucion", "presupuesto"])
++async def test_c1_d2_aplica_pago_real_en_mes_anclado_no_cerrado(db, estado):
++    """C-1 (gate PR3-I): E1 no ancla Auteco, así que en un mes anclado NO cerrado D2 SÍ
++    debe aplicar el pago real de la factura (sin doble conteo — campos disjuntos) y
++    conservar los campos que E1 ancló. Antes del fix, meses_anclados=frozenset(anclas)
++    excluía estos meses y el pago real de FIX-K desaparecía de la proyección."""
++    a = await _correr(_anclas_no_cerrado(estado), _facturas())  # con facturas
++    b = await _correr(_anclas_no_cerrado(estado), [])  # sin facturas (referencia)
++    cap_oct = pago_factura(
++        fecha_factura="2026-08-15",
++        valor=Decimal("1000000"),
++        plazo_elegido_dias=60,
++        plazo_base_dias=30,
++        tasa_excedente_mensual=Decimal("0.016"),
++    )
++    cap_dic = pago_factura(
++        fecha_factura="2026-08-15",
++        valor=Decimal("2000000"),
++        plazo_elegido_dias=120,
++        plazo_base_dias=30,
++        tasa_excedente_mensual=Decimal("0.016"),
++    )
++
++    # EL FIX — D2 aplica el pago REAL en el mes anclado no-cerrado (antes: excluido).
++    assert a["2026-10"].pago_inventario == Decimal(f"-{cap_oct.capital}")
++    assert a["2026-10"].fondeo == Decimal(f"-{cap_oct.interes}")
++
++    # E1 ancló int_deuda (=800 → -800.00) y D2 NO lo tocó (campos disjuntos).
++    assert a["2026-10"].int_deuda == Decimal("-800.00")
++    assert a["2026-10"].int_deuda == b["2026-10"].int_deuda
++
++    # 2026-12 (no anclado) reconcilia normal.
++    assert a["2026-12"].pago_inventario == Decimal(f"-{cap_dic.capital}")
 diff --git a/backend/tests/test_e1_precedencia.py b/backend/tests/test_e1_precedencia.py
 new file mode 100644
 index 0000000..733ff21
@@ -1058,49 +1164,51 @@ index 0000000..6a09570
 tests/test_rubros_neutros.py::test_resuelve_solo_los_neutros_presentes PASSED [  2%]
 tests/test_rubros_neutros.py::test_vacio_si_no_existen PASSED            [  4%]
 tests/test_rubros_neutros.py::test_metas_ingreso_reexporta_el_mismo_resolver PASSED [  6%]
-tests/test_e1_precedencia.py::test_candado_vacio_identico_a_hoy PASSED   [  9%]
-tests/test_e1_precedencia.py::test_b7_d2_salta_el_mes_anclado_y_reconcilia_el_resto PASSED [ 11%]
+tests/test_e1_precedencia.py::test_candado_vacio_identico_a_hoy PASSED   [  8%]
+tests/test_e1_precedencia.py::test_b7_d2_salta_el_mes_anclado_y_reconcilia_el_resto PASSED [ 10%]
 tests/test_e1_loader.py::test_mes_cerrado_ancla_ejecutado_e_ingreso_real_sin_neutros PASSED [ 13%]
 tests/test_e1_loader.py::test_mes_en_ejecucion_ancla_ejecutado_y_definido PASSED [ 15%]
-tests/test_e1_loader.py::test_mes_propuesto_con_definido_es_regimen_presupuesto PASSED [ 18%]
-tests/test_e1_loader.py::test_futuro_sin_definido_y_sin_mescontrol_se_omiten PASSED [ 20%]
-tests/test_e1_loader.py::test_rubros_info_y_neutros_ids_se_arman PASSED  [ 22%]
-tests/test_e1_loader_realmongo.py::TestLoaderReal::test_cerrado_agrega_egresos_y_en_ejecucion_lee_definido SKIPPED [ 25%]
-tests/test_e1_pipeline.py::test_b8_b11_candado_composicion PASSED        [ 27%]
-tests/test_e1_anclaje.py::test_b1_sin_ancla_es_base_bit_a_bit PASSED     [ 29%]
-tests/test_e1_anclaje.py::test_b2_cerrado_ejecutado_real_y_reacumula PASSED [ 31%]
-tests/test_e1_anclaje.py::test_b3_regla_a_incluye_ejecutado_mayor_que_definido PASSED [ 34%]
-tests/test_e1_anclaje.py::test_b4_futuro_con_presupuesto_usa_definido PASSED [ 36%]
-tests/test_e1_anclaje.py::test_b5_futuro_sin_presupuesto_es_el_motor PASSED [ 38%]
-tests/test_e1_anclaje.py::test_a3_fixture_julio_real_b2_y_b6 PASSED      [ 40%]
-tests/test_e1_lectura.py::test_b9_suma_rubros_igual_concepto PASSED      [ 43%]
-tests/test_e1_lectura.py::test_r1_1010_entero_a_pago_inventario_no_costo_nueva PASSED [ 45%]
-tests/test_e1_lectura.py::test_r2_4040_en_sin_mapear PASSED              [ 47%]
-tests/test_e1_lectura.py::test_a1_neutros_excluidos_por_id PASSED        [ 50%]
-tests/test_e1_lectura.py::test_b12_codigo_del_mapeo_ausente_es_ruidoso PASSED [ 52%]
-tests/test_reconciliacion.py::test_sin_facturas_es_base_bit_a_bit PASSED [ 54%]
-tests/test_reconciliacion.py::test_pagos_fuera_del_horizonte_no_reconcilian PASSED [ 56%]
-tests/test_reconciliacion.py::test_una_factura_netea_el_parametrico_y_suma_el_real PASSED [ 59%]
-tests/test_reconciliacion.py::test_meses_fuera_de_la_ventana_intactos PASSED [ 61%]
-tests/test_reconciliacion.py::test_coherencia_concepto_a_concepto_toda_la_serie PASSED [ 63%]
-tests/test_reconciliacion.py::test_ventana_reescribe_conceptos_con_el_pago_real PASSED [ 65%]
-tests/test_reconciliacion.py::test_hueco_en_ventana_netea_el_parametrico_a_cero PASSED [ 68%]
-tests/test_ingreso_real_neutros.py::test_reversas_no_suma_pero_recaudo_si PASSED [ 70%]
-tests/test_ingreso_real_neutros.py::test_recaudo_solo_cuenta_completo PASSED [ 72%]
-tests/test_ingreso_real_neutros.py::test_sin_mes_control_es_none PASSED  [ 75%]
-tests/test_ingreso_real_neutros.py::test_transito_wava_no_suma_ingreso_real PASSED [ 77%]
-tests/test_ingreso_real_neutros.py::test_ajuste_conciliacion_no_suma_ingreso_real PASSED [ 79%]
-tests/test_proyeccion_endpoints.py::test_proyeccion_sin_config_es_409 PASSED [ 81%]
+tests/test_e1_loader.py::test_mes_propuesto_con_definido_es_regimen_presupuesto PASSED [ 17%]
+tests/test_e1_loader.py::test_futuro_sin_definido_y_sin_mescontrol_se_omiten PASSED [ 19%]
+tests/test_e1_loader.py::test_rubros_info_y_neutros_ids_se_arman PASSED  [ 21%]
+tests/test_e1_loader_realmongo.py::TestLoaderReal::test_cerrado_agrega_egresos_y_en_ejecucion_lee_definido SKIPPED [ 23%]
+tests/test_e1_pipeline.py::test_b8_b11_candado_composicion PASSED        [ 26%]
+tests/test_e1_pipeline.py::test_c1_d2_aplica_pago_real_en_mes_anclado_no_cerrado[en_ejecucion] PASSED [ 28%]
+tests/test_e1_pipeline.py::test_c1_d2_aplica_pago_real_en_mes_anclado_no_cerrado[presupuesto] PASSED [ 30%]
+tests/test_e1_anclaje.py::test_b1_sin_ancla_es_base_bit_a_bit PASSED     [ 32%]
+tests/test_e1_anclaje.py::test_b2_cerrado_ejecutado_real_y_reacumula PASSED [ 34%]
+tests/test_e1_anclaje.py::test_b3_regla_a_incluye_ejecutado_mayor_que_definido PASSED [ 36%]
+tests/test_e1_anclaje.py::test_b4_futuro_con_presupuesto_usa_definido PASSED [ 39%]
+tests/test_e1_anclaje.py::test_b5_futuro_sin_presupuesto_es_el_motor PASSED [ 41%]
+tests/test_e1_anclaje.py::test_a3_fixture_julio_real_b2_y_b6 PASSED      [ 43%]
+tests/test_e1_lectura.py::test_b9_suma_rubros_igual_concepto PASSED      [ 45%]
+tests/test_e1_lectura.py::test_r1_1010_entero_a_pago_inventario_no_costo_nueva PASSED [ 47%]
+tests/test_e1_lectura.py::test_r2_4040_en_sin_mapear PASSED              [ 50%]
+tests/test_e1_lectura.py::test_a1_neutros_excluidos_por_id PASSED        [ 52%]
+tests/test_e1_lectura.py::test_b12_codigo_del_mapeo_ausente_es_ruidoso PASSED [ 54%]
+tests/test_reconciliacion.py::test_sin_facturas_es_base_bit_a_bit PASSED [ 56%]
+tests/test_reconciliacion.py::test_pagos_fuera_del_horizonte_no_reconcilian PASSED [ 58%]
+tests/test_reconciliacion.py::test_una_factura_netea_el_parametrico_y_suma_el_real PASSED [ 60%]
+tests/test_reconciliacion.py::test_meses_fuera_de_la_ventana_intactos PASSED [ 63%]
+tests/test_reconciliacion.py::test_coherencia_concepto_a_concepto_toda_la_serie PASSED [ 65%]
+tests/test_reconciliacion.py::test_ventana_reescribe_conceptos_con_el_pago_real PASSED [ 67%]
+tests/test_reconciliacion.py::test_hueco_en_ventana_netea_el_parametrico_a_cero PASSED [ 69%]
+tests/test_ingreso_real_neutros.py::test_reversas_no_suma_pero_recaudo_si PASSED [ 71%]
+tests/test_ingreso_real_neutros.py::test_recaudo_solo_cuenta_completo PASSED [ 73%]
+tests/test_ingreso_real_neutros.py::test_sin_mes_control_es_none PASSED  [ 76%]
+tests/test_ingreso_real_neutros.py::test_transito_wava_no_suma_ingreso_real PASSED [ 78%]
+tests/test_ingreso_real_neutros.py::test_ajuste_conciliacion_no_suma_ingreso_real PASSED [ 80%]
+tests/test_proyeccion_endpoints.py::test_proyeccion_sin_config_es_409 PASSED [ 82%]
 tests/test_proyeccion_endpoints.py::test_flujo_completo_ingreso_discriminado_y_kpis PASSED [ 84%]
 tests/test_proyeccion_endpoints.py::test_operacion_cartera_por_anada_y_colocacion PASSED [ 86%]
-tests/test_proyeccion_endpoints.py::test_operacion_sin_config_es_409 PASSED [ 88%]
-tests/test_proyeccion_endpoints.py::test_comparar_actuals_vs_forecast_rolling PASSED [ 90%]
+tests/test_proyeccion_endpoints.py::test_operacion_sin_config_es_409 PASSED [ 89%]
+tests/test_proyeccion_endpoints.py::test_comparar_actuals_vs_forecast_rolling PASSED [ 91%]
 tests/test_proyeccion_endpoints.py::test_comparar_ancla_modo_invalido_es_422 PASSED [ 93%]
 tests/test_proyeccion_endpoints.py::test_escenario_pesimista_menos_caja_que_optimista PASSED [ 95%]
 tests/test_proyeccion_endpoints.py::test_rbac_mutaciones_solo_gestionar PASSED [ 97%]
 tests/test_proyeccion_endpoints.py::test_modelo_baja_logica_y_reactivar PASSED [100%]
 SKIPPED [1] tests\test_e1_loader_realmongo.py:39: requiere Mongo real; correr con: pytest -m requires_real_mongo
-================ 43 passed, 1 skipped, 383 warnings in 12.17s =================
+================ 45 passed, 1 skipped, 383 warnings in 14.29s =================
 
 ```
 
