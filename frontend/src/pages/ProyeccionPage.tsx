@@ -95,7 +95,7 @@ export default function ProyeccionPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         titulo="Proyecciones"
-        descripcion="Caja proyectada mes a mes contra el umbral, por escenario."
+        descripcion="Caja proyectada mes a mes contra el mínimo de caja, por escenario."
         acciones={
           <FiltroBarra
             filtros={[
@@ -161,7 +161,7 @@ export default function ProyeccionPage() {
         <VallesCard
           valles={vallesQ.data?.valles ?? []}
           cargando={vallesQ.isLoading}
-          titulo="Valles de caja (hitos)"
+          titulo="Meses de caja más baja"
         />
       )}
     </div>
@@ -210,7 +210,7 @@ function ProyeccionContenido({
           valor={data.piso_caja}
           comparacion={{
             delta: formatDelta(vsUmbral),
-            contra: "vs. el umbral",
+            contra: "vs. el mínimo de caja",
           }}
           contexto={`en ${formatMesCorto(data.mes_mas_ajustado)}`}
           tono={perforada ? "critico" : "positivo"}
@@ -231,12 +231,12 @@ function ProyeccionContenido({
         <KpiTileV2
           label="Capital requerido"
           valor={data.capital_requerido}
-          contexto={`para sostener el umbral de ${formatCOPCompact(data.caja_minima)}`}
+          contexto={`para sostener el mínimo de caja de ${formatCOPCompact(data.caja_minima)}`}
           tono={requiereCapital ? "atencion" : "positivo"}
         />
         {data.runway_meses === null ? (
           <KpiTileV2
-            label="Runway"
+            label="Autonomía de caja"
             valor="0"
             valorTexto="Sin límite"
             contexto="la caja crece al ritmo actual"
@@ -244,10 +244,10 @@ function ProyeccionContenido({
           />
         ) : (
           <KpiTileV2
-            label="Runway"
+            label="Autonomía de caja"
             valor="0"
             valorTexto={`${data.runway_meses} meses`}
-            contexto="al ritmo promedio de quema"
+            contexto="al ritmo de gasto actual"
             tono="atencion"
           />
         )}
@@ -266,7 +266,7 @@ function ProyeccionContenido({
             valor={compromiso.monto}
             contexto={`${formatMesCorto(compromiso.mes)} · ${distanciaTexto(
               compromiso.mesesDistancia,
-            )} · lote + fondeo · ${compromiso.real ? "factura registrada" : "proyección"}`}
+            )} · lote + costo de financiación · ${compromiso.real ? "factura registrada" : "proyección"}`}
             tono={autecoEnValle ? "atencion" : "neutro"}
           />
         )}
@@ -282,7 +282,7 @@ function ProyeccionContenido({
             ? `El punto más ajustado (${formatMesCorto(data.mes_mas_ajustado)}) está más allá de esta vista`
             : perforada
               ? `La caja toca su punto más bajo en ${formatMesCorto(data.mes_mas_ajustado)}`
-              : "La caja se sostiene sobre el umbral en todo el horizonte"
+              : "La caja se sostiene sobre el mínimo de caja en todo el horizonte"
         }
         subtitulo={`caja proyectada · escenario ${ESCENARIO_LABEL[escenario].toLowerCase()} · ${ventana.length} de ${data.meses.length} meses`}
         pie={`Caja final a ${data.meses.length} meses: ${formatCOPCompact(data.caja_final)} (exacta en la tabla) · Fuente: motor de proyección`}

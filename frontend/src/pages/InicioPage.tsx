@@ -158,7 +158,7 @@ function Pulso({
           valor={data.piso_caja}
           comparacion={{
             delta: formatDelta(vsUmbral),
-            contra: "vs. el umbral",
+            contra: "vs. el mínimo de caja",
           }}
           contexto={`en ${formatMesCorto(data.mes_mas_ajustado)}`}
           tono={perforada ? "critico" : "positivo"}
@@ -179,7 +179,7 @@ function Pulso({
         <KpiTileV2
           label="Capital requerido"
           valor={data.capital_requerido}
-          contexto={`para sostener el umbral de ${formatCOPCompact(data.caja_minima)}`}
+          contexto={`para sostener el mínimo de caja de ${formatCOPCompact(data.caja_minima)}`}
           tono={requiereCapital ? "atencion" : "positivo"}
         />
         {caja ? (
@@ -207,7 +207,7 @@ function Pulso({
             ? `El punto más ajustado (${formatMesCorto(data.mes_mas_ajustado)}) está más allá de esta vista`
             : perforada
               ? `La caja toca su punto más bajo en ${formatMesCorto(data.mes_mas_ajustado)}`
-              : "La caja se sostiene sobre el umbral en todo el horizonte"
+              : "La caja se sostiene sobre el mínimo de caja en todo el horizonte"
         }
         subtitulo={`caja proyectada · escenario base · ${ventana.length} de ${data.meses.length} meses`}
         pie={

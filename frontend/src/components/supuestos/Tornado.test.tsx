@@ -53,7 +53,9 @@ describe("ordenarTornado", () => {
 describe("Tornado (render)", () => {
   it("la frase de conclusión nombra las dos variables que más pesan", () => {
     render(<Tornado data={DATA} />);
-    expect(screen.getByText("¿Qué mueve mi umbral?")).toBeInTheDocument();
+    expect(
+      screen.getByText("¿Qué mueve mi mínimo de caja?"),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/depende sobre todo de gastos fijos y de cuota semanal/),
     ).toBeInTheDocument();

@@ -93,7 +93,7 @@ describe("CargasPage — panel de movimientos manuales (FIX-G2)", () => {
     const f1 = within(await screen.findByTestId("mov-t1"));
     expect(f1.getByText("Anulada")).toBeInTheDocument();
     const f2 = within(await screen.findByTestId("mov-t2"));
-    expect(f2.getByText("Contra-asiento")).toBeInTheDocument();
+    expect(f2.getByText("Reverso")).toBeInTheDocument();
     // el reverso enlaza al original (nº de fila)
     expect(f2.getByText(/reversa de #1/)).toBeInTheDocument();
     // no se ofrece anular ni el anulado ni el reverso
@@ -106,7 +106,7 @@ describe("CargasPage — panel de movimientos manuales (FIX-G2)", () => {
     renderPage();
     const fila = within(await screen.findByTestId("mov-t1"));
     fireEvent.click(fila.getByRole("button", { name: /anular/i }));
-    const dialogo = await screen.findByText(/se creará un/i);
+    const dialogo = await screen.findByText(/se registra un/i);
     const scope = within(dialogo.closest("div") as HTMLElement);
     // sin motivo → no llama
     fireEvent.click(scope.getByRole("button", { name: /^anular$/i }));

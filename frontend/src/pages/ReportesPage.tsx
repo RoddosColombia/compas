@@ -112,7 +112,7 @@ export default function ReportesPage() {
             <CardTitle>Resumen ejecutivo</CardTitle>
             <p className="mt-1 font-sans text-sm text-ink-soft">
               Proyección de caja de RODDOS a {horizonte} meses (escenario base),
-              contra el umbral de {formatCOP(base.caja_minima)}.
+              contra el mínimo de caja de {formatCOP(base.caja_minima)}.
             </p>
 
             <div className="mt-4">
@@ -129,7 +129,7 @@ export default function ReportesPage() {
                       parseMonto(base.caja_minima),
                     ),
                   ),
-                  contra: "vs. el umbral",
+                  contra: "vs. el mínimo de caja",
                 }}
                 contexto={`en ${formatMesCorto(base.mes_mas_ajustado)}`}
                 tono={base.meses_bajo_minimo > 0 ? "critico" : "positivo"}
@@ -148,7 +148,7 @@ export default function ReportesPage() {
               <KpiTileV2
                 label="Capital requerido"
                 valor={base.capital_requerido}
-                contexto={`para sostener el umbral de ${formatCOPCompact(base.caja_minima)}`}
+                contexto={`para sostener el mínimo de caja de ${formatCOPCompact(base.caja_minima)}`}
                 tono={
                   parseMonto(base.capital_requerido).isZero()
                     ? "positivo"
@@ -157,7 +157,7 @@ export default function ReportesPage() {
               />
               {base.runway_meses === null ? (
                 <KpiTileV2
-                  label="Runway"
+                  label="Autonomía de caja"
                   valor="0"
                   valorTexto="Sin límite"
                   contexto="la caja crece al ritmo actual"
@@ -165,10 +165,10 @@ export default function ReportesPage() {
                 />
               ) : (
                 <KpiTileV2
-                  label="Runway"
+                  label="Autonomía de caja"
                   valor="0"
                   valorTexto={`${base.runway_meses} meses`}
-                  contexto="al ritmo promedio de quema"
+                  contexto="al ritmo de gasto actual"
                   tono="atencion"
                 />
               )}
@@ -179,7 +179,7 @@ export default function ReportesPage() {
             conclusion={
               base.meses_bajo_minimo > 0
                 ? `La caja toca su punto más bajo en ${formatMesCorto(base.mes_mas_ajustado)}`
-                : "La caja se sostiene sobre el umbral en todo el horizonte"
+                : "La caja se sostiene sobre el mínimo de caja en todo el horizonte"
             }
             subtitulo={`caja proyectada · escenario base · ${base.meses.length} meses`}
             pie={`Caja final: ${formatCOP(base.caja_final)} · Fuente: motor de proyección de COMPAS`}

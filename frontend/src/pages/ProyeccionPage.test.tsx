@@ -243,7 +243,9 @@ describe("ProyeccionPage — F1.1 §2", () => {
     ).toBeInTheDocument();
     // la frase de lectura del techo (única de la tarjeta) confirma la rama con holgura
     expect(
-      screen.getByText(/la caja se sostiene sobre el umbral los 60 meses/i),
+      screen.getByText(
+        /la caja se sostiene sobre el mínimo de caja los 60 meses/i,
+      ),
     ).toBeInTheDocument();
   });
 
