@@ -141,20 +141,24 @@ async def procesar_carga(
 
     archivo_hash = await to_thread.run_sync(_hash_archivo, archivo_path)
 
-    # F-02: solo bloquea una carga PREVIA COMPLETADA con el mismo hash. La lectura va
-    # con read concern 'majority' (FIX-I): la carga previa se persiste con estado
-    # COMPLETADA DENTRO de una transacción (commit w:majority); una lectura 'local' en
-    # una sesión nueva puede no ver aún esa escritura (read-after-write causal gap del
-    # replica set) → el dedup se saltaría. 'majority' lee el snapshot ya confirmado, así
-    # el guard es determinista contra dos cargas del mismo archivo muy seguidas.
+    # F-02: solo bloquea una carga PREVIA COMPLETADA con el mismo hash. La carga
+    # previa se persiste con estado COMPLETADA en una transacción (commit w:majority).
+    # FIX-I-2: 'majority' (FIX-I) solo garantiza leer datos ya confirmados por
+    # mayoría, NO el ÚLTIMO commit. Sin consistencia causal (afterClusterTime), esta
+    # lectura —operación nueva— podía leer un snapshot de mayoría ANTERIOR al commit
+    # de la carga previa (read-after-write causal gap del RS) → el dedup se saltaba a
+    # veces. 'linearizable' refleja TODOS los writes majority-ack completados antes de
+    # iniciar la lectura (primario + confirma liderazgo) → guard DETERMINISTA ante dos
+    # cargas del mismo archivo muy seguidas. max_time_ms acota la espera.
     _dedup_col = CargaBancaria.get_pymongo_collection().with_options(
-        read_concern=ReadConcern("majority")
+        read_concern=ReadConcern("linearizable")
     )
     previa = await _dedup_col.find_one(
         {
             "archivo_hash": archivo_hash,
             "estado": EstadoCarga.COMPLETADA.value,
-        }
+        },
+        max_time_ms=5000,
     )
     if previa is not None:
         raise CargaDuplicadaError(
