@@ -16,6 +16,8 @@ import { useAuth } from "@/auth/AuthContext";
 import { ComposicionCaja } from "@/components/charts/ComposicionCaja";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { LeyendaOrigen } from "@/components/proyeccion/MarcaOrigen";
+import { MesEnCursoCallout } from "@/components/proyeccion/MesEnCursoCallout";
 import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
 import { TechoGastoCard } from "@/components/proyeccion/TechoGastoCard";
 import { Button } from "@/components/ui/button";
@@ -270,6 +272,9 @@ function ProyeccionContenido({
         )}
       </div>
 
+      {/* E1·P6 — leyenda de origen (solo con ciclo; sin anclaje no se pinta) */}
+      {Object.keys(data.meses_anclados ?? {}).length > 0 && <LeyendaOrigen />}
+
       {/* Protagonista: la curva anotada en la ventana */}
       <ChartCard
         conclusion={
@@ -307,8 +312,14 @@ function ProyeccionContenido({
           meses={ventana}
           umbral={data.caja_minima}
           ventanaReconciliada={data.ventana_reconciliada}
+          mesesAnclados={data.meses_anclados}
         />
       </ChartCard>
+
+      {/* E1·P6 — el mes en curso: comparación + completitud (B13) + arrastre */}
+      {data.mes_en_curso && (
+        <MesEnCursoCallout mesEnCurso={data.mes_en_curso} />
+      )}
 
       {/* Tabla V1 §3: tres totales por mes, fila expandible, fila de totales */}
       <div className="flex flex-col gap-2">
@@ -317,6 +328,8 @@ function ProyeccionContenido({
           mesCritico={data.mes_mas_ajustado}
           perforada={perforada}
           ventanaReconciliada={data.ventana_reconciliada}
+          mesesAnclados={data.meses_anclados}
+          sinMapear={data.sin_mapear}
         />
         {data.meses.length > ventana.length && (
           <Button

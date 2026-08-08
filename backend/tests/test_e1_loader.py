@@ -230,20 +230,22 @@ async def test_cerrado_trae_definido_para_la_marca(db):
 
 @pytest.mark.asyncio
 async def test_completitud_mes_en_curso_toma_la_fecha_maxima(db):
-    """P5/B13: para el mes EN_EJECUCION, completitud = fecha máxima de tx + fórmula."""
+    """P5/B13: para el mes EN_EJECUCION, completitud = fecha máxima de tx + fórmula, y
+    (P6-b) el ejecutado real a la fecha vs el proyectado (Σ presupuesto definido)."""
     ago = await _mes("2026-08", EstadoMes.EN_EJECUCION)
     gasto = await _rubro(RubroGrupo.OPERACION, "Arriendos", TipoFlujo.EGRESO, "2010")
     for f in ("2026-08-03", "2026-08-06", "2026-08-01"):
         await Transaccion(
             fecha=f,
             descripcion="x",
-            valor=Decimal("1"),
+            valor=Decimal("10"),  # Σ egresos reales = 30
             tipo_flujo=TipoFlujo.EGRESO,
             rubro_id=gasto.id,
             mes_id=ago.id,
             banco=Banco.GLOBAL66,
             id_banco=f"REF-{f}|1",
         ).insert()
+    await _linea(ago, gasto, Decimal("100"))  # presupuesto definido = 100
 
     comp = await cargar_completitud_mes_en_curso((2026, 8), 1)
     assert comp == {
@@ -251,6 +253,8 @@ async def test_completitud_mes_en_curso_toma_la_fecha_maxima(db):
         "cargado_hasta": "2026-08-06",
         "dia": 6,
         "formula": "ejecutado + max(0, definido - ejecutado) por concepto",
+        "ejecutado": "30.00",  # P6-b: Σ egresos reales del mes a la fecha
+        "proyectado": "100.00",  # P6-b: Σ presupuesto definido del mes
     }
 
 

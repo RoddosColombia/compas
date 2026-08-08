@@ -25,6 +25,7 @@ from beanie import PydanticObjectId
 from beanie.operators import In
 
 from app.control.service import _egresos_por_rubro
+from app.core.money import money_str
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import RUBROS_SISTEMA_CLASIFICABLES, Rubro
@@ -181,9 +182,17 @@ async def cargar_completitud_mes_en_curso(
         .to_list()
     )
     cargado_hasta = ultima[0].fecha if ultima else None
+    # P6-b: ejecutado real del mes a la fecha vs proyectado (Σ presupuesto definido).
+    # Sumas planas (sin mapeo/B12): magnitudes positivas ya agregadas por rubro.
+    egresos = await _egresos_por_rubro(mc.id)
+    definido = await _definido_por_rubro(mc.id)
+    ejecutado = sum(egresos.values(), _CERO)
+    proyectado = sum(definido.values(), _CERO)
     return {
         "mes": mc.mes[:7],
         "cargado_hasta": cargado_hasta,
         "dia": int(cargado_hasta[8:10]) if cargado_hasta else None,
         "formula": _FORMULA_MES_EN_CURSO,
+        "ejecutado": money_str(ejecutado),
+        "proyectado": money_str(proyectado),
     }

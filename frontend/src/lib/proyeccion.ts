@@ -9,6 +9,23 @@ import { apiJson } from "@/lib/api";
 export type Escenario = "pesimista" | "base" | "optimista";
 export type EstadoMes = "ok" | "critico" | "negativo";
 
+// E1·P6 — marca de ORIGEN de la cifra (dimensión distinta de EstadoMes/salud de caja).
+export type MarcaOrigen =
+  | "cerrado"
+  | "cerrado_sospechoso"
+  | "en_ejecucion"
+  | "presupuesto";
+
+// B13 — completitud del mes en ejecución + comparación (P6-b).
+export interface MesEnCurso {
+  mes: string; // 'YYYY-MM'
+  cargado_hasta: string | null; // 'YYYY-MM-DD' | null si aún sin tx
+  dia: number | null;
+  formula: string; // fórmula técnica del backend (Regla A)
+  ejecutado: string; // Σ egresos reales del mes a la fecha (COP)
+  proyectado: string; // Σ presupuesto definido del mes (COP)
+}
+
 export interface MesProyeccion {
   mes: string; // 'YYYY-MM'
   motos: number;
@@ -57,6 +74,11 @@ export interface Proyeccion {
   // interés real de obligaciones por mes de pago (string COP positivo). Es el MISMO
   // interés que ya vive dentro de `fondeo` (Costo) — solo para mostrar, jamás sumar.
   interes_obligaciones: Record<string, string>;
+  // E1·P6 — origen de cada cifra (P5 shape). Opcionales en el tipo (aditivo, no rompe
+  // consumidores/mocks viejos); el backend P5 SIEMPRE los emite. Consumir con ?? vacío.
+  meses_anclados?: Record<string, MarcaOrigen>;
+  sin_mapear?: string[];
+  mes_en_curso?: MesEnCurso | null;
 }
 
 export const ESCENARIO_LABEL: Record<Escenario, string> = {

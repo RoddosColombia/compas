@@ -254,4 +254,42 @@ describe("ProyeccionPage — F1.1 §2", () => {
       expect(screen.getByRole("button", { name: e })).toBeInTheDocument();
     }
   });
+
+  // E1·P6 — con ciclo: leyenda de origen + callout del mes en curso visibles.
+  it("con anclaje muestra la leyenda de origen y el callout del mes en curso", async () => {
+    mocks.obtenerProyeccion.mockResolvedValue({
+      ...PROY,
+      meses_anclados: { "2026-07": "cerrado", "2026-08": "en_ejecucion" },
+      sin_mapear: ["Ajuste raro 4040"],
+      mes_en_curso: {
+        mes: "2026-08",
+        cargado_hasta: "2026-08-06",
+        dia: 6,
+        formula: "ejecutado + max(0, definido - ejecutado) por concepto",
+        ejecutado: "41000000.00",
+        proyectado: "168000000.00",
+      },
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProyeccionPage />
+      </QueryClientProvider>,
+    );
+    expect(
+      await screen.findByText(/Origen de cada cifra/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Mes en curso/i)).toBeInTheDocument();
+    expect(screen.getByText(/sin clasificar/i)).toBeInTheDocument();
+  });
+
+  // Candado: sin ciclo (PROY no trae las 3 claves) → nada nuevo se renderiza.
+  it("sin ciclo la UI queda como hoy (sin leyenda ni callout)", async () => {
+    renderPage();
+    await screen.findByText("Piso de caja");
+    expect(screen.queryByText(/Origen de cada cifra/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mes en curso/i)).not.toBeInTheDocument();
+  });
 });

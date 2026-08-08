@@ -179,14 +179,28 @@ class TestLoaderReal:
             await Transaccion(
                 fecha=f,
                 descripcion="x",
-                valor=Decimal("1"),
+                valor=Decimal("7"),  # Σ egresos reales = 21
                 tipo_flujo=TipoFlujo.EGRESO,
                 rubro_id=rubro.id,
                 mes_id=ago.id,
                 banco=Banco.GLOBAL66,
                 id_banco=f"REF-{f}|1",
             ).insert()
+        await PresupuestoLinea(
+            mes_id=ago.id,
+            rubro_id=rubro.id,
+            monto_sugerido=Decimal("0"),
+            prom_3m=Decimal("0"),
+            tendencia_mes=Decimal("0"),
+            crec_pct=Decimal("0"),
+            historia_incompleta=False,
+            monto_definido=Decimal("50"),
+            vigente=True,
+        ).insert()
 
         comp = await cargar_completitud_mes_en_curso((2026, 8), 1)
         assert comp["cargado_hasta"] == "2026-08-09"
         assert comp["dia"] == 9
+        # P6-b: el $group real suma los egresos (21) y el definido (50)
+        assert comp["ejecutado"] == "21.00"
+        assert comp["proyectado"] == "50.00"
