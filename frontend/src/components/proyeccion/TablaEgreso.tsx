@@ -159,7 +159,9 @@ export function TablaEgreso({
                           </span>
                           {formatMesCorto(m.mes)}
                         </span>
-                        {hayCiclo && <MarcaOrigen marca={mesesAnclados[m.mes]} />}
+                        {hayCiclo && (
+                          <MarcaOrigen marca={mesesAnclados[m.mes]} />
+                        )}
                       </button>
                     </td>
                     <Monto
