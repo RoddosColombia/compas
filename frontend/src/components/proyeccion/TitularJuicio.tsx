@@ -34,7 +34,7 @@ export function TitularJuicio({ data }: { data: Proyeccion }) {
   return (
     <div className="rounded-xl border border-atencion/40 bg-atencion/5 px-5 py-4">
       <p className="font-sans text-cuerpo font-semibold text-atencion">
-        ● La caja {crece ? "crece, pero" : "cae y"} perfora el mínimo en{" "}
+        ● La caja {crece ? "crece, pero" : "cae y"} baja del mínimo en{" "}
         {formatMesCorto(data.mes_mas_ajustado)} (
         <span className="tabular" title={formatCOP(data.piso_caja)}>
           {formatCOPCompact(data.piso_caja)}

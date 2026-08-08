@@ -64,8 +64,8 @@ describe("ComposicionCaja — V1 §2", () => {
       "Costo",
       "Gasto",
       "Caja acumulada",
-      "Umbral",
-      "Ventana con facturas reales",
+      "Mínimo de caja",
+      "Meses con facturas ya registradas",
     ]) {
       expect(screen.getByText(l)).toBeInTheDocument();
     }
@@ -78,7 +78,7 @@ describe("ComposicionCaja — V1 §2", () => {
     // próximo compromiso Auteco: 2027-01 (lote+fondeo 185,76M)
     expect(screen.getByText(/Compromiso Auteco/)).toBeInTheDocument();
     // ambos meses caen bajo el umbral (125M) → hay perforación anotada
-    expect(screen.getByText(/perfora el umbral/)).toBeInTheDocument();
+    expect(screen.getByText(/baja del mínimo de caja/)).toBeInTheDocument();
   });
 
   it("hover: ingreso discriminado (recaudo semanal vs cuota inicial) — ítem 1", () => {

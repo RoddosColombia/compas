@@ -267,7 +267,10 @@ function DesgloseMes({
           etiqueta={`Lote · ${reconciliado ? "real" : "proyectado"}`}
           valor={f(m.pago_inventario)}
         />
-        <Linea etiqueta="Fondeo del plazo (interés)" valor={f(m.fondeo)} />
+        <Linea
+          etiqueta="Costo de financiar el plazo (interés)"
+          valor={f(m.fondeo)}
+        />
       </Grupo>
       <Grupo titulo="Gasto">
         <Linea etiqueta="Gastos fijos" valor={f(m.gastos_fijos)} />

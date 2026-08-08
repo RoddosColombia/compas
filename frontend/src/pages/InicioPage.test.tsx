@@ -135,9 +135,7 @@ describe("InicioPage — piloto F1 (§7)", () => {
     renderPage();
     // crece (caja_final 200M > primer mes 40M) PERO perfora en jul-26
     expect(
-      await screen.findByText(
-        /La caja crece, pero perfora el mínimo en jul-26/,
-      ),
+      await screen.findByText(/La caja crece, pero baja del mínimo en jul-26/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Capital para cubrirlo/)).toBeInTheDocument();
     expect(
@@ -173,7 +171,7 @@ describe("InicioPage — piloto F1 (§7)", () => {
       }),
     ).toBeInTheDocument();
     // umbral etiquetado sobre el trazo (no leyenda)
-    expect(screen.getByText(/— Umbral \$ 125 M/)).toBeInTheDocument();
+    expect(screen.getByText(/— Mínimo de caja \$ 125 M/)).toBeInTheDocument();
     // eje X con meses mmm-aa
     expect(screen.getByText("jul-26")).toBeInTheDocument();
     // anotación del mínimo (mes · cifra)
@@ -190,7 +188,7 @@ describe("InicioPage — piloto F1 (§7)", () => {
     renderPage();
     // el titular sigue avisando la perforación (calculado a 60 m)
     expect(
-      await screen.findByText(/perfora el mínimo en ene-28/),
+      await screen.findByText(/baja del mínimo en ene-28/),
     ).toBeInTheDocument();
     // y el gráfico declara que el crítico está más allá de su vista
     expect(

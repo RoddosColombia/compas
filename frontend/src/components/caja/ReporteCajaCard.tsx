@@ -195,7 +195,7 @@ function PanelConciliacion({ conc }: { conc: Conciliacion }) {
         </p>
         {conc.dentro_de_umbral ? (
           <span className="rounded-full bg-positivo/10 px-3 py-0.5 font-sans text-apoyo font-medium text-positivo">
-            Cuadra (dentro del umbral)
+            Cuadra (dentro del margen)
           </span>
         ) : (
           <span className="rounded-full bg-critico/10 px-3 py-0.5 font-sans text-apoyo font-medium text-critico">
@@ -225,7 +225,7 @@ function PanelConciliacion({ conc }: { conc: Conciliacion }) {
           tono={conc.dentro_de_umbral ? "positivo" : "critico"}
         />
         <KpiTileV2
-          label="Umbral"
+          label="Margen"
           valor="0"
           valorTexto={formatCOP(conc.umbral)}
           contexto="tolerancia aceptada al cierre"

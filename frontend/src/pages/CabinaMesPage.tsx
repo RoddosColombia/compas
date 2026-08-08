@@ -393,7 +393,7 @@ function TarjetaCierre({
         <Card className="flex flex-col gap-2">
           <CardTitle>Cierre</CardTitle>
           <p className="font-sans text-sm text-ink-soft">
-            El mes {mes7} está cerrado: el histórico es inmutable (regla 4).
+            El mes {mes7} está cerrado: su historia ya no se puede editar.
           </p>
         </Card>
       );
@@ -462,7 +462,7 @@ function TarjetaCierre({
               <Precondicion ok={siguienteAbierto} />
               <span className="text-ink">
                 Mes siguiente abierto ({mesSiguiente(objetivo.mes).slice(0, 7)})
-                — el ajuste de conciliación se imputa al mes que abre.{" "}
+                — el ajuste de diferencia se registra en el mes que abre.{" "}
                 {!siguienteAbierto && (
                   <Link
                     to="/meses"
@@ -476,11 +476,11 @@ function TarjetaCierre({
             <li className="flex items-start gap-2">
               <Precondicion ok={conc === null ? null : concOk} />
               <span className="text-ink">
-                Conciliación dentro del umbral y sin bancos sin dato.
+                Diferencia dentro del margen y sin bancos por cargar.
                 {conc !== null && (
                   <span className="text-ink-soft">
                     {" "}
-                    Diferencia {formatCOP(conc.diferencia)} (umbral{" "}
+                    Diferencia {formatCOP(conc.diferencia)} (margen{" "}
                     {formatCOP(conc.umbral)})
                     {conc.sin_dato.length > 0 &&
                       ` · sin dato: ${conc.sin_dato.join(", ")}`}
@@ -599,19 +599,19 @@ function CerrarDialog({
         </h3>
         <p className="mb-4 font-sans text-apoyo text-ink-faint">
           El mes queda inmutable y el saldo inicial del siguiente se ancla al
-          consolidado de bancos. El backend valida la conciliación antes de
+          consolidado de bancos. El sistema valida la diferencia antes de
           cerrar. Esta acción queda auditada.
         </p>
         {conc !== null && (
           <dl className="mb-4 flex flex-col gap-1.5 font-sans text-sm">
             <div className="flex justify-between">
-              <dt className="text-ink-soft">Consolidado bancos</dt>
+              <dt className="text-ink-soft">Suma de saldos de bancos</dt>
               <dd className="tabular font-medium text-ink">
                 {formatCOP(conc.consolidado_reportado)}
               </dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-ink-soft">Caja del libro</dt>
+              <dt className="text-ink-soft">Caja según el sistema</dt>
               <dd className="tabular font-medium text-ink">
                 {formatCOP(conc.caja_libro)}
               </dd>
@@ -627,7 +627,10 @@ function CerrarDialog({
 
         {/* CR-WAVA: dinero en tránsito (Wava) + caja en tres líneas nombradas */}
         <label className="mb-3 flex flex-col gap-1 font-sans text-sm">
-          <span className="text-ink-soft">Dinero en tránsito (Wava)</span>
+          <span className="text-ink-soft">Dinero en camino (Wava)</span>
+          <span className="text-apoyo text-ink-faint">
+            lo cobrado que aún no cae en los bancos
+          </span>
           <input
             aria-label="Dinero en tránsito (Wava)"
             inputMode="decimal"
@@ -640,13 +643,13 @@ function CerrarDialog({
         {bancos !== null && (
           <dl className="mb-4 flex flex-col gap-1.5 border-t border-hairline pt-3 font-sans text-sm">
             <div className="flex justify-between">
-              <dt className="text-ink-soft">Consolidado bancos</dt>
+              <dt className="text-ink-soft">Suma de saldos de bancos</dt>
               <dd className="tabular font-medium text-ink">
                 {formatCOP(bancos)}
               </dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-ink-soft">En tránsito</dt>
+              <dt className="text-ink-soft">En camino</dt>
               <dd className="tabular font-medium text-ink">
                 {transitoOk ? formatCOP(parseMonto(transito.trim())) : "—"}
               </dd>

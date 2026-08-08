@@ -100,9 +100,13 @@ describe("TablaEgreso — V1 §3", () => {
   it("expande el desglose: solo lo NO promovido (Auteco lote/fondeo + gasto)", () => {
     renderTabla();
     // ingreso ya está en columnas → NO se repite en el expandible
-    expect(screen.queryByText("Fondeo del plazo (interés)")).toBeNull();
+    expect(
+      screen.queryByText("Costo de financiar el plazo (interés)"),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /oct-26/ }));
-    expect(screen.getByText("Fondeo del plazo (interés)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Costo de financiar el plazo (interés)"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Gastos fijos")).toBeInTheDocument();
     // 2026-10 no está en la ventana reconciliada → proyectado
     expect(screen.getByText(/Lote · proyectado/)).toBeInTheDocument();

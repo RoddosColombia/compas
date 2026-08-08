@@ -25,7 +25,9 @@ export function TechoGastoCard({
 
   return (
     <Card className="flex flex-col gap-2">
-      <CardTitle>¿Cuánto puedo gastar al mes sin perforar el umbral?</CardTitle>
+      <CardTitle>
+        ¿Cuánto puedo gastar al mes sin bajar del mínimo de caja?
+      </CardTitle>
       {techo.hay_holgura ? (
         <>
           <p className="font-display text-cifra-lg font-bold text-ink">
@@ -36,9 +38,9 @@ export function TechoGastoCard({
           </p>
           <p className="font-sans text-cuerpo text-ink-soft">
             Con gastos de hasta esa cifra CADA mes, la caja se sostiene sobre el
-            umbral los {horizonteJuicio} meses. Lo limita{" "}
+            mínimo de caja los {horizonteJuicio} meses. Lo limita{" "}
             {formatMesCorto(techo.valle_limitante_mes)} — es el mes que primero
-            tocaría el umbral si gastas más.
+            toca el mínimo si gastas más.
           </p>
         </>
       ) : (
@@ -47,10 +49,10 @@ export function TechoGastoCard({
             Sin margen para más gasto
           </p>
           <p className="font-sans text-cuerpo text-ink-soft">
-            El valle de {formatMesCorto(techo.valle_limitante_mes)} ya está en
-            el límite: no cabe gasto permanente extra sin perforar el umbral.
-            Para abrir espacio hay que subir el ingreso o recortar un gasto
-            existente.
+            El mes de caja más baja ({formatMesCorto(techo.valle_limitante_mes)}
+            ) ya está en el límite: no cabe gasto permanente extra sin bajar del
+            mínimo de caja. Para abrir espacio hay que subir el ingreso o
+            recortar un gasto existente.
           </p>
         </>
       )}

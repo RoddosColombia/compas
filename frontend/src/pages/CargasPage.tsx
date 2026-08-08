@@ -382,7 +382,7 @@ function EstadoMov({ mov }: { mov: TransaccionMovimiento }) {
   if (mov.es_reverso) {
     return (
       <span className="rounded-full bg-cyan/15 px-2 py-0.5 text-apoyo font-medium text-cyan">
-        Contra-asiento
+        Reverso
       </span>
     );
   }
@@ -436,10 +436,9 @@ function AnularDialog({
           Anular transacción manual
         </h3>
         <p className="mb-3 font-sans text-sm text-ink-soft">
-          Se creará un <strong>contra-asiento</strong> por{" "}
-          {formatCOP(mov.valor)} ({mov.tipo_flujo}) que revierte «
-          {mov.descripcion}». Nada se borra: el original y su reverso quedan
-          ambos en el histórico. Efecto neto 0.
+          Se registra un <strong>movimiento opuesto</strong> por{" "}
+          {formatCOP(mov.valor)} ({mov.tipo_flujo}) que cancela «
+          {mov.descripcion}». No se borra nada; queda en cero.
         </p>
         <form
           onSubmit={onSubmit}
@@ -498,9 +497,7 @@ function ManualDialog({
   const crear = useMutation({
     mutationFn: () => crearTransaccionManual(form, idemKey),
     onSuccess: (t) =>
-      alCrear(
-        `Transacción manual creada (${t.id_banco}) por ${formatCOP(t.valor)}.`,
-      ),
+      alCrear(`Transacción manual creada por ${formatCOP(t.valor)}.`),
     onError: (e) => setError(e instanceof Error ? e.message : "Error creando"),
   });
 

@@ -71,7 +71,7 @@ describe("ScenariosChart (banda §3)", () => {
     );
     expect(container.querySelectorAll("polygon")).toHaveLength(1); // la banda
     expect(container.querySelectorAll("polyline")).toHaveLength(3);
-    expect(screen.getByText(/— Umbral \$ 100 M/)).toBeInTheDocument();
+    expect(screen.getByText(/— Mínimo de caja \$ 100 M/)).toBeInTheDocument();
     // las tres cifras que SON la pantalla
     expect(screen.getByText(/Pesimista · piso -\$ 226 M/)).toBeInTheDocument();
     expect(screen.getByText(/Base · piso -\$ 63,9 M/)).toBeInTheDocument();

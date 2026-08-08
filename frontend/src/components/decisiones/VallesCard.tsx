@@ -10,7 +10,7 @@ import { formatCOP, formatCOPCompact, formatMesCorto } from "@/lib/money";
 export function VallesCard({
   valles,
   cargando,
-  titulo = "Valles de caja",
+  titulo = "Meses de caja más baja",
 }: {
   valles: Valle[];
   cargando: boolean;
@@ -22,7 +22,8 @@ export function VallesCard({
       {cargando && valles.length === 0 && <Cargando variante="tabla" />}
       {!cargando && valles.length === 0 && (
         <p className="font-sans text-cuerpo text-positivo">
-          Ningún valle relevante en el horizonte: la caja queda holgada.
+          Ningún mes de caja baja relevante en el horizonte: la caja queda
+          holgada.
         </p>
       )}
       <ul className="flex flex-col gap-3">
@@ -54,7 +55,7 @@ function ValleFila({ valle }: { valle: Valle }) {
         {meses <= 0
           ? "es este mes"
           : `faltan ${meses} ${meses === 1 ? "mes" : "meses"}`}
-        {perfora ? " · perfora el umbral" : ""}
+        {perfora ? " · baja del mínimo de caja" : ""}
       </span>
       {valle.causas.length > 0 && (
         <span className="font-sans text-apoyo text-ink-soft">
