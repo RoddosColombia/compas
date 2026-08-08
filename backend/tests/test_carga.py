@@ -311,11 +311,20 @@ class TestServicioCarga:
 
     # ── PR-S3: preservación del original en S3 (cliente stub inyectado) ──
 
-    async def _procesar_s3(self, tmp_path, filas, client, nombre="ext.xlsx"):
+    async def _procesar_s3(
+        self, tmp_path, filas, client, nombre="ext.xlsx", crear=True
+    ):
         from app.cargas.service import procesar_carga
 
         p = tmp_path / nombre
-        _crear_bbva(p, filas)
+        # FIX-I2-II: `crear=False` reprocesa el MISMO archivo byte a byte. `_crear_bbva`
+        # regenera el xlsx con timestamps nuevos por llamada (openpyxl embebe now() en
+        # core.xml + el zip) y el dedup F-02 es sha256 de los bytes → regenerarlo daba
+        # un hash distinto y el dedup no disparaba de forma intermitente (flake del CI:
+        # solo si las dos escrituras cruzaban un segundo). Reusar el archivo hace el
+        # test determinista y preserva la semántica de F-02 (mismo archivo, 2 veces).
+        if crear:
+            _crear_bbva(p, filas)
         return await procesar_carga(
             banco=Banco.BBVA,
             archivo_path=str(p),
@@ -358,7 +367,10 @@ class TestServicioCarga:
         assert await Transaccion.find_all().count() == 0
 
     async def test_s3_dedup_no_re_sube(self, entorno, tmp_path):
-        # F-02 intacto con S3: el mismo archivo (mismo hash) no vuelve a subirse.
+        # F-02 intacto con S3: el MISMO archivo byte a byte no vuelve a subirse.
+        # La 2ª llamada usa `crear=False` → reprocesa el archivo idéntico (mismo hash),
+        # determinista. Regenerarlo (crear=True) cambiaría el hash por los timestamps de
+        # openpyxl y el dedup no dispararía: ese era el flake FIX-I-2 (bug del test).
         from app.cargas.service import CargaDuplicadaError
 
         client = _StubS3()
@@ -367,7 +379,11 @@ class TestServicioCarga:
         )
         with pytest.raises(CargaDuplicadaError):
             await self._procesar_s3(
-                tmp_path, [("15-03-2026", "COMPRA", -50000)], client, nombre="d.xlsx"
+                tmp_path,
+                [("15-03-2026", "COMPRA", -50000)],
+                client,
+                nombre="d.xlsx",
+                crear=False,
             )
         assert len(client.calls) == 1  # la segunda no subió (dedup antes de S3)
 
