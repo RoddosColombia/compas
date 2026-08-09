@@ -82,7 +82,7 @@ export function CashCurve({
       role="img"
       aria-label="Curva de caja proyectada contra el umbral de caja mínima"
     >
-      <title>Caja proyectada vs. umbral</title>
+      <title>Caja proyectada vs. mínimo de caja</title>
 
       {/* zona ya transcurrida (real) vs. proyectada */}
       {anotada && iPasado >= 0 && (
@@ -166,7 +166,7 @@ export function CashCurve({
           fontSize={12.5}
           className="tabular fill-critico font-sans font-medium"
         >
-          — Umbral {formatCOPCompact(umbral)}
+          — Mínimo de caja {formatCOPCompact(umbral)}
         </text>
       )}
       {/* curva de caja — Cyber Cyan */}

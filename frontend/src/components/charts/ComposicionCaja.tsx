@@ -141,8 +141,8 @@ export function ComposicionCaja({
         aria-label="Ingreso y egreso por período (barras agrupadas) y, debajo, la caja acumulada contra su umbral, anotada"
       >
         <title>
-          Composición de caja: ingreso y egreso arriba; caja acumulada y umbral
-          abajo, con anotaciones de los meses clave
+          Composición de caja: ingreso y egreso arriba; caja acumulada y mínimo
+          de caja abajo, con anotaciones de los meses clave
         </title>
 
         {recL >= 0 && (
@@ -283,7 +283,7 @@ export function ComposicionCaja({
           fontSize={12}
           className="tabular fill-critico font-sans"
         >
-          umbral
+          mínimo de caja
         </text>
 
         {/* línea de caja acumulada — sólida (real/en curso) → punteada (proyección) */}
@@ -352,7 +352,7 @@ export function ComposicionCaja({
               fontSize={11}
               className="fill-critico font-sans"
             >
-              perfora el umbral
+              baja del mínimo de caja
             </text>
           </g>
         )}
@@ -394,9 +394,12 @@ export function ComposicionCaja({
         <Clave className="bg-costo" label="Costo" />
         <Clave className="bg-gasto" label="Gasto" />
         <Clave className="bg-cyan" label="Caja acumulada" linea />
-        <Clave className="bg-critico" label="Umbral" linea punteado />
+        <Clave className="bg-critico" label="Mínimo de caja" linea punteado />
         {ventanaReconciliada && (
-          <Clave className="bg-cyan/20" label="Ventana con facturas reales" />
+          <Clave
+            className="bg-cyan/20"
+            label="Meses con facturas ya registradas"
+          />
         )}
       </div>
 

@@ -49,7 +49,7 @@ export function Tornado({ data }: { data: Sensibilidad }) {
   return (
     <Card className="flex flex-col gap-3 p-5">
       <div>
-        <CardTitle>¿Qué mueve mi umbral?</CardTitle>
+        <CardTitle>¿Qué mueve mi mínimo de caja?</CardTitle>
         <p className="mt-0.5 font-sans text-cuerpo text-ink-soft">
           Tu piso de caja depende sobre todo de {top[0]}
           {top[1] ? ` y de ${top[1]}` : ""}.

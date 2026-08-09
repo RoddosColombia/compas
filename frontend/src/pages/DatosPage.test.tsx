@@ -374,7 +374,7 @@ describe("Supuestos — tornado presente (§6.7)", () => {
     renderPage();
     await esperarEditor();
     expect(
-      await screen.findByText("¿Qué mueve mi umbral?"),
+      await screen.findByText("¿Qué mueve mi mínimo de caja?"),
     ).toBeInTheDocument();
   });
 });

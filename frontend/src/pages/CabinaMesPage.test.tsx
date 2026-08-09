@@ -192,7 +192,9 @@ describe("CabinaMesPage — tarjetas por estado (§7.2)", () => {
     mocks.listarMeses.mockResolvedValue({ items: [mes("cerrado")] });
     renderPage();
     expect(
-      await screen.findByText(/está cerrado: el histórico es inmutable/),
+      await screen.findByText(
+        /está cerrado: su historia ya no se puede editar/,
+      ),
     ).toBeInTheDocument();
   });
 

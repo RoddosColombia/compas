@@ -193,7 +193,7 @@ function Contenido({
               delta: formatDelta(
                 parseMonto(data.piso_caja).minus(parseMonto(data.caja_minima)),
               ),
-              contra: "vs. el umbral",
+              contra: "vs. el mínimo de caja",
             }}
             contexto={`capital requerido: ${formatCOPCompact(data.capital_requerido)} · piso en ${formatMesCorto(data.mes_mas_ajustado)}`}
             tono={tonoPiso(data)}

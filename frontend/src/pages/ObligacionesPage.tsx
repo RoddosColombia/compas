@@ -362,7 +362,7 @@ function FacturaDialog({
     e.preventDefault();
     setError(null);
     if (!RE_FECHA.test(fecha)) {
-      setError("La fecha de la factura debe tener el formato YYYY-MM-DD.");
+      setError("La fecha de la factura usa año-mes-día (ej: 2026-08-15).");
       return;
     }
     if (!RE_MONTO.test(valor.trim())) {
@@ -470,7 +470,7 @@ function PagoDialog({
     e.preventDefault();
     setError(null);
     if (!RE_FECHA.test(fecha)) {
-      setError("La fecha del pago debe tener el formato YYYY-MM-DD.");
+      setError("La fecha del pago usa año-mes-día (ej: 2026-08-15).");
       return;
     }
     if (!RE_MONTO.test(valor.trim())) {

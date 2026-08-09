@@ -93,7 +93,7 @@ export function ScenariosChart({
       role="img"
       aria-label="Banda de escenarios de caja (pesimista a optimista) contra el umbral"
     >
-      <title>Escenarios de caja vs. umbral</title>
+      <title>Escenarios de caja vs. mínimo de caja</title>
 
       {ticksY.map((v) => (
         <g key={v}>
@@ -173,7 +173,7 @@ export function ScenariosChart({
         fontSize={12.5}
         className="tabular fill-critico font-sans font-medium"
       >
-        — Umbral {formatCOPCompact(umbral)}
+        — Mínimo de caja {formatCOPCompact(umbral)}
       </text>
 
       {/* la pantalla entera: el piso de cada escenario, etiqueta directa */}

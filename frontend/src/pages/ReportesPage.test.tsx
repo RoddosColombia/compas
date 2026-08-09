@@ -84,7 +84,7 @@ describe("ReportesPage", () => {
     expect(await screen.findByText("Resumen ejecutivo")).toBeInTheDocument();
     // §7: titular de juicio reconciliador + cuarteto estándar de KPIs
     expect(
-      screen.getByText(/perfora el mínimo|se mantiene sobre el mínimo/),
+      screen.getByText(/baja del mínimo|se mantiene sobre el mínimo/),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Piso de caja").length).toBeGreaterThan(0);
     // "Capital requerido" aparece como KPI y como columna de la tabla comparativa

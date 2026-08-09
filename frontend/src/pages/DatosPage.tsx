@@ -79,14 +79,14 @@ interface BloqueDef {
 // Bloques en ORDEN DE IMPACTO (no alfabético) — §2.
 const BLOQUES: BloqueDef[] = [
   {
-    titulo: "① Caja y umbral",
+    titulo: "① Caja y mínimo de caja",
     campos: [
       {
         key: "caja_minima",
-        label: "Umbral (caja mínima)",
+        label: "Mínimo de caja",
         unidad: "money",
         contrato:
-          "La línea roja: si la caja proyectada baja de aquí, COMPAS lo marca como perforación. Es el mínimo operativo que decidiste sostener.",
+          "La línea roja: si la caja proyectada baja de aquí, COMPAS lo marca como una baja del mínimo de caja. Es el mínimo operativo que decidiste sostener.",
       },
       {
         key: "caja_inicial",
@@ -119,7 +119,7 @@ const BLOQUES: BloqueDef[] = [
         label: "Horizonte",
         unidad: "meses",
         contrato:
-          "Hasta dónde proyecta el motor por defecto. El umbral del norte (may-2027) debe quedar siempre adentro.",
+          "Hasta dónde proyecta el motor por defecto. El mínimo de caja del norte (may-2027) debe quedar siempre adentro.",
       },
     ],
   },
@@ -131,7 +131,7 @@ const BLOQUES: BloqueDef[] = [
         label: "Mora",
         unidad: "pct",
         contrato:
-          "Del recaudo esperado, cuánto NO llega en el mes. La provisión NIIF 9 se calcula aparte y NO resta caja (caja veraz).",
+          "Del recaudo esperado, cuánto NO llega en el mes. La provisión de cartera se calcula aparte y NO resta caja (caja veraz).",
       },
       {
         key: "pct_recuperacion",
@@ -141,16 +141,15 @@ const BLOQUES: BloqueDef[] = [
       },
       {
         key: "pct_default",
-        label: "Default",
+        label: "Incumplimiento (cartera perdida)",
         unidad: "pct",
         contrato: "Cuánto del recaudo esperado se pierde definitivamente.",
       },
       {
         key: "pct_provision",
-        label: "Provisión (NIIF 9)",
+        label: "Provisión de cartera (contable, no afecta la caja)",
         unidad: "pct",
-        contrato:
-          "Reserva contable informativa (P&G/NIIF 9). NO entra al flujo de caja.",
+        contrato: "Reserva contable informativa. NO entra al flujo de caja.",
       },
     ],
   },
@@ -191,17 +190,17 @@ const BLOQUES: BloqueDef[] = [
       },
       {
         key: "base_auteco_dias",
-        label: "Base de fondeo",
+        label: "Días base de financiación",
         unidad: "dias",
         contrato:
-          "Días de referencia del costo de fondeo del lote (la espera que se financia).",
+          "Días de referencia del costo de financiación del lote (la espera que se financia).",
       },
       {
         key: "tasa_auteco",
-        label: "Tasa de fondeo",
+        label: "Tasa de financiación",
         unidad: "pct",
         contrato:
-          "El costo mensual de esperar el plazo: el fondeo del inventario Auteco.",
+          "El costo mensual de esperar el plazo: la financiación del inventario Auteco.",
       },
     ],
   },
@@ -740,7 +739,7 @@ function diffCampos(
     JSON.stringify(vigente.rampa_unidades)
   ) {
     filas.push({
-      label: "Rampa de unidades (por mes)",
+      label: "Unidades reales por mes",
       antes: resumenRampa(vigente.rampa_unidades),
       despues: resumenRampa(canon.rampa_unidades),
     });
@@ -785,7 +784,7 @@ function resumenComps(
       activos++;
     }
   }
-  return `${activos} activos · Σ ${formatCOP(suma)}`;
+  return `${activos} activos · Total ${formatCOP(suma)}`;
 }
 
 interface Validacion {
@@ -880,7 +879,7 @@ function validar(
   const gastos = montoSeguro(borr.gastos_fijos ?? "");
   if (umbral && gastos && umbral.lessThan(gastos.div(2))) {
     advertencias.push(
-      "El umbral quedó por debajo de medio mes de gastos fijos.",
+      "El mínimo de caja quedó por debajo de medio mes de gastos fijos.",
     );
   }
   // cambios de más de ±50 % vs. el vigente (montos y porcentajes)
@@ -909,7 +908,7 @@ function validar(
     let mix = new Decimal(0);
     for (const m of activos) mix = mix.plus(m.participacion_mix);
     if (!mix.equals(1)) {
-      mixError = `El mix de los modelos activos suma ${mix.times(100).toString()} % (debe ser 100 %). Corrige la participación en Modelos antes de guardar.`;
+      mixError = `La participación en ventas de los modelos activos suma ${mix.times(100).toString()} % (debe ser 100 %). Corrige la participación en Modelos antes de guardar.`;
       errores.__mix = mixError;
     }
   }
@@ -1069,11 +1068,11 @@ function RampaCard({
   return (
     <Card className="flex flex-col gap-3 p-5">
       <div>
-        <CardTitle>⑧ Rampa de unidades por mes</CardTitle>
+        <CardTitle>⑧ Unidades reales por mes (primeros meses)</CardTitle>
         <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
-          Colocación REAL de los primeros meses (override). El primer mes sin
-          dato reinicia la cadena en “motos base” y de ahí crece encadenado.
-          Vacío = sin rampa (comportamiento por defecto).
+          Colocación REAL de los primeros meses (reemplaza la proyección esos
+          meses). El primer mes sin dato vuelve a “motos base” y de ahí crece
+          encadenado. Vacío = sin rampa (comportamiento por defecto).
         </p>
       </div>
       {filas.length > 0 && (
@@ -1451,7 +1450,8 @@ function ModelosPanel({ puedeGestionar }: { puedeGestionar: boolean }) {
     <Card className="p-5">
       <CardTitle>Modelos de moto</CardTitle>
       <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
-        Cada modelo aporta al mix con su cuota, plazo y cuota inicial.
+        Cada modelo aporta a la participación en ventas con su cuota, plazo y
+        cuota inicial.
       </p>
 
       {q.isLoading && <Cargando variante="tabla" className="mt-3" />}
@@ -1471,7 +1471,9 @@ function ModelosPanel({ puedeGestionar }: { puedeGestionar: boolean }) {
                   </span>
                 </th>
                 <th className="px-3 py-2 text-right font-semibold">Plazo</th>
-                <th className="px-3 py-2 text-right font-semibold">Mix</th>
+                <th className="px-3 py-2 text-right font-semibold">
+                  Participación
+                </th>
                 <th className="px-3 py-2 font-semibold">Estado</th>
                 {puedeGestionar && <th className="px-3 py-2" />}
               </tr>
@@ -1541,8 +1543,8 @@ function ModelosPanel({ puedeGestionar }: { puedeGestionar: boolean }) {
               onChange={(v) => setN("precio_venta_con_iva", v)}
             />
             <CampoModelo
-              label="Participación mix"
-              hint="fracción (0.5 = 50 %)"
+              label="Participación en ventas (%)"
+              hint="fracción — ej: 0.5 = 50 %"
               inputMode="decimal"
               value={nuevo.participacion_mix}
               onChange={(v) => setN("participacion_mix", v)}
@@ -1589,7 +1591,7 @@ const CAMPOS_MODELO: { key: keyof ModeloEditarInput; label: string }[] = [
   { key: "plazo_semanas", label: "Plazo (semanas)" },
   { key: "costo_auteco", label: "Costo Auteco" },
   { key: "precio_venta_con_iva", label: "Precio venta (con IVA)" },
-  { key: "participacion_mix", label: "Participación mix" },
+  { key: "participacion_mix", label: "Participación en ventas (%)" },
 ];
 
 function EditarModeloDialog({

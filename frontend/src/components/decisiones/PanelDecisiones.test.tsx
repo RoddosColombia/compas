@@ -108,7 +108,9 @@ describe("PanelDecisiones (D1 §4)", () => {
     expect(
       await screen.findByText(/Techo de gasto mensual sostenido/i),
     ).toBeTruthy();
-    expect(await screen.findByText(/Ningún valle relevante/i)).toBeTruthy();
+    expect(
+      await screen.findByText(/Ningún mes de caja baja relevante/i),
+    ).toBeTruthy();
     // sin ajustes: PanelImpacto muestra el hint, no cifras viejas
     expect(await screen.findByText(/Agrega un ajuste/i)).toBeTruthy();
   });

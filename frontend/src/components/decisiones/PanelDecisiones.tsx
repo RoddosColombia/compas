@@ -514,7 +514,7 @@ function TechoCard({
       label="Techo de gasto mensual sostenido"
       valor={techo.techo_mensual}
       tono="atencion"
-      contexto={`Lo máximo que puedes sumar CADA mes de aquí en adelante sin que ningún valle baje del umbral (no es un cupo de un solo mes). Lo limita ${formatMesCorto(techo.valle_limitante_mes)}.`}
+      contexto={`Lo máximo que puedes sumar CADA mes de aquí en adelante sin que ningún mes baje del mínimo de caja (no es un cupo de un solo mes). Lo limita ${formatMesCorto(techo.valle_limitante_mes)}.`}
     />
   ) : (
     <KpiTileV2
@@ -522,7 +522,7 @@ function TechoCard({
       valor="0"
       valorTexto="Sin margen"
       tono="critico"
-      contexto={`El valle de ${formatMesCorto(techo.valle_limitante_mes)} ya está en el límite: no hay espacio para sumar gasto permanente sin perforar.`}
+      contexto={`El mes de caja más baja (${formatMesCorto(techo.valle_limitante_mes)}) ya está en el límite: no hay espacio para sumar gasto permanente sin bajar del mínimo de caja.`}
     />
   );
 
