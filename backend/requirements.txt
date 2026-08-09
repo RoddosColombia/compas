@@ -1,6 +1,6 @@
 # COMPAS backend — dependencias de runtime (Python 3.12 en Render)
 # Pinneadas a versiones verificadas localmente. Stack: STACK v1.1.2 §2.
-fastapi==0.135.2
+fastapi==0.141.1
 uvicorn[standard]==0.44.0
 pydantic==2.12.5
 pydantic-settings==2.14.2
