@@ -2,7 +2,7 @@
 # Pinneadas a versiones verificadas localmente. Stack: STACK v1.1.2 §2.
 fastapi==0.141.1
 uvicorn[standard]==0.52.1
-pydantic==2.12.5
+pydantic==2.13.4
 pydantic-settings==2.14.2
 beanie==2.0.0
 motor==3.7.1
