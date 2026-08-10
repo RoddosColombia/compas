@@ -3,7 +3,7 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.1
 pydantic==2.12.5
-pydantic-settings==2.14.2
+pydantic-settings==2.15.0
 beanie==2.0.0
 motor==3.7.1
 anyio==4.12.1
