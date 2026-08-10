@@ -92,6 +92,11 @@ export async function crearTransaccionManual(
 // FIX-G2: transacciones del mes (panel de manuales). `anulada` = ya tiene su
 // contra-asiento; `es_reverso` = es un contra-asiento (enlaza al original por
 // revierte_id). Montos string (regla 1).
+export interface ParteTransaccion {
+  rubro_id: string;
+  valor: string;
+}
+
 export interface TransaccionMovimiento {
   id: string;
   fecha: string;
@@ -104,12 +109,23 @@ export interface TransaccionMovimiento {
   revierte_id: string | null;
   anulada: boolean;
   es_reverso: boolean;
+  // PTS6-B: división de clasificación (null si la tx no está dividida).
+  dividida: boolean;
+  partes: ParteTransaccion[] | null;
 }
 
 export async function listarTransaccionesManuales(
   mes: string,
 ): Promise<{ items: TransaccionMovimiento[] }> {
   return apiJson(`/transacciones?banco=manual&mes=${encodeURIComponent(mes)}`);
+}
+
+/** PTS6-B: TODAS las transacciones del mes (todos los bancos), para el panel de
+ * división de movimientos bancarios mixtos. */
+export async function listarTransaccionesMes(
+  mes: string,
+): Promise<{ items: TransaccionMovimiento[] }> {
+  return apiJson(`/transacciones?mes=${encodeURIComponent(mes)}`);
 }
 
 export async function anularTransaccion(
@@ -120,5 +136,28 @@ export async function anularTransaccion(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ motivo }),
+  });
+}
+
+/** PTS6-B: divide una transacción en partes de clasificación (deben sumar EXACTO su
+ * valor; el backend valida). Los inmutables (valor/fecha/banco) no cambian. */
+export async function dividirTransaccion(
+  id: string,
+  partes: ParteTransaccion[],
+): Promise<TransaccionMovimiento> {
+  return apiJson(`/transacciones/${id}/dividir`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ partes }),
+  });
+}
+
+export async function deshacerDivision(
+  id: string,
+): Promise<TransaccionMovimiento> {
+  return apiJson(`/transacciones/${id}/deshacer-division`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
   });
 }

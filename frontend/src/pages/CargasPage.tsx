@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useRef, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { PanelDividir } from "@/components/cargas/PanelDividir";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
@@ -237,6 +238,8 @@ export default function CargasPage() {
       )}
 
       <PanelManuales gestor={gestor} />
+
+      <PanelDividir gestor={gestor} />
 
       {manualAbierto && (
         <ManualDialog

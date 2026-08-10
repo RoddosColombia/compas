@@ -48,6 +48,8 @@ function mov(over: Partial<TransaccionMovimiento> = {}): TransaccionMovimiento {
     revierte_id: null,
     anulada: false,
     es_reverso: false,
+    dividida: false,
+    partes: null,
     ...over,
   };
 }
