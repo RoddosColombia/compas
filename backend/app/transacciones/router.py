@@ -77,6 +77,16 @@ def _serializar(tx: Transaccion) -> dict:
         # FIX-G2: vínculo del contra-asiento (None en una tx normal). La Vista Control
         # muestra el original y su reverso enlazados por este campo.
         "revierte_id": str(tx.revierte_id) if tx.revierte_id is not None else None,
+        # PTS6-B: división de clasificación (None si la tx no está dividida).
+        "dividida": tx.partes is not None,
+        "partes": (
+            [
+                {"rubro_id": str(p.rubro_id), "valor": money_str(p.valor)}
+                for p in tx.partes
+            ]
+            if tx.partes is not None
+            else None
+        ),
     }
 
 
@@ -259,6 +269,57 @@ async def clasificar(
             usuario_id=user.id,
             proponer_regla=body.proponer_regla,
             patron=body.patron,
+        )
+    except service.TransaccionManualError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _serializar(tx)
+
+
+class ParteBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    rubro_id: str
+    valor: str  # monto COP como string (regla 1)
+
+
+class DividirBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    partes: list[ParteBody] = Field(min_length=2, max_length=10)
+
+
+@router.post("/{transaccion_id}/dividir")
+async def dividir(
+    transaccion_id: str,
+    body: DividirBody,
+    user: User = Depends(require_permission("cargas:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """PTS6-B: reparte la clasificación de una transacción entre ≥2 rubros cuyas
+    partes suman EXACTO su valor. Sin Idempotency-Key (mismo criterio que
+    clasificar): no crea dinero, y re-aplicar sobre una tx ya dividida da 409."""
+    partes = [
+        {"rubro_id": p.rubro_id, "valor": _parse_valor(p.valor)} for p in body.partes
+    ]
+    try:
+        tx = await service.dividir_transaccion(
+            tx_id=transaccion_id, partes=partes, usuario_id=user.id
+        )
+    except service.TransaccionManualError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return _serializar(tx)
+
+
+@router.post("/{transaccion_id}/deshacer-division")
+async def deshacer_division(
+    transaccion_id: str,
+    user: User = Depends(require_permission("cargas:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """PTS6-B: revierte una división (rubro vuelve al pre-división)."""
+    try:
+        tx = await service.deshacer_division(
+            tx_id=transaccion_id, usuario_id=user.id
         )
     except service.TransaccionManualError as e:
         raise HTTPException(e.status, e.detalle) from e

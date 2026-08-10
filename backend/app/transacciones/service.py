@@ -364,3 +364,191 @@ async def reclasificar_transaccion(
         except ReglasError as e:
             raise TransaccionManualError(e.detalle, e.status) from e
     return tx
+
+
+async def _validar_rubro_de_parte(rubro_id: PydanticObjectId, tipo: TipoFlujo) -> Rubro:
+    """Validaciones de destino de una PARTE (idénticas a reclasificar, D1/P0-1)."""
+    rubro = await Rubro.get(rubro_id)
+    if rubro is None:
+        raise TransaccionManualError("el rubro de una parte no existe", 404)
+    if not rubro.activo:
+        raise TransaccionManualError(
+            f"el rubro '{rubro.nombre}' está inactivo (B-2a C1)", 422
+        )
+    if rubro.tipo_flujo is not tipo:
+        raise TransaccionManualError(
+            f"el rubro '{rubro.nombre}' es {rubro.tipo_flujo.value}, incoherente "
+            f"con una transacción de {tipo.value} (D1)",
+            409,
+        )
+    if not es_rubro_clasificable(rubro):
+        raise TransaccionManualError(
+            f"el rubro '{rubro.nombre}' es de sistema y no admite clasificación "
+            "manual (P0-1)",
+            422,
+        )
+    return rubro
+
+
+async def dividir_transaccion(
+    *,
+    tx_id: str,
+    partes: list[dict],
+    usuario_id: str,
+) -> Transaccion:
+    """PTS6-B (CR división de clasificación, GO CEO 2026-08-10): reparte la
+    CLASIFICACIÓN de una transacción entre ≥2 rubros. Los inmutables §2.2 (fecha,
+    valor, banco, id_banco) NO cambian: las `partes` deben sumar EXACTO `valor`
+    (Decimal; 422 si no). `rubro_id` queda como la parte MAYOR (primario). Mes
+    cerrado → 409 (regla 4). Ya dividida → 409 (deshacer primero). Emite
+    `transaccion.dividida` FAIL-CLOSED (compensa si el emit falla)."""
+    try:
+        tid = PydanticObjectId(tx_id)
+    except Exception:
+        raise TransaccionManualError("transaccion_id inválido", 422) from None
+    tx = await Transaccion.get(tid)
+    if tx is None:
+        raise TransaccionManualError("la transacción no existe", 404)
+
+    mc = await MesControl.get(tx.mes_id)
+    if mc is not None and mc.estado is EstadoMes.CERRADO:
+        raise TransaccionManualError(
+            "el mes está cerrado y su histórico es inmutable (regla 4)", 409
+        )
+    if tx.partes is not None:
+        raise TransaccionManualError(
+            "la transacción ya está dividida; deshaz la división primero", 409
+        )
+    if len(partes) < 2:
+        raise TransaccionManualError("una división requiere al menos 2 partes", 422)
+
+    parseadas: list[tuple[PydanticObjectId, Decimal]] = []
+    for p in partes:
+        try:
+            rid = PydanticObjectId(p["rubro_id"])
+        except Exception:
+            raise TransaccionManualError(
+                "rubro_id inválido en una parte", 422
+            ) from None
+        valor = p["valor"]
+        if not isinstance(valor, Decimal) or valor <= 0:
+            raise TransaccionManualError("cada parte debe ser un Decimal > 0", 422)
+        parseadas.append((rid, valor))
+
+    if len({rid for rid, _ in parseadas}) != len(parseadas):
+        raise TransaccionManualError(
+            "partes con rubro repetido: usa una sola parte por rubro", 422
+        )
+    suma = sum((v for _, v in parseadas), Decimal("0"))
+    if suma != tx.valor:
+        raise TransaccionManualError(
+            f"las partes deben sumar exacto el valor de la transacción "
+            f"({suma} != {tx.valor})",
+            422,
+        )
+    rubros: list[Rubro] = []
+    for rid, _ in parseadas:
+        rubros.append(await _validar_rubro_de_parte(rid, tx.tipo_flujo))
+
+    # Estado previo para la compensación (O1). Inmutables §2.2: NO se tocan.
+    prev_rubro = tx.rubro_id
+    prev_pre = tx.rubro_pre_division
+    prev_por = tx.clasificada_por
+    prev_at = tx.clasificada_at
+
+    from app.domain.transaccion import ParteClasificacion
+
+    primaria = max(parseadas, key=lambda pv: pv[1])
+    tx.partes = [ParteClasificacion(rubro_id=r, valor=v) for r, v in parseadas]
+    tx.rubro_pre_division = prev_rubro
+    tx.rubro_id = primaria[0]
+    tx.clasificada_por = usuario_id
+    tx.clasificada_at = now_utc()
+    await tx.save()
+
+    try:
+        await emit_audit(
+            AuditEvento.transaccion_dividida,
+            entidad="transaccion",
+            entidad_id=str(tx.id),
+            actor_id=usuario_id,
+            metadata={
+                "valor_total": f"{tx.valor:.2f}",
+                "rubro_anterior": str(prev_rubro),
+                "partes": [
+                    {
+                        "rubro_id": str(r.id),
+                        "rubro": r.nombre,
+                        "valor": f"{v:.2f}",
+                    }
+                    for r, (_, v) in zip(rubros, parseadas, strict=True)
+                ],
+            },
+        )
+    except Exception:
+        # O1: sin rastro no hay división → compensar.
+        tx.partes = None
+        tx.rubro_pre_division = prev_pre
+        tx.rubro_id = prev_rubro
+        tx.clasificada_por = prev_por
+        tx.clasificada_at = prev_at
+        await tx.save()
+        raise
+    return tx
+
+
+async def deshacer_division(*, tx_id: str, usuario_id: str) -> Transaccion:
+    """PTS6-B: revierte una división — `partes` se limpia y `rubro_id` vuelve al
+    rubro pre-división. Mes cerrado → 409 (regla 4). Sin división → 409. Emite
+    `transaccion.division_deshecha` FAIL-CLOSED."""
+    try:
+        tid = PydanticObjectId(tx_id)
+    except Exception:
+        raise TransaccionManualError("transaccion_id inválido", 422) from None
+    tx = await Transaccion.get(tid)
+    if tx is None:
+        raise TransaccionManualError("la transacción no existe", 404)
+    mc = await MesControl.get(tx.mes_id)
+    if mc is not None and mc.estado is EstadoMes.CERRADO:
+        raise TransaccionManualError(
+            "el mes está cerrado y su histórico es inmutable (regla 4)", 409
+        )
+    if tx.partes is None:
+        raise TransaccionManualError("la transacción no está dividida", 409)
+
+    prev_partes = tx.partes
+    prev_rubro = tx.rubro_id
+    prev_pre = tx.rubro_pre_division
+    prev_por = tx.clasificada_por
+    prev_at = tx.clasificada_at
+
+    tx.partes = None
+    tx.rubro_id = prev_pre if prev_pre is not None else tx.rubro_id
+    tx.rubro_pre_division = None
+    tx.clasificada_por = usuario_id
+    tx.clasificada_at = now_utc()
+    await tx.save()
+
+    try:
+        await emit_audit(
+            AuditEvento.transaccion_division_deshecha,
+            entidad="transaccion",
+            entidad_id=str(tx.id),
+            actor_id=usuario_id,
+            metadata={
+                "rubro_restaurado": str(tx.rubro_id),
+                "partes_deshechas": [
+                    {"rubro_id": str(p.rubro_id), "valor": f"{p.valor:.2f}"}
+                    for p in prev_partes
+                ],
+            },
+        )
+    except Exception:
+        tx.partes = prev_partes
+        tx.rubro_id = prev_rubro
+        tx.rubro_pre_division = prev_pre
+        tx.clasificada_por = prev_por
+        tx.clasificada_at = prev_at
+        await tx.save()
+        raise
+    return tx

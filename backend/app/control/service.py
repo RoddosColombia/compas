@@ -23,7 +23,7 @@ from app.core.money import money_str
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import Rubro, RubroGrupo, TipoFlujo
-from app.domain.transaccion import Transaccion
+from app.domain.transaccion import Transaccion, pares_clasificacion
 
 _CENTAVO = Decimal("0.01")
 _ABIERTO = (EstadoMes.EN_EJECUCION, EstadoMes.CERRADO)
@@ -57,10 +57,18 @@ def _semaforo(pct: Decimal | None, ejecutado: Decimal) -> str:
 
 async def _egresos_por_rubro(mes_id: PydanticObjectId) -> dict[str, Decimal]:
     """$group: Σ egresos por rubro del mes (1 agregación; equivalente a la suma
-    directa, mismo patrón del motor)."""
+    directa, mismo patrón del motor). PTS6-B: las transacciones DIVIDIDAS salen del
+    $group (partes:None solo matchea sin división) y sus partes se suman aparte por
+    rubro — Σ pares == valor, así el total del mes no cambia por construcción."""
     col = Transaccion.get_pymongo_collection()
     pipeline = [
-        {"$match": {"mes_id": mes_id, "tipo_flujo": TipoFlujo.EGRESO.value}},
+        {
+            "$match": {
+                "mes_id": mes_id,
+                "tipo_flujo": TipoFlujo.EGRESO.value,
+                "partes": None,
+            }
+        },
         {"$group": {"_id": "$rubro_id", "total": {"$sum": "$valor"}}},
     ]
     out: dict[str, Decimal] = {}
@@ -68,6 +76,16 @@ async def _egresos_por_rubro(mes_id: PydanticObjectId) -> dict[str, Decimal]:
         t = d["total"]
         dec = t.to_decimal() if isinstance(t, Decimal128) else Decimal(str(t))
         out[str(d["_id"])] = dec
+    async for t in Transaccion.find(
+        {
+            "mes_id": mes_id,
+            "tipo_flujo": TipoFlujo.EGRESO.value,
+            "partes": {"$ne": None},
+        }
+    ):
+        for rid, val in pares_clasificacion(t):
+            k = str(rid)
+            out[k] = out.get(k, Decimal("0")) + val
     return out
 
 
@@ -81,8 +99,10 @@ async def _egresos_por_rubro_banco(
     async for t in Transaccion.find(Transaccion.mes_id == mes_id):
         if t.tipo_flujo is not TipoFlujo.EGRESO:
             continue
-        key = (str(t.rubro_id), t.banco.value)
-        out[key] = out.get(key, Decimal("0")) + t.valor
+        # PTS6-B: expande partes (identidad si la tx no está dividida).
+        for rid, val in pares_clasificacion(t):
+            key = (str(rid), t.banco.value)
+            out[key] = out.get(key, Decimal("0")) + val
     return out
 
 

@@ -20,9 +20,10 @@ en la capa de servicio (no se actualizan esos campos), no en el modelo.
 import hashlib
 import re
 from datetime import datetime
+from decimal import Decimal
 
 from beanie import Document, PydanticObjectId
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pymongo import IndexModel
 
 from app.core.money import Money
@@ -67,6 +68,33 @@ def derivar_id_banco(
     return f"{huella}|{ocurrencia}"
 
 
+class ParteClasificacion(BaseModel):
+    """Una parte de la clasificación de una transacción DIVIDIDA (PTS6-B, CR
+    transaccion.dividida): el valor del movimiento repartido entre rubros. La suma
+    de las partes es EXACTO `valor` (invariante del model_validator de abajo)."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    rubro_id: PydanticObjectId
+    valor: Money
+
+    @field_validator("valor")
+    @classmethod
+    def _parte_positiva(cls, v):
+        if v <= 0:
+            raise ValueError("cada parte debe ser > 0 (regla 1)")
+        return v
+
+
+def pares_clasificacion(tx: "Transaccion") -> list[tuple[PydanticObjectId, Money]]:
+    """(rubro_id, valor) para AGREGACIONES POR RUBRO: expande `partes` si la
+    transacción está dividida; identidad (rubro_id, valor) si no. Por el invariante
+    de división, Σ pares == tx.valor SIEMPRE — las sumas totales no cambian."""
+    if tx.partes:
+        return [(p.rubro_id, p.valor) for p in tx.partes]
+    return [(tx.rubro_id, tx.valor)]
+
+
 class Transaccion(Document):
     model_config = ConfigDict(strict=True, extra="forbid")
 
@@ -96,6 +124,23 @@ class Transaccion(Document):
     pago_planeado_id: PydanticObjectId | None = None
     factura_id: PydanticObjectId | None = None
     regla_id: PydanticObjectId | None = None
+    # PTS6-B: división de CLASIFICACIÓN (los inmutables §2.2 no cambian). `rubro_id`
+    # queda como la parte MAYOR (primario para consumidores que no expanden partes);
+    # `rubro_pre_division` guarda el rubro previo para poder deshacer.
+    partes: list[ParteClasificacion] | None = None
+    rubro_pre_division: PydanticObjectId | None = None
+
+    @model_validator(mode="after")
+    def _partes_consistentes(self) -> "Transaccion":
+        if self.partes is not None:
+            if len(self.partes) < 2:
+                raise ValueError("una división requiere al menos 2 partes")
+            suma = sum((p.valor for p in self.partes), Decimal("0"))
+            if suma != self.valor:
+                raise ValueError(
+                    f"las partes deben sumar exacto el valor ({suma} != {self.valor})"
+                )
+        return self
 
     class Settings:
         name = TRANSACCIONES_COLLECTION

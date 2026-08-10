@@ -66,6 +66,12 @@ class AuditEvento(StrEnum):
     # ── CR-S2 (1) ──
     transaccion_creada = "transaccion.creada"
 
+    # PTS6-B (CR división de clasificación, GO CEO 2026-08-10): una transacción
+    # bancaria que cubre varios conceptos se reparte en partes que suman exacto su
+    # valor. Los inmutables §2.2 no cambian; el rastro queda completo y es reversible.
+    transaccion_dividida = "transaccion.dividida"
+    transaccion_division_deshecha = "transaccion.division_deshecha"
+
     # ── CR-S4 (2) — C1 categorías administrables ──
     rubro_creado = "rubro.creado"
     rubro_editado = "rubro.editado"

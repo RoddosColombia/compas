@@ -33,7 +33,7 @@ from app.core.time import now_utc
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import Rubro, TipoFlujo
-from app.domain.transaccion import Transaccion
+from app.domain.transaccion import Transaccion, pares_clasificacion
 from app.presupuesto.motor import calcular_sugerido_historico
 
 _ACOTABLE = (EstadoMes.SUGERIDO, EstadoMes.PROPUESTO, EstadoMes.EN_EJECUCION)
@@ -88,6 +88,9 @@ async def _ejecutados_por_rubro_mes(
                 "tipo_flujo": TipoFlujo.EGRESO.value,
                 "mes_id": {"$in": mes_ids},
                 "rubro_id": {"$in": rubro_ids},
+                # PTS6-B: las divididas se expanden aparte (abajo); partes:None
+                # matchea las no divididas (campo ausente o nulo).
+                "partes": None,
             }
         },
         {
@@ -104,6 +107,21 @@ async def _ejecutados_por_rubro_mes(
             total.to_decimal() if isinstance(total, Decimal128) else Decimal(str(total))
         )
         out[(str(doc["_id"]["rubro_id"]), str(doc["_id"]["mes_id"]))] = dec
+    # PTS6-B: transacciones DIVIDIDAS de esos meses — sus partes suman por rubro
+    # (solo las partes cuyos rubros están en el universo pedido).
+    rubros_pedidos = {str(r) for r in rubro_ids}
+    async for t in Transaccion.find(
+        {
+            "tipo_flujo": TipoFlujo.EGRESO.value,
+            "mes_id": {"$in": mes_ids},
+            "partes": {"$ne": None},
+        }
+    ):
+        for rid, val in pares_clasificacion(t):
+            if str(rid) not in rubros_pedidos:
+                continue
+            key = (str(rid), str(t.mes_id))
+            out[key] = out.get(key, Decimal("0")) + val
     return out
 
 

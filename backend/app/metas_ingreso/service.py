@@ -14,6 +14,7 @@ from app.audit.service import emit_audit
 from app.core.money import Money
 from app.core.time import now_bogota
 from app.domain.mes_control import MesControl
+from app.domain.transaccion import pares_clasificacion
 from app.domain.obligacion import LineaMeta, MetaIngreso
 
 # El set de neutros Y su resolver nombre→id viven en `app.domain.rubros_neutros` (E1 lo
@@ -154,6 +155,11 @@ async def ingreso_real(mes: str) -> Decimal | None:
     neutros = await _ids_rubros_neutros()
     total = Decimal("0")
     async for t in Transaccion.find(Transaccion.mes_id == mc.id):
-        if t.tipo_flujo is TipoFlujo.INGRESO and t.rubro_id not in neutros:
-            total += t.valor
+        if t.tipo_flujo is not TipoFlujo.INGRESO:
+            continue
+        # PTS6-B: expande partes; la exclusión de neutros aplica POR PARTE (una
+        # consignación mixta suma solo sus partes no-neutras).
+        for rid, val in pares_clasificacion(t):
+            if rid not in neutros:
+                total += val
     return total
