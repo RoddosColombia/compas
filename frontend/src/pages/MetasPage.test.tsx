@@ -45,6 +45,8 @@ function meta(over: Partial<Meta> = {}): Meta {
     lineas: [],
     real_ejecutado: "25000000.00",
     pct_cumplimiento: "25.0",
+    real_inicial: null,
+    real_semanal: null,
     activo: true,
     ...over,
   };
@@ -124,40 +126,87 @@ describe("MetasPage — acumulado del año", () => {
 });
 
 describe("MetasPage — CRUD (proyeccion:gestionar)", () => {
-  it("crear valida monto y mes ANTES de llamar al backend", async () => {
+  it("PTS6-E: crea con 2 líneas; el total es la suma y valida antes del backend", async () => {
     mocks.listarMetas.mockResolvedValue({ items: [] });
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: /nueva meta/i }));
     const dialogo = await screen.findByRole("dialog");
-    // monto inválido → no se llama
     fireEvent.change(within(dialogo).getByLabelText(/mes/i), {
       target: { value: "2026-09" },
     });
-    fireEvent.change(within(dialogo).getByLabelText(/monto/i), {
+    // una línea inválida → no se llama
+    fireEvent.change(within(dialogo).getByLabelText("Cuota inicial"), {
       target: { value: "abc" },
+    });
+    fireEvent.change(within(dialogo).getByLabelText("Cuotas semanales"), {
+      target: { value: "200000000" },
     });
     fireEvent.click(within(dialogo).getByRole("button", { name: /guardar/i }));
     expect(mocks.crearMeta).not.toHaveBeenCalled();
-    expect(within(dialogo).getByText(/número positivo/i)).toBeInTheDocument();
-    // ahora válido → sí se llama con mes + valor
+    expect(within(dialogo).getByText(/números válidos/i)).toBeInTheDocument();
+    // ahora ambas válidas → total = 60M + 200M = 260M; se envía con lineas
     mocks.crearMeta.mockResolvedValue(meta({ mes: "2026-09" }));
-    fireEvent.change(within(dialogo).getByLabelText(/monto/i), {
-      target: { value: "50000000" },
+    fireEvent.change(within(dialogo).getByLabelText("Cuota inicial"), {
+      target: { value: "60000000" },
     });
+    // el total se muestra en vivo
+    expect(within(dialogo).getByTestId("meta-total").textContent).toMatch(
+      /260\.000\.000/,
+    );
     fireEvent.click(within(dialogo).getByRole("button", { name: /guardar/i }));
     expect(mocks.crearMeta).toHaveBeenCalledWith(
-      expect.objectContaining({ mes: "2026-09", valor: "50000000" }),
+      expect.objectContaining({
+        mes: "2026-09",
+        valor: "260000000",
+        lineas: [
+          { nombre: "Cuota inicial", valor: "60000000" },
+          { nombre: "Cuotas semanales", valor: "200000000" },
+        ],
+      }),
     );
   });
 
-  it("editar abre el formulario con el valor actual", async () => {
-    mocks.listarMetas.mockResolvedValue({ items: [meta()] });
+  it("editar precarga las 2 líneas de la meta", async () => {
+    mocks.listarMetas.mockResolvedValue({
+      items: [
+        meta({
+          lineas: [
+            { nombre: "Cuota inicial", valor: "40000000.00" },
+            { nombre: "Cuotas semanales", valor: "60000000.00" },
+          ],
+        }),
+      ],
+    });
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: /editar/i }));
     const dialogo = await screen.findByRole("dialog");
-    expect(within(dialogo).getByLabelText(/monto/i)).toHaveValue(
-      "100000000.00",
+    expect(within(dialogo).getByLabelText("Cuota inicial")).toHaveValue(
+      "40000000.00",
     );
+    expect(within(dialogo).getByLabelText("Cuotas semanales")).toHaveValue(
+      "60000000.00",
+    );
+  });
+
+  it("PTS6-E: el bloque del mes muestra el desglose inicial vs semanal (meta y real)", async () => {
+    mocks.listarMetas.mockResolvedValue({
+      items: [
+        meta({
+          lineas: [
+            { nombre: "Cuota inicial", valor: "60000000.00" },
+            { nombre: "Cuotas semanales", valor: "200000000.00" },
+          ],
+          real_inicial: "12000000.00",
+          real_semanal: "58000000.00",
+        }),
+      ],
+    });
+    renderPage();
+    const bloque = within(await screen.findByTestId("mes-actual"));
+    expect(bloque.getByText(/Desglose/i)).toBeInTheDocument();
+    expect(bloque.getByText(/60\.000\.000/)).toBeInTheDocument(); // meta inicial
+    expect(bloque.getByText(/12\.000\.000/)).toBeInTheDocument(); // real inicial
+    expect(bloque.getByText(/58\.000\.000/)).toBeInTheDocument(); // real semanal
   });
 
   it("oculta el CRUD a roles sin proyeccion:gestionar", async () => {

@@ -20,8 +20,17 @@ export interface Meta {
   lineas: LineaMeta[];
   real_ejecutado: string | null; // Σ ingresos del mes, excluidos los neutros
   pct_cumplimiento: string | null; // null si meta 0/ausente
+  // PTS6-E: real separado por concepto (rubro 0120 inicial / 0110 semanal). null si
+  // el mes aún no tiene ciclo abierto.
+  real_inicial: string | null;
+  real_semanal: string | null;
   activo: boolean;
 }
+
+// PTS6-E: nombres canónicos de las 2 líneas de la meta (deben calzar con el desglose
+// del real inicial/semanal del backend).
+export const LINEA_INICIAL = "Cuota inicial";
+export const LINEA_SEMANAL = "Cuotas semanales";
 
 export interface MetasRespuesta {
   items: Meta[];

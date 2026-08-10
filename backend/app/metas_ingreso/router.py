@@ -65,6 +65,8 @@ async def _serializar(m: MetaIngreso) -> dict:
     pct = None
     if real is not None and m.valor > 0:
         pct = str((real / m.valor * 100).quantize(Decimal("0.1"), ROUND_HALF_EVEN))
+    # PTS6-E: real separado en cuota inicial vs. cuotas semanales (por rubro 0120/0110).
+    desglose = await service.ingreso_real_por_concepto(m.mes)
     return {
         "id": str(m.id),
         "mes": m.mes,
@@ -74,6 +76,8 @@ async def _serializar(m: MetaIngreso) -> dict:
         ],
         "real_ejecutado": money_str(real) if real is not None else None,
         "pct_cumplimiento": pct,
+        "real_inicial": money_str(desglose["inicial"]) if desglose else None,
+        "real_semanal": money_str(desglose["semanal"]) if desglose else None,
         "activo": m.activo,
     }
 

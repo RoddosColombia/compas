@@ -18,6 +18,9 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
 import { ErrorEstado } from "@/components/ui/error-estado";
 import {
+  LINEA_INICIAL,
+  LINEA_SEMANAL,
+  type LineaMeta,
   type Meta,
   type MetaCrearInput,
   crearMeta,
@@ -111,13 +114,13 @@ export default function MetasPage() {
         <MetaDialog
           modo={dialogo.modo}
           mesInicial={dialogo.modo === "crear" ? dialogo.mes : dialogo.meta.mes}
-          valorInicial={dialogo.modo === "editar" ? dialogo.meta.valor : ""}
-          onGuardar={async (mes, valor) => {
+          metaInicial={dialogo.modo === "editar" ? dialogo.meta : null}
+          onGuardar={async (mes, valor, lineas) => {
             if (dialogo.modo === "crear") {
-              const input: MetaCrearInput = { mes, valor };
+              const input: MetaCrearInput = { mes, valor, lineas };
               await crearMeta(input);
             } else {
-              await editarMeta({ id: dialogo.meta.id, valor });
+              await editarMeta({ id: dialogo.meta.id, valor, lineas });
             }
             setDialogo(null);
             invalidar();
@@ -223,7 +226,63 @@ function BloqueMesActual({
           )}
         </div>
       )}
+      <DesgloseMeta meta={meta} />
     </Card>
+  );
+}
+
+/** PTS6-E: las 2 líneas de la meta (Cuota inicial / Cuotas semanales) con su real
+ * por concepto. Se muestra solo si la meta trae líneas; el real por concepto puede
+ * ser "—" hasta que se clasifiquen los ingresos al rubro 0120. */
+function DesgloseMeta({ meta }: { meta: Meta }) {
+  const lineaMeta = (nombre: string): string | null =>
+    meta.lineas.find((l) => l.nombre === nombre)?.valor ?? null;
+  const filas: { nombre: string; meta: string | null; real: string | null }[] =
+    [
+      {
+        nombre: LINEA_INICIAL,
+        meta: lineaMeta(LINEA_INICIAL),
+        real: meta.real_inicial,
+      },
+      {
+        nombre: LINEA_SEMANAL,
+        meta: lineaMeta(LINEA_SEMANAL),
+        real: meta.real_semanal,
+      },
+    ];
+  // sin líneas canónicas ni desglose real → no aporta (candado)
+  if (filas.every((f) => f.meta === null) && meta.real_inicial === null)
+    return null;
+  return (
+    <div className="mt-1 border-t border-hairline pt-3">
+      <div className="mb-2 font-sans text-apoyo text-ink-faint uppercase tracking-wide">
+        Desglose: cuota inicial vs. cuotas semanales
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full font-sans text-sm">
+          <thead>
+            <tr className="text-left text-ink-faint">
+              <th className="py-1 pr-4 font-semibold">Concepto</th>
+              <th className="py-1 px-4 text-right font-semibold">Meta</th>
+              <th className="py-1 pl-4 text-right font-semibold">Real</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              <tr key={f.nombre} className="border-t border-hairline/50">
+                <td className="py-1.5 pr-4 text-ink">{f.nombre}</td>
+                <td className="tabular py-1.5 px-4 text-right text-ink-soft">
+                  {f.meta !== null ? formatCOP(f.meta) : "—"}
+                </td>
+                <td className="tabular py-1.5 pl-4 text-right text-ink-soft">
+                  {f.real !== null ? formatCOP(f.real) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -377,20 +436,34 @@ function AcumuladoAnio({
 function MetaDialog({
   modo,
   mesInicial,
-  valorInicial,
+  metaInicial,
   onGuardar,
   onCerrar,
 }: {
   modo: "crear" | "editar";
   mesInicial: string;
-  valorInicial: string;
-  onGuardar: (mes: string, valor: string) => Promise<void>;
+  metaInicial: Meta | null;
+  onGuardar: (
+    mes: string,
+    valor: string,
+    lineas: LineaMeta[],
+  ) => Promise<void>;
   onCerrar: () => void;
 }) {
+  const lineaInicial = (nombre: string) =>
+    metaInicial?.lineas.find((l) => l.nombre === nombre)?.valor ?? "";
   const [mes, setMes] = useState(mesInicial);
-  const [valor, setValor] = useState(valorInicial);
+  const [inicial, setInicial] = useState(lineaInicial(LINEA_INICIAL));
+  const [semanal, setSemanal] = useState(lineaInicial(LINEA_SEMANAL));
   const [error, setError] = useState<string | null>(null);
   const [pendiente, setPendiente] = useState(false);
+
+  // El total de la meta es la SUMA de las 2 líneas (no se teclea aparte): así la
+  // meta siempre está partida y cuadra por construcción.
+  const total =
+    RE_MONTO.test(inicial.trim()) && RE_MONTO.test(semanal.trim())
+      ? parseMonto(inicial.trim()).plus(semanal.trim())
+      : null;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -399,13 +472,23 @@ function MetaDialog({
       setError("El mes debe tener el formato YYYY-MM.");
       return;
     }
-    if (!RE_MONTO.test(valor.trim())) {
-      setError("El monto de la meta debe ser un número positivo (COP).");
+    if (!RE_MONTO.test(inicial.trim()) || !RE_MONTO.test(semanal.trim())) {
+      setError(
+        "Cuota inicial y Cuotas semanales deben ser números válidos (COP).",
+      );
       return;
     }
+    if (total === null || total.lessThanOrEqualTo(0)) {
+      setError("El total de la meta (inicial + semanales) debe ser mayor a 0.");
+      return;
+    }
+    const lineas: LineaMeta[] = [
+      { nombre: LINEA_INICIAL, valor: inicial.trim() },
+      { nombre: LINEA_SEMANAL, valor: semanal.trim() },
+    ];
     setPendiente(true);
     try {
-      await onGuardar(mes, valor.trim());
+      await onGuardar(mes, total.toString(), lineas);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "No se pudo guardar la meta",
@@ -447,15 +530,33 @@ function MetaDialog({
             </p>
           )}
           <label className="flex flex-col gap-1">
-            <span className="font-medium text-ink">Monto de la meta (COP)</span>
+            <span className="font-medium text-ink">Cuota inicial (COP)</span>
             <input
               inputMode="decimal"
-              placeholder="50000000"
+              placeholder="60000000"
+              aria-label="Cuota inicial"
               className="tabular rounded-md border border-hairline bg-surface px-3 py-1.5 text-right text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
+              value={inicial}
+              onChange={(e) => setInicial(e.target.value)}
             />
           </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-medium text-ink">Cuotas semanales (COP)</span>
+            <input
+              inputMode="decimal"
+              placeholder="200000000"
+              aria-label="Cuotas semanales"
+              className="tabular rounded-md border border-hairline bg-surface px-3 py-1.5 text-right text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+              value={semanal}
+              onChange={(e) => setSemanal(e.target.value)}
+            />
+          </label>
+          <div className="flex items-center justify-between border-t border-hairline pt-2 font-medium text-ink">
+            <span>Total de la meta</span>
+            <span className="tabular" data-testid="meta-total">
+              {total !== null ? formatCOP(total) : "—"}
+            </span>
+          </div>
 
           {error && <AlertBanner variant="danger">{error}</AlertBanner>}
 

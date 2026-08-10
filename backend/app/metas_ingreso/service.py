@@ -163,3 +163,41 @@ async def ingreso_real(mes: str) -> Decimal | None:
             if rid not in neutros:
                 total += val
     return total
+
+
+# PTS6-E: el ingreso real, SEPARADO en cuota inicial vs. cuotas semanales, por el
+# código del rubro (taxonomía canónica de COMPAS, igual que E1 lectura.py):
+#   inicial  ← 0120 Cuotas iniciales   (rubro dormido hasta que se clasifique)
+#   semanal  ← 0110 Recaudo de cartera (hoy TODO el ingreso cae aquí)
+# Devuelve magnitudes por concepto (Decimal); los rubros de ingreso que no sean
+# 0110/0120 (ni neutros) quedan fuera de esta partición pero SÍ cuentan en el total
+# de `ingreso_real` — la partición es de los dos conceptos que el CEO pidió ver.
+_COD_INICIAL = "0120"
+_COD_SEMANAL = "0110"
+
+
+async def ingreso_real_por_concepto(mes: str) -> dict[str, Decimal] | None:
+    """{'inicial': Σ0120, 'semanal': Σ0110} del mes (INGRESO, expande partes,
+    excluye neutros). None si el mes aún no tiene MesControl."""
+    from app.domain.rubro import Rubro
+
+    mc = await MesControl.find_one(MesControl.mes == f"{mes[:7]}-01")
+    if mc is None:
+        return None
+    neutros = await _ids_rubros_neutros()
+    concepto_por_id: dict[PydanticObjectId, str] = {}
+    async for r in Rubro.find(Rubro.codigo == _COD_INICIAL):
+        concepto_por_id[r.id] = "inicial"
+    async for r in Rubro.find(Rubro.codigo == _COD_SEMANAL):
+        concepto_por_id[r.id] = "semanal"
+    out = {"inicial": Decimal("0"), "semanal": Decimal("0")}
+    async for t in Transaccion.find(Transaccion.mes_id == mc.id):
+        if t.tipo_flujo is not TipoFlujo.INGRESO:
+            continue
+        for rid, val in pares_clasificacion(t):
+            if rid in neutros:
+                continue
+            concepto = concepto_por_id.get(rid)
+            if concepto is not None:
+                out[concepto] += val
+    return out
