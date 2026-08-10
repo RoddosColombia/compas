@@ -38,6 +38,7 @@ _PLAN = [
     ("4040", "deudas_obligaciones", "Deudas impuestos", False),
     ("4050", "deudas_obligaciones", "Deudas proveedores anteriores", False),
     ("4060", "deudas_obligaciones", "Inventario Auteco (150 días)", False),
+    ("4070", "deudas_obligaciones", "Rodante – Financiación a clientes", False),
     # otros
     ("5010", "otros", "Otros gastos", False),
     ("5060", "otros", "Impuestos", False),
@@ -103,14 +104,34 @@ def test_r1_1010_entero_a_pago_inventario_no_costo_nueva():
     assert r.conceptos["costo_nueva"] == Decimal("0.00")
 
 
-def test_r2_4040_en_sin_mapear():
+def test_pts6d_4040_y_4070_a_int_deuda():
+    # R-2 (4040 en sin_mapear) SUPERSEDED por PTS6-D (decisión CEO 2026-08-10):
+    # 4040 Deudas impuestos y 4070 Rodante–Financiación entran a int_deuda para que
+    # el Gasto del mes en curso refleje TODO el presupuesto no-costo.
     rubros = _rubros()
     r = mapear_a_conceptos(
         rubros=rubros,
-        valor_por_rubro_id=_valores(**{"Deudas impuestos": "8000"}),
+        valor_por_rubro_id=_valores(
+            **{
+                "Deudas impuestos": "8000",
+                "Rodante – Financiación a clientes": "3000",
+            }
+        ),
         neutros_ids=set(),
     )
-    assert "Deudas impuestos" in r.sin_mapear
+    assert r.conceptos["int_deuda"] == Decimal("11000")
+    assert r.sin_mapear == []
+
+
+def test_codigo_sin_concepto_sigue_en_sin_mapear():
+    # El canal sin_mapear sigue vivo (mecanismo R-2): 4060 no tiene concepto.
+    rubros = _rubros()
+    r = mapear_a_conceptos(
+        rubros=rubros,
+        valor_por_rubro_id=_valores(**{"Inventario Auteco (150 días)": "5000"}),
+        neutros_ids=set(),
+    )
+    assert "Inventario Auteco (150 días)" in r.sin_mapear
     # y no se sumó a ningún concepto
     assert all(v == Decimal("0.00") for v in r.conceptos.values())
 

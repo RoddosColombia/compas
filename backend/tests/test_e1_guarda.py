@@ -29,7 +29,9 @@ _PLAN = [
     ("4010", "deudas_obligaciones", "Préstamos"),
     ("4020", "deudas_obligaciones", "Tarjetas"),
     ("4030", "deudas_obligaciones", "Garantía cupo"),
+    ("4040", "deudas_obligaciones", "Deudas impuestos"),
     ("4050", "deudas_obligaciones", "Proveedores"),
+    ("4070", "deudas_obligaciones", "Rodante Financiación"),
     ("5060", "otros", "Impuestos"),
 ]
 
@@ -111,15 +113,16 @@ def test_marcas_origen_marca_solo_cerrado_anomalo():
     }
 
 
-def _rubros_con_4040():
-    # los 9 del mapeo + un rubro no-sistema sin concepto (4040 = R-2, grupo
-    # deudas_obligaciones no está en _GRUPOS_GASTOS_FIJOS → _concepto_de = None)
+def _rubros_con_4060():
+    # los del mapeo + un rubro no-sistema sin concepto (4060, grupo
+    # deudas_obligaciones no está en _GRUPOS_GASTOS_FIJOS → _concepto_de = None).
+    # PTS6-D: 4040 ya mapea a int_deuda (CEO 2026-08-10); el ejemplo usa 4060.
     return _rubros() + [
         RubroInfo(
-            id="4040",
-            codigo="4040",
+            id="4060",
+            codigo="4060",
             grupo="deudas_obligaciones",
-            nombre="Ajuste raro 4040",
+            nombre="Ajuste raro 4060",
             es_sistema=False,
         )
     ]
@@ -129,13 +132,13 @@ def test_rubros_sin_mapear_reporta_rubro_con_movimiento_sin_concepto():
     anclas = {
         "2026-05": AnclaMes(
             estado="cerrado",
-            ejecutado_por_rubro_id={"4010": Decimal("100"), "4040": Decimal("500")},
+            ejecutado_por_rubro_id={"4010": Decimal("100"), "4060": Decimal("500")},
             definido_por_rubro_id={},
             ingreso_real=Decimal("0"),
         ),
     }
-    assert rubros_sin_mapear(anclas, rubros=_rubros_con_4040(), neutros_ids=set()) == [
-        "Ajuste raro 4040"
+    assert rubros_sin_mapear(anclas, rubros=_rubros_con_4060(), neutros_ids=set()) == [
+        "Ajuste raro 4060"
     ]
 
 
@@ -154,11 +157,11 @@ def test_rubros_sin_mapear_vacio_cuando_todo_mapea():
 def test_rubros_sin_mapear_dedup_y_ordena_entre_meses():
     a = AnclaMes(
         estado="cerrado",
-        ejecutado_por_rubro_id={"4040": Decimal("500")},
+        ejecutado_por_rubro_id={"4060": Decimal("500")},
         definido_por_rubro_id={},
         ingreso_real=Decimal("0"),
     )
     anclas = {"2026-05": a, "2026-06": a}  # mismo rubro en dos meses → una entrada
-    assert rubros_sin_mapear(anclas, rubros=_rubros_con_4040(), neutros_ids=set()) == [
-        "Ajuste raro 4040"
+    assert rubros_sin_mapear(anclas, rubros=_rubros_con_4060(), neutros_ids=set()) == [
+        "Ajuste raro 4060"
     ]

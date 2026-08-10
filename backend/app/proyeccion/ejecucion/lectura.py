@@ -10,7 +10,8 @@ proyecta, usando el mapeo del Plan de Cuentas (I-PLAN §10, decisiones del CEO):
     costo_nueva      ← 1020 SOAT/Matrículas                 [R-1: 1010 no entra aquí]
     gps              ← 1030 Seguros (Hunter)
     gastos_fijos     ← TODO OPERACIÓN + NÓMINA + OTROS (menos 5060 y menos sistema)
-    int_deuda        ← 4010 Préstamos · 4020 Tarjetas · 4050 Proveedores
+    int_deuda        ← 4010 Préstamos · 4020 Tarjetas · 4040 Deudas impuestos ·
+                       4050 Proveedores · 4070 Rodante–Financiación (PTS6-D)
     iva              ← 5060 Impuestos
 
 NOTA (E1-P2, decisión CEO 2026-08-06): se quitaron del mapeo 0120 (Cuotas iniciales),
@@ -23,8 +24,9 @@ FUNCIÓN PURA (sin Mongo): recibe el snapshot de rubros + el valor ejecutado por
 rubro_id + los ids de los rubros neutros, y devuelve {concepto: Decimal} + sin_mapear.
 Nada se adivina:
   • los 3 NEUTROS se excluyen por rubro_id (A1) — antes que cualquier regla de grupo;
-  • R-1 (1010→pago_inventario entero) y R-2 (4040 sin concepto) quedan documentados:
-    4040 sale en `sin_mapear`, no se suma a nada;
+  • R-1 (1010→pago_inventario entero) queda documentado; R-2 (4040 en sin_mapear)
+    fue SUPERSEDED por PTS6-D (CEO 2026-08-10): 4040 y 4070 → int_deuda. El canal
+    `sin_mapear` sigue vivo para códigos genuinamente sin concepto;
   • si un código del mapeo NO existe en la taxonomía → error ruidoso (B12).
 
 E1 NO decide temporalidad aquí: esta capa solo MAPEA. Qué meses se anclan y con qué
@@ -54,6 +56,11 @@ CONCEPTOS = (
 
 # Mapeo explícito por código (los específicos del §10). Solo códigos presentes en la
 # taxonomía de PROD — 0120/0130/0140/4060 quitados (ver NOTA del docstring).
+# PTS6-D (decisión CEO 2026-08-10, supersede R-2): 4040 (Deudas impuestos) y 4070
+# (Rodante – Financiación a clientes, creado en PTS6-C) entran a `int_deuda` para que
+# el Gasto del mes en curso refleje TODO el presupuesto no-costo. R-2 (4040 en
+# sin_mapear) queda superseded; el mecanismo sin_mapear sigue vivo para códigos
+# genuinamente sin concepto.
 _CONCEPTO_POR_CODIGO: dict[str, str] = {
     "0110": "neto",  # único rubro de ingreso real; E1 ancla el neto vía ingreso_real
     "1010": "pago_inventario",  # R-1: entero a pago_inventario
@@ -62,7 +69,9 @@ _CONCEPTO_POR_CODIGO: dict[str, str] = {
     "1030": "gps",
     "4010": "int_deuda",
     "4020": "int_deuda",
+    "4040": "int_deuda",  # PTS6-D: supersede R-2 (CEO 2026-08-10)
     "4050": "int_deuda",
+    "4070": "int_deuda",  # PTS6-D: Rodante – Financiación a clientes (PTS6-C)
     "5060": "iva",
 }
 

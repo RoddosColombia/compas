@@ -9,7 +9,8 @@
       "ingreso_real": "179710080.31",
       "egresos_total_esperado": "372200776.84",
       "ingreso_real_esperado": "179710080.31"
-    }
+    },
+    "actualizacion_2026_08_10": "PTS6-D: +rubro 4070 (creado en PROD por PTS6-C, id real). B12 exige que todo código del mapeo exista en la taxonomía; sin ejecutado en julio (0) → los controles egresos_total/ingreso_real quedan INTACTOS."
   },
   "rubros": [
     {
@@ -333,6 +334,13 @@
       "grupo": "otros",
       "nombre": "Tránsito Wava mes anterior",
       "es_sistema": true
+    },
+    {
+      "id": "6a7a3c24508cee7551f9dd80",
+      "codigo": "4070",
+      "grupo": "deudas_obligaciones",
+      "nombre": "Rodante – Financiación a clientes",
+      "es_sistema": false
     }
   ],
   "egresos_por_rubro_id": {

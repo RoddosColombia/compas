@@ -42,7 +42,9 @@ _PLAN = [
     ("4010", "deudas_obligaciones", "Préstamos"),
     ("4020", "deudas_obligaciones", "Tarjetas"),
     ("4030", "deudas_obligaciones", "Garantía cupo"),
+    ("4040", "deudas_obligaciones", "Deudas impuestos"),
     ("4050", "deudas_obligaciones", "Proveedores"),
+    ("4070", "deudas_obligaciones", "Rodante Financiación"),
     ("5060", "otros", "Impuestos"),
 ]
 
@@ -271,27 +273,28 @@ async def test_b10_loguea_mes_cerrado_sospechoso(db, caplog):
 async def test_meta_marcas_y_sin_mapear(db):
     """P5: _resultado_con expone AnclajeMeta — meses_anclados (marcas) y sin_mapear
     (rubro con movimiento sin concepto). mes_en_curso es None (db vacía, sin ciclo)."""
-    rubros_4040 = _rubros() + [
+    # PTS6-D: 4040 ya mapea a int_deuda; el caso sin_mapear usa 4060 (sin concepto).
+    rubros_4060 = _rubros() + [
         RubroInfo(
-            id="4040",
-            codigo="4040",
+            id="4060",
+            codigo="4060",
             grupo="deudas_obligaciones",
-            nombre="Ajuste raro 4040",
+            nombre="Ajuste raro 4060",
             es_sistema=False,
         )
     ]
     anclas = {
         "2026-10": AnclaMes(
             estado="cerrado",
-            ejecutado_por_rubro_id={"4010": Decimal("40"), "4040": Decimal("9")},
+            ejecutado_por_rubro_id={"4010": Decimal("40"), "4060": Decimal("9")},
             definido_por_rubro_id={"4010": Decimal("100")},  # 40<50 → sospechoso
             ingreso_real=Decimal("0"),
         )
     }
-    _filas, meta = await _correr((anclas, rubros_4040, set()), [], con_meta=True)
+    _filas, meta = await _correr((anclas, rubros_4060, set()), [], con_meta=True)
     assert isinstance(meta, AnclajeMeta)
     assert meta.meses_anclados == {"2026-10": "cerrado_sospechoso"}
-    assert meta.sin_mapear == ["Ajuste raro 4040"]
+    assert meta.sin_mapear == ["Ajuste raro 4060"]
     assert meta.mes_en_curso is None
 
 

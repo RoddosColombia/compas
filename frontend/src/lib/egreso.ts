@@ -142,6 +142,15 @@ export function nuevaDeMes(m: MesProyeccion): Decimal {
   return parseMonto(m.costo_nueva).plus(m.adelanto).negated();
 }
 
+/** PTS6-D — el ajuste de recaudo que hace que la fila SUME a la vista:
+ *   ajuste = Ingreso(neto) − (Cuota inicial + Cuotas semanales)(bruto).
+ * Es la mora/default neta de recuperación (negativa en escenarios con mora); así
+ * `cuotas_iniciales + recaudo_credito + ajuste == neto`. NO es cálculo nuevo: es la
+ * diferencia entre dos cifras que el backend ya entrega (ingreso_bruto y neto). */
+export function ajusteRecaudoDeMes(m: MesProyeccion): Decimal {
+  return parseMonto(m.neto).minus(m.ingreso_bruto);
+}
+
 /** Periodicidad recomendada por longitud de la ventana. */
 export function periodicidadPara(nMeses: number): Periodicidad {
   if (nMeses <= 24) return "mes";

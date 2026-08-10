@@ -36,8 +36,10 @@ _PLAN = [
     ("4010", "deudas_obligaciones", "Préstamos", False),
     ("4020", "deudas_obligaciones", "Tarjetas", False),
     ("4030", "deudas_obligaciones", "Garantía cupo (Auteco)", False),
+    ("4040", "deudas_obligaciones", "Deudas impuestos", False),
     ("4050", "deudas_obligaciones", "Proveedores", False),
     ("4060", "deudas_obligaciones", "Inventario Auteco", False),
+    ("4070", "deudas_obligaciones", "Rodante Financiación", False),
     ("5060", "otros", "Impuestos", False),
 ]
 

@@ -10,7 +10,13 @@ import { Fragment, type ReactNode, useState } from "react";
 
 import { MarcaOrigen } from "@/components/proyeccion/MarcaOrigen";
 import { Card } from "@/components/ui/card";
-import { autecoDeMes, bucketsMes, nuevaDeMes, totales } from "@/lib/egreso";
+import {
+  ajusteRecaudoDeMes,
+  autecoDeMes,
+  bucketsMes,
+  nuevaDeMes,
+  totales,
+} from "@/lib/egreso";
 import { formatCOPEntero, formatMesCorto } from "@/lib/money";
 import {
   ESTADO_LABEL,
@@ -88,6 +94,7 @@ export function TablaEgreso({
   // V1.2 B — totales de las columnas discriminadas (ingreso y costo a la vista)
   const tInicial = sumaCol(filas, (m) => m.cuotas_iniciales);
   const tSemanal = sumaCol(filas, (m) => m.recaudo_credito);
+  const tAjuste = sumaCol(filas, ajusteRecaudoDeMes); // PTS6-D: cierra la fila
   const tActivacion = sumaCol(filas, nuevaDeMes);
   const tAuteco = sumaCol(filas, autecoDeMes);
 
@@ -111,17 +118,29 @@ export function TablaEgreso({
               <th className="sticky left-0 z-10 bg-surface px-4 py-2.5 font-semibold">
                 Mes
               </th>
-              {/* Ingreso discriminado a la VISTA (V1.2 B) */}
+              {/* Ingreso discriminado a la VISTA (V1.2 B); Ajuste = PTS6-D:
+                  Cuota inicial + Cuotas semanales + Ajuste == Ingreso (neto). */}
               <th className="px-4 py-2.5 text-right font-semibold">
                 Cuota inicial
               </th>
               <th className="px-4 py-2.5 text-right font-semibold">
                 Cuotas semanales
               </th>
+              <th
+                className="px-4 py-2.5 text-right font-semibold"
+                title="Mora, recuperación y default sobre el recaudo bruto. La caja se proyecta con el ingreso neto."
+              >
+                Ajuste mora/default
+              </th>
               <th className="px-4 py-2.5 text-right font-semibold">Ingreso</th>
-              {/* Costo discriminado a la VISTA (V1.2 B) */}
-              <th className="px-4 py-2.5 text-right font-semibold">
-                Activación
+              {/* Costo discriminado a la VISTA (V1.2 B). Alistamiento (antes
+                  «Activación») es COSTO por moto colocada — Costo = Alistamiento
+                  + Auteco. */}
+              <th
+                className="px-4 py-2.5 text-right font-semibold"
+                title="Alistamiento por moto colocada (SOAT, matrícula, GPS…) + adelanto a Auteco. Es costo, no ingreso: Costo = Alistamiento + Auteco."
+              >
+                Alistamiento
               </th>
               <th className="px-4 py-2.5 text-right font-semibold">Auteco</th>
               <th className="px-4 py-2.5 text-right font-semibold">Costo</th>
@@ -172,6 +191,10 @@ export function TablaEgreso({
                       valor={m.recaudo_credito}
                       className="text-ink-soft"
                     />
+                    <Monto
+                      valor={ajusteRecaudoDeMes(m)}
+                      className="text-ink-faint"
+                    />
                     <Monto valor={b.ingreso} className="font-medium text-ink" />
                     <Monto valor={nuevaDeMes(m)} className="text-ink-soft" />
                     <Monto valor={autecoDeMes(m)} className="text-ink-soft" />
@@ -195,7 +218,7 @@ export function TablaEgreso({
                   </tr>
                   {abierto && (
                     <tr className="border-b border-hairline/60 bg-surface-muted/40">
-                      <td colSpan={11} className="px-4 py-3">
+                      <td colSpan={12} className="px-4 py-3">
                         <DesgloseMes
                           m={m}
                           reconciliado={esReconciliado(
@@ -215,6 +238,7 @@ export function TablaEgreso({
               <td className="sticky left-0 bg-surface px-4 py-2.5">Totales</td>
               <Monto valor={tInicial} />
               <Monto valor={tSemanal} />
+              <Monto valor={tAjuste} className="text-ink-faint" />
               <Monto valor={t.ingreso} />
               <Monto valor={tActivacion} />
               <Monto valor={tAuteco} />
@@ -275,7 +299,7 @@ function DesgloseMes({
       <Grupo titulo="Gasto">
         <Linea etiqueta="Gastos fijos" valor={f(m.gastos_fijos)} />
         <Linea etiqueta="GPS cartera" valor={f(m.gps)} />
-        <Linea etiqueta="Intereses deuda" valor={f(m.int_deuda)} />
+        <Linea etiqueta="Deudas y obligaciones" valor={f(m.int_deuda)} />
         <Linea etiqueta="IVA" valor={f(m.iva)} />
       </Grupo>
     </div>

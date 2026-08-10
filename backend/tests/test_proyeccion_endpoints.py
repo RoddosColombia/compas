@@ -195,7 +195,9 @@ async def _seed_mes_cerrado_con_ingreso():
         ("4010", "deudas_obligaciones", TipoFlujo.EGRESO),
         ("4020", "deudas_obligaciones", TipoFlujo.EGRESO),
         ("4030", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4040", "deudas_obligaciones", TipoFlujo.EGRESO),
         ("4050", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4070", "deudas_obligaciones", TipoFlujo.EGRESO),
         ("5060", "otros", TipoFlujo.EGRESO),
     ]
     for i, (cod, grupo, flujo) in enumerate(_plan):
@@ -307,7 +309,9 @@ async def _seed_mes_en_ejecucion():
         ("4010", "deudas_obligaciones", TipoFlujo.EGRESO),
         ("4020", "deudas_obligaciones", TipoFlujo.EGRESO),
         ("4030", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4040", "deudas_obligaciones", TipoFlujo.EGRESO),
         ("4050", "deudas_obligaciones", TipoFlujo.EGRESO),
+        ("4070", "deudas_obligaciones", TipoFlujo.EGRESO),
         ("5060", "otros", TipoFlujo.EGRESO),
     ]
     for i, (cod, grupo, flujo) in enumerate(_plan):

@@ -64,12 +64,13 @@ describe("TablaEgreso — V1 §3", () => {
     }
   });
 
-  it("discrimina ingreso y costo en COLUMNAS a la vista (V1.2 B)", () => {
+  it("discrimina ingreso y costo en COLUMNAS a la vista (V1.2 B + PTS6-D)", () => {
     renderTabla();
     for (const h of [
       "Cuota inicial",
       "Cuotas semanales",
-      "Activación",
+      "Ajuste mora/default",
+      "Alistamiento",
       "Auteco",
     ]) {
       expect(screen.getByRole("columnheader", { name: h })).toBeInTheDocument();
@@ -85,6 +86,36 @@ describe("TablaEgreso — V1 §3", () => {
     ).toBeGreaterThan(0);
     // "Motos" se quitó por ancho (se priorizan las columnas discriminadas)
     expect(screen.queryByRole("columnheader", { name: "Motos" })).toBeNull();
+  });
+
+  it("PTS6-D: Cuota inicial + Cuotas semanales + Ajuste == Ingreso (con mora)", () => {
+    // fila con mora: bruto 189.171.000 (145.640.000 + 43.531.000), neto 180.090.792
+    // → ajuste = 180.090.792 − 189.171.000 = −9.080.208 (el caso real de agosto).
+    const conMora = mes({
+      mes: "2026-08",
+      cuotas_iniciales: "145640000.00",
+      recaudo_credito: "43531000.00",
+      ingreso_bruto: "189171000.00",
+      neto: "180090792.00",
+      estado: "ok",
+    });
+    render(
+      <TablaEgreso
+        filas={[conMora]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    // el ajuste se muestra (negativo) y la fila reconcilia a la vista:
+    // 145.640.000 + 43.531.000 + (−9.080.208) = 180.090.792 = Ingreso
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "-$ 9.080.208").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 180.090.792")
+        .length,
+    ).toBeGreaterThan(0);
   });
 
   it("cierra con una fila de totales (Σ ingreso de la ventana)", () => {
