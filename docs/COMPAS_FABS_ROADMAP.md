@@ -25,7 +25,7 @@ Estado: ⬜ Pendiente · 🟡 En curso · ✅ Hecho · 🔒 Bloqueado
 
 | # | Incremento | Qué entrega | Gate | Estado |
 |---|---|---|---|---|
-| **1** | **Cimiento determinista** (sin LLM) | `app/cfo/calc` (3 conceptos: caja hoy · runway · IVA cuatrimestre, cada cifra con evidencia) + arnés de goldens (`cfo/goldens`) + salvaguarda S1 + flag `CFO_ENABLED`. Motor COMPAS cero diffs. | Kimi (lee cifras de plata) | ✅ Hecho (rama `feat/fabs-inc1`; falta merge a main tras gate) |
+| **1** | **Cimiento determinista** (sin LLM) | `app/cfo/calc` (3 conceptos: caja hoy · runway · IVA cuatrimestre, cada cifra con evidencia) + arnés de goldens (`cfo/goldens`) + salvaguarda S1 + flag `CFO_ENABLED`. Motor COMPAS cero diffs. | Kimi (gate-waiver GO CEO 2026-08-11; retroactivo pendiente) | ✅ **MERGEADO a main** (`248bfed`) |
 | **2** | **Loop del agente + cifra→evidencia** | Loop con SDK Anthropic (temp 0.1, límites), verificador cifra→evidencia invocado antes de publicar, endpoint `/api/v1/cfo` bajo flag, salida tipada. Primeros eventos `cfo.*` (CR). | Kimi (crítico) + CR eventos | ⬜ Pendiente |
 | **3** | **Canal Telegram + piloto Q&A** | Webhook Telegram en compas-api, vínculo `telegram_id↔user_id`, hilos por usuario (`cfo_hilos`, sin TTL naïve), observabilidad. Piloto pregunta-respuesta (CEO/CGO/CFO). | G2 (núcleo confiable) | ⬜ Pendiente |
 | **4** | **Vigilante + Comité de Pagos** | Jobs `cfo_*` en el Worker (alertas por umbral, paquete del lunes 7:00, cierre mensual comentado) — borrador con liberación humana. | G3 (piloto→operación) | ⬜ Pendiente |
@@ -55,6 +55,8 @@ Estado: ⬜ Pendiente · 🟡 En curso · ✅ Hecho · 🔒 Bloqueado
 | 2026-08-10 | 1 | Plan de implementación escrito + roadmap creado | `docs/superpowers/plans/2026-08-10-fabs-cimiento-determinista.md` |
 | 2026-08-11 | 1 | **Incremento 1 CONSTRUIDO** (SDD, 11 tasks, subagente+review por tarea). `app/cfo/`: evidencia · flag · 3 conceptos · refactor DRY `liquidacion_iva()` · modelo/runner/semilla de goldens · guard S1. Suite COMPAS **940 passed / 95 skipped**, flag apagado ⇒ idéntico; `motor.py` cero diffs. | rama `feat/fabs-inc1`, commits `63f8ef3..bbe2c3b` |
 | 2026-08-11 | 1 | Semilla real de goldens desde PROD (snapshot): caja_hoy 704.722.003 · runway abstención · IVA C2-2026 36.204.698,10 (DIAN 10-sep) | `app/cfo/goldens/semilla.py` (`bbe2c3b`) |
+| 2026-08-11 | 1 | **MERGEADO a main** (ff `79ce281..248bfed`). Merge con lo que la terminal avanzó en paralelo (C2' Excel DIAN, Auteco 2 NITs, saldo a favor declarado): conflicto solo en el refactor DRY → resuelto preservando el código de plata de la terminal; `service.liquidacion_iva()` en paridad con el endpoint (incl. saldo declarado) para que FABS lea la cifra oficial. Suite completa **955 passed / 95 skipped**. Gate: **gate-waiver GO CEO 2026-08-11**; Kimi retroactivo pendiente (paquete en `planning/phases/fabs-inc1/auditorias/PR1-I/`). | `248bfed` |
+| — | 1→2 | **Deuda de cleanup (inc2):** duplicación endpoint router + `service.liquidacion_iva()` (quedó por no tocar facturas mientras la terminal lo mueve). Reconciliar el gate FABS-INC1 en el tracker `.xlsx` cuando la terminal deje de escribirlo (se registró aquí para no chocar el binario). | — |
 
 ## 5. Estado de datos / decisiones abiertas del CEO
 
