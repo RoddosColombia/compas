@@ -16,9 +16,17 @@ from pymongo.errors import DuplicateKeyError
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
+from app.core.money import money_str
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.factura import Factura, OrigenFactura, TipoFactura
-from app.iva.liquidacion import FacturaIva, Periodicidad, iva_desde_base
+from app.iva.liquidacion import (
+    FacturaIva,
+    Periodicidad,
+    etiqueta_periodo,
+    iva_desde_base,
+    liquidar,
+    proximo_pago,
+)
 
 _MES = re.compile(r"^\d{4}-\d{2}$")
 
@@ -339,3 +347,30 @@ async def obtener_facturas_iva() -> list[FacturaIva]:
         )
         for f in activas
     ]
+
+
+async def liquidacion_iva() -> dict:
+    """Liquidación de IVA por período (misma forma que GET /facturas/liquidacion)."""
+    periodicidad = await obtener_periodicidad()
+    items = await obtener_facturas_iva()
+    calendario = await obtener_calendario_dian()
+    return {
+        "periodicidad": periodicidad.value,
+        "periodos": [
+            {
+                "anio": c.anio,
+                "periodo": c.periodo,
+                "etiqueta": etiqueta_periodo(c.anio, c.periodo, periodicidad),
+                "generado": money_str(c.generado),
+                "descontable": money_str(c.descontable),
+                "saldo": money_str(c.saldo),
+                "saldo_favor_previo": money_str(c.saldo_favor_previo),
+                "neto_a_pagar": money_str(c.neto_a_pagar),
+                "saldo_favor_nuevo": money_str(c.saldo_favor_nuevo),
+                "proximo_pago": proximo_pago(
+                    c.anio, c.periodo, periodicidad, calendario
+                ),
+            }
+            for c in liquidar(items, periodicidad)
+        ],
+    }

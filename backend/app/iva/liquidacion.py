@@ -11,8 +11,11 @@ ARRASTRA al siguiente período.
 """
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
 from enum import StrEnum
+
+from app.core.time import today_bogota
 
 _CENTAVO = Decimal("0.01")
 
@@ -77,6 +80,25 @@ def clave_dian(idx: int, periodicidad: Periodicidad) -> str:
     ini = (idx - 1) * meses
     fin = idx * meses - 1
     return f"{_MESES_ABBR[ini]}_{_MESES_ABBR[fin]}"
+
+
+def etiqueta_periodo(anio: int, idx: int, periodicidad: Periodicidad) -> str:
+    # 'C' cuatrimestral (2026-C1) · 'B' bimestral (2026-B1)
+    prefijo = "C" if periodicidad == Periodicidad.cuatrimestral else "B"
+    return f"{anio}-{prefijo}{idx}"
+
+
+def proximo_pago(
+    anio: int, idx: int, periodicidad: Periodicidad, calendario: dict
+) -> dict | None:
+    """Fecha DIAN del período (de `CALENDARIO_DIAN`) + días desde hoy (Bogotá). Sin
+    fecha en el calendario → None: la UI omite la línea, no se inventa (R5, §3③)."""
+    anio_cal = calendario.get(str(anio))
+    fecha = anio_cal.get(clave_dian(idx, periodicidad)) if anio_cal else None
+    if not fecha:
+        return None
+    y, m, d = (int(x) for x in fecha.split("-"))
+    return {"fecha": fecha, "dias": (date(y, m, d) - today_bogota()).days}
 
 
 def cuatrimestre_de(fecha: str) -> tuple[int, int]:

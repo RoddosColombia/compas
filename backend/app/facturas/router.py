@@ -8,7 +8,6 @@ Decimal antes de construir la factura; la respuesta los serializa con `money_str
 Idempotency-Key: no es un movimiento de dinero; el índice único (tercero_nit, numero)
 hace inocuo el replay (→ 409). La liquidación se calcula en el backend."""
 
-from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from beanie import PydanticObjectId
@@ -20,7 +19,6 @@ from app.auth.models import User
 from app.auth.permissions import has_permission
 from app.auth.router import verify_origin
 from app.core.money import money_str
-from app.core.time import today_bogota
 from app.domain.factura import (
     TARIFAS_IVA_VALIDAS,
     Factura,
@@ -29,7 +27,7 @@ from app.domain.factura import (
 )
 from app.facturas import ingesta, service
 from app.facturas.extraccion import PERSONA_JURIDICA
-from app.iva.liquidacion import Periodicidad, clave_dian, liquidar, periodo_de
+from app.iva.liquidacion import Periodicidad, etiqueta_periodo, periodo_de
 
 router = APIRouter(prefix="/facturas", tags=["facturas"])
 
@@ -70,25 +68,6 @@ class FacturaEditarBody(BaseModel):
     origen: str | None = None
 
 
-def _etiqueta_periodo(anio: int, idx: int, periodicidad: Periodicidad) -> str:
-    # 'C' cuatrimestral (2026-C1) · 'B' bimestral (2026-B1)
-    prefijo = "C" if periodicidad == Periodicidad.cuatrimestral else "B"
-    return f"{anio}-{prefijo}{idx}"
-
-
-def _proximo_pago(
-    anio: int, idx: int, periodicidad: Periodicidad, calendario: dict
-) -> dict | None:
-    """Fecha DIAN del período (de `CALENDARIO_DIAN`) + días desde hoy (Bogotá). Sin
-    fecha en el calendario → None: la UI omite la línea, no se inventa (R5, §3③)."""
-    anio_cal = calendario.get(str(anio))
-    fecha = anio_cal.get(clave_dian(idx, periodicidad)) if anio_cal else None
-    if not fecha:
-        return None
-    y, m, d = (int(x) for x in fecha.split("-"))
-    return {"fecha": fecha, "dias": (date(y, m, d) - today_bogota()).days}
-
-
 def _serializar(
     f: Factura, periodicidad: Periodicidad, *, ver_pii: bool = True
 ) -> dict:
@@ -122,7 +101,7 @@ def _serializar(
         # decidir. El §2 cuenta las compras activas con deducible_decidido=False.
         "deducible_decidido": f.deducible_decidido,
         "activo": f.activo,
-        "periodo": _etiqueta_periodo(anio, idx, periodicidad),  # derivado de la fecha
+        "periodo": etiqueta_periodo(anio, idx, periodicidad),  # derivado de la fecha
     }
 
 
@@ -142,29 +121,7 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
     """Liquidación por período (cuatrimestral o bimestral, según `PERIODICIDAD_IVA`) de
     las facturas activas: generado − descontable con arrastre de saldo a favor. Montos
     como string (regla 1)."""
-    periodicidad = await service.obtener_periodicidad()
-    items = await service.obtener_facturas_iva()
-    calendario = await service.obtener_calendario_dian()
-    return {
-        "periodicidad": periodicidad.value,
-        "periodos": [
-            {
-                "anio": c.anio,
-                "periodo": c.periodo,
-                "etiqueta": _etiqueta_periodo(c.anio, c.periodo, periodicidad),
-                "generado": money_str(c.generado),
-                "descontable": money_str(c.descontable),
-                "saldo": money_str(c.saldo),
-                "saldo_favor_previo": money_str(c.saldo_favor_previo),
-                "neto_a_pagar": money_str(c.neto_a_pagar),
-                "saldo_favor_nuevo": money_str(c.saldo_favor_nuevo),
-                "proximo_pago": _proximo_pago(
-                    c.anio, c.periodo, periodicidad, calendario
-                ),
-            }
-            for c in liquidar(items, periodicidad)
-        ],
-    }
+    return await service.liquidacion_iva()
 
 
 @router.get("/{factura_id}")
