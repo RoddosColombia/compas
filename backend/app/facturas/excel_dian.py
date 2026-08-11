@@ -223,15 +223,16 @@ def parsear_excel(contenido: bytes) -> list[dict]:
 
 
 def campos_desde_fila(
-    fila: dict, *, nit_auteco: str | None
+    fila: dict, *, nits_auteco: frozenset[str]
 ) -> dict:
     """Fila cruda válida → campos del Document Factura (compra recibida).
 
     Misma semántica de deducibilidad que `ingesta.campos_desde_dian`: Auteco por
-    NIT → deducible/decidida/origen auteco; el resto sin decidir (el operador
-    marca después — contador del §2). El Excel de la DIAN no trae total bruto ni
+    NIT → deducible/decidida/origen auteco (factura con VARIOS NITs — config
+    {"nits": [...]}, CEO 2026-08-11); el resto sin decidir (el operador marca
+    después — contador del §2). El Excel de la DIAN no trae total bruto ni
     base gravada por línea → None (R5: no se inventa)."""
-    es_auteco = nit_auteco is not None and fila["nit_emisor"] == nit_auteco
+    es_auteco = fila["nit_emisor"] in nits_auteco
     nombre = fila["nombre_emisor"] or f"NIT {fila['nit_emisor']}"
     return {
         "tipo": TipoFactura.compra,

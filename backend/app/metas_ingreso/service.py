@@ -14,7 +14,6 @@ from app.audit.service import emit_audit
 from app.core.money import Money
 from app.core.time import now_bogota
 from app.domain.mes_control import MesControl
-from app.domain.transaccion import pares_clasificacion
 from app.domain.obligacion import LineaMeta, MetaIngreso
 
 # El set de neutros Y su resolver nombre→id viven en `app.domain.rubros_neutros` (E1 lo
@@ -26,7 +25,7 @@ from app.domain.rubros_neutros import (
 from app.domain.rubros_neutros import (
     _ids_rubros_neutros as _ids_rubros_neutros,
 )
-from app.domain.transaccion import TipoFlujo, Transaccion
+from app.domain.transaccion import TipoFlujo, Transaccion, pares_clasificacion
 
 
 class MetasError(Exception):

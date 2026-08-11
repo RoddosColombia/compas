@@ -149,8 +149,11 @@ SEMILLA_CONFIGURACION: list[dict] = [
         "vigente_desde": "2026-01-01",
     },
     {
+        # Auteco factura con DOS NITs (CEO 2026-08-11): el histórico y el de
+        # AUTOTECNICA COLOMBIANA S.A.S. (verificado contra factura real E670165520).
+        # La ingesta acepta {"nits": [...]} y la forma histórica {"nit": "..."}.
         "clave": "NIT_AUTECO",
-        "valor_json": {"nit": "860024781"},
+        "valor_json": {"nits": ["860024781", "890900317"]},
         "vigente_desde": "2026-01-01",
     },
     {
