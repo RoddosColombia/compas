@@ -25,7 +25,7 @@ Estado: ⬜ Pendiente · 🟡 En curso · ✅ Hecho · 🔒 Bloqueado
 
 | # | Incremento | Qué entrega | Gate | Estado |
 |---|---|---|---|---|
-| **1** | **Cimiento determinista** (sin LLM) | `app/cfo/calc` (3 conceptos: caja hoy · runway · IVA cuatrimestre, cada cifra con evidencia) + arnés de goldens (`cfo/goldens`) + salvaguarda S1 + flag `CFO_ENABLED`. Motor COMPAS cero diffs. | Kimi (lee cifras de plata) | 🟡 En curso |
+| **1** | **Cimiento determinista** (sin LLM) | `app/cfo/calc` (3 conceptos: caja hoy · runway · IVA cuatrimestre, cada cifra con evidencia) + arnés de goldens (`cfo/goldens`) + salvaguarda S1 + flag `CFO_ENABLED`. Motor COMPAS cero diffs. | Kimi (lee cifras de plata) | ✅ Hecho (rama `feat/fabs-inc1`; falta merge a main tras gate) |
 | **2** | **Loop del agente + cifra→evidencia** | Loop con SDK Anthropic (temp 0.1, límites), verificador cifra→evidencia invocado antes de publicar, endpoint `/api/v1/cfo` bajo flag, salida tipada. Primeros eventos `cfo.*` (CR). | Kimi (crítico) + CR eventos | ⬜ Pendiente |
 | **3** | **Canal Telegram + piloto Q&A** | Webhook Telegram en compas-api, vínculo `telegram_id↔user_id`, hilos por usuario (`cfo_hilos`, sin TTL naïve), observabilidad. Piloto pregunta-respuesta (CEO/CGO/CFO). | G2 (núcleo confiable) | ⬜ Pendiente |
 | **4** | **Vigilante + Comité de Pagos** | Jobs `cfo_*` en el Worker (alertas por umbral, paquete del lunes 7:00, cierre mensual comentado) — borrador con liberación humana. | G3 (piloto→operación) | ⬜ Pendiente |
@@ -53,13 +53,20 @@ Estado: ⬜ Pendiente · 🟡 En curso · ✅ Hecho · 🔒 Bloqueado
 |---|---|---|---|
 | 2026-08-10 | 1 | Spec del incremento 1 aprobado por el CEO | `docs/superpowers/specs/2026-08-10-fabs-cimiento-determinista-design.md` (commit 898d3c9) |
 | 2026-08-10 | 1 | Plan de implementación escrito + roadmap creado | `docs/superpowers/plans/2026-08-10-fabs-cimiento-determinista.md` |
+| 2026-08-11 | 1 | **Incremento 1 CONSTRUIDO** (SDD, 11 tasks, subagente+review por tarea). `app/cfo/`: evidencia · flag · 3 conceptos · refactor DRY `liquidacion_iva()` · modelo/runner/semilla de goldens · guard S1. Suite COMPAS **940 passed / 95 skipped**, flag apagado ⇒ idéntico; `motor.py` cero diffs. | rama `feat/fabs-inc1`, commits `63f8ef3..bbe2c3b` |
+| 2026-08-11 | 1 | Semilla real de goldens desde PROD (snapshot): caja_hoy 704.722.003 · runway abstención · IVA C2-2026 36.204.698,10 (DIAN 10-sep) | `app/cfo/goldens/semilla.py` (`bbe2c3b`) |
 
 ## 5. Estado de datos / decisiones abiertas del CEO
 
 - **Alegra:** CERO en esta fase (revisión 2027 si se requiere).
 - **Fuera de alcance permanente:** CXC socios, interés presuntivo, devengado/P&L, labores contables (COMPAS/FABS NO son ERP).
 - **Fórmulas faltantes** (si las hubiera): se construyen EN COMPAS (aditivas, motor intocable), FABS las consume (D5).
-- **Pendientes del CEO:** rotación del token Alegra filtrado en SISMO-V2 (higiene de seguridad); GO al CR-PTS6F (cartera de apertura).
+- **Pendientes del CEO:** rotación del token Alegra filtrado en SISMO-V2 (higiene de seguridad); GO al CR-PTS6F (cartera de apertura); merge de `feat/fabs-inc1` a main tras el gate.
+
+## 6. Refinamientos conocidos (para incrementos siguientes)
+
+- **`caja_hoy` — semántica de anclaje (inc2):** hoy corre `caja_diaria` desde el `vigente_desde` de los parámetros vigentes. Como esos parámetros se re-guardan seguido (vigente_desde = fecha reciente) y no hay movimientos cargados en esa ventana, en PROD devolvió la `caja_inicial` cruda (704.722.003) con `ref="sin-movimientos"`, no la caja corrida real. Refinar en inc2: anclar desde el último mes CERRADO (o desde el primer movimiento del mes en curso) para reflejar la caja real a la fecha de corte. La abstención honesta y la evidencia ya funcionan; es un ajuste de fuente, no de contrato.
+- **`proximo_pago` lee reloj dentro de módulo "compute-only"** (`app/iva/liquidacion.py`, preexistente, reubicado en el refactor DRY): considerar pasar "hoy" como parámetro para determinismo pleno.
 
 ---
 *Creado 2026-08-10. Este archivo se actualiza al cerrar cada pieza (no al final del incremento).*
