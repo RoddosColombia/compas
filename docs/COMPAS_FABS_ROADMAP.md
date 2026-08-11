@@ -66,7 +66,9 @@ Estado: ⬜ Pendiente · 🟡 En curso · ✅ Hecho · 🔒 Bloqueado
 ## 6. Refinamientos conocidos (para incrementos siguientes)
 
 - **`caja_hoy` — semántica de anclaje (inc2):** hoy corre `caja_diaria` desde el `vigente_desde` de los parámetros vigentes. Como esos parámetros se re-guardan seguido (vigente_desde = fecha reciente) y no hay movimientos cargados en esa ventana, en PROD devolvió la `caja_inicial` cruda (704.722.003) con `ref="sin-movimientos"`, no la caja corrida real. Refinar en inc2: anclar desde el último mes CERRADO (o desde el primer movimiento del mes en curso) para reflejar la caja real a la fecha de corte. La abstención honesta y la evidencia ya funcionan; es un ajuste de fuente, no de contrato.
-- **`proximo_pago` lee reloj dentro de módulo "compute-only"** (`app/iva/liquidacion.py`, preexistente, reubicado en el refactor DRY): considerar pasar "hoy" como parámetro para determinismo pleno.
+- **`proximo_pago` lee reloj dentro de módulo "compute-only"** (`app/iva/liquidacion.py`, preexistente, reubicado en el refactor DRY): el reviewer final dictaminó que `dias` (días al vencimiento DIAN) es intrínsecamente relativo al reloj → `today_bogota()` es semánticamente correcto ahí; opcional pasar "hoy" como parámetro para determinismo pleno. NO bloquea.
+- **`iva_cuatrimestre` asume periodicidad cuatrimestral** (`app/cfo/calc/iva.py` `_periodo_vigente_idx`, `(month-1)//4`): ignora `data["periodicidad"]` que ya trae. Hoy exposición CERO (RODDOS cuatrimestral, flag apagado, sin consumidor). **MUST-DO al inicio de inc2, ANTES de que el LLM consuma esta cifra:** derivar el índice de `data["periodicidad"]` o fail-closed (abstenerse) si `periodicidad != "cuatrimestral"` — para no publicar jamás una cifra/evidencia equivocada (regla #1).
+- **`upsert_golden` es insert-si-ausente, no upsert real** (`app/cfo/datos/repositorios.py`): idempotente por `(concepto, nota)` sin índice único; si cambia un valor con la misma `nota`, re-sembrar no lo actualiza. Aceptable para siembra de una sola vez; revisar cuando Fabián cargue el set 240+60.
 
 ---
 *Creado 2026-08-10. Este archivo se actualiza al cerrar cada pieza (no al final del incremento).*
