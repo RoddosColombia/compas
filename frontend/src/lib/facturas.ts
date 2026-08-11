@@ -96,6 +96,23 @@ export async function cargarFacturas(files: File[]): Promise<CargaRespuesta> {
   return body;
 }
 
+/** C2' (acta FABS): import masivo del Excel de documentos recibidos del portal
+ * DIAN — un solo .xlsx con una fila por factura. Mismo shape de respuesta que el
+ * lote de PDFs (el panel de carga pinta ambos con el mismo componente). */
+export async function cargarFacturasExcel(file: File): Promise<CargaRespuesta> {
+  const fd = new FormData();
+  fd.append("archivo", file);
+  const r = await apiFetch("/facturas/cargar-excel", {
+    method: "POST",
+    body: fd,
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw new ApiError(r.status, body.detail ?? "No se pudo cargar el Excel.");
+  }
+  return body;
+}
+
 // ── Editar deducibilidad / origen (PATCH) ──
 export async function editarFactura(
   id: string,
