@@ -280,7 +280,7 @@ async def test_iva_extraido_manda_sobre_base_por_tarifa(api, monkeypatch):
 def test_campos_desde_dian_mapea_inc_a_inc_valor():
     """Costura pura: el desajuste FacturaDian.inc→Factura.inc_valor guardaría un
     cero en silencio; este test lo hace imposible."""
-    campos = ingesta.campos_desde_dian(_dian(), nit_auteco=NIT_AUTECO)
+    campos = ingesta.campos_desde_dian(_dian(), nits_auteco=frozenset({NIT_AUTECO}))
     assert campos["inc_valor"] == Decimal("100.00")
     assert "inc" not in campos  # el campo del Document se llama inc_valor
 
@@ -288,7 +288,7 @@ def test_campos_desde_dian_mapea_inc_a_inc_valor():
 def test_campos_desde_dian_queda_sin_decidir():
     """DIAN no decide la deducibilidad: deducible_decidido=False para que el §2 cuente
     las recibidas sin decidir. La decisión la fija el operador (PATCH/manual)."""
-    campos = ingesta.campos_desde_dian(_dian(), nit_auteco=NIT_AUTECO)
+    campos = ingesta.campos_desde_dian(_dian(), nits_auteco=frozenset({NIT_AUTECO}))
     assert campos["deducible"] is False
     assert campos["deducible_decidido"] is False
 
@@ -296,7 +296,7 @@ def test_campos_desde_dian_queda_sin_decidir():
 def test_campos_desde_dian_total_bruto_no_base_gravable():
     """Total Bruto DIAN → total_bruto; base_gravable=None (no es la base gravada)."""
     campos = ingesta.campos_desde_dian(
-        _dian(base_gravable=Decimal("31447.06")), nit_auteco=NIT_AUTECO
+        _dian(base_gravable=Decimal("31447.06")), nits_auteco=frozenset({NIT_AUTECO})
     )
     assert campos["total_bruto"] == Decimal("31447.06")
     assert campos["base_gravable"] is None
@@ -343,11 +343,27 @@ def test_campos_desde_dian_auteco_es_deducible_decidido():
     viene del DOCUMENTO+CONFIG, no del operador (no entra al contador 'sin decidir')."""
     campos = ingesta.campos_desde_dian(
         _dian(nit_emisor=NIT_AUTECO, nombre_emisor="AUTECO S.A.S."),
-        nit_auteco=NIT_AUTECO,
+        nits_auteco=frozenset({NIT_AUTECO}),
     )
     assert campos["origen"] == OrigenFactura.auteco
     assert campos["deducible"] is True
     assert campos["deducible_decidido"] is True
+
+
+def test_campos_desde_dian_auteco_segundo_nit_tambien_deducible():
+    """Auteco factura con DOS NITs (CEO 2026-08-11): el histórico 860024781 y el de
+    AUTOTECNICA COLOMBIANA 890900317. La config guarda el CONJUNTO y cualquiera de
+    los dos auto-deduce; un tercero cualquiera sigue sin decidir."""
+    nits = frozenset({NIT_AUTECO, "890900317"})
+    campos = ingesta.campos_desde_dian(
+        _dian(nit_emisor="890900317", nombre_emisor="AUTOTECNICA COLOMBIANA S.A.S."),
+        nits_auteco=nits,
+    )
+    assert campos["origen"] == OrigenFactura.auteco
+    assert campos["deducible"] is True
+    assert campos["deducible_decidido"] is True
+    ajeno = ingesta.campos_desde_dian(_dian(), nits_auteco=nits)
+    assert ajeno["deducible_decidido"] is False
 
 
 async def test_cargar_auteco_queda_deducible_decidido(api):

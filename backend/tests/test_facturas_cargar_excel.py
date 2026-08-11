@@ -37,6 +37,9 @@ from openpyxl import Workbook
 PWD = "clave-larga-1234"
 NIT_RODDOS = "901012622"
 NIT_AUTECO = "860024781"
+# Auteco factura con DOS NITs (CEO 2026-08-11): el histórico y el de AUTOTECNICA
+# COLOMBIANA S.A.S. — ambos deben auto-deducir.
+NIT_AUTOTECNICA = "890900317"
 
 ENCABEZADOS = [
     "Tipo de documento",
@@ -174,6 +177,43 @@ async def test_carga_feliz_con_auteco_autodeducible(api):
     assert auteco["deducible"] is True  # decisión CEO: Auteco descontable por config
     assert auteco["deducible_decidido"] is True
     assert auteco["origen"] == "auteco"
+
+
+@pytest.mark.asyncio
+async def test_auteco_con_dos_nits_ambos_autodeducibles(api):
+    """Auteco factura con DOS NITs (CEO 2026-08-11). Con la config en la forma
+    {"nits": [...]}, una fila de CUALQUIERA de los dos entra deducible/decidida/
+    origen auteco; el fixture (forma vieja {"nit": ...}) prueba la compatibilidad."""
+    await Configuracion(
+        clave="NIT_AUTECO",
+        valor_json={"nits": [NIT_AUTECO, NIT_AUTOTECNICA]},
+        vigente_desde="2026-02-01",  # vigencia más nueva que la del fixture
+    ).insert()
+    h = await _token(api)
+    contenido = _xlsx(
+        [
+            _fila(cufe="a1" * 32, folio="111", nit=NIT_AUTECO, nombre="AUTECO SAS"),
+            _fila(
+                cufe="a2" * 32,
+                folio="222",
+                nit=NIT_AUTOTECNICA,
+                nombre="AUTOTECNICA COLOMBIANA S.A.S.",
+            ),
+            _fila(cufe="a3" * 32, folio="333"),  # tercero cualquiera: sin decidir
+        ]
+    )
+    r = await _cargar(api, h, contenido)
+    assert r.status_code == 200, r.text
+    assert r.json()["resumen"]["creadas"] == 3
+
+    lista = (await api.get("/api/v1/facturas", headers=h)).json()
+    por_numero = {f["numero"]: f for f in lista}
+    for numero in ("FE111", "FE222"):
+        assert por_numero[numero]["deducible"] is True, numero
+        assert por_numero[numero]["deducible_decidido"] is True, numero
+        assert por_numero[numero]["origen"] == "auteco", numero
+    assert por_numero["FE333"]["deducible_decidido"] is False
+    assert por_numero["FE333"]["origen"] == "sin_clasificar"
 
 
 @pytest.mark.asyncio

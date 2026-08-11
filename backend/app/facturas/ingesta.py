@@ -97,6 +97,26 @@ async def _nit_config(clave: ClaveConfig) -> str | None:
     return None
 
 
+async def _nits_config(clave: ClaveConfig) -> frozenset[str]:
+    """Última vigencia de una clave NIT_* que puede tener VARIOS NITs (Auteco factura
+    con dos: 860024781 y AUTOTECNICA COLOMBIANA 890900317 — CEO 2026-08-11). Acepta
+    {"nits": [...]} y la forma histórica {"nit": "..."}. Ausente → conjunto vacío."""
+    cfg = (
+        await Configuracion.find(Configuracion.clave == clave)
+        .sort(-Configuracion.vigente_desde)
+        .limit(1)
+        .to_list()
+    )
+    if cfg and cfg[0].valor_json:
+        nits = cfg[0].valor_json.get("nits")
+        if isinstance(nits, list):
+            return frozenset(str(n) for n in nits if n)
+        nit = cfg[0].valor_json.get("nit")
+        if nit:
+            return frozenset({str(nit)})
+    return frozenset()
+
+
 def _extraer_bytes(contenido: bytes, nombre: str, nit_propio: str) -> FacturaDian:
     """SÍNCRONA y CPU-bound: llamar SIEMPRE vía `anyio.to_thread` (A16).
 
@@ -111,7 +131,7 @@ def _extraer_bytes(contenido: bytes, nombre: str, nit_propio: str) -> FacturaDia
     return factura_desde_documento(texto, filas, titulo_pdf, nit_propio, nombre)
 
 
-def campos_desde_dian(f: FacturaDian, *, nit_auteco: str | None) -> dict:
+def campos_desde_dian(f: FacturaDian, *, nits_auteco: frozenset[str]) -> dict:
     """Costura PURA (testeable sin PDF): FacturaDian → campos del Document Factura.
 
     ⚠ `FacturaDian.inc` → `Factura.inc_valor` (rename anti-shadow): NO "corregir"
@@ -126,7 +146,8 @@ def campos_desde_dian(f: FacturaDian, *, nit_auteco: str | None) -> dict:
     if f.tipo == "recibida":
         tercero_nit, tercero_nombre = f.nit_emisor, f.nombre_emisor
         tipo = TipoFactura.compra
-        es_auteco = nit_auteco is not None and f.nit_emisor == nit_auteco
+        # Auteco factura con VARIOS NITs (config {"nits": [...]}): cualquiera deduce.
+        es_auteco = f.nit_emisor in nits_auteco
         origen = OrigenFactura.auteco if es_auteco else OrigenFactura.sin_clasificar
         # Auteco: descontable por configuración (decidido por el documento, no el
         # operador). Las demás recibidas quedan "sin decidir" para el contador del §2.
@@ -289,7 +310,7 @@ async def _procesar_archivo(
     archivo: UploadFile,
     *,
     nit_propio: str,
-    nit_auteco: str | None,
+    nits_auteco: frozenset[str],
     usuario_id: str,
 ) -> dict:
     nombre = archivo.filename or "documento.pdf"
@@ -319,7 +340,7 @@ async def _procesar_archivo(
     except DocumentoNoDian as e:
         return _resultado(nombre, EstadoIngesta.rechazada_no_dian, motivo=str(e))
 
-    campos = campos_desde_dian(dian, nit_auteco=nit_auteco)
+    campos = campos_desde_dian(dian, nits_auteco=nits_auteco)
     datos = _datos_extraidos(dian, campos)
 
     # Pieza 5: la validación de integridad de la extracción es la COHERENCIA A6
@@ -358,7 +379,7 @@ async def procesar_lote(archivos: list[UploadFile], *, usuario_id: str) -> dict:
             "una factura es emitida o recibida. Corra la migración "
             "20260728_e2_facturas_iva."
         )
-    nit_auteco = await _nit_config(ClaveConfig.NIT_AUTECO)
+    nits_auteco = await _nits_config(ClaveConfig.NIT_AUTECO)
 
     resultados: list[dict] = []
     for i, archivo in enumerate(archivos):
@@ -368,7 +389,7 @@ async def procesar_lote(archivos: list[UploadFile], *, usuario_id: str) -> dict:
                 await _procesar_archivo(
                     archivo,
                     nit_propio=nit_propio,
-                    nit_auteco=nit_auteco,
+                    nits_auteco=nits_auteco,
                     usuario_id=usuario_id,
                 )
             )
@@ -404,7 +425,7 @@ async def procesar_lote_excel(
             "las filas del Excel sean documentos RECIBIDOS por RODDOS. Corra la "
             "migración 20260728_e2_facturas_iva."
         )
-    nit_auteco = await _nit_config(ClaveConfig.NIT_AUTECO)
+    nits_auteco = await _nits_config(ClaveConfig.NIT_AUTECO)
     archivo_ref = f"sha256:{hashlib.sha256(contenido).hexdigest()}"
 
     filas = await to_thread.run_sync(parsear_excel, contenido)
@@ -452,7 +473,7 @@ async def procesar_lote_excel(
                     )
                 )
                 continue
-            campos = campos_desde_fila(fila, nit_auteco=nit_auteco)
+            campos = campos_desde_fila(fila, nits_auteco=nits_auteco)
             resultados.append(
                 await persistir_factura_ingesta(
                     campos,
