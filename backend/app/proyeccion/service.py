@@ -279,7 +279,8 @@ async def _iva_plan(
         return {}, []
     periodicidad = await facturas_service.obtener_periodicidad()
     calendario = await _calendario_dian()
-    liquidaciones = liquidar(facturas, periodicidad)
+    declarado = await facturas_service.obtener_saldo_favor_declarado()
+    liquidaciones = liquidar(facturas, periodicidad, saldo_declarado=declarado)
     egreso = programar_egresos_iva(
         liquidaciones,
         calendario,

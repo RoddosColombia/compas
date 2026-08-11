@@ -18,7 +18,12 @@ from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.factura import Factura, OrigenFactura, TipoFactura
-from app.iva.liquidacion import FacturaIva, Periodicidad, iva_desde_base
+from app.iva.liquidacion import (
+    FacturaIva,
+    Periodicidad,
+    SaldoFavorDeclarado,
+    iva_desde_base,
+)
 
 _MES = re.compile(r"^\d{4}-\d{2}$")
 
@@ -311,6 +316,32 @@ async def obtener_periodicidad() -> Periodicidad:
         if valor in Periodicidad._value2member_map_:
             return Periodicidad(valor)
     return Periodicidad.cuatrimestral
+
+
+async def obtener_saldo_favor_declarado() -> SaldoFavorDeclarado | None:
+    """Última vigencia de `SALDO_FAVOR_IVA_DECLARADO` (la cifra oficial de la
+    declaración DIAN anterior a los datos de COMPAS — CEO 2026-08-11). Ausente o
+    incompleta → None (no aplica; NUNCA se inventa un saldo, R5)."""
+    cfg = (
+        await Configuracion.find(
+            Configuracion.clave == ClaveConfig.SALDO_FAVOR_IVA_DECLARADO
+        )
+        .sort(-Configuracion.vigente_desde)
+        .limit(1)
+        .to_list()
+    )
+    if not (cfg and cfg[0].valor_json):
+        return None
+    aplica_desde = cfg[0].valor_json.get("aplica_desde")
+    valor = cfg[0].valor_json.get("valor")
+    if not aplica_desde or valor is None:
+        return None
+    try:
+        return SaldoFavorDeclarado(
+            aplica_desde=str(aplica_desde), valor=Decimal(str(valor))
+        )
+    except Exception:
+        return None  # valor ilegible = no aplica; jamás se adivina (regla 7)
 
 
 async def obtener_calendario_dian() -> dict:

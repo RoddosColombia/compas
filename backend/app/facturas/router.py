@@ -147,6 +147,7 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
     periodicidad = await service.obtener_periodicidad()
     items = await service.obtener_facturas_iva()
     calendario = await service.obtener_calendario_dian()
+    declarado = await service.obtener_saldo_favor_declarado()
     return {
         "periodicidad": periodicidad.value,
         "periodos": [
@@ -164,7 +165,7 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
                     c.anio, c.periodo, periodicidad, calendario
                 ),
             }
-            for c in liquidar(items, periodicidad)
+            for c in liquidar(items, periodicidad, saldo_declarado=declarado)
         ],
     }
 
