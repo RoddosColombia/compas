@@ -1,9 +1,8 @@
 from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
-
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
+from pydantic import ValidationError
 
 
 def test_resultado_ok_con_evidencia():
