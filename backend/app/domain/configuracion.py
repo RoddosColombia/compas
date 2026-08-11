@@ -37,6 +37,11 @@ class ClaveConfig(StrEnum):
     # E2 (CR-E2-COMPUERTA): compuerta IVA→proyección. Apagada por defecto → E2 captura
     # facturas y liquida el IVA SIN mover la caja proyectada (D-12). Encender es dato.
     IVA_ALIMENTA_PROYECCION = "IVA_ALIMENTA_PROYECCION"
+    # Saldo a favor de la declaración DIAN anterior a los datos de COMPAS (CEO
+    # 2026-08-11): {"aplica_desde": "YYYY-MM-DD", "valor": "monto"}. Entra como
+    # saldo_favor_previo del período de aplica_desde, REEMPLAZANDO el arrastre
+    # derivado. Sin semilla: es un dato de la empresa, ausente → no aplica.
+    SALDO_FAVOR_IVA_DECLARADO = "SALDO_FAVOR_IVA_DECLARADO"
 
 
 # Tipo esperado por clave (M-03). "decimal" | "fecha" | "json".
@@ -48,6 +53,7 @@ _TIPO_POR_CLAVE: dict[ClaveConfig, str] = {
     ClaveConfig.NIT_RODDOS: "json",
     ClaveConfig.NIT_AUTECO: "json",
     ClaveConfig.IVA_ALIMENTA_PROYECCION: "json",
+    ClaveConfig.SALDO_FAVOR_IVA_DECLARADO: "json",
 }
 
 
@@ -149,8 +155,11 @@ SEMILLA_CONFIGURACION: list[dict] = [
         "vigente_desde": "2026-01-01",
     },
     {
+        # Auteco factura con DOS NITs (CEO 2026-08-11): el histórico y el de
+        # AUTOTECNICA COLOMBIANA S.A.S. (verificado contra factura real E670165520).
+        # La ingesta acepta {"nits": [...]} y la forma histórica {"nit": "..."}.
         "clave": "NIT_AUTECO",
-        "valor_json": {"nit": "860024781"},
+        "valor_json": {"nits": ["860024781", "890900317"]},
         "vigente_desde": "2026-01-01",
     },
     {

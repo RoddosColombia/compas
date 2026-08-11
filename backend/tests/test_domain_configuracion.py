@@ -84,7 +84,8 @@ def test_semilla_tiene_las_claves_esperadas():
 def test_semilla_e2_nits_y_compuerta_apagada():
     d = {c["clave"]: c for c in SEMILLA_CONFIGURACION}
     assert d["NIT_RODDOS"]["valor_json"] == {"nit": "901012622"}
-    assert d["NIT_AUTECO"]["valor_json"] == {"nit": "860024781"}
+    # Auteco factura con DOS NITs (CEO 2026-08-11): histórico + AUTOTECNICA COLOMBIANA
+    assert d["NIT_AUTECO"]["valor_json"] == {"nits": ["860024781", "890900317"]}
     # compuerta IVA→proyección apagada por defecto (D-12 / CR-E2-COMPUERTA)
     assert d["IVA_ALIMENTA_PROYECCION"]["valor_json"] == {"activa": False}
 

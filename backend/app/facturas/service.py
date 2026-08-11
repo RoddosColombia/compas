@@ -22,6 +22,7 @@ from app.domain.factura import Factura, OrigenFactura, TipoFactura
 from app.iva.liquidacion import (
     FacturaIva,
     Periodicidad,
+    SaldoFavorDeclarado,
     etiqueta_periodo,
     iva_desde_base,
     liquidar,
@@ -321,6 +322,32 @@ async def obtener_periodicidad() -> Periodicidad:
     return Periodicidad.cuatrimestral
 
 
+async def obtener_saldo_favor_declarado() -> SaldoFavorDeclarado | None:
+    """Última vigencia de `SALDO_FAVOR_IVA_DECLARADO` (la cifra oficial de la
+    declaración DIAN anterior a los datos de COMPAS — CEO 2026-08-11). Ausente o
+    incompleta → None (no aplica; NUNCA se inventa un saldo, R5)."""
+    cfg = (
+        await Configuracion.find(
+            Configuracion.clave == ClaveConfig.SALDO_FAVOR_IVA_DECLARADO
+        )
+        .sort(-Configuracion.vigente_desde)
+        .limit(1)
+        .to_list()
+    )
+    if not (cfg and cfg[0].valor_json):
+        return None
+    aplica_desde = cfg[0].valor_json.get("aplica_desde")
+    valor = cfg[0].valor_json.get("valor")
+    if not aplica_desde or valor is None:
+        return None
+    try:
+        return SaldoFavorDeclarado(
+            aplica_desde=str(aplica_desde), valor=Decimal(str(valor))
+        )
+    except Exception:
+        return None  # valor ilegible = no aplica; jamás se adivina (regla 7)
+
+
 async def obtener_calendario_dian() -> dict:
     """Última vigencia de `CALENDARIO_DIAN` ({"2026": {"ene_abr": "2026-05-13", ...}}).
     Ausente → {} (la UI omite la línea del próximo pago; NUNCA se inventa una fecha,
@@ -350,10 +377,14 @@ async def obtener_facturas_iva() -> list[FacturaIva]:
 
 
 async def liquidacion_iva() -> dict:
-    """Liquidación de IVA por período (misma forma que GET /facturas/liquidacion)."""
+    """Liquidación de IVA por período (misma forma y lógica que
+    GET /facturas/liquidacion, incluido el saldo a favor DECLARADO de la DIAN).
+    FABS la consume para leer la cifra oficial. Mantener en paridad con el
+    endpoint del router (cleanup DRY pendiente: inc2)."""
     periodicidad = await obtener_periodicidad()
     items = await obtener_facturas_iva()
     calendario = await obtener_calendario_dian()
+    declarado = await obtener_saldo_favor_declarado()
     return {
         "periodicidad": periodicidad.value,
         "periodos": [
@@ -371,6 +402,6 @@ async def liquidacion_iva() -> dict:
                     c.anio, c.periodo, periodicidad, calendario
                 ),
             }
-            for c in liquidar(items, periodicidad)
+            for c in liquidar(items, periodicidad, saldo_declarado=declarado)
         ],
     }

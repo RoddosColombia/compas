@@ -8,6 +8,8 @@ Decimal antes de construir la factura; la respuesta los serializa con `money_str
 Idempotency-Key: no es un movimiento de dinero; el índice único (tercero_nit, numero)
 hace inocuo el replay (→ 409). La liquidación se calcula en el backend."""
 
+import os
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from beanie import PydanticObjectId
@@ -19,6 +21,7 @@ from app.auth.models import User
 from app.auth.permissions import has_permission
 from app.auth.router import verify_origin
 from app.core.money import money_str
+from app.core.time import today_bogota
 from app.domain.factura import (
     TARIFAS_IVA_VALIDAS,
     Factura,
@@ -26,8 +29,9 @@ from app.domain.factura import (
     TipoFactura,
 )
 from app.facturas import ingesta, service
+from app.facturas.excel_dian import EncabezadosNoReconocidos
 from app.facturas.extraccion import PERSONA_JURIDICA
-from app.iva.liquidacion import Periodicidad, etiqueta_periodo, periodo_de
+from app.iva.liquidacion import Periodicidad, clave_dian, liquidar, periodo_de
 
 router = APIRouter(prefix="/facturas", tags=["facturas"])
 
@@ -68,6 +72,25 @@ class FacturaEditarBody(BaseModel):
     origen: str | None = None
 
 
+def _etiqueta_periodo(anio: int, idx: int, periodicidad: Periodicidad) -> str:
+    # 'C' cuatrimestral (2026-C1) · 'B' bimestral (2026-B1)
+    prefijo = "C" if periodicidad == Periodicidad.cuatrimestral else "B"
+    return f"{anio}-{prefijo}{idx}"
+
+
+def _proximo_pago(
+    anio: int, idx: int, periodicidad: Periodicidad, calendario: dict
+) -> dict | None:
+    """Fecha DIAN del período (de `CALENDARIO_DIAN`) + días desde hoy (Bogotá). Sin
+    fecha en el calendario → None: la UI omite la línea, no se inventa (R5, §3③)."""
+    anio_cal = calendario.get(str(anio))
+    fecha = anio_cal.get(clave_dian(idx, periodicidad)) if anio_cal else None
+    if not fecha:
+        return None
+    y, m, d = (int(x) for x in fecha.split("-"))
+    return {"fecha": fecha, "dias": (date(y, m, d) - today_bogota()).days}
+
+
 def _serializar(
     f: Factura, periodicidad: Periodicidad, *, ver_pii: bool = True
 ) -> dict:
@@ -101,7 +124,7 @@ def _serializar(
         # decidir. El §2 cuenta las compras activas con deducible_decidido=False.
         "deducible_decidido": f.deducible_decidido,
         "activo": f.activo,
-        "periodo": etiqueta_periodo(anio, idx, periodicidad),  # derivado de la fecha
+        "periodo": _etiqueta_periodo(anio, idx, periodicidad),  # derivado de la fecha
     }
 
 
@@ -121,7 +144,30 @@ async def liquidacion(_: User = Depends(require_permission("dashboard:leer"))):
     """Liquidación por período (cuatrimestral o bimestral, según `PERIODICIDAD_IVA`) de
     las facturas activas: generado − descontable con arrastre de saldo a favor. Montos
     como string (regla 1)."""
-    return await service.liquidacion_iva()
+    periodicidad = await service.obtener_periodicidad()
+    items = await service.obtener_facturas_iva()
+    calendario = await service.obtener_calendario_dian()
+    declarado = await service.obtener_saldo_favor_declarado()
+    return {
+        "periodicidad": periodicidad.value,
+        "periodos": [
+            {
+                "anio": c.anio,
+                "periodo": c.periodo,
+                "etiqueta": _etiqueta_periodo(c.anio, c.periodo, periodicidad),
+                "generado": money_str(c.generado),
+                "descontable": money_str(c.descontable),
+                "saldo": money_str(c.saldo),
+                "saldo_favor_previo": money_str(c.saldo_favor_previo),
+                "neto_a_pagar": money_str(c.neto_a_pagar),
+                "saldo_favor_nuevo": money_str(c.saldo_favor_nuevo),
+                "proximo_pago": _proximo_pago(
+                    c.anio, c.periodo, periodicidad, calendario
+                ),
+            }
+            for c in liquidar(items, periodicidad, saldo_declarado=declarado)
+        ],
+    }
 
 
 @router.get("/{factura_id}")
@@ -161,6 +207,34 @@ async def cargar(
         )
     try:
         return await ingesta.procesar_lote(archivos, usuario_id=user.id)
+    except ingesta.ConfigFaltanteError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@router.post("/cargar-excel")
+async def cargar_excel(
+    archivo: UploadFile,
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """C2' (acta FABS): import masivo del Excel de documentos recibidos del portal
+    DIAN — facturas a nombre de RODDOS (gasto con IVA potencialmente deducible).
+    Resultado por FILA con los mismos estados del lote PDF. Encabezados que no
+    cuadran con el contrato → 422 listando esperado vs encontrado (regla 7)."""
+    nombre = archivo.filename or "documentos.xlsx"
+    ext = os.path.splitext(nombre)[1].lower()
+    if ext != ".xlsx":
+        raise HTTPException(
+            422,
+            f"extensión '{ext}' no soportada: el export del portal DIAN es un .xlsx",
+        )
+    contenido = await archivo.read(ingesta.MAX_BYTES_ARCHIVO + 1)
+    if len(contenido) > ingesta.MAX_BYTES_ARCHIVO:
+        raise HTTPException(422, "el archivo supera el límite de 10 MB")
+    try:
+        return await ingesta.procesar_lote_excel(contenido, usuario_id=user.id)
+    except EncabezadosNoReconocidos as e:
+        raise HTTPException(422, str(e)) from e
     except ingesta.ConfigFaltanteError as e:
         raise HTTPException(409, str(e)) from e
 
