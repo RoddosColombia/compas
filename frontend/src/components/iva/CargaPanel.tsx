@@ -11,6 +11,7 @@ import {
   type CargaResultado,
   type EstadoCarga,
   cargarFacturas,
+  cargarFacturasExcel,
 } from "@/lib/facturas";
 
 const MAX = 20;
@@ -115,14 +116,19 @@ export function CargaPanel({
     const acc: CargaResultado[] = [];
     for (let i = 0; i < lote.length; i++) {
       setProgreso({ n: i + 1, total: lote.length, archivo: lote[i].name });
+      const esExcel = lote[i].name.toLowerCase().endsWith(".xlsx");
       try {
-        const resp = await cargarFacturas([lote[i]]);
+        // C2': un Excel de la DIAN trae CIENTOS de filas en un solo archivo —
+        // va al endpoint masivo; los PDF siguen de a uno (barra n de N real).
+        const resp = esExcel
+          ? await cargarFacturasExcel(lote[i])
+          : await cargarFacturas([lote[i]]);
         acc.push(...resp.resultados);
-      } catch {
+      } catch (e) {
         acc.push({
           archivo: lote[i].name,
           estado: "error",
-          motivo: null,
+          motivo: e instanceof Error ? e.message : null,
           factura_id: null,
           datos_extraidos: null,
         });
@@ -136,8 +142,10 @@ export function CargaPanel({
   function alSoltar(e: DragEvent) {
     e.preventDefault();
     setArrastrando(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) =>
-      f.name.toLowerCase().endsWith(".pdf"),
+    const files = Array.from(e.dataTransfer.files).filter(
+      (f) =>
+        f.name.toLowerCase().endsWith(".pdf") ||
+        f.name.toLowerCase().endsWith(".xlsx"),
     );
     if (files.length) void subir(files);
   }
@@ -171,12 +179,13 @@ export function CargaPanel({
             Arrastra aquí los PDF que descargas de la DIAN — hasta 20 archivos
           </span>
           <span className="font-sans text-apoyo text-ink-faint">
-            o haz clic para seleccionar archivos
+            o el Excel de «documentos recibidos» del portal (carga masiva) · o
+            haz clic para seleccionar
           </span>
           <input
             ref={inputRef}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,.xlsx"
             multiple
             className="hidden"
             onChange={(e) => {
@@ -230,7 +239,8 @@ export function CargaPanel({
                         </button>
                       </>
                     ) : (
-                      MOTIVO[r.estado] && ` — ${MOTIVO[r.estado]}`
+                      (r.motivo || MOTIVO[r.estado]) &&
+                      ` — ${r.motivo || MOTIVO[r.estado]}`
                     )}
                   </p>
                 ))}

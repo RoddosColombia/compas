@@ -41,6 +41,11 @@ from app.audit.service import emit_audit
 from app.core.money import money_str
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.factura import Factura, OrigenFactura, TipoFactura
+from app.facturas.excel_dian import (
+    campos_desde_fila,
+    es_tipo_soportado,
+    parsear_excel,
+)
 from app.facturas.extraccion import (
     DocumentoNoDian,
     FacturaDian,
@@ -215,6 +220,71 @@ def _resultado(
     }
 
 
+async def persistir_factura_ingesta(
+    campos: dict,
+    *,
+    usuario_id: str,
+    via: str,
+    etiqueta: str,
+    archivo_ref: str | None,
+    datos: dict | None = None,
+) -> dict:
+    """El ÚNICO camino de escritura de la ingesta (PDF y Excel): pre-check de
+    CUFE, insert con la garantía dura de los índices únicos, y `factura.creada`
+    fail-closed (saga O1). Devuelve el dict-resultado de la pieza procesada."""
+    if (
+        campos.get("cufe")
+        and await Factura.find_one(Factura.cufe == campos["cufe"]) is not None
+    ):
+        return _resultado(
+            etiqueta,
+            EstadoIngesta.duplicada,
+            motivo="ya existe una factura con este CUFE",
+            datos=datos,
+        )
+
+    factura = Factura(**campos, archivo_ref=archivo_ref)
+    try:
+        await factura.insert()
+    except DuplicateKeyError:
+        # carrera del pre-check (cufe_unico) o carga manual previa con el mismo
+        # par NIT+número (nit_numero_unico): en ambos casos ya está registrada
+        return _resultado(
+            etiqueta,
+            EstadoIngesta.duplicada,
+            motivo="ya existe una factura con este CUFE o con el mismo "
+            "número para este NIT",
+            datos=datos,
+        )
+    try:
+        await emit_audit(
+            AuditEvento.factura_creada,
+            entidad="factura",
+            entidad_id=str(factura.id),
+            actor_id=usuario_id,
+            # sin nombre de archivo ni NIT/nombre del tercero: puede ser cédula/
+            # persona natural (PII, Ley 1581 / A17). CUFE+número identifican.
+            metadata={
+                "via": via,
+                "numero": factura.numero,
+                "cufe": factura.cufe,
+                "tipo": factura.tipo.value,
+                "origen": factura.origen.value,
+                "iva_valor": money_str(factura.iva_valor),
+                # deja el valor DECIDIDO en el rastro (Auteco → True por config); no
+                # exige un evento nuevo (la decisión viaja con origen=auteco).
+                "deducible": factura.deducible,
+                "deducible_decidido": factura.deducible_decidido,
+            },
+        )
+    except Exception:
+        await factura.delete()  # saga O1: sin rastro de auditoría no hay alta
+        raise
+    return _resultado(
+        etiqueta, EstadoIngesta.creada, factura_id=str(factura.id), datos=datos
+    )
+
+
 async def _procesar_archivo(
     archivo: UploadFile,
     *,
@@ -268,58 +338,13 @@ async def _procesar_archivo(
             datos=datos,
         )
 
-    # Pre-check de CUFE (legible, NO atómico); la garantía dura es el índice
-    # único cufe_unico + el DuplicateKeyError de abajo.
-    if await Factura.find_one(Factura.cufe == dian.cufe) is not None:
-        return _resultado(
-            nombre,
-            EstadoIngesta.duplicada,
-            motivo="ya existe una factura con este CUFE",
-            datos=datos,
-        )
-
-    factura = Factura(
-        **campos,
+    return await persistir_factura_ingesta(
+        campos,
+        usuario_id=usuario_id,
+        via="ingesta_dian",
+        etiqueta=nombre,
         archivo_ref=f"sha256:{hashlib.sha256(contenido).hexdigest()}",
-    )
-    try:
-        await factura.insert()
-    except DuplicateKeyError:
-        # carrera del pre-check (cufe_unico) o carga manual previa con el mismo
-        # par NIT+número (nit_numero_unico): en ambos casos ya está registrada
-        return _resultado(
-            nombre,
-            EstadoIngesta.duplicada,
-            motivo="ya existe una factura con este CUFE o con el mismo "
-            "número para este NIT",
-            datos=datos,
-        )
-    try:
-        await emit_audit(
-            AuditEvento.factura_creada,
-            entidad="factura",
-            entidad_id=str(factura.id),
-            actor_id=usuario_id,
-            # sin nombre de archivo ni NIT/nombre del tercero: puede ser cédula/
-            # persona natural (PII, Ley 1581 / A17). CUFE+número identifican.
-            metadata={
-                "via": "ingesta_dian",
-                "numero": factura.numero,
-                "cufe": factura.cufe,
-                "tipo": factura.tipo.value,
-                "origen": factura.origen.value,
-                "iva_valor": money_str(factura.iva_valor),
-                # deja el valor DECIDIDO en el rastro (Auteco → True por config); no
-                # exige un evento nuevo (la decisión viaja con origen=auteco).
-                "deducible": factura.deducible,
-                "deducible_decidido": factura.deducible_decidido,
-            },
-        )
-    except Exception:
-        await factura.delete()  # saga O1: sin rastro de auditoría no hay alta
-        raise
-    return _resultado(
-        nombre, EstadoIngesta.creada, factura_id=str(factura.id), datos=datos
+        datos=datos,
     )
 
 
@@ -356,6 +381,98 @@ async def procesar_lote(archivos: list[UploadFile], *, usuario_id: str) -> dict:
                     EstadoIngesta.error,
                     motivo="error interno procesando el archivo; los demás "
                     "archivos del lote no se afectaron",
+                )
+            )
+
+    resumen = {plural: 0 for plural in _PLURAL.values()}
+    for r in resultados:
+        resumen[_PLURAL[EstadoIngesta(r["estado"])]] += 1
+    return {"resultados": resultados, "resumen": resumen}
+
+
+async def procesar_lote_excel(
+    contenido: bytes, *, usuario_id: str
+) -> dict:
+    """C2' — import masivo del Excel de documentos recibidos del portal DIAN.
+    Resultado POR FILA con los mismos estados del lote PDF (el frontend pinta
+    ambos con el mismo componente); `EncabezadosNoReconocidos` sube al router
+    (422 con esperado vs encontrado — regla 7)."""
+    nit_propio = await _nit_config(ClaveConfig.NIT_RODDOS)
+    if not nit_propio:
+        raise ConfigFaltanteError(
+            "NIT_RODDOS no está en Configuracion: sin él no se puede validar que "
+            "las filas del Excel sean documentos RECIBIDOS por RODDOS. Corra la "
+            "migración 20260728_e2_facturas_iva."
+        )
+    nit_auteco = await _nit_config(ClaveConfig.NIT_AUTECO)
+    archivo_ref = f"sha256:{hashlib.sha256(contenido).hexdigest()}"
+
+    filas = await to_thread.run_sync(parsear_excel, contenido)
+
+    resultados: list[dict] = []
+    for fila in filas:
+        etiqueta = f"fila {fila['fila']}"
+        try:
+            if "error" in fila:
+                resultados.append(
+                    _resultado(etiqueta, EstadoIngesta.error, motivo=fila["error"])
+                )
+                continue
+            etiqueta = f"fila {fila['fila']} · {fila['numero']}"
+            if not es_tipo_soportado(fila["tipo_documento"]):
+                resultados.append(
+                    _resultado(
+                        etiqueta,
+                        EstadoIngesta.rechazada_tipo_no_soportado,
+                        motivo=f"'{fila['tipo_documento']}' no se procesa todavía "
+                        "(solo facturas electrónicas; notas crédito/débito y "
+                        "documentos equivalentes van a E2.1). No entró a la "
+                        "liquidación.",
+                    )
+                )
+                continue
+            if fila["nit_emisor"] == nit_propio:
+                resultados.append(
+                    _resultado(
+                        etiqueta,
+                        EstadoIngesta.rechazada_tipo_no_soportado,
+                        motivo="es una factura EMITIDA por RODDOS; este importador "
+                        "es solo de recibidas (gasto). El IVA generado del mes se "
+                        "registra aparte.",
+                    )
+                )
+                continue
+            if fila.get("nit_receptor") and fila["nit_receptor"] != nit_propio:
+                resultados.append(
+                    _resultado(
+                        etiqueta,
+                        EstadoIngesta.rechazada_tipo_no_soportado,
+                        motivo="el receptor de esta fila no es RODDOS; no es un "
+                        "documento recibido nuestro.",
+                    )
+                )
+                continue
+            campos = campos_desde_fila(fila, nit_auteco=nit_auteco)
+            resultados.append(
+                await persistir_factura_ingesta(
+                    campos,
+                    usuario_id=usuario_id,
+                    via="import_excel_dian",
+                    etiqueta=etiqueta,
+                    archivo_ref=archivo_ref,
+                )
+            )
+        except Exception:
+            # sin contenido de la fila en el log (puede llevar PII, A17)
+            logger.exception(
+                "import excel: error procesando la fila %s", fila.get("fila")
+            )
+            resultados.append(
+                _resultado(
+                    etiqueta,
+                    EstadoIngesta.error,
+                    motivo="error interno procesando la fila; las demás filas "
+                    "no se afectaron",
                 )
             )
 

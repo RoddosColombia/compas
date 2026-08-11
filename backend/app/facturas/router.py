@@ -8,6 +8,7 @@ Decimal antes de construir la factura; la respuesta los serializa con `money_str
 Idempotency-Key: no es un movimiento de dinero; el índice único (tercero_nit, numero)
 hace inocuo el replay (→ 409). La liquidación se calcula en el backend."""
 
+import os
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -28,6 +29,7 @@ from app.domain.factura import (
     TipoFactura,
 )
 from app.facturas import ingesta, service
+from app.facturas.excel_dian import EncabezadosNoReconocidos
 from app.facturas.extraccion import PERSONA_JURIDICA
 from app.iva.liquidacion import Periodicidad, clave_dian, liquidar, periodo_de
 
@@ -204,6 +206,34 @@ async def cargar(
         )
     try:
         return await ingesta.procesar_lote(archivos, usuario_id=user.id)
+    except ingesta.ConfigFaltanteError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@router.post("/cargar-excel")
+async def cargar_excel(
+    archivo: UploadFile,
+    user: User = Depends(require_permission("iva:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """C2' (acta FABS): import masivo del Excel de documentos recibidos del portal
+    DIAN — facturas a nombre de RODDOS (gasto con IVA potencialmente deducible).
+    Resultado por FILA con los mismos estados del lote PDF. Encabezados que no
+    cuadran con el contrato → 422 listando esperado vs encontrado (regla 7)."""
+    nombre = archivo.filename or "documentos.xlsx"
+    ext = os.path.splitext(nombre)[1].lower()
+    if ext != ".xlsx":
+        raise HTTPException(
+            422,
+            f"extensión '{ext}' no soportada: el export del portal DIAN es un .xlsx",
+        )
+    contenido = await archivo.read(ingesta.MAX_BYTES_ARCHIVO + 1)
+    if len(contenido) > ingesta.MAX_BYTES_ARCHIVO:
+        raise HTTPException(422, "el archivo supera el límite de 10 MB")
+    try:
+        return await ingesta.procesar_lote_excel(contenido, usuario_id=user.id)
+    except EncabezadosNoReconocidos as e:
+        raise HTTPException(422, str(e)) from e
     except ingesta.ConfigFaltanteError as e:
         raise HTTPException(409, str(e)) from e
 
