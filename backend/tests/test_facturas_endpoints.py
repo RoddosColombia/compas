@@ -665,6 +665,43 @@ async def test_a10_ejemplo_aritmetico_spec_6_end_to_end(api):
     assert any(f["numero"] == "R-4" for f in rl.json())
 
 
+async def test_liquidacion_usa_saldo_favor_declarado_de_config(api):
+    """CEO 2026-08-11: el saldo a favor de la declaración DIAN anterior (períodos
+    pre-COMPAS) se captura en la config SALDO_FAVOR_IVA_DECLARADO y entra como
+    `saldo_favor_previo` del período configurado, REEMPLAZANDO el arrastre derivado."""
+    from app.domain.configuracion import Configuracion
+
+    ac, _ = api
+    h = await _token(ac)
+    await Configuracion(
+        clave="SALDO_FAVOR_IVA_DECLARADO",
+        valor_json={"aplica_desde": "2026-05-01", "valor": "28950000.00"},
+        vigente_desde="2026-08-11",
+    ).insert()
+    # venta C2 (may–ago): generado 190000; sin el declarado pagaría 190000
+    await ac.post(
+        "/api/v1/facturas",
+        json={
+            "tipo": "venta",
+            "origen": "moto",
+            "numero": "FV-DECL",
+            "tercero_nombre": "Cliente",
+            "tercero_nit": "79",
+            "fecha": "2026-06-01",
+            "base_gravable": "1000000",
+            "tarifa_iva": "0.19",
+            "deducible": False,
+        },
+        headers=h,
+    )
+    r = await ac.get("/api/v1/facturas/liquidacion", headers=h)
+    per = {p["etiqueta"]: p for p in r.json()["periodos"]}
+    c2 = per["2026-C2"]
+    assert c2["saldo_favor_previo"] == "28950000.00"
+    assert c2["neto_a_pagar"] == "0.00"
+    assert c2["saldo_favor_nuevo"] == "28760000.00"  # 28.950.000 − 190.000
+
+
 # ── PASO 1c: proximo_pago {fecha, dias} en /liquidacion desde CALENDARIO_DIAN ──
 async def test_liquidacion_incluye_proximo_pago_dian(api):
     from datetime import date

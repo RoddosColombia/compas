@@ -96,6 +96,17 @@ class FacturaIva:
 
 
 @dataclass(frozen=True)
+class SaldoFavorDeclarado:
+    """Saldo a favor de la declaración DIAN anterior a los datos de COMPAS (CEO
+    2026-08-11). `aplica_desde` (YYYY-MM-DD) marca el período donde ENTRA como
+    `saldo_favor_previo`; ahí REEMPLAZA el arrastre derivado — la declaración
+    oficial ya incorpora todo lo anterior (sumarlos sería doble conteo)."""
+
+    aplica_desde: str  # 'YYYY-MM-DD' (el período se deriva con la periodicidad)
+    valor: Decimal
+
+
+@dataclass(frozen=True)
 class LiquidacionPeriodo:
     anio: int
     periodo: int  # índice del período (1..3 cuatrimestral | 1..6 bimestral)
@@ -214,16 +225,29 @@ def programar_egresos_iva(
 def liquidar(
     facturas: list[FacturaIva],
     periodicidad: Periodicidad = Periodicidad.cuatrimestral,
+    saldo_declarado: SaldoFavorDeclarado | None = None,
 ) -> list[LiquidacionPeriodo]:
     """Liquida cada período en orden CRONOLÓGICO (el arrastre lo exige). Devuelve una
-    `LiquidacionPeriodo` por período con facturas, según la periodicidad."""
+    `LiquidacionPeriodo` por período con facturas, según la periodicidad.
+
+    `saldo_declarado`: al llegar al PRIMER período >= su `aplica_desde`, el arrastre
+    se REEMPLAZA por el valor declarado (una sola vez; si ese período no tiene
+    facturas, fluye al siguiente con datos). Los períodos anteriores no cambian."""
     grupos: dict[tuple[int, int], list[FacturaIva]] = {}
     for f in facturas:
         grupos.setdefault(periodo_de(f.fecha, periodicidad), []).append(f)
 
+    clave_declarado = (
+        periodo_de(saldo_declarado.aplica_desde, periodicidad)
+        if saldo_declarado is not None
+        else None
+    )
     out: list[LiquidacionPeriodo] = []
     favor = Decimal("0")
     for anio, c in sorted(grupos):
+        if clave_declarado is not None and (anio, c) >= clave_declarado:
+            favor = saldo_declarado.valor  # reemplaza el derivado (doble conteo no)
+            clave_declarado = None  # se consume una sola vez
         fs = grupos[(anio, c)]
         generado = sum((f.iva_valor for f in fs if f.tipo == "venta"), Decimal("0"))
         descontable = sum(

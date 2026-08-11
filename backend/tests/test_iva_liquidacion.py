@@ -10,6 +10,7 @@ from decimal import Decimal
 from app.iva.liquidacion import (
     FacturaIva,
     Periodicidad,
+    SaldoFavorDeclarado,
     cuatrimestre_de,
     iva_desde_base,
     iva_desde_total,
@@ -89,6 +90,46 @@ def test_liquidar_arrastra_saldo_a_favor():
     assert c2.saldo_favor_previo == Decimal("70")
     assert c2.neto_a_pagar == Decimal("80")  # 150 − 70 arrastrado
     assert c2.saldo_favor_nuevo == Decimal("0")
+
+
+def test_liquidar_saldo_declarado_reemplaza_el_arrastre():
+    """Saldo a favor DECLARADO (la cifra oficial de la declaración DIAN anterior,
+    capturada por config — CEO 2026-08-11): al llegar a su período REEMPLAZA el
+    arrastre derivado (la declaración oficial ya incorpora todo lo anterior —
+    sumarlos sería doble conteo). Los períodos anteriores no cambian."""
+    facturas = [
+        # C1: favor derivado 70 (descontable 120 > generado 50)
+        FacturaIva("venta", "2026-02-10", Decimal("50")),
+        FacturaIva("compra", "2026-02-11", Decimal("120"), True),
+        # C2: generado 200
+        FacturaIva("venta", "2026-06-10", Decimal("200")),
+    ]
+    decl = SaldoFavorDeclarado(aplica_desde="2026-05-01", valor=Decimal("100"))
+    c1, c2 = liquidar(facturas, saldo_declarado=decl)
+    assert c1.saldo_favor_nuevo == Decimal("70")  # C1 intacto
+    assert c2.saldo_favor_previo == Decimal("100")  # reemplaza: ni 70 ni 170
+    assert c2.neto_a_pagar == Decimal("100")  # 200 − 100
+    assert c2.saldo_favor_nuevo == Decimal("0")
+
+
+def test_liquidar_saldo_declarado_sin_facturas_en_su_periodo_fluye():
+    """Si el período donde entra el declarado no tiene facturas, el saldo fluye al
+    primer período posterior con datos (no se pierde)."""
+    facturas = [FacturaIva("venta", "2026-10-10", Decimal("300"))]  # solo C3
+    decl = SaldoFavorDeclarado(aplica_desde="2026-05-01", valor=Decimal("100"))
+    (c3,) = liquidar(facturas, saldo_declarado=decl)
+    assert c3.saldo_favor_previo == Decimal("100")
+    assert c3.neto_a_pagar == Decimal("200")
+
+
+def test_liquidar_saldo_declarado_no_toca_periodos_anteriores():
+    """Un declarado que entra en C2 no altera la liquidación de C1 (el pasado ya
+    declarado no se reescribe — regla 4)."""
+    facturas = [FacturaIva("venta", "2026-02-10", Decimal("90"))]  # solo C1
+    decl = SaldoFavorDeclarado(aplica_desde="2026-05-01", valor=Decimal("100"))
+    (c1,) = liquidar(facturas, saldo_declarado=decl)
+    assert c1.saldo_favor_previo == Decimal("0")
+    assert c1.neto_a_pagar == Decimal("90")
 
 
 def test_liquidar_bimestral_separa_en_seis_periodos():
