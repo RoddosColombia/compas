@@ -7,6 +7,7 @@ por repositorios con Motor crudo/conexión dedicada (decisión de la Sesión 2),
 el ODM general.
 """
 
+from app.cfo.goldens.modelo import CFOGolden
 from app.domain.carga import CargaBancaria
 from app.domain.cartera_previa import CarteraPreviaRecaudo
 from app.domain.configuracion import Configuracion
@@ -45,6 +46,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     Obligacion,
     FacturaObligacion,
     MetaIngreso,
+    CFOGolden,
 ]
 
 __all__ = [
@@ -67,5 +69,6 @@ __all__ = [
     "Obligacion",
     "FacturaObligacion",
     "MetaIngreso",
+    "CFOGolden",
     "DOMAIN_DOCUMENTS",
 ]

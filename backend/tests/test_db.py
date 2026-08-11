@@ -23,8 +23,9 @@ async def test_init_beanie_registra_los_documents_de_dominio():
     # + CarteraPreviaRecaudo (PR-1) + Factura (PR-2a) + LoanTapeCredito (aging)
     # + GastoRecurrente (plantilla de gastos fijos, 1d9f99c)
     # + EscenarioImpacto (D1 §2, escenarios what-if auditados)
-    # + Obligacion/FacturaObligacion/MetaIngreso (D2 §2/§6).
-    assert len(DOMAIN_DOCUMENTS) == 19
+    # + Obligacion/FacturaObligacion/MetaIngreso (D2 §2/§6)
+    # + CFOGolden (Task 7, FABS inc1 — cimiento determinista).
+    assert len(DOMAIN_DOCUMENTS) == 20
     assert Transaccion in mongo.DOCUMENT_MODELS
     assert AuditLog not in mongo.DOCUMENT_MODELS
     client = AsyncMongoMockClient()
