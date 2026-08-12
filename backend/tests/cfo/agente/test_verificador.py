@@ -126,3 +126,40 @@ def test_multiples_cifras_todas_respaldadas_pasa():
     v = verificar(texto, [_cop(Decimal("704722003")), _cop(Decimal("36204698"))])
     assert v.ok is True
     assert v.cifras_sin_evidencia == []
+
+
+# --- Robustez formato "wire" (hallazgo de revisión sobre commit 80b70cd) -----
+# tools.resultado_a_dict serializa valor como str(Decimal(...)): dígitos pelados
+# sin separador de miles para COP ("704722003") y con PUNTO decimal para meses
+# ("4.2") — no el formato es-CO con "$"/miles/coma que asumía la heurística
+# original. El prompt (regla #1) exige reproducir las cifras LITERALMENTE, así
+# que la respuesta real del modelo llega mayoritariamente en formato wire.
+
+
+def test_bare_digit_wire_inventado_se_atrapa():
+    # monto fabricado en formato wire (sin $, sin separadores) DEBE atraparse
+    v = verificar("el flujo proyectado es 950000000", [_cop(Decimal("704722003"))])
+    assert v.ok is False
+    assert any("950000000" in t for t in v.cifras_sin_evidencia)
+
+
+def test_bare_digit_wire_que_coincide_pasa():
+    v = verificar("la caja es 704722003", [_cop(Decimal("704722003"))])
+    assert v.ok is True
+
+
+def test_anio_no_marcado_pese_a_nuevo_regex():
+    # el umbral de 5+ dígitos pelados no debe empezar a atrapar años de 4 dígitos
+    cifras = extraer_cifras("En 2026 la caja subió")
+    assert all(v != Decimal("2026") for v, _, _ in cifras)
+
+
+def test_runway_wire_punto_decimal_pasa():
+    # str(Decimal("4.2")) usa PUNTO — el runway real del modelo llega así
+    v = verificar("El runway es de 4.2 meses.", [_meses(Decimal("4.2"))])
+    assert v.ok is True
+
+
+def test_runway_coma_decimal_sigue_pasando():
+    v = verificar("El runway es de 4,2 meses.", [_meses(Decimal("4.2"))])
+    assert v.ok is True
