@@ -5,19 +5,21 @@ Toda cifra monetaria o con unidad que aparezca en la respuesta del modelo debe e
 dentro de tolerancia de ALGÚN valor devuelto por las tools de este turno (conjunto
 cerrado de evidencias). Si una cifra no tiene respaldo, el veredicto es `ok=False` y
 esa cifra no debe publicarse (regla #1). Heurística conservadora: exige evidencia a
-los montos ($ / separador de miles / dígitos pelados de 5+) y a los números con
-unidad de meses; ignora años, fechas y ordinales pequeños sin formato de dinero
+los montos ($ / separador de miles / decimal / entero pelado de 5+) y a los números
+con unidad de meses; ignora años, fechas y ordinales pequeños sin formato de dinero
 (para no abstenerse de lo inocuo).
 
-Nota de formato "wire" (hallazgo de revisión sobre el commit inicial):
-`tools.resultado_a_dict` serializa `valor` como `str(Decimal(...))` — dígitos
-pelados sin separador de miles para COP (p.ej. "704722003") y con PUNTO decimal
-para meses (p.ej. "4.2") — y el prompt (regla #1) exige que el modelo reproduzca
-las cifras LITERALMENTE. La respuesta real del modelo llega mayoritariamente en
-ese formato wire, no en es-CO con "$"/miles/coma. Por eso el regex de montos
-también acepta una corrida de 5+ dígitos pelados, y el de meses acepta tanto coma
-como punto decimal (con un normalizador propio — ver `_a_decimal_meses` — porque
-para dinero el punto es separador de miles pero para meses el punto es decimal)."""
+Nota de formato "wire" (verificado empíricamente contra `caja.py`/`runway.py`/
+`iva.py` + `tools.resultado_a_dict`, ronda 2 de revisión — corrige el supuesto de la
+ronda 1, que asumía dígitos pelados SIN decimales): las 3 tools NO devuelven enteros
+pelados. Cada una construye `valor` como `Decimal(money_str(x))` — primero cuantizan
+a 2 decimales con `money_str` (p.ej. `"704722003.00"`, `"36204698.10"`, `"4.20"`) y
+ese string se reconstruye a `Decimal`, que conserva la escala. `tools.resultado_a_dict`
+hace luego `str(r.valor)`, así que el modelo recibe literalmente `"704722003.00"` —
+un PUNTO decimal de 2 cifras, no dígitos pelados sin separador. Ese punto colisiona
+con el separador de miles es-CO (`"704.722.003"`), así que la normalización de
+montos (`_a_decimal_cop`) distingue los dos casos por REGLA DE FORMA (ver su
+docstring) — no por conteo de dígitos, que ya no basta para desambiguar."""
 
 import re
 from dataclasses import dataclass
@@ -28,23 +30,24 @@ from app.cfo.calc.evidencia import ResultadoCFO
 _TOL_COP = Decimal("1")  # ±$1 COP por redondeo
 _TOL_MESES = Decimal("0.1")  # ±0,1 meses
 
-# Monto: prefijo $ (con o sin separadores) O número con separador de miles es-CO O
-# corrida de 5+ dígitos pelados (formato wire str(Decimal), sin $ ni separadores;
-# el umbral de 5 excluye años de 4 dígitos como 2026 — ver test_anio_no_marcado_*).
-_RE_MONTO = re.compile(
-    r"\$\s?\d+(?:\.\d{3})*(?:,\d{1,2})?"  # $50.000.000 · $0 · $1.234,56
-    r"|(?<![\d.,])\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?"  # 704.722.003 (requiere separador)
-    r"|(?<![\d.,])\d{5,}(?![\d.,])"  # 950000000 (wire pelado, ≥5 dígitos)
-)
-# Meses: número (decimal con coma O punto — wire str(Decimal) usa punto) + 'mes(es)'.
+# Un "número" = corrida de dígitos con posibles separadores . , y $ opcional.
+_RE_NUM = re.compile(r"\$?\s?\d[\d.,]*\d|\$?\s?\d")
+# Meses: número (decimal con , o .) seguido de 'mes'/'meses'.
 _RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
 
 
-def _a_decimal_es(token: str) -> Decimal | None:
-    """Dinero es-CO: el punto es separador de MILES (se descarta) y la coma es el
-    decimal. NUNCA usar esta función para 'meses' — ver `_a_decimal_meses`."""
+def _a_decimal_cop(token: str) -> Decimal | None:
+    """Normaliza un monto en CUALQUIER forma plausible a Decimal. Regla de
+    separadores: si hay ',' es es-CO ('.'=miles, ','=decimal); si solo hay un '.'
+    con 2 dígitos al final es el formato wire de str(Decimal(money_str)) ('.'=decimal,
+    p.ej. '704722003.00'); en los demás casos los '.' son miles (grupos de 3)."""
     t = token.replace("$", "").replace(" ", "").strip()
-    t = t.replace(".", "").replace(",", ".")
+    if "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    elif re.search(r"\.\d{2}$", t) and t.count(".") == 1:
+        pass  # wire decimal: dejar el punto
+    else:
+        t = t.replace(".", "")  # miles
     try:
         return Decimal(t)
     except InvalidOperation:
@@ -53,13 +56,25 @@ def _a_decimal_es(token: str) -> Decimal | None:
 
 def _a_decimal_meses(token: str) -> Decimal | None:
     """Meses: una sola marca decimal (coma es-CO o punto wire str(Decimal)); a
-    diferencia de `_a_decimal_es`, el punto NUNCA se descarta — aquí es decimal,
+    diferencia de `_a_decimal_cop`, el punto NUNCA se descarta — aquí es decimal,
     no separador de miles (los valores de meses no tienen miles)."""
     t = token.replace(",", ".").strip()
     try:
         return Decimal(t)
     except InvalidOperation:
         return None
+
+
+def _es_monto(raw: str) -> bool:
+    """Un candidato numérico exige evidencia (es un MONTO) si lleva '$', un separador
+    (miles/decimal), o es un entero pelado de >=5 dígitos. Excluye años de 4 dígitos,
+    días y ordinales pequeños sin formato de dinero — para no abstenerse de lo inocuo.
+    Sesgo conservador: preferimos un falso-positivo (dispara el reintento del servicio)
+    antes que dejar pasar una cifra sin evidencia."""
+    core = raw.replace("$", "").replace(" ", "")
+    if "$" in raw or "," in core or "." in core:
+        return True
+    return core.isdigit() and len(core) >= 5
 
 
 @dataclass(frozen=True)
@@ -70,22 +85,34 @@ class Veredicto:
 
 def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
     cifras: list[tuple[Decimal, str, str]] = []
-    # Meses primero, y marcamos sus tramos para no re-capturar el número como monto.
-    # (Guarda puramente defensiva: un decimal de meses no alcanza el umbral de 5+
-    # dígitos de _RE_MONTO en la práctica, pero se mantiene por si cambia el formato.)
+    # Meses primero, y marcamos sus tramos para no re-capturar el número como monto
+    # COP. Ya NO es solo defensivo (como en la ronda 1): un decimal de meses como
+    # "4.20" también cumple `_es_monto` (tiene '.'), así que sin este guard se
+    # contaría dos veces con la unidad equivocada (buscaría "4.20" en la evidencia
+    # de COP, que nunca lo respalda, en vez de en la de meses).
+    #
+    # El chequeo de solape es de INTERSECCIÓN de intervalos, no de contención del
+    # punto de inicio: _RE_NUM permite un '\s?' inicial opcional, así que su match
+    # puede empezar 1 char ANTES del tramo de meses (consume el espacio previo a
+    # "4.2", p.ej. " 4.2" en vez de "4.2") — con una contención estricta ese match
+    # queda FUERA del tramo registrado y el guard nunca dispara (hallazgo de ronda
+    # 2 vía tests reales, no traza manual: test_runway_wire_punto_decimal_pasa et
+    # al. daban RED con la contención simple).
     tramos_meses: list[tuple[int, int]] = []
     for m in _RE_MESES.finditer(texto):
         val = _a_decimal_meses(m.group(1))
         if val is not None:
             cifras.append((val, "meses", m.group(0)))
             tramos_meses.append((m.start(1), m.end(1)))
-    for m in _RE_MONTO.finditer(texto):
-        # saltar si el número pertenece a un tramo de 'meses'
-        if any(s <= m.start() < e for s, e in tramos_meses):
-            continue
-        val = _a_decimal_es(m.group(0))
+    for m in _RE_NUM.finditer(texto):
+        if any(s < m.end() and m.start() < e for s, e in tramos_meses):
+            continue  # ya contado como meses (intervalos se solapan)
+        raw = m.group(0)
+        if not _es_monto(raw):
+            continue  # año/día/ordinal pelado
+        val = _a_decimal_cop(raw)
         if val is not None:
-            cifras.append((val, "COP", m.group(0)))
+            cifras.append((val, "COP", raw.strip()))
     return cifras
 
 

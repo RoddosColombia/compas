@@ -163,3 +163,40 @@ def test_runway_wire_punto_decimal_pasa():
 def test_runway_coma_decimal_sigue_pasando():
     v = verificar("El runway es de 4,2 meses.", [_meses(Decimal("4.2"))])
     assert v.ok is True
+
+
+# --- Formato wire REAL (ronda 2 de revisión) ---------------------------------
+# La ronda 1 asumió dígitos pelados SIN decimales. Verificado empíricamente
+# contra caja.py/runway.py/iva.py: las 3 tools construyen `valor` como
+# Decimal(money_str(x)) -> SIEMPRE 2 decimales ("704722003.00", "36204698.10",
+# "4.20"). El '.' de wire colisiona con el '.' de miles es-CO; estos tests fijan
+# la regla de forma que los distingue (_a_decimal_cop).
+
+
+def test_wire_caja_dos_decimales_con_evidencia_pasa():
+    # formato REAL de las tools: str(Decimal(money_str(x))) -> "704722003.00"
+    v = verificar("La caja hoy es 704722003.00.", [_cop(Decimal("704722003.00"))])
+    assert v.ok is True
+
+
+def test_wire_iva_dos_decimales_con_evidencia_pasa():
+    v = verificar(
+        "El IVA del cuatrimestre es 36204698.10.", [_cop(Decimal("36204698.10"))]
+    )
+    assert v.ok is True
+
+
+def test_wire_fabricado_dos_decimales_se_atrapa():
+    v = verificar("Proyecto un flujo de 950000000.00.", [_cop(Decimal("704722003.00"))])
+    assert v.ok is False
+    assert any("950000000.00" in t for t in v.cifras_sin_evidencia)
+
+
+def test_wire_runway_dos_decimales_pasa():
+    v = verificar("El runway es de 4.20 meses.", [_meses(Decimal("4.20"))])
+    assert v.ok is True
+
+
+def test_es_co_con_centavos_coma_pasa():
+    v = verificar("La caja es $704.722.003,00.", [_cop(Decimal("704722003.00"))])
+    assert v.ok is True
