@@ -40,3 +40,29 @@ async def test_iva_sin_periodo_vigente_abstiene(monkeypatch):
     monkeypatch.setattr(mod, "_periodo_vigente_idx", lambda: (2026, 3))
     r = await mod.iva_cuatrimestre()
     assert r.disponible is False and r.valor is None
+
+
+@pytest.mark.asyncio
+async def test_iva_cuatrimestre_abstiene_si_periodicidad_no_cuatrimestral(monkeypatch):
+    from app.cfo.calc import iva as iva_calc
+
+    async def fake_liq():
+        return {
+            "periodicidad": "bimestral",
+            "periodos": [
+                {
+                    "anio": 2026,
+                    "periodo": 4,
+                    "etiqueta": "2026-B4",
+                    "neto_a_pagar": "10000.00",
+                    "proximo_pago": {"fecha": "2026-09-10"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(iva_calc, "_liquidacion", fake_liq)
+    r = await iva_calc.iva_cuatrimestre()
+    assert r.disponible is False
+    assert r.valor is None
+    assert r.evidencia.ref == "periodicidad-no-cuatrimestral"
+    assert r.detalle == {"periodicidad": "bimestral"}

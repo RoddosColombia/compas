@@ -24,6 +24,20 @@ async def iva_cuatrimestre() -> ResultadoCFO:
     anio, idx = _periodo_vigente_idx()
     ref = f"{anio}-C{idx}"
     data = await _liquidacion()
+    if data.get("periodicidad") != "cuatrimestral":
+        # Fail-closed: el concepto asume cuatrimestral; con otra periodicidad el
+        # índice y la etiqueta del período serían erróneos. Regla #1: antes que
+        # publicar una cifra mal ubicada, se abstiene honestamente.
+        return ResultadoCFO(
+            concepto="iva_cuatrimestre",
+            valor=None,
+            unidad="COP",
+            disponible=False,
+            evidencia=Evidencia(
+                fuente=fuente, fecha_corte=None, ref="periodicidad-no-cuatrimestral"
+            ),
+            detalle={"periodicidad": data.get("periodicidad")},
+        )
     vig = next(
         (p for p in data["periodos"] if p["anio"] == anio and p["periodo"] == idx),
         None,
