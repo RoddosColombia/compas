@@ -10,6 +10,8 @@ inicial · cuota semanal · plazo · matrícula) + participación en el mix. El 
 recaudo. Todo monto es Decimal/Money (regla 1); `participacion_mix` es fracción 0..1.
 """
 
+from decimal import Decimal
+
 from beanie import Document
 from pydantic import ConfigDict, Field
 from pymongo import IndexModel
@@ -30,6 +32,13 @@ class ModeloMoto(Document):
     plazo_semanas: int = Field(gt=0)
     matricula: Money
     participacion_mix: Money  # fracción 0..1 (participación en la colocación)
+    # PLAN-52 (CEO 2026-08-11): segundo plan de pago OPCIONAL (p. ej. 52 semanas)
+    # con su propia cuota; comparte precio, inicial, matrícula y costo Auteco.
+    # `peso_plan1` = fracción 0..1 del mix del modelo que va al plan 1 (el resto al
+    # plan 2); sin plan 2 debe ser 1. La coherencia la valida el servicio (422).
+    plan2_plazo_semanas: int | None = Field(default=None, gt=0)
+    plan2_cuota_semanal: Money | None = None
+    peso_plan1: Money = Decimal("1")
     orden: int
     activo: bool = True
     es_sistema: bool = False

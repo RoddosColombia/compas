@@ -17,6 +17,11 @@ export interface ModeloMoto {
   plazo_semanas: number;
   matricula: string;
   participacion_mix: string;
+  /** PLAN-52: segundo plan de pago opcional (comparte precio/inicial/costo). */
+  plan2_plazo_semanas: number | null;
+  plan2_cuota_semanal: string | null;
+  /** Fracción 0..1 del mix del modelo que va al plan 1; sin plan 2 es "1". */
+  peso_plan1: string;
   orden: number;
   activo: boolean;
   es_sistema: boolean;
@@ -31,6 +36,9 @@ export interface ModeloCrearInput {
   plazo_semanas: number;
   matricula: string;
   participacion_mix: string;
+  plan2_plazo_semanas?: number;
+  plan2_cuota_semanal?: string;
+  peso_plan1?: string;
 }
 
 export interface ModeloEditarInput {
@@ -46,6 +54,11 @@ export interface ModeloEditarInput {
   cuota_semanal?: string;
   matricula?: string;
   participacion_mix?: string;
+  plan2_plazo_semanas?: number;
+  plan2_cuota_semanal?: string;
+  peso_plan1?: string;
+  /** PLAN-52: vuelve el modelo a un solo plan (el peso regresa a 1). */
+  quitar_plan2?: true;
 }
 
 export async function listarModelos(activo?: boolean): Promise<ModeloMoto[]> {
