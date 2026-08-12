@@ -164,6 +164,63 @@ async def test_sensibilidad_sin_config_es_409(api):
 
 
 @pytest.mark.asyncio
+async def test_sensibilidad_mide_la_misma_pista_que_la_pantalla(api):
+    """Bug CEO 2026-08-11 ('el tornado quedó todo en $0'): el tornado corría el motor
+    CRUDO, sin las capas que GET /proyeccion sí aplica (E1 anclaje + D2
+    reconciliación). Cuando las capas arrastran el mínimo de la curva a un mes
+    futuro, el piso crudo queda clavado en la caja del arranque y ninguna variable
+    lo mueve → deltas $0 engañosos. Contrato: (a) el piso base del tornado ==
+    el piso de la pantalla a 60 meses; (b) una factura real de obligación (D2)
+    cambia el piso del tornado (el cache no puede servir el mundo sin factura)."""
+    h = await _setup_config(api)
+
+    r0 = await api.get(
+        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
+    )
+    piso_sin_factura = r0.json()["piso_base"]
+
+    # obligación de facturación + factura grande que golpea la caja en nov-2026
+    oid = (
+        await api.post(
+            "/api/v1/obligaciones",
+            json={
+                "nombre": "Auteco",
+                "acreedor": "Auteco S.A.S.",
+                "naturaleza": "facturacion",
+                "plazo_base_dias": 90,
+                "plazo_max_dias": 150,
+                "tasa_excedente_mensual": "0.016",
+            },
+            headers=h,
+        )
+    ).json()["id"]
+    rf = await api.post(
+        f"/api/v1/obligaciones/{oid}/facturas",
+        json={
+            "fecha_factura": "2026-08-15",
+            "valor": "500000000",
+            "plazo_elegido_dias": 90,
+        },
+        headers=h,
+    )
+    assert rf.status_code in (200, 201), rf.text
+
+    p = await api.get(
+        "/api/v1/proyeccion?mes_inicio=2026-07&horizonte_meses=60", headers=h
+    )
+    assert p.status_code == 200, p.text
+    s = await api.get(
+        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
+    )
+    assert s.status_code == 200, s.text
+
+    # (a) misma pista que la pantalla
+    assert s.json()["piso_base"] == p.json()["piso_caja"]
+    # (b) la factura D2 SÍ movió el piso del tornado (y el cache no sirvió lo viejo)
+    assert s.json()["piso_base"] != piso_sin_factura
+
+
+@pytest.mark.asyncio
 async def test_editar_dos_veces_el_mismo_dia_no_sirve_cache_viejo(api):
     """Bug QA C3: el upsert por vigente_desde deja id/fecha/autor idénticos al
     guardar dos veces el mismo día → el fingerprint debe cubrir los VALORES,

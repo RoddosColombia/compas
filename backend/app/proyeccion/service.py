@@ -895,11 +895,42 @@ def _fingerprint(params: ParametrosProyeccion, modelos: list[ModeloMoto]) -> tup
     )
 
 
+def _fingerprint_capas(anclas: dict, facturas: list[FacturaReconciliar]) -> tuple:
+    """Huella de las capas E1/D2 para el cache del tornado: un cierre nuevo o una
+    factura de obligación cambian el piso aunque los supuestos no cambien (bug CEO
+    2026-08-11 — el cache servía el mundo sin la factura)."""
+    return (
+        tuple(sorted((mes, repr(a)) for mes, a in anclas.items())),
+        tuple(
+            (
+                f.fecha_factura,
+                str(f.valor),
+                f.plazo_elegido_dias,
+                f.plazo_base_dias,
+                str(f.tasa_excedente_mensual),
+            )
+            for f in facturas
+        ),
+    )
+
+
 async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -> dict:
-    """El tornado '¿qué mueve mi umbral?': 7 variables × ± → 14 corridas del motor
-    puro a 60 meses sobre el set vigente. Compute-only; cache por vigencia."""
+    """El tornado '¿qué mueve mi umbral?': 7 variables × ± → 14 corridas a 60 meses
+    sobre el set vigente, cada una por la MISMA tubería que GET /proyeccion
+    (motor → E1 anclaje → D2 reconciliación — bug CEO 2026-08-11: el motor crudo
+    dejaba el piso clavado en la caja del arranque y todos los deltas en $0).
+    Compute-only; cache por vigencia + huella de las capas."""
     params, modelos = await _cargar_config_vigente()
-    clave = (_fingerprint(params, modelos), escenario, mes_inicio)
+    anclas, rubros_e1, neutros_e1 = await cargar_anclas(
+        mes_inicio, SENSIBILIDAD_HORIZONTE
+    )
+    facturas = await _facturas_reconciliar()
+    clave = (
+        _fingerprint(params, modelos),
+        escenario,
+        mes_inicio,
+        _fingerprint_capas(anclas, facturas),
+    )
     if clave in _sensibilidad_cache:
         return _sensibilidad_cache[clave]
 
@@ -915,7 +946,34 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
         activos_previos,
         iva_egreso,
     )
-    piso_base = proyectar(pm).piso_caja
+
+    def piso_con_capas(pm_x: ParametrosMotor):
+        """Motor + E1 + D2 (mismo orden de precedencia de `_resultado_con`): el piso
+        que ve la pantalla. Los meses anclados no responden a las variaciones — el
+        pasado es del libro; el tornado mide el FUTURO, que es lo decidible."""
+        r = proyectar(pm_x)
+        meses_anclados: frozenset[str] = frozenset()
+        if anclas:
+            r = _kpis_a_resultado(
+                anclar(
+                    resultado=r,
+                    caja_minima=params.caja_minima,
+                    anclas=anclas,
+                    rubros=rubros_e1,
+                    neutros_ids=neutros_e1,
+                )
+            )
+            meses_anclados = frozenset(
+                m for m, a in anclas.items() if a.estado == CERRADO
+            )
+        if facturas:
+            rec = reconciliar(
+                r, facturas, params.caja_minima, meses_anclados=meses_anclados
+            )
+            r = _kpis_a_resultado(rec.ajustado)
+        return r.piso_caja
+
+    piso_base = piso_con_capas(pm)
 
     variables = []
     for v in _variaciones(pm):
@@ -925,8 +983,8 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
                 "etiqueta": v["etiqueta"],
                 "variacion": v["variacion"],
                 "piso_base": money_str(piso_base),
-                "piso_mas": money_str(proyectar(v["mas"]).piso_caja),
-                "piso_menos": money_str(proyectar(v["menos"]).piso_caja),
+                "piso_mas": money_str(piso_con_capas(v["mas"])),
+                "piso_menos": money_str(piso_con_capas(v["menos"])),
             }
         )
 
