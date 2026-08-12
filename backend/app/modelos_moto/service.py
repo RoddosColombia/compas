@@ -47,6 +47,24 @@ async def listar_modelos(*, activo: bool | None = None) -> list[ModeloMoto]:
     return await ModeloMoto.find(*filtros).sort(+ModeloMoto.orden).to_list()
 
 
+def _validar_planes(modelo: ModeloMoto) -> None:
+    """PLAN-52: coherencia fail-closed del segundo plan. (plazo, cuota) del plan 2 van
+    JUNTOS; `peso_plan1` es fracción 0..1 y sin plan 2 debe ser exactamente 1 (el mix
+    completo del modelo va al único plan)."""
+    tiene_plazo = modelo.plan2_plazo_semanas is not None
+    tiene_cuota = modelo.plan2_cuota_semanal is not None
+    if tiene_plazo != tiene_cuota:
+        raise ModelosMotoError(
+            "plan 2 incompleto: plazo y cuota semanal del plan 2 van juntos", 422
+        )
+    if not (Decimal("0") <= modelo.peso_plan1 <= Decimal("1")):
+        raise ModelosMotoError("peso_plan1 debe ser una fracción entre 0 y 1", 422)
+    if not tiene_plazo and modelo.peso_plan1 != Decimal("1"):
+        raise ModelosMotoError(
+            "sin plan 2, peso_plan1 debe ser 1 (todo el mix va al único plan)", 422
+        )
+
+
 async def crear_modelo(
     *,
     nombre: str,
@@ -58,6 +76,9 @@ async def crear_modelo(
     matricula: Decimal,
     participacion_mix: Decimal,
     usuario_id: str,
+    plan2_plazo_semanas: int | None = None,
+    plan2_cuota_semanal: Decimal | None = None,
+    peso_plan1: Decimal = Decimal("1"),
 ) -> ModeloMoto:
     """POST: crea con `orden` = máx+1 y emite `modelo_moto.creado` (fail-closed)."""
     if await ModeloMoto.find_one(ModeloMoto.nombre == nombre) is not None:
@@ -72,8 +93,12 @@ async def crear_modelo(
         plazo_semanas=plazo_semanas,
         matricula=matricula,
         participacion_mix=participacion_mix,
+        plan2_plazo_semanas=plan2_plazo_semanas,
+        plan2_cuota_semanal=plan2_cuota_semanal,
+        peso_plan1=peso_plan1,
         orden=(ultimo.orden if ultimo is not None else 0) + 1,
     )
+    _validar_planes(modelo)
     try:
         await modelo.insert()
     except DuplicateKeyError:
@@ -100,6 +125,9 @@ _EDITABLES_MONEY = (
     "cuota_semanal",
     "matricula",
     "participacion_mix",
+    # PLAN-52: cuota del segundo plan y reparto entre planes (fracción 0..1)
+    "plan2_cuota_semanal",
+    "peso_plan1",
 )
 
 
@@ -110,6 +138,8 @@ async def editar_modelo(
     nombre: str | None = None,
     orden: int | None = None,
     plazo_semanas: int | None = None,
+    plan2_plazo_semanas: int | None = None,
+    quitar_plan2: bool = False,
     activo: bool | None = None,
     campos_money: dict[str, Decimal] | None = None,
 ) -> ModeloMoto:
@@ -140,6 +170,32 @@ async def editar_modelo(
         }
         modelo.plazo_semanas = plazo_semanas
 
+    if plan2_plazo_semanas is not None and (
+        plan2_plazo_semanas != modelo.plan2_plazo_semanas
+    ):
+        previos["plan2_plazo_semanas"] = modelo.plan2_plazo_semanas
+        cambios["plan2_plazo_semanas"] = {
+            "anterior": modelo.plan2_plazo_semanas,
+            "nuevo": plan2_plazo_semanas,
+        }
+        modelo.plan2_plazo_semanas = plan2_plazo_semanas
+
+    if quitar_plan2 and (
+        modelo.plan2_plazo_semanas is not None
+        or modelo.plan2_cuota_semanal is not None
+        or modelo.peso_plan1 != Decimal("1")
+    ):
+        for campo, nuevo in (
+            ("plan2_plazo_semanas", None),
+            ("plan2_cuota_semanal", None),
+            ("peso_plan1", Decimal("1")),
+        ):
+            actual = getattr(modelo, campo)
+            if nuevo != actual:
+                previos[campo] = actual
+                cambios[campo] = {"anterior": str(actual), "nuevo": str(nuevo)}
+                setattr(modelo, campo, nuevo)
+
     if activo is not None:
         if activo is False:
             raise ModelosMotoError(
@@ -164,6 +220,8 @@ async def editar_modelo(
 
     if not cambios:
         raise ModelosMotoError("nada que editar (ningún campo cambia)", 422)
+
+    _validar_planes(modelo)  # PLAN-52: el estado FINAL debe ser coherente (422)
 
     try:
         await modelo.save()

@@ -64,8 +64,12 @@ class ProyeccionError(Exception):
         self.status = status
 
 
-def _modelo_a_motor(m: ModeloMoto) -> ModeloProyeccion:
-    return ModeloProyeccion(
+def _modelo_a_lineas(m: ModeloMoto) -> list[ModeloProyeccion]:
+    """PLAN-52 (CEO 2026-08-11): expande un modelo en UNA línea de motor por plan de
+    pago, con mix = participación del modelo × peso del plan. El motor certificado no
+    cambia (consume líneas como siempre); sin plan 2 la línea es IDÉNTICA a la de
+    siempre — candado golden-master en test_modelos_planes."""
+    base = ModeloProyeccion(
         nombre=m.nombre,
         cuota_semanal=m.cuota_semanal,
         cuota_inicial=m.cuota_inicial,
@@ -73,6 +77,22 @@ def _modelo_a_motor(m: ModeloMoto) -> ModeloProyeccion:
         mix=m.participacion_mix,
         costo_moto=m.costo_auteco,
     )
+    if m.plan2_cuota_semanal is None or m.plan2_plazo_semanas is None:
+        return [base]
+    return [
+        replace(
+            base,
+            nombre=f"{m.nombre} · {m.plazo_semanas} sem",
+            mix=m.participacion_mix * m.peso_plan1,
+        ),
+        replace(
+            base,
+            nombre=f"{m.nombre} · {m.plan2_plazo_semanas} sem",
+            cuota_semanal=m.plan2_cuota_semanal,
+            plazo_semanas=m.plan2_plazo_semanas,
+            mix=m.participacion_mix * (Decimal("1") - m.peso_plan1),
+        ),
+    ]
 
 
 def _rampa_a_lista(
@@ -111,7 +131,7 @@ def _armar_parametros(
     return ParametrosMotor(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
-        modelos=[_modelo_a_motor(m) for m in modelos],
+        modelos=[ln for m in modelos for ln in _modelo_a_lineas(m)],
         motos_base=params.motos_base,
         crec_pct_mensual=params.crec_pct_mensual,
         rampa=_rampa_a_lista(params.rampa_unidades, mes_inicio),
@@ -726,7 +746,7 @@ async def operacion_vigente(
         raise ProyeccionError(
             f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
         )
-    modelos_m = [_modelo_a_motor(m) for m in modelos]
+    modelos_m = [ln for m in modelos for ln in _modelo_a_lineas(m)]
     _, activos_previos = await cartera_previa_service.obtener_series()
 
     colocacion = colocacion_mensual(
@@ -865,6 +885,10 @@ def _fingerprint(params: ParametrosProyeccion, modelos: list[ModeloMoto]) -> tup
                 m.plazo_semanas,
                 str(m.participacion_mix),
                 str(m.costo_auteco),
+                # PLAN-52: el segundo plan y su peso también invalidan el cache
+                m.plan2_plazo_semanas,
+                str(m.plan2_cuota_semanal),
+                str(m.peso_plan1),
             )
             for m in modelos
         ),
