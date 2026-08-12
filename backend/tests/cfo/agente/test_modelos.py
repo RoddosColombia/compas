@@ -1,0 +1,30 @@
+import pytest
+from app.cfo.agente.modelos import CifraPublicada, RespuestaCFO, UsoLLM
+from app.cfo.calc.evidencia import Evidencia
+from pydantic import ValidationError
+
+
+def _uso():
+    return UsoLLM(
+        modelo="claude-haiku-4-5-20251001", tokens_in=10, tokens_out=20, iteraciones=1
+    )
+
+
+def test_respuesta_cfo_valida():
+    ev = Evidencia(
+        fuente="caja.service.caja_diaria", fecha_corte="2026-08-11", ref="2026-08"
+    )
+    r = RespuestaCFO(
+        texto="La caja hoy es $704.722.003.",
+        abstuvo=False,
+        conceptos_usados=["caja_hoy"],
+        cifras=[CifraPublicada(valor="704722003", unidad="COP", evidencia=ev)],
+        uso=_uso(),
+    )
+    assert r.abstuvo is False
+    assert r.cifras[0].valor == "704722003"
+
+
+def test_respuesta_cfo_rechaza_campo_extra():
+    with pytest.raises(ValidationError):
+        RespuestaCFO(texto="x", abstuvo=True, uso=_uso(), foo=1)
