@@ -15,12 +15,13 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_62_eventos():
+def test_catalogo_tiene_exactamente_64_eventos():
     # 59 + factura_obligacion.pagada (D2 §7, GO CEO 2026-08-04)
     # + transaccion.dividida + transaccion.division_deshecha (PTS6-B, CR división de
-    #   clasificación, GO CEO 2026-08-10).
-    assert len(AuditEvento) == 62
-    assert len(CATALOGO_EVENTOS) == 62
+    #   clasificación, GO CEO 2026-08-10) = 62
+    # + cfo.consulta + cfo.respuesta (CR-CFO-1, FABS incremento 2, GO CEO 2026-08-11).
+    assert len(AuditEvento) == 64
+    assert len(CATALOGO_EVENTOS) == 64
     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
     assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
     assert AuditEvento.transaccion_dividida.value == "transaccion.dividida"
@@ -28,6 +29,8 @@ def test_catalogo_tiene_exactamente_62_eventos():
         AuditEvento.transaccion_division_deshecha.value
         == "transaccion.division_deshecha"
     )
+    assert "cfo.consulta" in CATALOGO_EVENTOS
+    assert "cfo.respuesta" in CATALOGO_EVENTOS
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():

@@ -130,6 +130,15 @@ class AuditEvento(StrEnum):
     meta_ingreso_editada = "meta_ingreso.editada"
     meta_ingreso_eliminada = "meta_ingreso.eliminada"
 
+    # ── CR-CFO-1 (2) — FABS incremento 2 (agente CFO, GO CEO 2026-08-11) ──
+    # Rastro forense de cada interacción con FABS (lectura/asesoría; no mueve plata).
+    # `cfo.consulta` = pregunta recibida (actor_id = usuario real); `cfo.respuesta` =
+    # lo que FABS respondió, con {abstuvo, motivo, conceptos_usados, cifras+evidencia,
+    # uso}. La abstención es un `cfo.respuesta` {abstuvo: true} — sin evento extra.
+    # Catálogo 62 -> 64.
+    cfo_consulta = "cfo.consulta"
+    cfo_respuesta = "cfo.respuesta"
+
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)
