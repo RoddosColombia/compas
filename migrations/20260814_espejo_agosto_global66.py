@@ -341,6 +341,10 @@ async def _run(uri: str, db_name: str, path: str, commit: bool) -> None:
 
     if nuevos:
         docs_nuevos = [d for d, _ in nuevos]
+        # id explícito ANTES de insertar → el rastro de auditoría (transaccion.creada)
+        # tiene entidad_id fiable sin depender de que insert_many rellene .id.
+        for d in docs_nuevos:
+            d.id = PydanticObjectId()
         mongo_client = Transaccion.get_pymongo_collection().database.client
 
         async def _finalizar(session):
@@ -361,15 +365,13 @@ async def _run(uri: str, db_name: str, path: str, commit: bool) -> None:
         print(f"\n[commit] insertados {len(docs_nuevos)} nuevos + audit transaccion.creada.")
 
     for tx, nom, nuevo_rubro in a_reclasificar:
-        rubro_doc = next(r for r in rubros_por_norm.values() if r["_id"] == nuevo_rubro)
-        if es_rubro_clasificable(Rubro(grupo="otros", nombre=rubro_doc["nombre"], orden=0,
-                                       tipo_flujo=TipoFlujo(rubro_doc["tipo_flujo"]),
-                                       es_sistema=rubro_doc.get("es_sistema", False))):
+        rubro = await Rubro.get(nuevo_rubro)  # rubro real de la BD
+        if es_rubro_clasificable(rubro):
             await reclasificar_transaccion(
                 tx_id=str(tx.id), rubro_id=str(nuevo_rubro), usuario_id=_ACTOR_SISTEMA
             )
         else:
-            # destino de sistema: set directo + audit (reclasificar lo bloquea).
+            # destino de sistema: set directo + audit (reclasificar lo bloquea, P0-1).
             prev = tx.rubro_id
             tx.rubro_id = nuevo_rubro
             tx.clasificada_por = _ACTOR_SISTEMA
