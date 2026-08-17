@@ -112,6 +112,33 @@ def _rampa_a_lista(
     return out or None
 
 
+def _guard_apache_por_mes(
+    apache_por_mes: dict[int, int] | None, modelos: list[ModeloMoto]
+) -> None:
+    """B-1 del gate Kimi retroactivo (9.4, 2026-08-13). El motor certificado ancla el
+    override de rampa `apache_por_mes` al ÍNDICE 1 de la lista de líneas ("el Apache
+    real de un mes de rampa" — `_split_por_mix`). PLAN-52 expande cada modelo en una
+    línea POR PLAN, así que con algún modelo a dos planes el índice 1 deja de ser
+    Apache y el override caería en la línea equivocada EN SILENCIO.
+
+    Hoy NINGÚN camino de producción alimenta `apache_por_mes` (solo fixtures del
+    golden master, cuyo catálogo no tiene plan 2). Este guard cierra la puerta para
+    siempre: quien lo alimente con el catálogo expandido recibe un error explícito
+    en vez de una proyección mal indexada."""
+    if not apache_por_mes:
+        return
+    con_plan2 = [m.nombre for m in modelos if m.plan2_plazo_semanas is not None]
+    if con_plan2:
+        raise ProyeccionError(
+            "apache_por_mes ancla su override al índice 1 de la lista de líneas del "
+            f"motor y hay modelos con segundo plan ({', '.join(con_plan2)}): la "
+            "expansión por planes desplaza los índices y el override caería en la "
+            "línea equivocada. Antes de usar este camino hay que rediseñar el "
+            "override por NOMBRE de línea (CR).",
+            422,
+        )
+
+
 def _armar_parametros(
     params: ParametrosProyeccion,
     modelos: list[ModeloMoto],
@@ -128,7 +155,7 @@ def _armar_parametros(
     if escenario in PRESETS_ESCENARIO:
         pct_mora = PRESETS_ESCENARIO[escenario]["pct_mora"]
         pct_recuperacion = PRESETS_ESCENARIO[escenario]["pct_recuperacion"]
-    return ParametrosMotor(
+    pm = ParametrosMotor(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
         modelos=[ln for m in modelos for ln in _modelo_a_lineas(m)],
@@ -166,6 +193,10 @@ def _armar_parametros(
         activos_previos_por_semana=activos_previos,
         iva_egreso_por_mes=iva_egreso_por_mes,
     )
+    # B-1 (gate Kimi 9.4): si algún día este armado alimenta apache_por_mes con el
+    # catálogo expandido por planes, fallar EXPLÍCITO aquí — nunca indexar mal.
+    _guard_apache_por_mes(pm.apache_por_mes, modelos)
+    return pm
 
 
 @dataclass(frozen=True)

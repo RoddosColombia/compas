@@ -88,6 +88,39 @@ def test_con_plan2_dos_lineas_con_mix_repartido():
     assert l1.mix + l2.mix == Decimal("0.35")
 
 
+# ── B-1 gate Kimi retroactivo (9.4, 2026-08-13): guard de apache_por_mes ──
+# El motor ancla el override de rampa al ÍNDICE 1 de la lista de líneas ("el
+# Apache real"). Con PLAN-52 la expansión por planes DESPLAZA los índices: si
+# algún día un camino alimenta apache_por_mes con modelos a dos planes, debe
+# fallar EXPLÍCITO, jamás indexar la línea equivocada en silencio.
+
+
+def test_guard_apache_por_mes_con_plan2_falla_explicito():
+    from app.proyeccion.service import ProyeccionError, _guard_apache_por_mes
+
+    m = _modelo(
+        plan2_plazo_semanas=52,
+        plan2_cuota_semanal=Decimal("214900"),
+        peso_plan1=Decimal("0.70"),
+    )
+    with pytest.raises(ProyeccionError) as exc:
+        _guard_apache_por_mes({0: 5}, [m])
+    assert "índice 1" in exc.value.detalle
+    assert "Raider" in exc.value.detalle  # nombra a los culpables
+
+
+def test_guard_apache_por_mes_casos_seguros_pasan():
+    from app.proyeccion.service import _guard_apache_por_mes
+
+    # sin override no hay riesgo, tenga o no plan 2
+    _guard_apache_por_mes(
+        None, [_modelo(plan2_plazo_semanas=52, plan2_cuota_semanal=Decimal("1"))]
+    )
+    _guard_apache_por_mes({}, [_modelo()])
+    # con override pero SIN plan 2 los índices no se desplazan (mundo del golden)
+    _guard_apache_por_mes({0: 5}, [_modelo()])
+
+
 # ── API: CRUD con plan 2 + validaciones + proyección end-to-end ──
 
 
