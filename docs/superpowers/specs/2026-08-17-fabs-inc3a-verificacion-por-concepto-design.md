@@ -38,10 +38,10 @@ tests/cfo/agente/…             tests: caja/IVA no se confunde; número crudo s
 
 ### 3.1 `conceptos.py` (nuevo) — formateo y registro
 - `CONCEPTOS_CITABLES: frozenset[str]` = {`caja_hoy`, `runway`, `iva_cuatrimestre`} (los `concepto` de los `ResultadoCFO`).
-- `def formatear(r: ResultadoCFO) -> str` — el valor concept-bound listo para prosa:
+- `def formatear(r: ResultadoCFO) -> str` — el valor concept-bound listo para prosa, **con su contexto interpretativo ya computado por el servidor** (D-1, ver §3.6):
   - COP → `$` + miles es-CO (`Intl`-equivalente en backend, `decimal`), + ` (al {fecha_corte})` si aplica. Ej: `$704.722.003 (al 2026-08-11)`.
-  - meses → coma decimal es-CO + ` meses`. Ej: `4,2 meses`.
-  - iva incluye la fecha DIAN si está en la evidencia. Ej: `$36.204.698 (vence 2026-09-10)`.
+  - meses → coma decimal es-CO + ` meses`. Ej: `4,2 meses`. (Runway ya ES un juicio de duración computado por COMPAS.)
+  - iva incluye la fecha DIAN **y los días que faltan** (de `detalle`/`proximo_pago.dias`, computado por el servidor). Ej: `$36.204.698 (vence el 2026-09-10, en 24 días)`.
   - Money es `Decimal`; formateo con `decimal`, **cero float**.
 
 ### 3.2 `tools.py` — el modelo no ve valores
@@ -71,6 +71,11 @@ tests/cfo/agente/…             tests: caja/IVA no se confunde; número crudo s
 - Los abstención/motivos actuales se mantienen (`verificacion` cubre "escribió crudo y no corrigió").
 - `RespuestaCFO.cifras` (las `CifraPublicada`) siguen construyéndose de los `ResultadoCFO` (ya concept-bound) — así el canal (Pieza B) puede mostrarlas aparte.
 
+### 3.6 D-1 — interpretación ligada a fuente (qué SÍ, qué NO)
+Con el valor invisible, el modelo enuncia pero no puede juzgar por su cuenta. Resolución (nota D-1 del gate de diseño):
+- **SÍ (gratis, server-bound, va en esta pieza):** las sustituciones ya cargan el **contexto interpretativo que COMPAS computa**: `[[runway]]` = "te alcanza 4,2 meses" (duración), `[[iva_cuatrimestre]]` = "… vence el 2026-09-10, **en 24 días**" (urgencia, de `proximo_pago.dias`). El juicio de tiempo queda ligado a fuente sin exponer ninguna cifra que el modelo pueda mal-etiquetar.
+- **NO (no-alcance declarado):** juicios de **magnitud contra un umbral** ("tu caja está alta/baja"). Requieren un **mínimo de caja configurado**, que hoy NO existe como dato — e inventarlo choca con el norte (el umbral de mayo-2027 es una meta puntual, no un piso diario). Cuando se modele el mínimo como **dato editable**, entra como tool futura `estado_vs_umbral` (categoría server-bound `sobre_minimo|bajo_minimo`, sin exponer el valor). **Hasta entonces: FABS enuncia y da la interpretación de tiempo ya computada; NO juzga magnitud.** Declarado explícito por diseño.
+
 ## 4. Flujo (feliz)
 ```
 pregunta → loop: el modelo llama tool(s) → ve {concepto, disponible, evidencia} (SIN valor)
@@ -85,21 +90,25 @@ El caso que hoy se colaría ("tu caja es [el valor del IVA]") es **imposible**: 
 - **El caso vinculante:** con evidencia caja=704.722.003 e IVA=36.204.698, un guion donde el modelo cita `[[caja_hoy]]` → la sustitución rinde el valor de CAJA (no el del IVA); y un guion donde el modelo escribe crudo el valor del IVA bajo la etiqueta caja → **rechazado** (cifra cruda) → reintento/abstención.
 - **Número crudo prohibido:** cualquier `$…`/`NNN.dd`/`N%`/`N meses` en el texto del modelo → `ok=False`.
 - **Token inválido:** `[[ventas]]` (no existe) o `[[runway]]` cuando runway abstuvo → `ok=False`.
-- **Sustitución:** `[[caja_hoy]]` → `$704.722.003 (al …)`; `[[runway]]` → `4,2 meses`; múltiples tokens en una frase.
+- **Sustitución:** `[[caja_hoy]]` → `$704.722.003 (al …)`; `[[runway]]` → `4,2 meses`; `[[iva_cuatrimestre]]` → `$36.204.698 (vence el 2026-09-10, en 24 días)` (D-1: el "en N días" lo pone el servidor); múltiples tokens en una frase.
+- **Tope del reintento (D-3):** el modelo escribe crudo, se le corrige, y **reincide** → **abstención** `motivo="verificacion"`, **exactamente 1 reintento, jamás loop** (guion de 2 respuestas crudas seguidas).
 - **Modelo no ve valores:** `resultado_a_dict` no contiene `valor` ni `detalle` (test directo).
 - **Regresión:** la suite `tests/cfo/` verde; flag apagado ⇒ COMPAS idéntico; `motor.py` 0 diffs; cero float; ruff limpio.
 - Todo con `ClienteFake` (guiones) — CI verde sin `ANTHROPIC_API_KEY`.
 
 ## 6. Alcance / no-alcance
-- **Entra:** el contrato de citación por concepto en los 4 archivos del núcleo + `conceptos.py` + tests. Solo los 3 conceptos actuales.
-- **NO entra:** el canal Telegram, hilos, vínculo de identidad, encender el flag (todo eso es Pieza B / go-live). Nuevos conceptos (umbral, etc.) = futuras tools. Sin cambios a `app/cfo/calc/*` ni a `motor.py`.
+- **Entra:** el contrato de citación por concepto en los 4 archivos del núcleo + `conceptos.py` + tests. Solo los 3 conceptos actuales. El "en N días" del IVA en la sustitución (D-1, ya computado).
+- **NO entra:** el canal Telegram, hilos, vínculo de identidad, encender el flag (todo eso es Pieza B / go-live). Juicios de magnitud contra umbral (D-1, requiere mínimo configurable = tool futura). Sin cambios a `app/cfo/calc/*` ni a `motor.py`.
+- **Radar del piloto (D-2, limitación inherente, NO se resuelve aquí):** la aritmética en prosa ("el doble de antes", "la mitad") no lleva cifra cruda → el verificador no la caza (también la tenía inc2). Mitigación actual = la instrucción del prompt (el modelo no calcula) + abstención. Se registra para vigilar en el piloto; no hay solución barata hoy.
+- **Radar del piloto (D-4):** vigilar la terse-ificación (prohibir "3 meses" genérico puede volver al agente lacónico). Ajustable con datos del piloto; correcto dejarlo estricto ahora.
 
 ## 7. DoD
 1. El caso caja/IVA ya no se confunde (test que hoy fallaría, pasa).
-2. Cifra cruda en el texto ⇒ rechazo; token inválido ⇒ rechazo; sustitución correcta (tests).
+2. Cifra cruda en el texto ⇒ rechazo; token inválido ⇒ rechazo; sustitución correcta — incl. el "en N días" del IVA (tests).
 3. El modelo no recibe `valor` (test de `resultado_a_dict`).
-4. Flag-off ⇒ COMPAS idéntico; `motor.py` 0 diffs; cero float; S1 intacto; ruff limpio; suite verde.
-5. Roadmap + paquete Kimi (gate crítico) listos.
+4. **Tope de reintento (D-3):** reincidencia en cifra cruda ⇒ abstención `motivo="verificacion"`, exactamente 1 reintento, **jamás loop** (test).
+5. Flag-off ⇒ COMPAS idéntico; `motor.py` 0 diffs; cero float; S1 intacto; ruff limpio; suite verde.
+6. Roadmap actualizado + **paquete Kimi de código en `planning/phases/fabs/auditorias/INC3A-I/`** (SOLICITUD+EVIDENCIA del PR; gate ≥ 9.0). El flag sigue apagado hasta Pieza B + decisión de go-live del CEO.
 
 ---
 *Pieza A de inc3. Ante conflicto de alcance mandan `COMPAS_NORTE.md`, `CLAUDE.md`, el roadmap de FABS. La Pieza B (Telegram + hilos + vínculo + piloto) se diseña después, sobre una A ya auditada.*
