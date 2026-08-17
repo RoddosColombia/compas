@@ -23,22 +23,21 @@ def test_schema_tres_tools_sin_parametros():
         assert t["input_schema"]["properties"] == {}
 
 
-def test_resultado_a_dict_serializa_valor_a_string():
+def test_resultado_a_dict_no_expone_valor_ni_detalle():
+    # inc3 Pieza A: el modelo ya no ve `valor` — cita conceptos con [[token]] y el
+    # servicio sustituye el valor concept-bound tras verificar. Sin `valor` no puede
+    # fabricar, mal-etiquetar ni calcular.
     d = tools.resultado_a_dict(_res(Decimal("704722003")))
-    assert d["valor"] == "704722003"
+    assert "valor" not in d
+    assert "detalle" not in d
+    assert d["concepto"] == "caja_hoy"
     assert d["disponible"] is True
-    assert d["evidencia"]["ref"] == "2026-08"
-    d0 = tools.resultado_a_dict(_res(None))
-    assert d0["valor"] is None
-    assert d0["disponible"] is False
-
-
-def test_resultado_a_dict_cero_legitimo_es_cero_no_none():
-    # guard contra una futura regresión a `if r.valor:` (Decimal("0") es falsy en
-    # Python, pero caja/IVA en $0 es un dato legítimo, no "falta evidencia").
-    d = tools.resultado_a_dict(_res(Decimal("0")))
-    assert d["valor"] == "0"
-    assert d["disponible"] is True
+    assert d["unidad"] == "COP"
+    assert d["evidencia"] == {
+        "fuente": "f",
+        "fecha_corte": "2026-08-11",
+        "ref": "2026-08",
+    }
 
 
 @pytest.mark.asyncio
