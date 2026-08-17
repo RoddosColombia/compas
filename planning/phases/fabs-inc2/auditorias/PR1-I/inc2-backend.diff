@@ -1,0 +1,1857 @@
+diff --git a/backend/app/audit/events.py b/backend/app/audit/events.py
+index 2907fe0..d43614d 100644
+--- a/backend/app/audit/events.py
++++ b/backend/app/audit/events.py
+@@ -130,6 +130,15 @@ class AuditEvento(StrEnum):
+     meta_ingreso_editada = "meta_ingreso.editada"
+     meta_ingreso_eliminada = "meta_ingreso.eliminada"
+ 
++    # ── CR-CFO-1 (2) — FABS incremento 2 (agente CFO, GO CEO 2026-08-11) ──
++    # Rastro forense de cada interacción con FABS (lectura/asesoría; no mueve plata).
++    # `cfo.consulta` = pregunta recibida (actor_id = usuario real); `cfo.respuesta` =
++    # lo que FABS respondió, con {abstuvo, motivo, conceptos_usados, cifras+evidencia,
++    # uso}. La abstención es un `cfo.respuesta` {abstuvo: true} — sin evento extra.
++    # Catálogo 62 -> 64.
++    cfo_consulta = "cfo.consulta"
++    cfo_respuesta = "cfo.respuesta"
++
+ 
+ # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
+ CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)
+diff --git a/backend/app/auth/permissions.py b/backend/app/auth/permissions.py
+index ab2b4be..92ef4a6 100644
+--- a/backend/app/auth/permissions.py
++++ b/backend/app/auth/permissions.py
+@@ -22,6 +22,10 @@ PERMISSIONS: dict[str, frozenset[Role]] = {
+     "facturas_emitidas:gestionar": frozenset({Role.financiero, Role.admin}),
+     "evidencia:ver": frozenset({Role.financiero, Role.admin}),
+     "capacidad_pago:ver": frozenset({Role.financiero, Role.directivo, Role.admin}),
++    # ── CR-CFO-1 (FABS inc2, T11): consultar al agente CFO. Mismo público que
++    # capacidad_pago:ver (ve cifras de plata). El endpoint está además tras el flag
++    # CFO_ENABLED (doble barrera: router condicional + guard 404 en el handler).
++    "cfo:consultar": frozenset({Role.financiero, Role.directivo, Role.admin}),
+     # ── CR-S4 (C1 categorías administrables, GO Kimi PLAN-I 9.2) ──
+     "rubros:gestionar": frozenset({Role.financiero, Role.admin}),
+     # ── CR-S5 (C3 auto-clasificación, GO Kimi PLAN-I 9.3) ──
+diff --git a/backend/app/cfo/agente/__init__.py b/backend/app/cfo/agente/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/cfo/agente/cliente.py b/backend/app/cfo/agente/cliente.py
+new file mode 100644
+index 0000000..ec67ab3
+--- /dev/null
++++ b/backend/app/cfo/agente/cliente.py
+@@ -0,0 +1,95 @@
++# backend/app/cfo/agente/cliente.py
++"""FABS · wrapper del SDK Anthropic. Import PEREZOSO (la dep solo se toca al invocar de
++verdad; los tests usan un cliente falso). Normaliza la respuesta del SDK a RespuestaLLM
++para desacoplar el loop del formato del SDK. Sin API key ⇒ crear_cliente() = None."""
++
++from collections.abc import Awaitable
++from dataclasses import dataclass
++from typing import Protocol
++
++from app.cfo import config
++
++
++@dataclass(frozen=True)
++class BloqueTexto:
++    texto: str
++
++
++@dataclass(frozen=True)
++class BloqueToolUse:
++    id: str
++    nombre: str
++    input: dict
++
++
++@dataclass(frozen=True)
++class RespuestaLLM:
++    stop_reason: str
++    bloques: list  # list[BloqueTexto | BloqueToolUse]
++    tokens_in: int
++    tokens_out: int
++
++
++class ClienteLLM(Protocol):
++    def crear(
++        self, *, system: str, messages: list[dict], tools: list[dict]
++    ) -> Awaitable[RespuestaLLM]: ...
++
++
++def contenido_asistente(bloques: list) -> list[dict]:
++    out: list[dict] = []
++    for b in bloques:
++        if isinstance(b, BloqueTexto):
++            out.append({"type": "text", "text": b.texto})
++        elif isinstance(b, BloqueToolUse):
++            out.append(
++                {"type": "tool_use", "id": b.id, "name": b.nombre, "input": b.input}
++            )
++    return out
++
++
++class ClienteAnthropic:
++    def __init__(self, api_key: str, modelo: str, max_tokens: int, timeout_s: float):
++        from anthropic import AsyncAnthropic  # import perezoso
++
++        self._client = AsyncAnthropic(api_key=api_key, timeout=timeout_s)
++        self._modelo = modelo
++        self._max_tokens = max_tokens
++
++    async def crear(
++        self, *, system: str, messages: list[dict], tools: list[dict]
++    ) -> RespuestaLLM:
++        resp = await self._client.messages.create(
++            model=self._modelo,
++            max_tokens=self._max_tokens,
++            temperature=0.1,
++            system=system,
++            messages=messages,
++            tools=tools,
++        )
++        bloques: list = []
++        for b in resp.content:
++            if b.type == "text":
++                bloques.append(BloqueTexto(texto=b.text))
++            elif b.type == "tool_use":
++                bloques.append(
++                    BloqueToolUse(id=b.id, nombre=b.name, input=dict(b.input))
++                )
++        return RespuestaLLM(
++            stop_reason=resp.stop_reason,
++            bloques=bloques,
++            tokens_in=resp.usage.input_tokens,
++            tokens_out=resp.usage.output_tokens,
++        )
++
++
++def crear_cliente() -> ClienteLLM | None:
++    key = config.cfo_api_key()
++    if key is None:
++        return None
++    return ClienteAnthropic(
++        api_key=key,
++        modelo=config.cfo_model(),
++        max_tokens=config.cfo_max_tokens(),
++        timeout_s=config.cfo_timeout_s(),
++    )
+diff --git a/backend/app/cfo/agente/loop.py b/backend/app/cfo/agente/loop.py
+new file mode 100644
+index 0000000..2d338af
+--- /dev/null
++++ b/backend/app/cfo/agente/loop.py
+@@ -0,0 +1,67 @@
++# backend/app/cfo/agente/loop.py
++"""FABS · loop acotado modelo↔tool (D1). Corre ≤ max_iter rondas: si el modelo pide
++tools, se ejecutan (solo lectura) y se realimentan; si da texto final, termina. No
++verifica (eso lo hace el servicio). Determinista: temp 0.1 la fija el cliente."""
++
++import json
++from dataclasses import dataclass
++
++from app.cfo.agente.cliente import (
++    BloqueTexto,
++    BloqueToolUse,
++    ClienteLLM,
++    contenido_asistente,
++)
++from app.cfo.agente.prompt import SYSTEM_PROMPT
++from app.cfo.agente.tools import TOOLS_SCHEMA, ejecutar_tool, resultado_a_dict
++from app.cfo.calc.evidencia import ResultadoCFO
++
++
++@dataclass
++class ResultadoLoop:
++    texto: str | None
++    resultados: list[ResultadoCFO]
++    tokens_in: int
++    tokens_out: int
++    iteraciones: int
++
++
++def _texto_de(bloques: list) -> str | None:
++    partes = [b.texto for b in bloques if isinstance(b, BloqueTexto)]
++    return "\n".join(partes).strip() if partes else None
++
++
++async def conversar(
++    cliente: ClienteLLM,
++    mensajes: list[dict],
++    *,
++    max_iter: int,
++    system: str = SYSTEM_PROMPT,
++) -> ResultadoLoop:
++    mensajes = list(mensajes)
++    resultados: list[ResultadoCFO] = []
++    tin = tout = 0
++    for i in range(1, max_iter + 1):
++        resp = await cliente.crear(system=system, messages=mensajes, tools=TOOLS_SCHEMA)
++        tin += resp.tokens_in
++        tout += resp.tokens_out
++        usos = [b for b in resp.bloques if isinstance(b, BloqueToolUse)]
++        if not usos:
++            return ResultadoLoop(_texto_de(resp.bloques), resultados, tin, tout, i)
++        # ejecutar tools y realimentar
++        mensajes.append(
++            {"role": "assistant", "content": contenido_asistente(resp.bloques)}
++        )
++        contenido_tool: list[dict] = []
++        for u in usos:
++            r = await ejecutar_tool(u.nombre)
++            resultados.append(r)
++            contenido_tool.append(
++                {
++                    "type": "tool_result",
++                    "tool_use_id": u.id,
++                    "content": json.dumps(resultado_a_dict(r), ensure_ascii=False),
++                }
++            )
++        mensajes.append({"role": "user", "content": contenido_tool})
++    return ResultadoLoop(None, resultados, tin, tout, max_iter)
+diff --git a/backend/app/cfo/agente/modelos.py b/backend/app/cfo/agente/modelos.py
+new file mode 100644
+index 0000000..428435d
+--- /dev/null
++++ b/backend/app/cfo/agente/modelos.py
+@@ -0,0 +1,35 @@
++# backend/app/cfo/agente/modelos.py
++"""FABS · salida tipada del agente. Ninguna cifra viaja suelta: cada una lleva su
++Evidencia. `strict=True, extra="forbid"` (regla 3). Montos como string (regla 1)."""
++
++from pydantic import BaseModel, ConfigDict, Field
++
++from app.cfo.calc.evidencia import Evidencia
++
++
++class CifraPublicada(BaseModel):
++    model_config = ConfigDict(strict=True, extra="forbid")
++
++    valor: str
++    unidad: str
++    evidencia: Evidencia
++
++
++class UsoLLM(BaseModel):
++    model_config = ConfigDict(strict=True, extra="forbid")
++
++    modelo: str
++    tokens_in: int
++    tokens_out: int
++    iteraciones: int
++
++
++class RespuestaCFO(BaseModel):
++    model_config = ConfigDict(strict=True, extra="forbid")
++
++    texto: str
++    abstuvo: bool
++    motivo: str | None = None
++    conceptos_usados: list[str] = Field(default_factory=list)
++    cifras: list[CifraPublicada] = Field(default_factory=list)
++    uso: UsoLLM
+diff --git a/backend/app/cfo/agente/prompt.py b/backend/app/cfo/agente/prompt.py
+new file mode 100644
+index 0000000..7d371be
+--- /dev/null
++++ b/backend/app/cfo/agente/prompt.py
+@@ -0,0 +1,34 @@
++# backend/app/cfo/agente/prompt.py
++"""FABS · system prompt. Codifica la regla #1: el modelo NUNCA calcula ni inventa;
++solo narra los valores que devuelven las herramientas, con su fecha de corte; si un
++dato no está disponible, se abstiene honestamente."""
++
++SYSTEM_PROMPT = (
++    "Eres FABS, el analista financiero de IA de RODDOS S.A.S. Complementas al CFO "
++    "humano; no lo reemplazas. Respondes en español, claro y conciso.\n\n"
++    "REGLAS INQUEBRANTABLES:\n"
++    "1. NUNCA calculas, sumas, estimas ni extrapolas cifras. Toda cifra que menciones "
++    "debe provenir LITERALMENTE del resultado de una herramienta. Si necesitas un "
++    "número, llama la herramienta correspondiente.\n"
++    "2. Cada herramienta devuelve un valor con su evidencia (fuente + fecha de corte). "
++    "Al dar una cifra, menciona su fecha de corte.\n"
++    "3. Si una herramienta responde disponible=false, NO inventes un número: "
++    "abstente honestamente ('con los datos disponibles no puedo confirmar X'). "
++    "Jamás un $0 falso.\n"
++    "4. Si la pregunta requiere algo para lo que no tienes herramienta, dilo con "
++    "claridad; no improvises.\n"
++    "5. No mueves dinero ni ejecutas operaciones: solo informas.\n"
++    "6. NUNCA das porcentajes, tasas o proporciones que calcules tú mismo (p.ej. "
++    "qué % representan tus gastos sobre tus ingresos). COMPAS no tiene ese "
++    "concepto: ninguna herramienta devuelve porcentajes. Si te preguntan por un % "
++    "que ninguna herramienta te da, dilo con honestidad; no lo estimes.\n\n"
++    "Herramientas disponibles: caja disponible hoy, runway (meses de caja), IVA del "
++    "cuatrimestre. Úsalas para responder con cifras reales y trazables."
++)
++
++CORRECTIVO = (
++    "Tu respuesta anterior incluyó cifras que NO provienen de ninguna herramienta: "
++    "{cifras}. Reescribe la respuesta usando EXCLUSIVAMENTE estos valores verificados: "
++    "{valores}. Si no puedes responder con ellos, abstente honestamente. No inventes "
++    "números."
++)
+diff --git a/backend/app/cfo/agente/servicio.py b/backend/app/cfo/agente/servicio.py
+new file mode 100644
+index 0000000..0734c79
+--- /dev/null
++++ b/backend/app/cfo/agente/servicio.py
+@@ -0,0 +1,209 @@
++# backend/app/cfo/agente/servicio.py
++"""FABS · orquestador de una consulta (D2). Flujo: emite cfo.consulta → corre el loop
++→ verifica cifra→evidencia → si falla, UN reintento correctivo → verifica → publica o
++se abstiene (dura). Emite cfo.respuesta. La auditoría es fail-soft (lectura: no bloquea
++la respuesta si la BD de auditoría falla; O1 rama no-crítica). Un backstop de nivel
++superior envuelve todo el cuerpo posterior al primer emit: FABS es un READ, así que
++`consultar` NUNCA debe reventar al caller (endpoint T11) — incluso un fallo no-LLM
++inesperado (p. ej. `crear_cliente()` o una validación de pydantic) se convierte en una
++abstención `motivo="error"`, nunca en una excepción propagada.
++
++Nota de alcance — verificación por UNIDAD, no por CONCEPTO (decisión explícita T10,
++hereda la nota de `verificador.verificar`):
++
++(a) Límite: `verificar()` agrupa la evidencia disponible del turno por `unidad`
++    (COP / meses), no por `concepto`. Como `caja_hoy` e `iva_cuatrimestre` comparten
++    unidad COP, una cifra que el modelo etiquete mal (dice "la caja es X" pero en
++    realidad citó el valor de IVA) pasaría el verificador si X cae en tolerancia de
++    CUALQUIER resultado COP del turno — el control atrapa "número inventado", no
++    "número real pero atribuido al concepto equivocado".
++(b) Por qué es aceptable para inc2: el flag `CFO_ENABLED` sigue apagado (nadie
++    depende de esto en producción todavía); con solo 3 conceptos hoy (caja_hoy,
++    runway_meses en meses, iva_cuatrimestre en COP) una COLISIÓN de magnitud entre
++    caja e IVA dentro de ±$1 COP es, en la práctica, virtualmente imposible (son
++    series independientes con dominios de valores muy distintos); y el propio
++    prompt (regla 1, SYSTEM_PROMPT) prohíbe al modelo calcular o mezclar cifras,
++    lo que limita — sin eliminar — la probabilidad de esta confusión específica.
++(c) Trazabilidad que SÍ queda, para que un humano pueda auditar el caso raro: cada
++    `CifraPublicada` en `RespuestaCFO.cifras` viaja con su propia `Evidencia`
++    (fuente + fecha_corte + ref) heredada del `ResultadoCFO` que la respaldó;
++    `RespuestaCFO.conceptos_usados` lista todos los conceptos consultados en el
++    turno; y la metadata de auditoría `cfo.respuesta` persiste ambos. Con eso un
++    revisor puede cotejar a mano "¿la cifra que el texto atribuye a X coincide con
++    la Evidencia/concepto que realmente la produjo?" — el sistema no lo hace solo,
++    pero no deja el rastro incompleto.
++(d) Pendiente, fuera de alcance aquí: verificación cifra→CONCEPTO (no solo
++    cifra→valor), que exigiría o bien que el modelo cite estructuradamente
++    (p. ej. `[[caja_hoy]]` inline) o NLP para atar cada número del texto a su
++    concepto más cercano — ninguna de las dos se implementa en este archivo.
++    Requiere CR para un incremento posterior; NO se aborda con un fix rápido acá.
++"""
++
++import logging
++
++from app.audit.events import AuditEvento
++from app.audit.service import emit_audit
++from app.cfo import config
++from app.cfo.agente.cliente import ClienteLLM, crear_cliente
++from app.cfo.agente.loop import ResultadoLoop, conversar
++from app.cfo.agente.modelos import CifraPublicada, RespuestaCFO, UsoLLM
++from app.cfo.agente.prompt import CORRECTIVO
++from app.cfo.agente.verificador import verificar
++from app.cfo.calc.evidencia import ResultadoCFO
++
++logger = logging.getLogger(__name__)
++
++_ABSTENCION = (
++    "Con los datos disponibles no puedo confirmar esa cifra con evidencia. "
++    "Prefiero no darte un número que no pueda respaldar."
++)
++
++
++async def _audit_soft(evento, metadata: dict, actor_id: str) -> None:
++    try:
++        await emit_audit(evento, entidad="cfo", actor_id=actor_id, metadata=metadata)
++    except Exception:  # noqa: BLE001 — lectura: no bloquear la respuesta
++        logger.exception("fallo al auditar %s", evento)
++
++
++def _cifras(resultados: list[ResultadoCFO]) -> list[CifraPublicada]:
++    return [
++        CifraPublicada(valor=str(r.valor), unidad=r.unidad, evidencia=r.evidencia)
++        for r in resultados
++        if r.disponible and r.valor is not None
++    ]
++
++
++def _abstencion(motivo: str, res: ResultadoLoop | None, actor_id: str) -> RespuestaCFO:
++    uso = UsoLLM(
++        modelo=config.cfo_model(),
++        tokens_in=res.tokens_in if res else 0,
++        tokens_out=res.tokens_out if res else 0,
++        iteraciones=res.iteraciones if res else 0,
++    )
++    return RespuestaCFO(
++        texto=_ABSTENCION,
++        abstuvo=True,
++        motivo=motivo,
++        conceptos_usados=[],
++        cifras=[],
++        uso=uso,
++    )
++
++
++def _meta(r: RespuestaCFO) -> dict:
++    return {
++        "abstuvo": r.abstuvo,
++        "motivo": r.motivo,
++        "conceptos_usados": r.conceptos_usados,
++        "cifras": [
++            {
++                "valor": c.valor,
++                "unidad": c.unidad,
++                "evidencia": c.evidencia.model_dump(),
++            }
++            for c in r.cifras
++        ],
++        "uso": r.uso.model_dump(),
++    }
++
++
++async def consultar(
++    pregunta: str, *, actor_id: str, cliente: ClienteLLM | None = None
++) -> RespuestaCFO:
++    # cfo.consulta ANTES de todo (rastro de la pregunta aunque algo falle después)
++    await _audit_soft(
++        AuditEvento.cfo_consulta, {"pregunta": pregunta, "canal": "api"}, actor_id
++    )
++
++    try:
++        if cliente is None:
++            cliente = crear_cliente()
++        if cliente is None:
++            r = _abstencion("sin_api_key", None, actor_id)
++            await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
++            return r
++
++        try:
++            res = await conversar(
++                cliente,
++                [{"role": "user", "content": pregunta}],
++                max_iter=config.cfo_max_iter(),
++            )
++        except Exception:  # noqa: BLE001 — fallo del LLM
++            logger.exception("fallo del LLM en FABS")
++            r = _abstencion("error_llm", None, actor_id)
++            await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
++            return r
++
++        if res.texto is None:
++            r = _abstencion("tope_iter", res, actor_id)
++            await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
++            return r
++
++        # Ver nota de alcance del módulo (arriba): `verificar()` respalda cifra->valor
++        # por unidad, no cifra->concepto. Aceptado para inc2 (flag off + colisión de
++        # magnitud entre caja/IVA prácticamente imposible); CR aparte para cerrarlo.
++        veredicto = verificar(res.texto, res.resultados)
++        if not veredicto.ok:
++            # UN reintento correctivo con los valores válidos
++            valores = (
++                "; ".join(
++                    f"{r.concepto}={r.valor} {r.unidad}"
++                    for r in res.resultados
++                    if r.disponible and r.valor is not None
++                )
++                or "(ninguno disponible)"
++            )
++            correccion = CORRECTIVO.format(
++                cifras=", ".join(veredicto.cifras_sin_evidencia), valores=valores
++            )
++            mensajes = [
++                {"role": "user", "content": pregunta},
++                {"role": "assistant", "content": res.texto},
++                {"role": "user", "content": correccion},
++            ]
++            try:
++                res2 = await conversar(
++                    cliente, mensajes, max_iter=config.cfo_max_iter()
++                )
++            except Exception:  # noqa: BLE001
++                logger.exception("fallo del LLM en reintento FABS")
++                r = _abstencion("error_llm", res, actor_id)
++                await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
++                return r
++            # acumular resultados/uso de ambas conversaciones para las cifras/evidencia
++            # y para que el `uso` reportado (éxito o abstención) refleje el costo real
++            # de las DOS llamadas al LLM, no solo la primera.
++            res.resultados.extend(res2.resultados)
++            res.tokens_in += res2.tokens_in
++            res.tokens_out += res2.tokens_out
++            res.iteraciones += res2.iteraciones
++            if res2.texto is None or not verificar(res2.texto, res.resultados).ok:
++                r = _abstencion("verificacion", res, actor_id)
++                await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
++                return r
++            texto_final = res2.texto
++        else:
++            texto_final = res.texto
++
++        r = RespuestaCFO(
++            texto=texto_final,
++            abstuvo=False,
++            motivo=None,
++            conceptos_usados=[x.concepto for x in res.resultados],
++            cifras=_cifras(res.resultados),
++            uso=UsoLLM(
++                modelo=config.cfo_model(),
++                tokens_in=res.tokens_in,
++                tokens_out=res.tokens_out,
++                iteraciones=res.iteraciones,
++            ),
++        )
++        await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
++        return r
++    except Exception:  # noqa: BLE001 — backstop: un READ jamás revienta al caller
++        logger.exception("fallo inesperado en FABS")
++        r = _abstencion("error", None, actor_id)
++        await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
++        return r
+diff --git a/backend/app/cfo/agente/tools.py b/backend/app/cfo/agente/tools.py
+new file mode 100644
+index 0000000..64e60fd
+--- /dev/null
++++ b/backend/app/cfo/agente/tools.py
+@@ -0,0 +1,75 @@
++# backend/app/cfo/agente/tools.py
++"""FABS · tools de SOLO LECTURA que el modelo puede invocar. Cada tool envuelve un
++concepto de `app.cfo.calc` y devuelve su ResultadoCFO completo (incl. disponible y
++evidencia). El dispatcher es cerrado: una tool desconocida es error, nunca se inventa.
++Serialización para el modelo: valor→string (regla 1, jamás float)."""
++
++from collections.abc import Awaitable, Callable
++
++from app.cfo.calc import caja, iva, runway
++from app.cfo.calc.evidencia import ResultadoCFO
++
++DISPATCH: dict[str, Callable[[], Awaitable[ResultadoCFO]]] = {
++    "caja_disponible_hoy": caja.caja_hoy,
++    "runway_meses": runway.runway,
++    "iva_del_cuatrimestre": iva.iva_cuatrimestre,
++}
++
++TOOLS_SCHEMA: list[dict] = [
++    {
++        "name": "caja_disponible_hoy",
++        "description": (
++            "Caja disponible HOY en COP: último saldo real de la serie diaria de "
++            "COMPAS, con su fecha de corte. Si no hay datos, disponible=false."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {},
++            "additionalProperties": False,
++        },
++    },
++    {
++        "name": "runway_meses",
++        "description": (
++            "Meses de caja restantes al ritmo de quema actual (KPI runway de la "
++            "proyección vigente). Sin quema neta o sin configuración, disponible=false."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {},
++            "additionalProperties": False,
++        },
++    },
++    {
++        "name": "iva_del_cuatrimestre",
++        "description": (
++            "IVA neto a pagar del cuatrimestre fiscal vigente en COP, con la fecha "
++            "límite DIAN. Solo válido con periodicidad cuatrimestral; si no, "
++            "disponible=false."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {},
++            "additionalProperties": False,
++        },
++    },
++]
++
++
++async def ejecutar_tool(nombre: str) -> ResultadoCFO:
++    return await DISPATCH[nombre]()
++
++
++def resultado_a_dict(r: ResultadoCFO) -> dict:
++    return {
++        "concepto": r.concepto,
++        "disponible": r.disponible,
++        "valor": str(r.valor) if r.valor is not None else None,
++        "unidad": r.unidad,
++        "evidencia": {
++            "fuente": r.evidencia.fuente,
++            "fecha_corte": r.evidencia.fecha_corte,
++            "ref": r.evidencia.ref,
++        },
++        "detalle": r.detalle,
++    }
+diff --git a/backend/app/cfo/agente/verificador.py b/backend/app/cfo/agente/verificador.py
+new file mode 100644
+index 0000000..d9f9d2f
+--- /dev/null
++++ b/backend/app/cfo/agente/verificador.py
+@@ -0,0 +1,178 @@
++# backend/app/cfo/agente/verificador.py
++"""FABS · verificador cifra→evidencia (EL control crítico, lección Deloitte).
++
++Toda cifra monetaria o con unidad que aparezca en la respuesta del modelo debe estar
++dentro de tolerancia de ALGÚN valor devuelto por las tools de este turno (conjunto
++cerrado de evidencias). Si una cifra no tiene respaldo, el veredicto es `ok=False` y
++esa cifra no debe publicarse (regla #1). Heurística conservadora: exige evidencia a
++los montos ($ / separador de miles / decimal / entero pelado de 5+) y a los números
++con unidad de meses; ignora años, fechas y ordinales pequeños sin formato de dinero
++(para no abstenerse de lo inocuo).
++
++Nota de formato "wire" (verificado empíricamente contra `caja.py`/`runway.py`/
++`iva.py` + `tools.resultado_a_dict`, ronda 2 de revisión — corrige el supuesto de la
++ronda 1, que asumía dígitos pelados SIN decimales): las 3 tools NO devuelven enteros
++pelados. Cada una construye `valor` como `Decimal(money_str(x))` — primero cuantizan
++a 2 decimales con `money_str` (p.ej. `"704722003.00"`, `"36204698.10"`, `"4.20"`) y
++ese string se reconstruye a `Decimal`, que conserva la escala. `tools.resultado_a_dict`
++hace luego `str(r.valor)`, así que el modelo recibe literalmente `"704722003.00"` —
++un PUNTO decimal de 2 cifras, no dígitos pelados sin separador. Ese punto colisiona
++con el separador de miles es-CO (`"704.722.003"`), así que la normalización de
++montos (`_a_decimal_cop`) distingue los dos casos por REGLA DE FORMA (ver su
++docstring) — no por conteo de dígitos, que ya no basta para desambiguar."""
++
++import re
++from dataclasses import dataclass
++from decimal import Decimal, InvalidOperation
++
++from app.cfo.calc.evidencia import ResultadoCFO
++
++_TOL_COP = Decimal("1")  # ±$1 COP por redondeo
++_TOL_MESES = Decimal("0.1")  # ±0,1 meses
++
++# Un "número" = corrida de dígitos con posibles separadores . , y $ opcional.
++_RE_NUM = re.compile(r"\$?\s?\d[\d.,]*\d|\$?\s?\d")
++# Meses: número (decimal con , o .) seguido de 'mes'/'meses'.
++_RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
++# Porcentaje: número (decimal con , o .) seguido de '%'. COMPAS no tiene concepto
++# de "porcentaje" — ninguna tool lo calcula ni lo devuelve — así que cualquier %
++# en la respuesta es una cifra auto-computada por el modelo, prohibida por regla
++# #1 (ver su uso en `extraer_cifras`, FIX 1 FINAL-REVIEW inc2).
++_RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
++
++
++def _a_decimal_cop(token: str) -> Decimal | None:
++    """Normaliza un monto en CUALQUIER forma plausible a Decimal. Regla de
++    separadores: si hay ',' es es-CO ('.'=miles, ','=decimal); si solo hay un '.'
++    con 2 dígitos al final es el formato wire de str(Decimal(money_str)) ('.'=decimal,
++    p.ej. '704722003.00'); en los demás casos los '.' son miles (grupos de 3)."""
++    t = token.replace("$", "").replace(" ", "").strip()
++    if "," in t:
++        t = t.replace(".", "").replace(",", ".")
++    elif re.search(r"\.\d{2}$", t) and t.count(".") == 1:
++        pass  # wire decimal: dejar el punto
++    else:
++        t = t.replace(".", "")  # miles
++    try:
++        return Decimal(t)
++    except InvalidOperation:
++        return None
++
++
++def _a_decimal_meses(token: str) -> Decimal | None:
++    """Meses: una sola marca decimal (coma es-CO o punto wire str(Decimal)); a
++    diferencia de `_a_decimal_cop`, el punto NUNCA se descarta — aquí es decimal,
++    no separador de miles (los valores de meses no tienen miles)."""
++    t = token.replace(",", ".").strip()
++    try:
++        return Decimal(t)
++    except InvalidOperation:
++        return None
++
++
++def _es_monto(raw: str) -> bool:
++    """Un candidato numérico exige evidencia (es un MONTO) si lleva '$', un separador
++    (miles/decimal), o es un entero pelado de >=5 dígitos. Excluye años de 4 dígitos,
++    días y ordinales pequeños sin formato de dinero — para no abstenerse de lo inocuo.
++    Sesgo conservador: preferimos un falso-positivo (dispara el reintento del servicio)
++    antes que dejar pasar una cifra sin evidencia."""
++    core = raw.replace("$", "").replace(" ", "")
++    if "$" in raw or "," in core or "." in core:
++        return True
++    return core.isdigit() and len(core) >= 5
++
++
++@dataclass(frozen=True)
++class Veredicto:
++    ok: bool
++    cifras_sin_evidencia: list[str]
++
++
++def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
++    cifras: list[tuple[Decimal, str, str]] = []
++    # Meses y % primero, y marcamos sus tramos para no re-capturar el número como
++    # monto COP. Ya NO es solo defensivo (como en la ronda 1): un decimal de meses
++    # como "4.20" también cumple `_es_monto` (tiene '.'), así que sin este guard se
++    # contaría dos veces con la unidad equivocada (buscaría "4.20" en la evidencia
++    # de COP, que nunca lo respalda, en vez de en la de meses). Lo mismo aplica a
++    # "%" desde FIX 1 (FINAL-REVIEW inc2): "12,5 %" tiene ',' y calificaría como
++    # monto COP si no se excluyera su tramo.
++    #
++    # El chequeo de solape es de INTERSECCIÓN de intervalos, no de contención del
++    # punto de inicio: _RE_NUM permite un '\s?' inicial opcional, así que su match
++    # puede empezar 1 char ANTES del tramo de meses (consume el espacio previo a
++    # "4.2", p.ej. " 4.2" en vez de "4.2") — con una contención estricta ese match
++    # queda FUERA del tramo registrado y el guard nunca dispara (hallazgo de ronda
++    # 2 vía tests reales, no traza manual: test_runway_wire_punto_decimal_pasa et
++    # al. daban RED con la contención simple).
++    tramos: list[tuple[int, int]] = []  # meses y % → no re-contar como monto COP
++    for m in _RE_MESES.finditer(texto):
++        val = _a_decimal_meses(m.group(1))
++        if val is not None:
++            cifras.append((val, "meses", m.group(0)))
++            tramos.append((m.start(1), m.end(1)))
++    for m in _RE_PORCENTAJE.finditer(texto):
++        # COMPAS no calcula porcentajes: no existe pool "pct", así que TODO %
++        # queda huérfano → fuerza reintento/abstención (regla #1: el modelo no
++        # extrapola ratios).
++        val = _a_decimal_meses(m.group(0).rstrip("% ").strip()) or Decimal(0)
++        cifras.append((val, "pct", m.group(0)))
++        tramos.append((m.start(), m.end()))
++    for m in _RE_NUM.finditer(texto):
++        if any(s < m.end() and m.start() < e for s, e in tramos):
++            continue  # ya contado como meses o %
++        raw = m.group(0)
++        if not _es_monto(raw):
++            continue  # año/día/ordinal pelado
++        val = _a_decimal_cop(raw)
++        if val is not None:
++            cifras.append((val, "COP", raw.strip()))
++    return cifras
++
++
++def verificar(texto: str, resultados: list[ResultadoCFO]) -> Veredicto:
++    """Nota de alcance para T10 (servicio.py — el orquestador que llama esta
++    función): la evidencia se agrupa solo por `unidad` (COP / meses), NUNCA por
++    `concepto`. Una cifra en COP que caiga en tolerancia de CUALQUIER ResultadoCFO
++    en COP se considera respaldada, aunque sea el concepto equivocado (p.ej. una
++    respuesta que confunda caja con IVA pero coincida en valor no se atraparía
++    aquí). Verificación cifra→concepto (no solo cifra→valor) es un diseño
++    PENDIENTE, requerido antes de confiar en citas estructuradas; no implementado
++    en esta función a propósito — está fuera de la interfaz de este módulo
++    (`extraer_cifras` devuelve unidad, no concepto). Requiere CR si se necesita.
++
++    Huecos residuales aceptados para inc2 (compuerta apagada; FIX 2, FINAL-REVIEW
++    inc2) — mismo rigor que la nota anterior, documentados en vez de resueltos:
++    (a) los porcentajes ya NO son un hueco — se atrapan siempre como huérfanos
++    porque no existe (ni debe existir) un pool de evidencia "pct" (FIX 1,
++    `_RE_PORCENTAJE`); se listan aquí por trazabilidad de la ronda que los cerró;
++    (b) un entero pelado de MENOS de 5 dígitos nunca se trata como monto
++    (`_es_monto`) — los montos COP reales de RODDOS son de 7+ dígitos, así que el
++    daño esperado es bajo, pero un monto chico inventado sin separadores ('500'
++    en vez de '$500') pasaría sin marcarse; (c) números en palabras ('mil
++    millones', 'cien mil') no los parsea ningún regex de este módulo, solo
++    dígitos. Los tres puntos se aceptan así para inc2 con la compuerta apagada;
++    la verificación cifra→concepto de arriba y (b)/(c) con el mismo rigor que hoy
++    tiene COP/meses quedan como UNA sola CR de "verificación concept-aware"
++    antes de encender la compuerta (flag on) — no como deuda dispersa."""
++    ev_cop = [
++        r.valor
++        for r in resultados
++        if r.disponible and r.valor is not None and r.unidad == "COP"
++    ]
++    ev_meses = [
++        r.valor
++        for r in resultados
++        if r.disponible and r.valor is not None and r.unidad == "meses"
++    ]
++    huerfanas: list[str] = []
++    for valor, unidad, token in extraer_cifras(texto):
++        if unidad == "COP":
++            pool, tol = ev_cop, _TOL_COP
++        elif unidad == "meses":
++            pool, tol = ev_meses, _TOL_MESES
++        else:  # "pct" u otra unidad sin evidencia posible → siempre huérfano
++            pool, tol = [], _TOL_COP
++        if not any(abs(valor - e) <= tol for e in pool):
++            huerfanas.append(token)
++    return Veredicto(ok=not huerfanas, cifras_sin_evidencia=huerfanas)
+diff --git a/backend/app/cfo/calc/iva.py b/backend/app/cfo/calc/iva.py
+index 49f53c6..aed4e0a 100644
+--- a/backend/app/cfo/calc/iva.py
++++ b/backend/app/cfo/calc/iva.py
+@@ -24,6 +24,20 @@ async def iva_cuatrimestre() -> ResultadoCFO:
+     anio, idx = _periodo_vigente_idx()
+     ref = f"{anio}-C{idx}"
+     data = await _liquidacion()
++    if data.get("periodicidad") != "cuatrimestral":
++        # Fail-closed: el concepto asume cuatrimestral; con otra periodicidad el
++        # índice y la etiqueta del período serían erróneos. Regla #1: antes que
++        # publicar una cifra mal ubicada, se abstiene honestamente.
++        return ResultadoCFO(
++            concepto="iva_cuatrimestre",
++            valor=None,
++            unidad="COP",
++            disponible=False,
++            evidencia=Evidencia(
++                fuente=fuente, fecha_corte=None, ref="periodicidad-no-cuatrimestral"
++            ),
++            detalle={"periodicidad": data.get("periodicidad")},
++        )
+     vig = next(
+         (p for p in data["periodos"] if p["anio"] == anio and p["periodo"] == idx),
+         None,
+diff --git a/backend/app/cfo/config.py b/backend/app/cfo/config.py
+index 77d0f9c..c0dfaf4 100644
+--- a/backend/app/cfo/config.py
++++ b/backend/app/cfo/config.py
+@@ -6,3 +6,28 @@ import os
+ 
+ def cfo_enabled() -> bool:
+     return os.environ.get("CFO_ENABLED", "false").strip().lower() == "true"
++
++
++def cfo_model() -> str:
++    """Modelo Claude que orquesta y narra (nunca calcula). Barato por default
++    (el modelo solo elige tools y redacta); override por env a un modelo mayor."""
++    return os.environ.get("CFO_MODEL", "claude-haiku-4-5-20251001").strip()
++
++
++def cfo_api_key() -> str | None:
++    """API key de Anthropic (SOLO env var en Render; nunca en repo). Vacía ⇒ None
++    ⇒ FABS se abstiene con motivo 'sin_api_key' (nunca crashea)."""
++    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
++    return key or None
++
++
++def cfo_max_iter() -> int:
++    return int(os.environ.get("CFO_MAX_ITER", "3"))
++
++
++def cfo_max_tokens() -> int:
++    return int(os.environ.get("CFO_MAX_TOKENS", "1024"))
++
++
++def cfo_timeout_s() -> float:
++    return float(os.environ.get("CFO_TIMEOUT_S", "60"))
+diff --git a/backend/app/cfo/router.py b/backend/app/cfo/router.py
+new file mode 100644
+index 0000000..26ec144
+--- /dev/null
++++ b/backend/app/cfo/router.py
+@@ -0,0 +1,37 @@
++# backend/app/cfo/router.py
++"""FABS · endpoint POST /api/v1/cfo (incremento 2). Doble barrera: (1) solo se
++monta en main si CFO_ENABLED (app/main.py::create_app); (2) guard 404 defensivo en
++el propio handler si se alcanza con el flag apagado (p. ej. si alguien apaga la env
++var en caliente sin reiniciar el proceso — cfo_enabled() lee el entorno en cada
++llamada, sin cache).
++
++RBAC: require_permission('cfo:consultar') (Regla 9: nunca require_role en negocio).
++Money/cifras viajan como string dentro de RespuestaCFO (regla 1); el body de la
++consulta es texto libre, no dinero."""
++
++from fastapi import APIRouter, Depends, HTTPException
++from pydantic import BaseModel, ConfigDict
++
++from app.auth.deps import require_permission
++from app.auth.models import User
++from app.cfo.agente import servicio
++from app.cfo.agente.modelos import RespuestaCFO
++from app.cfo.config import cfo_enabled
++
++router = APIRouter(prefix="/api/v1/cfo", tags=["cfo"])
++
++
++class ConsultaBody(BaseModel):
++    model_config = ConfigDict(strict=True, extra="forbid")
++
++    pregunta: str
++
++
++@router.post("", response_model=RespuestaCFO)
++async def consultar(
++    body: ConsultaBody,
++    user: User = Depends(require_permission("cfo:consultar")),
++) -> RespuestaCFO:
++    if not cfo_enabled():  # guard defensivo (barrera 2)
++        raise HTTPException(404, "No encontrado.")
++    return await servicio.consultar(body.pregunta, actor_id=str(user.id))
+diff --git a/backend/app/main.py b/backend/app/main.py
+index 2e88a76..613e973 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -180,6 +180,17 @@ def create_app() -> FastAPI:
+         return {"status": "ok", "service": "compas-api", "version": __version__}
+ 
+     app.include_router(api_router, prefix="/api/v1")
++
++    # FABS (agente CFO) — solo con el flag encendido (doble barrera; apagado ⇒
++    # ausente). El router cfo ya trae el prefix /api/v1/cfo completo, así que se
++    # monta directo en `app` (no en api_router) para no duplicar el prefijo.
++    from app.cfo.config import cfo_enabled
++
++    if cfo_enabled():
++        from app.cfo.router import router as cfo_router
++
++        app.include_router(cfo_router)
++
+     return app
+ 
+ 
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+index 92cf785..34fae04 100644
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@ -18,3 +18,4 @@ pyotp==2.9.0
+ cryptography==50.0.0  # CVE-2026-69247/69248/69249 (fix del advisory 2026-08-03; pdfminer.six >=36 compat)
+ sentry-sdk>=2.66.1,<3.0
+ boto3==1.43.62  # PR-S3 (DISP-02/M-04): preserva el original de cada extracto en S3 con Object Lock
++anthropic==0.100.0  # FABS inc2: SDK del LLM del agente CFO (import perezoso en ClienteAnthropic; solo runtime, sin llamadas en import)
+diff --git a/backend/tests/cfo/agente/__init__.py b/backend/tests/cfo/agente/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/tests/cfo/agente/fakes.py b/backend/tests/cfo/agente/fakes.py
+new file mode 100644
+index 0000000..986edfe
+--- /dev/null
++++ b/backend/tests/cfo/agente/fakes.py
+@@ -0,0 +1,18 @@
++# backend/tests/cfo/agente/fakes.py
++"""Cliente LLM falso para tests del loop/servicio (sin API real)."""
++
++from app.cfo.agente.cliente import RespuestaLLM
++
++
++class ClienteFake:
++    def __init__(self, guiones: list[RespuestaLLM]):
++        self._guiones = list(guiones)
++        self.llamadas: list[dict] = []
++
++    async def crear(
++        self, *, system: str, messages: list[dict], tools: list[dict]
++    ) -> RespuestaLLM:
++        self.llamadas.append({"system": system, "messages": messages, "tools": tools})
++        if not self._guiones:
++            raise AssertionError("ClienteFake sin más guiones")
++        return self._guiones.pop(0)
+diff --git a/backend/tests/cfo/agente/test_cliente.py b/backend/tests/cfo/agente/test_cliente.py
+new file mode 100644
+index 0000000..8a70477
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_cliente.py
+@@ -0,0 +1,58 @@
++# backend/tests/cfo/agente/test_cliente.py
++from types import SimpleNamespace
++
++import pytest
++from app.cfo.agente import cliente as cli
++
++
++def test_crear_cliente_none_sin_key(monkeypatch):
++    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
++    assert cli.crear_cliente() is None
++
++
++def test_crear_cliente_instancia_con_key(monkeypatch):
++    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
++    c = cli.crear_cliente()
++    assert isinstance(c, cli.ClienteAnthropic)
++
++
++def test_contenido_asistente_reconstruye_wire():
++    bloques = [
++        cli.BloqueTexto(texto="hola"),
++        cli.BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={}),
++    ]
++    wire = cli.contenido_asistente(bloques)
++    assert wire[0] == {"type": "text", "text": "hola"}
++    assert wire[1] == {
++        "type": "tool_use",
++        "id": "t1",
++        "name": "caja_disponible_hoy",
++        "input": {},
++    }
++
++
++@pytest.mark.asyncio
++async def test_crear_mapea_respuesta_del_sdk(monkeypatch):
++    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
++    c = cli.crear_cliente()
++
++    async def fake_create(**kwargs):
++        return SimpleNamespace(
++            stop_reason="tool_use",
++            content=[
++                SimpleNamespace(type="text", text="hola"),
++                SimpleNamespace(
++                    type="tool_use", id="t1", name="caja_disponible_hoy", input={"x": 1}
++                ),
++            ],
++            usage=SimpleNamespace(input_tokens=11, output_tokens=22),
++        )
++
++    c._client = SimpleNamespace(messages=SimpleNamespace(create=fake_create))
++    r = await c.crear(system="s", messages=[{"role": "user", "content": "q"}], tools=[])
++    assert r.stop_reason == "tool_use"
++    assert r.tokens_in == 11 and r.tokens_out == 22
++    assert isinstance(r.bloques[0], cli.BloqueTexto) and r.bloques[0].texto == "hola"
++    assert isinstance(r.bloques[1], cli.BloqueToolUse)
++    assert r.bloques[1].nombre == "caja_disponible_hoy"
++    assert r.bloques[1].input == {"x": 1}
+diff --git a/backend/tests/cfo/agente/test_loop.py b/backend/tests/cfo/agente/test_loop.py
+new file mode 100644
+index 0000000..58576ac
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_loop.py
+@@ -0,0 +1,64 @@
++# backend/tests/cfo/agente/test_loop.py
++from decimal import Decimal
++
++import pytest
++from app.cfo.agente import loop as loop_mod
++from app.cfo.agente.cliente import BloqueTexto, BloqueToolUse, RespuestaLLM
++from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
++from tests.cfo.agente.fakes import ClienteFake
++
++
++def _res():
++    return ResultadoCFO(
++        concepto="caja_hoy",
++        valor=Decimal("704722003"),
++        unidad="COP",
++        disponible=True,
++        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="2026-08"),
++    )
++
++
++@pytest.mark.asyncio
++async def test_conversar_tool_luego_texto(monkeypatch):
++    async def fake_tool(nombre):
++        return _res()
++
++    monkeypatch.setattr(loop_mod, "ejecutar_tool", fake_tool)
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
++            5,
++            3,
++        ),
++        RespuestaLLM("end_turn", [BloqueTexto(texto="La caja es $704.722.003.")], 4, 8),
++    ]
++    r = await loop_mod.conversar(
++        ClienteFake(guiones), [{"role": "user", "content": "¿caja?"}], max_iter=3
++    )
++    assert r.texto == "La caja es $704.722.003."
++    assert len(r.resultados) == 1 and r.resultados[0].valor == Decimal("704722003")
++    assert r.tokens_in == 9 and r.tokens_out == 11 and r.iteraciones == 2
++
++
++@pytest.mark.asyncio
++async def test_conversar_agota_iteraciones(monkeypatch):
++    async def fake_tool(nombre):
++        return _res()
++
++    monkeypatch.setattr(loop_mod, "ejecutar_tool", fake_tool)
++    # siempre pide tool → nunca da texto
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [BloqueToolUse(id=f"t{i}", nombre="caja_disponible_hoy", input={})],
++            1,
++            1,
++        )
++        for i in range(5)
++    ]
++    r = await loop_mod.conversar(
++        ClienteFake(guiones), [{"role": "user", "content": "x"}], max_iter=3
++    )
++    assert r.texto is None
++    assert r.iteraciones == 3
+diff --git a/backend/tests/cfo/agente/test_modelos.py b/backend/tests/cfo/agente/test_modelos.py
+new file mode 100644
+index 0000000..08f8f64
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_modelos.py
+@@ -0,0 +1,30 @@
++import pytest
++from app.cfo.agente.modelos import CifraPublicada, RespuestaCFO, UsoLLM
++from app.cfo.calc.evidencia import Evidencia
++from pydantic import ValidationError
++
++
++def _uso():
++    return UsoLLM(
++        modelo="claude-haiku-4-5-20251001", tokens_in=10, tokens_out=20, iteraciones=1
++    )
++
++
++def test_respuesta_cfo_valida():
++    ev = Evidencia(
++        fuente="caja.service.caja_diaria", fecha_corte="2026-08-11", ref="2026-08"
++    )
++    r = RespuestaCFO(
++        texto="La caja hoy es $704.722.003.",
++        abstuvo=False,
++        conceptos_usados=["caja_hoy"],
++        cifras=[CifraPublicada(valor="704722003", unidad="COP", evidencia=ev)],
++        uso=_uso(),
++    )
++    assert r.abstuvo is False
++    assert r.cifras[0].valor == "704722003"
++
++
++def test_respuesta_cfo_rechaza_campo_extra():
++    with pytest.raises(ValidationError):
++        RespuestaCFO(texto="x", abstuvo=True, uso=_uso(), foo=1)
+diff --git a/backend/tests/cfo/agente/test_prompt.py b/backend/tests/cfo/agente/test_prompt.py
+new file mode 100644
+index 0000000..1085f2d
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_prompt.py
+@@ -0,0 +1,20 @@
++from app.cfo.agente.prompt import CORRECTIVO, SYSTEM_PROMPT
++
++
++def test_system_prompt_fija_invariantes():
++    p = SYSTEM_PROMPT.lower()
++    assert "nunca calcul" in p  # el modelo no calcula
++    assert "herramienta" in p or "tool" in p
++    assert "abst" in p  # abstenerse
++    assert "evidencia" in p or "fecha de corte" in p
++
++
++def test_correctivo_es_formateable():
++    out = CORRECTIVO.format(cifras="$999", valores="caja=$704.722.003")
++    assert "$999" in out and "704.722.003" in out
++
++
++def test_system_prompt_prohibe_porcentajes_calculados():
++    # COMPAS no tiene concepto de "porcentaje": el modelo no debe calcular ni dar
++    # porcentajes/ratios propios (regla #1, FIX 1 FINAL-REVIEW inc2).
++    assert "%" in SYSTEM_PROMPT or "porcentaje" in SYSTEM_PROMPT.lower()
+diff --git a/backend/tests/cfo/agente/test_router.py b/backend/tests/cfo/agente/test_router.py
+new file mode 100644
+index 0000000..274dfef
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_router.py
+@@ -0,0 +1,168 @@
++# backend/tests/cfo/agente/test_router.py
++"""T11 · POST /api/v1/cfo — doble barrera (router condicional + guard 404) y RBAC
++`cfo:consultar`.
++
++Patrón de auth REUSADO de tests/test_rbac_endpoints.py: create_app() real +
++mongomock para auth/audit + login real para obtener el token. NO usamos
++`dependency_overrides[require_permission(...)]` (el plan original lo sugería):
++`require_permission(cap)` fabrica una función `dep` NUEVA en cada llamada, así que
++un override "por identidad" contra esa instancia nunca hace match con la que el
++router realmente resuelve en cada request — `dependency_overrides` se queda ciego.
++`get_current_user`, en cambio, es una única función de módulo reusada tal cual
++dentro de `dep`; overridearla ahí sí tendría efecto, pero aquí preferimos ir con
++login real (mismo patrón ya probado por PR-3) para ejercer el stack RBAC completo,
++incluido `str(user.id)` con un id real de Mongo (mongomock)."""
++
++import httpx
++import pytest
++import pytest_asyncio
++from app.audit.service import configure_audit, reset_audit
++from app.auth import passwords, repository
++from app.auth.models import User
++from app.auth.roles import Role
++from app.cfo.agente.modelos import RespuestaCFO, UsoLLM
++from app.config import get_settings
++from app.main import create_app
++from mongomock_motor import AsyncMongoMockClient
++
++PWD = "clave-larga-1234"
++
++RESPUESTA_FAKE = RespuestaCFO(
++    texto="ok",
++    abstuvo=False,
++    uso=UsoLLM(modelo="m", tokens_in=1, tokens_out=1, iteraciones=1),
++)
++
++
++async def _fake_consultar(
++    pregunta: str, *, actor_id: str, cliente=None
++) -> RespuestaCFO:
++    return RESPUESTA_FAKE
++
++
++@pytest_asyncio.fixture
++async def api(monkeypatch):
++    """App con el router cfo MONTADO (CFO_ENABLED=true) + un usuario por rol.
++    `servicio.consultar` queda monkeypatcheado (ningún test aquí toca un LLM real)."""
++    monkeypatch.setenv("APP_ENV", "development")
++    monkeypatch.setenv("JWT_SECRET", "x" * 40)
++    monkeypatch.setenv("COOKIE_SECURE", "False")
++    monkeypatch.setenv("CFO_ENABLED", "true")
++    monkeypatch.delenv("RUN_SCHEDULER", raising=False)
++    get_settings.cache_clear()
++
++    import app.cfo.router as cfo_router_module
++
++    monkeypatch.setattr(cfo_router_module.servicio, "consultar", _fake_consultar)
++
++    app = create_app()
++    c = AsyncMongoMockClient()
++    repository.configure_auth(c, "compas_test")
++    configure_audit(c, "compas_test")
++    for correo, rol in [
++        ("consulta@roddos.com", Role.consulta),
++        ("fin@roddos.com", Role.financiero),
++        ("dir@roddos.com", Role.directivo),
++        ("admin@roddos.com", Role.admin),
++    ]:
++        await repository.create_user(
++            User(email=correo, password_hash=passwords.hash_password(PWD), rol=rol)
++        )
++    transport = httpx.ASGITransport(app=app)
++    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
++        yield ac
++    repository.reset_auth()
++    reset_audit()
++    get_settings.cache_clear()
++
++
++async def _token(ac, email) -> str:
++    r = await ac.post("/api/v1/auth/login", json={"email": email, "password": PWD})
++    assert r.status_code == 200
++    return r.json()["access_token"]
++
++
++@pytest.mark.parametrize(
++    "email", ["fin@roddos.com", "dir@roddos.com", "admin@roddos.com"]
++)
++async def test_responde_ok_con_flag_on_y_rol_autorizado(api, email):
++    tok = await _token(api, email)
++    h = {"Authorization": f"Bearer {tok}"}
++    r = await api.post(
++        "/api/v1/cfo", json={"pregunta": "¿cuánta caja hay hoy?"}, headers=h
++    )
++    assert r.status_code == 200
++    body = r.json()
++    assert body["texto"] == "ok"
++    assert body["abstuvo"] is False
++    assert body["uso"]["modelo"] == "m"
++
++
++async def test_rol_consulta_no_autorizado_403(api):
++    tok = await _token(api, "consulta@roddos.com")
++    h = {"Authorization": f"Bearer {tok}"}
++    r = await api.post("/api/v1/cfo", json={"pregunta": "¿caja?"}, headers=h)
++    assert r.status_code == 403
++
++
++async def test_sin_token_es_401(api):
++    r = await api.post("/api/v1/cfo", json={"pregunta": "¿caja?"})
++    assert r.status_code == 401
++
++
++async def test_body_extra_forbidden_422(api):
++    # Regla 3 (Pydantic strict=True/extra=forbid): campo no declarado se rechaza.
++    tok = await _token(api, "admin@roddos.com")
++    h = {"Authorization": f"Bearer {tok}"}
++    r = await api.post(
++        "/api/v1/cfo", json={"pregunta": "¿caja?", "campo_extra": 1}, headers=h
++    )
++    assert r.status_code == 422
++
++
++async def test_guard_defensivo_404_si_flag_se_apaga_en_runtime(api, monkeypatch):
++    # Barrera 2: el router YA está montado (flag=true al construir la app), pero si
++    # alguien apaga CFO_ENABLED en caliente (sin reiniciar el proceso) el guard
++    # dentro del handler debe cortar en 404 — cfo_enabled() relee el entorno en cada
++    # llamada (sin cache), así que este flip toma efecto en la MISMA request.
++    tok = await _token(api, "admin@roddos.com")
++    h = {"Authorization": f"Bearer {tok}"}
++    monkeypatch.setenv("CFO_ENABLED", "false")
++    r = await api.post("/api/v1/cfo", json={"pregunta": "¿caja?"}, headers=h)
++    assert r.status_code == 404
++    assert r.json()["detail"] == "No encontrado."
++
++
++async def test_ruta_ausente_si_flag_apagado_al_construir_la_app(monkeypatch):
++    # Barrera 1: con el flag apagado desde el arranque, create_app() NUNCA monta el
++    # router — la ruta no existe (404 genérico de FastAPI, no el guard del handler).
++    monkeypatch.setenv("APP_ENV", "development")
++    monkeypatch.setenv("JWT_SECRET", "x" * 40)
++    monkeypatch.delenv("CFO_ENABLED", raising=False)
++    get_settings.cache_clear()
++
++    app = create_app()
++    transport = httpx.ASGITransport(app=app)
++    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
++        r = await ac.post("/api/v1/cfo", json={"pregunta": "¿caja?"})
++    assert r.status_code == 404
++    assert r.json() == {"detail": "Not Found"}
++    get_settings.cache_clear()
++
++
++def test_flag_off_no_monta_router_en_app_routes(monkeypatch):
++    """T12 (cierre inc2) · flag-off = COMPAS byte-idéntico: verificación
++    ESTRUCTURAL, no solo conductual — con CFO_ENABLED ausente/false,
++    create_app() no debe registrar /api/v1/cfo en app.routes en absoluto (el
++    router nunca se incluye; no es que responda 404, es que la ruta no existe
++    como tal). Complementa la prueba conductual de arriba (barrera 1)."""
++    monkeypatch.setenv("APP_ENV", "development")
++    monkeypatch.setenv("JWT_SECRET", "x" * 40)
++    monkeypatch.delenv("CFO_ENABLED", raising=False)
++    get_settings.cache_clear()
++
++    app = create_app()
++    rutas = {r.path for r in app.routes}
++    assert "/api/v1/cfo" not in rutas
++
++    get_settings.cache_clear()
+diff --git a/backend/tests/cfo/agente/test_servicio.py b/backend/tests/cfo/agente/test_servicio.py
+new file mode 100644
+index 0000000..948722e
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_servicio.py
+@@ -0,0 +1,95 @@
++# backend/tests/cfo/agente/test_servicio.py
++from decimal import Decimal
++
++import pytest
++from app.cfo.agente import servicio as srv
++from app.cfo.agente.cliente import BloqueTexto, BloqueToolUse, RespuestaLLM
++from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
++from tests.cfo.agente.fakes import ClienteFake
++
++
++@pytest.fixture(autouse=True)
++def _audit(monkeypatch):
++    eventos = []
++
++    async def fake_emit(evento, entidad, entidad_id=None, actor_id=None, metadata=None):
++        eventos.append((str(evento), metadata))
++
++    monkeypatch.setattr(srv, "emit_audit", fake_emit)
++    return eventos
++
++
++def _res():
++    return ResultadoCFO(
++        concepto="caja_hoy",
++        valor=Decimal("704722003"),
++        unidad="COP",
++        disponible=True,
++        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="2026-08"),
++    )
++
++
++@pytest.mark.asyncio
++async def test_sin_key_abstiene(monkeypatch, _audit):
++    monkeypatch.setattr(srv, "crear_cliente", lambda: None)
++    r = await srv.consultar("¿caja?", actor_id="u1")
++    assert r.abstuvo is True and r.motivo == "sin_api_key"
++    assert [e[0] for e in _audit] == ["cfo.consulta", "cfo.respuesta"]
++
++
++@pytest.mark.asyncio
++async def test_camino_feliz(monkeypatch, _audit):
++    async def fake_tool(nombre):
++        return _res()
++
++    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
++            5,
++            3,
++        ),
++        RespuestaLLM(
++            "end_turn", [BloqueTexto(texto="La caja hoy es $704.722.003.")], 4, 8
++        ),
++    ]
++    r = await srv.consultar("¿caja?", actor_id="u1", cliente=ClienteFake(guiones))
++    assert r.abstuvo is False
++    assert r.cifras[0].valor == "704722003"
++    assert "caja_hoy" in r.conceptos_usados
++    resp_meta = [m for e, m in _audit if e == "cfo.respuesta"][0]
++    assert resp_meta["abstuvo"] is False
++
++
++@pytest.mark.asyncio
++async def test_alucinacion_reintento_falla_abstiene(monkeypatch, _audit):
++    async def fake_tool(nombre):
++        return _res()
++
++    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
++    # 1ra conversación: tool + texto con cifra inventada. Reintento: sigue inventando.
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
++            1,
++            1,
++        ),
++        RespuestaLLM("end_turn", [BloqueTexto(texto="Tienes $999.999.999.")], 1, 1),
++        RespuestaLLM("end_turn", [BloqueTexto(texto="Bueno, $888.888.888.")], 1, 1),
++    ]
++    r = await srv.consultar("¿caja?", actor_id="u1", cliente=ClienteFake(guiones))
++    assert r.abstuvo is True and r.motivo == "verificacion"
++
++
++@pytest.mark.asyncio
++async def test_error_interno_no_revienta_y_audita(monkeypatch, _audit):
++    # crear_cliente revienta (fallo no-LLM) -> abstención graciosa, no excepción
++    def boom():
++        raise RuntimeError("boom")
++
++    monkeypatch.setattr(srv, "crear_cliente", boom)
++    r = await srv.consultar("¿caja?", actor_id="u1")  # NO debe levantar
++    assert r.abstuvo is True and r.motivo == "error"
++    assert [e[0] for e in _audit] == ["cfo.consulta", "cfo.respuesta"]
+diff --git a/backend/tests/cfo/agente/test_tools.py b/backend/tests/cfo/agente/test_tools.py
+new file mode 100644
+index 0000000..923c0e7
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_tools.py
+@@ -0,0 +1,57 @@
++# backend/tests/cfo/agente/test_tools.py
++from decimal import Decimal
++
++import pytest
++from app.cfo.agente import tools
++from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
++
++
++def _res(valor):
++    return ResultadoCFO(
++        concepto="caja_hoy",
++        valor=valor,
++        unidad="COP",
++        disponible=valor is not None,
++        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="2026-08"),
++    )
++
++
++def test_schema_tres_tools_sin_parametros():
++    nombres = {t["name"] for t in tools.TOOLS_SCHEMA}
++    assert nombres == {"caja_disponible_hoy", "runway_meses", "iva_del_cuatrimestre"}
++    for t in tools.TOOLS_SCHEMA:
++        assert t["input_schema"]["properties"] == {}
++
++
++def test_resultado_a_dict_serializa_valor_a_string():
++    d = tools.resultado_a_dict(_res(Decimal("704722003")))
++    assert d["valor"] == "704722003"
++    assert d["disponible"] is True
++    assert d["evidencia"]["ref"] == "2026-08"
++    d0 = tools.resultado_a_dict(_res(None))
++    assert d0["valor"] is None
++    assert d0["disponible"] is False
++
++
++def test_resultado_a_dict_cero_legitimo_es_cero_no_none():
++    # guard contra una futura regresión a `if r.valor:` (Decimal("0") es falsy en
++    # Python, pero caja/IVA en $0 es un dato legítimo, no "falta evidencia").
++    d = tools.resultado_a_dict(_res(Decimal("0")))
++    assert d["valor"] == "0"
++    assert d["disponible"] is True
++
++
++@pytest.mark.asyncio
++async def test_ejecutar_tool_despacha(monkeypatch):
++    async def fake():
++        return _res(Decimal("123"))
++
++    monkeypatch.setitem(tools.DISPATCH, "caja_disponible_hoy", fake)
++    r = await tools.ejecutar_tool("caja_disponible_hoy")
++    assert r.valor == Decimal("123")
++
++
++@pytest.mark.asyncio
++async def test_ejecutar_tool_desconocida_falla():
++    with pytest.raises(KeyError):
++        await tools.ejecutar_tool("no_existe")
+diff --git a/backend/tests/cfo/agente/test_verificador.py b/backend/tests/cfo/agente/test_verificador.py
+new file mode 100644
+index 0000000..9fb9e1b
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_verificador.py
+@@ -0,0 +1,221 @@
++# backend/tests/cfo/agente/test_verificador.py
++"""FABS · batería adversarial del verificador cifra→evidencia (control crítico).
++
++Cada caso ataca un modo de falla real de LLMs con cifras (monto inventado, suma
++inventada, $0 falso, meses fuera de tolerancia, evidencia abstenida) o un falso
++positivo que NO debe disparar el veredicto (años, fechas, tolerancia de redondeo)."""
++
++from decimal import Decimal
++
++from app.cfo.agente.verificador import extraer_cifras, verificar
++from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
++
++
++def _cop(valor):
++    return ResultadoCFO(
++        concepto="caja_hoy",
++        valor=valor,
++        unidad="COP",
++        disponible=True,
++        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="2026-08"),
++    )
++
++
++def _meses(valor):
++    return ResultadoCFO(
++        concepto="runway",
++        valor=valor,
++        unidad="meses",
++        disponible=True,
++        evidencia=Evidencia(fuente="f", fecha_corte=None, ref="2026-08"),
++    )
++
++
++def test_extrae_montos_y_meses_ignora_anios_y_fechas():
++    texto = (
++        "En 2026, al 10 de septiembre, la caja es $704.722.003 y el runway "
++        "es de 4,2 meses. Período C2."
++    )
++    cifras = {(v, u) for v, u, _ in extraer_cifras(texto)}
++    assert (Decimal("704722003"), "COP") in cifras
++    assert (Decimal("4.2"), "meses") in cifras
++    # 2026 (año), 10 (día), C2 (etiqueta) NO son cifras monetarias/unitarias
++    assert all(not (v == Decimal("2026")) for v, _, _ in extraer_cifras(texto))
++
++
++def test_ok_cuando_toda_cifra_tiene_evidencia():
++    texto = "La caja hoy es $704.722.003 (al 2026-08-11)."
++    v = verificar(texto, [_cop(Decimal("704722003"))])
++    assert v.ok is True
++    assert v.cifras_sin_evidencia == []
++
++
++def test_atrapa_monto_inventado():
++    texto = "La caja hoy es $704.722.003, pero podrías tener hasta $50.000.000 extra."
++    v = verificar(texto, [_cop(Decimal("704722003"))])
++    assert v.ok is False
++    assert any("50.000.000" in t for t in v.cifras_sin_evidencia)
++
++
++def test_atrapa_suma_inventada():
++    # el modelo sumó dos evidencias — resultado sin respaldo directo
++    texto = "En total son $740.926.701."
++    v = verificar(texto, [_cop(Decimal("704722003")), _cop(Decimal("36204698"))])
++    assert v.ok is False
++
++
++def test_tolerancia_cop_1_peso():
++    texto = "Caja $704.722.004."  # +1 por redondeo
++    v = verificar(texto, [_cop(Decimal("704722003"))])
++    assert v.ok is True
++
++
++def test_meses_fuera_de_tolerancia_falla():
++    texto = "El runway es de 6 meses."
++    v = verificar(texto, [_meses(Decimal("4.2"))])
++    assert v.ok is False
++
++
++def test_evidencia_no_disponible_no_respalda_cifra():
++    # un ResultadoCFO abstenido NO respalda ninguna cifra
++    r = ResultadoCFO(
++        concepto="iva_cuatrimestre",
++        valor=None,
++        unidad="COP",
++        disponible=False,
++        evidencia=Evidencia(fuente="f", fecha_corte=None, ref="x"),
++    )
++    v = verificar("El IVA es $36.204.698.", [r])
++    assert v.ok is False
++
++
++def test_dolares_cero_falso_es_atrapado():
++    v = verificar("No debes nada: $0.", [_cop(Decimal("704722003"))])
++    assert v.ok is False
++
++
++# --- Regresión / hardening (Task 7 hardening pass) ---------------------------
++# Fijan la intención de la heurística: no castigar lo inocuo (cero legítimo,
++# números pelados sin formato de dinero) y seguir atrapando lo inventado
++# (monto grande junto a uno real, múltiples cifras con múltiple evidencia).
++
++
++def test_cero_legitimo_con_evidencia_pasa():
++    # un $0 que SÍ tiene evidencia (caja realmente en 0) no debe marcarse
++    v = verificar("La caja hoy es $0.", [_cop(Decimal("0"))])
++    assert v.ok is True
++    assert v.cifras_sin_evidencia == []
++
++
++def test_entero_pelado_sin_formato_no_se_marca():
++    # números sin formato de dinero (nº de cuenta) no son candidatos → no molestan
++    texto = "Según la cuenta 5493, la caja es $704.722.003."
++    v = verificar(texto, [_cop(Decimal("704722003"))])
++    assert v.ok is True
++
++
++def test_monto_grande_inventado_junto_a_uno_real_se_atrapa():
++    texto = "La caja es $704.722.003; proyecto ingresos de $1.200.000.000."
++    v = verificar(texto, [_cop(Decimal("704722003"))])
++    assert v.ok is False
++    assert any("1.200.000.000" in t for t in v.cifras_sin_evidencia)
++
++
++def test_multiples_cifras_todas_respaldadas_pasa():
++    texto = "Caja $704.722.003 y el IVA del cuatrimestre es $36.204.698."
++    v = verificar(texto, [_cop(Decimal("704722003")), _cop(Decimal("36204698"))])
++    assert v.ok is True
++    assert v.cifras_sin_evidencia == []
++
++
++# --- Robustez formato "wire" (hallazgo de revisión sobre commit 80b70cd) -----
++# tools.resultado_a_dict serializa valor como str(Decimal(...)): dígitos pelados
++# sin separador de miles para COP ("704722003") y con PUNTO decimal para meses
++# ("4.2") — no el formato es-CO con "$"/miles/coma que asumía la heurística
++# original. El prompt (regla #1) exige reproducir las cifras LITERALMENTE, así
++# que la respuesta real del modelo llega mayoritariamente en formato wire.
++
++
++def test_bare_digit_wire_inventado_se_atrapa():
++    # monto fabricado en formato wire (sin $, sin separadores) DEBE atraparse
++    v = verificar("el flujo proyectado es 950000000", [_cop(Decimal("704722003"))])
++    assert v.ok is False
++    assert any("950000000" in t for t in v.cifras_sin_evidencia)
++
++
++def test_bare_digit_wire_que_coincide_pasa():
++    v = verificar("la caja es 704722003", [_cop(Decimal("704722003"))])
++    assert v.ok is True
++
++
++def test_anio_no_marcado_pese_a_nuevo_regex():
++    # el umbral de 5+ dígitos pelados no debe empezar a atrapar años de 4 dígitos
++    cifras = extraer_cifras("En 2026 la caja subió")
++    assert all(v != Decimal("2026") for v, _, _ in cifras)
++
++
++def test_runway_wire_punto_decimal_pasa():
++    # str(Decimal("4.2")) usa PUNTO — el runway real del modelo llega así
++    v = verificar("El runway es de 4.2 meses.", [_meses(Decimal("4.2"))])
++    assert v.ok is True
++
++
++def test_runway_coma_decimal_sigue_pasando():
++    v = verificar("El runway es de 4,2 meses.", [_meses(Decimal("4.2"))])
++    assert v.ok is True
++
++
++# --- Formato wire REAL (ronda 2 de revisión) ---------------------------------
++# La ronda 1 asumió dígitos pelados SIN decimales. Verificado empíricamente
++# contra caja.py/runway.py/iva.py: las 3 tools construyen `valor` como
++# Decimal(money_str(x)) -> SIEMPRE 2 decimales ("704722003.00", "36204698.10",
++# "4.20"). El '.' de wire colisiona con el '.' de miles es-CO; estos tests fijan
++# la regla de forma que los distingue (_a_decimal_cop).
++
++
++def test_wire_caja_dos_decimales_con_evidencia_pasa():
++    # formato REAL de las tools: str(Decimal(money_str(x))) -> "704722003.00"
++    v = verificar("La caja hoy es 704722003.00.", [_cop(Decimal("704722003.00"))])
++    assert v.ok is True
++
++
++def test_wire_iva_dos_decimales_con_evidencia_pasa():
++    v = verificar(
++        "El IVA del cuatrimestre es 36204698.10.", [_cop(Decimal("36204698.10"))]
++    )
++    assert v.ok is True
++
++
++def test_wire_fabricado_dos_decimales_se_atrapa():
++    v = verificar("Proyecto un flujo de 950000000.00.", [_cop(Decimal("704722003.00"))])
++    assert v.ok is False
++    assert any("950000000.00" in t for t in v.cifras_sin_evidencia)
++
++
++def test_wire_runway_dos_decimales_pasa():
++    v = verificar("El runway es de 4.20 meses.", [_meses(Decimal("4.20"))])
++    assert v.ok is True
++
++
++def test_es_co_con_centavos_coma_pasa():
++    v = verificar("La caja es $704.722.003,00.", [_cop(Decimal("704722003.00"))])
++    assert v.ok is True
++
++
++# --- Porcentajes (FIX 1, FINAL-REVIEW inc2) ----------------------------------
++# COMPAS no tiene concepto de "porcentaje": cualquier % que el modelo emita es una
++# cifra auto-calculada, prohibida por regla #1. No existe (ni debe existir) un pool
++# de evidencia "pct", así que todo % debe quedar huérfano SIEMPRE, sin excepción.
++
++
++def test_porcentaje_inventado_se_atrapa():
++    v = verificar("El IVA es el 25% de tus ingresos.", [_cop(Decimal("704722003.00"))])
++    assert v.ok is False
++    assert any("25%" in t for t in v.cifras_sin_evidencia)
++
++
++def test_porcentaje_con_decimal_tambien_se_atrapa():
++    v = verificar(
++        "Tu carga tributaria es 12,5 % del flujo.", [_cop(Decimal("704722003.00"))]
++    )
++    assert v.ok is False
+diff --git a/backend/tests/cfo/test_calc_iva.py b/backend/tests/cfo/test_calc_iva.py
+index 48df9fc..89db04b 100644
+--- a/backend/tests/cfo/test_calc_iva.py
++++ b/backend/tests/cfo/test_calc_iva.py
+@@ -40,3 +40,29 @@ async def test_iva_sin_periodo_vigente_abstiene(monkeypatch):
+     monkeypatch.setattr(mod, "_periodo_vigente_idx", lambda: (2026, 3))
+     r = await mod.iva_cuatrimestre()
+     assert r.disponible is False and r.valor is None
++
++
++@pytest.mark.asyncio
++async def test_iva_cuatrimestre_abstiene_si_periodicidad_no_cuatrimestral(monkeypatch):
++    from app.cfo.calc import iva as iva_calc
++
++    async def fake_liq():
++        return {
++            "periodicidad": "bimestral",
++            "periodos": [
++                {
++                    "anio": 2026,
++                    "periodo": 4,
++                    "etiqueta": "2026-B4",
++                    "neto_a_pagar": "10000.00",
++                    "proximo_pago": {"fecha": "2026-09-10"},
++                }
++            ],
++        }
++
++    monkeypatch.setattr(iva_calc, "_liquidacion", fake_liq)
++    r = await iva_calc.iva_cuatrimestre()
++    assert r.disponible is False
++    assert r.valor is None
++    assert r.evidencia.ref == "periodicidad-no-cuatrimestral"
++    assert r.detalle == {"periodicidad": "bimestral"}
+diff --git a/backend/tests/cfo/test_config.py b/backend/tests/cfo/test_config.py
+index 2759043..b66d9bd 100644
+--- a/backend/tests/cfo/test_config.py
++++ b/backend/tests/cfo/test_config.py
+@@ -1,3 +1,4 @@
++from app.cfo import config as cfo_config
+ from app.cfo.config import cfo_enabled
+ 
+ 
+@@ -9,3 +10,27 @@ def test_flag_apagado_por_defecto(monkeypatch):
+ def test_flag_encendible_por_env(monkeypatch):
+     monkeypatch.setenv("CFO_ENABLED", "true")
+     assert cfo_enabled() is True
++
++
++def test_cfo_model_default_y_override(monkeypatch):
++    monkeypatch.delenv("CFO_MODEL", raising=False)
++    assert cfo_config.cfo_model() == "claude-haiku-4-5-20251001"
++    monkeypatch.setenv("CFO_MODEL", "claude-sonnet-5")
++    assert cfo_config.cfo_model() == "claude-sonnet-5"
++
++
++def test_cfo_api_key_none_si_ausente(monkeypatch):
++    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
++    assert cfo_config.cfo_api_key() is None
++    monkeypatch.setenv("ANTHROPIC_API_KEY", "  ")
++    assert cfo_config.cfo_api_key() is None
++    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
++    assert cfo_config.cfo_api_key() == "sk-test"
++
++
++def test_cfo_limites_default(monkeypatch):
++    for k in ("CFO_MAX_ITER", "CFO_MAX_TOKENS", "CFO_TIMEOUT_S"):
++        monkeypatch.delenv(k, raising=False)
++    assert cfo_config.cfo_max_iter() == 3
++    assert cfo_config.cfo_max_tokens() == 1024
++    assert cfo_config.cfo_timeout_s() == 60.0
+diff --git a/backend/tests/cfo/test_s1_aislamiento.py b/backend/tests/cfo/test_s1_aislamiento.py
+index 88b156e..5c2d93a 100644
+--- a/backend/tests/cfo/test_s1_aislamiento.py
++++ b/backend/tests/cfo/test_s1_aislamiento.py
+@@ -1,13 +1,16 @@
+-"""S1: cfo/calc y cfo/goldens NO importan modelos de dominio ajenos ni tocan el driver
+-de Mongo; la única subruta que persiste es cfo/datos/repositorios.py y solo cfo_*."""
++"""S1: cfo/calc, cfo/goldens, cfo/agente y cfo/router.py NO importan modelos de
++dominio ajenos ni tocan el driver de Mongo; la única subruta que persiste es
++cfo/datos/repositorios.py y solo cfo_*."""
+ 
+ import pathlib
+ import re
+ 
+ CFO = pathlib.Path(__file__).resolve().parents[2] / "app" / "cfo"
+ 
+-# Subrutas que NO pueden tocar Mongo directamente ni importar modelos de dominio ajenos.
+-LOGICA = [CFO / "calc", CFO / "goldens"]
++# Subrutas/archivos que NO pueden tocar Mongo directamente ni importar modelos de
++# dominio ajenos. inc2 (FABS) añade agente/ (loop LLM<->tools) y router.py (endpoint):
++# ninguno de los dos persiste ni conoce dominio ajeno, solo leen vía cfo/datos.
++LOGICA = [CFO / "calc", CFO / "goldens", CFO / "agente", CFO / "router.py"]
+ PROHIBIDO_IMPORT = re.compile(
+     r"from app\.domain\.(?!__init__)"
+ )  # modelos de dominio ajenos
+@@ -15,6 +18,9 @@ PROHIBIDO_DRIVER = re.compile(r"get_pymongo_collection|motor|AsyncIOMotor")
+ 
+ 
+ def _py_files(base):
++    # LOGICA mezcla directorios (calc/goldens/agente) y un archivo suelto (router.py).
++    if base.is_file():
++        return [] if base.name == "__init__.py" else [base]
+     return [p for p in base.rglob("*.py") if p.name != "__init__.py"]
+ 
+ 
+diff --git a/backend/tests/test_audit_events.py b/backend/tests/test_audit_events.py
+index 4a77ba3..c54e667 100644
+--- a/backend/tests/test_audit_events.py
++++ b/backend/tests/test_audit_events.py
+@@ -15,12 +15,13 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
+ from app.audit.events import CATALOGO_EVENTOS, AuditEvento
+ 
+ 
+-def test_catalogo_tiene_exactamente_62_eventos():
++def test_catalogo_tiene_exactamente_64_eventos():
+     # 59 + factura_obligacion.pagada (D2 §7, GO CEO 2026-08-04)
+     # + transaccion.dividida + transaccion.division_deshecha (PTS6-B, CR división de
+-    #   clasificación, GO CEO 2026-08-10).
+-    assert len(AuditEvento) == 62
+-    assert len(CATALOGO_EVENTOS) == 62
++    #   clasificación, GO CEO 2026-08-10) = 62
++    # + cfo.consulta + cfo.respuesta (CR-CFO-1, FABS incremento 2, GO CEO 2026-08-11).
++    assert len(AuditEvento) == 64
++    assert len(CATALOGO_EVENTOS) == 64
+     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
+     assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
+     assert AuditEvento.transaccion_dividida.value == "transaccion.dividida"
+@@ -28,6 +29,8 @@ def test_catalogo_tiene_exactamente_62_eventos():
+         AuditEvento.transaccion_division_deshecha.value
+         == "transaccion.division_deshecha"
+     )
++    assert "cfo.consulta" in CATALOGO_EVENTOS
++    assert "cfo.respuesta" in CATALOGO_EVENTOS
+ 
+ 
+ def test_extracto_cargado_es_el_evento_30_de_cr001():
+diff --git a/backend/tests/test_rbac_permissions.py b/backend/tests/test_rbac_permissions.py
+index c192cb3..64f15ca 100644
+--- a/backend/tests/test_rbac_permissions.py
++++ b/backend/tests/test_rbac_permissions.py
+@@ -20,6 +20,8 @@ CANONICA: dict[str, set[Role]] = {
+     "facturas_emitidas:gestionar": {Role.financiero, Role.admin},
+     "evidencia:ver": {Role.financiero, Role.admin},
+     "capacidad_pago:ver": {Role.financiero, Role.directivo, Role.admin},
++    # CR-CFO-1 (FABS inc2, T11): consultar al agente CFO (tras flag CFO_ENABLED)
++    "cfo:consultar": {Role.financiero, Role.directivo, Role.admin},
+     # CR-S4 (C1 categorías administrables): gestión del catálogo de rubros
+     "rubros:gestionar": {Role.financiero, Role.admin},
+     # CR-S5 (C3 auto-clasificación): gestión de reglas de clasificación
+@@ -69,6 +71,13 @@ def test_consulta_no_puede_exportar():
+     assert perms.has_permission(Role.financiero, "export:reportes")
+ 
+ 
++def test_cfo_consultar_para_financiero_directivo_admin():
++    # T11 (FABS inc2): mismo público que capacidad_pago:ver (ve cifras de plata).
++    for rol in (Role.financiero, Role.directivo, Role.admin):
++        assert perms.has_permission(rol, "cfo:consultar")
++    assert not perms.has_permission(Role.consulta, "cfo:consultar")
++
++
+ def test_aprobar_solo_admin():
+     # §2.4: solo Admin aprueba (Directivo acota, no aprueba).
+     assert perms.has_permission(Role.admin, "ciclo:aprobar")
