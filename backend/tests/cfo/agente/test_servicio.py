@@ -81,3 +81,15 @@ async def test_alucinacion_reintento_falla_abstiene(monkeypatch, _audit):
     ]
     r = await srv.consultar("¿caja?", actor_id="u1", cliente=ClienteFake(guiones))
     assert r.abstuvo is True and r.motivo == "verificacion"
+
+
+@pytest.mark.asyncio
+async def test_error_interno_no_revienta_y_audita(monkeypatch, _audit):
+    # crear_cliente revienta (fallo no-LLM) -> abstención graciosa, no excepción
+    def boom():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(srv, "crear_cliente", boom)
+    r = await srv.consultar("¿caja?", actor_id="u1")  # NO debe levantar
+    assert r.abstuvo is True and r.motivo == "error"
+    assert [e[0] for e in _audit] == ["cfo.consulta", "cfo.respuesta"]

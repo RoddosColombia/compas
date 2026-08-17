@@ -2,7 +2,11 @@
 """FABS · orquestador de una consulta (D2). Flujo: emite cfo.consulta → corre el loop
 → verifica cifra→evidencia → si falla, UN reintento correctivo → verifica → publica o
 se abstiene (dura). Emite cfo.respuesta. La auditoría es fail-soft (lectura: no bloquea
-la respuesta si la BD de auditoría falla; O1 rama no-crítica).
+la respuesta si la BD de auditoría falla; O1 rama no-crítica). Un backstop de nivel
+superior envuelve todo el cuerpo posterior al primer emit: FABS es un READ, así que
+`consultar` NUNCA debe reventar al caller (endpoint T11) — incluso un fallo no-LLM
+inesperado (p. ej. `crear_cliente()` o una validación de pydantic) se convierte en una
+abstención `motivo="error"`, nunca en una excepción propagada.
 
 Nota de alcance — verificación por UNIDAD, no por CONCEPTO (decisión explícita T10,
 hereda la nota de `verificador.verificar`):
@@ -107,90 +111,99 @@ def _meta(r: RespuestaCFO) -> dict:
 async def consultar(
     pregunta: str, *, actor_id: str, cliente: ClienteLLM | None = None
 ) -> RespuestaCFO:
+    # cfo.consulta ANTES de todo (rastro de la pregunta aunque algo falle después)
     await _audit_soft(
         AuditEvento.cfo_consulta, {"pregunta": pregunta, "canal": "api"}, actor_id
     )
 
-    if cliente is None:
-        cliente = crear_cliente()
-    if cliente is None:
-        r = _abstencion("sin_api_key", None, actor_id)
-        await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
-        return r
-
     try:
-        res = await conversar(
-            cliente,
-            [{"role": "user", "content": pregunta}],
-            max_iter=config.cfo_max_iter(),
-        )
-    except Exception:  # noqa: BLE001 — fallo del LLM
-        logger.exception("fallo del LLM en FABS")
-        r = _abstencion("error_llm", None, actor_id)
-        await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
-        return r
+        if cliente is None:
+            cliente = crear_cliente()
+        if cliente is None:
+            r = _abstencion("sin_api_key", None, actor_id)
+            await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
+            return r
 
-    if res.texto is None:
-        r = _abstencion("tope_iter", res, actor_id)
-        await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
-        return r
-
-    # Ver nota de alcance del módulo (arriba): `verificar()` respalda cifra->valor
-    # por unidad, no cifra->concepto. Aceptado para inc2 (flag off + colisión de
-    # magnitud entre caja/IVA prácticamente imposible); CR aparte para cerrarlo.
-    veredicto = verificar(res.texto, res.resultados)
-    if not veredicto.ok:
-        # UN reintento correctivo con los valores válidos
-        valores = (
-            "; ".join(
-                f"{r.concepto}={r.valor} {r.unidad}"
-                for r in res.resultados
-                if r.disponible and r.valor is not None
-            )
-            or "(ninguno disponible)"
-        )
-        correccion = CORRECTIVO.format(
-            cifras=", ".join(veredicto.cifras_sin_evidencia), valores=valores
-        )
-        mensajes = [
-            {"role": "user", "content": pregunta},
-            {"role": "assistant", "content": res.texto},
-            {"role": "user", "content": correccion},
-        ]
         try:
-            res2 = await conversar(cliente, mensajes, max_iter=config.cfo_max_iter())
-        except Exception:  # noqa: BLE001
-            logger.exception("fallo del LLM en reintento FABS")
-            r = _abstencion("error_llm", res, actor_id)
+            res = await conversar(
+                cliente,
+                [{"role": "user", "content": pregunta}],
+                max_iter=config.cfo_max_iter(),
+            )
+        except Exception:  # noqa: BLE001 — fallo del LLM
+            logger.exception("fallo del LLM en FABS")
+            r = _abstencion("error_llm", None, actor_id)
             await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
             return r
-        # acumular resultados/uso de ambas conversaciones para las cifras/evidencia
-        # y para que el `uso` reportado (éxito o abstención) refleje el costo real
-        # de las DOS llamadas al LLM, no solo la primera.
-        res.resultados.extend(res2.resultados)
-        res.tokens_in += res2.tokens_in
-        res.tokens_out += res2.tokens_out
-        res.iteraciones += res2.iteraciones
-        if res2.texto is None or not verificar(res2.texto, res.resultados).ok:
-            r = _abstencion("verificacion", res, actor_id)
-            await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
-            return r
-        texto_final = res2.texto
-    else:
-        texto_final = res.texto
 
-    r = RespuestaCFO(
-        texto=texto_final,
-        abstuvo=False,
-        motivo=None,
-        conceptos_usados=[x.concepto for x in res.resultados],
-        cifras=_cifras(res.resultados),
-        uso=UsoLLM(
-            modelo=config.cfo_model(),
-            tokens_in=res.tokens_in,
-            tokens_out=res.tokens_out,
-            iteraciones=res.iteraciones,
-        ),
-    )
-    await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
-    return r
+        if res.texto is None:
+            r = _abstencion("tope_iter", res, actor_id)
+            await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
+            return r
+
+        # Ver nota de alcance del módulo (arriba): `verificar()` respalda cifra->valor
+        # por unidad, no cifra->concepto. Aceptado para inc2 (flag off + colisión de
+        # magnitud entre caja/IVA prácticamente imposible); CR aparte para cerrarlo.
+        veredicto = verificar(res.texto, res.resultados)
+        if not veredicto.ok:
+            # UN reintento correctivo con los valores válidos
+            valores = (
+                "; ".join(
+                    f"{r.concepto}={r.valor} {r.unidad}"
+                    for r in res.resultados
+                    if r.disponible and r.valor is not None
+                )
+                or "(ninguno disponible)"
+            )
+            correccion = CORRECTIVO.format(
+                cifras=", ".join(veredicto.cifras_sin_evidencia), valores=valores
+            )
+            mensajes = [
+                {"role": "user", "content": pregunta},
+                {"role": "assistant", "content": res.texto},
+                {"role": "user", "content": correccion},
+            ]
+            try:
+                res2 = await conversar(
+                    cliente, mensajes, max_iter=config.cfo_max_iter()
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("fallo del LLM en reintento FABS")
+                r = _abstencion("error_llm", res, actor_id)
+                await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
+                return r
+            # acumular resultados/uso de ambas conversaciones para las cifras/evidencia
+            # y para que el `uso` reportado (éxito o abstención) refleje el costo real
+            # de las DOS llamadas al LLM, no solo la primera.
+            res.resultados.extend(res2.resultados)
+            res.tokens_in += res2.tokens_in
+            res.tokens_out += res2.tokens_out
+            res.iteraciones += res2.iteraciones
+            if res2.texto is None or not verificar(res2.texto, res.resultados).ok:
+                r = _abstencion("verificacion", res, actor_id)
+                await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
+                return r
+            texto_final = res2.texto
+        else:
+            texto_final = res.texto
+
+        r = RespuestaCFO(
+            texto=texto_final,
+            abstuvo=False,
+            motivo=None,
+            conceptos_usados=[x.concepto for x in res.resultados],
+            cifras=_cifras(res.resultados),
+            uso=UsoLLM(
+                modelo=config.cfo_model(),
+                tokens_in=res.tokens_in,
+                tokens_out=res.tokens_out,
+                iteraciones=res.iteraciones,
+            ),
+        )
+        await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
+        return r
+    except Exception:  # noqa: BLE001 — backstop: un READ jamás revienta al caller
+        logger.exception("fallo inesperado en FABS")
+        r = _abstencion("error", None, actor_id)
+        await _audit_soft(AuditEvento.cfo_respuesta, _meta(r), actor_id)
+        return r
