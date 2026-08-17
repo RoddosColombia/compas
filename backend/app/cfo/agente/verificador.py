@@ -1,34 +1,41 @@
 # backend/app/cfo/agente/verificador.py
-"""FABS · verificador cifra→evidencia (EL control crítico, lección Deloitte).
+"""FABS · verificador cifra→concepto (EL control crítico, lección Deloitte + inc3
+Pieza A: citación estructurada).
 
-Toda cifra monetaria o con unidad que aparezca en la respuesta del modelo debe estar
-dentro de tolerancia de ALGÚN valor devuelto por las tools de este turno (conjunto
-cerrado de evidencias). Si una cifra no tiene respaldo, el veredicto es `ok=False` y
-esa cifra no debe publicarse (regla #1). Heurística conservadora: exige evidencia a
-los montos ($ / separador de miles / decimal / entero pelado de 5+) y a los números
-con unidad de meses; ignora años, fechas y ordinales pequeños sin formato de dinero
-(para no abstenerse de lo inocuo).
+Contrato: el modelo NUNCA escribe una cifra cruda (monto/meses/%) en su respuesta —
+cita el concepto con `[[concepto]]` (A2: `tools.py` ya no expone `valor` al modelo,
+así que no tiene un número que copiar) y el servicio sustituye cada token por el
+valor concept-bound DESPUÉS de este veredicto (A5; el texto sustituido nunca se
+re-verifica). El veredicto es `ok=True` sii (1) NO hay ninguna cifra cruda en el
+texto — cualquier número detectado es violación, sin excepción, ya no hay pool de
+tolerancia que la respalde — y (2) todo token `[[X]]` referencia un concepto con
+evidencia disponible ESTE turno (frescura por turno).
+
+Esto cierra por construcción el hueco de inc2: la verificación agrupaba la evidencia
+disponible solo por `unidad` (COP/meses), nunca por `concepto`, así que una cifra de
+IVA mal-etiquetada como caja pasaba si el VALOR caía en tolerancia de CUALQUIER
+ResultadoCFO en COP del turno. Ahora el modelo no puede mal-etiquetar un valor porque
+no escribe valores — solo cita conceptos, y el concepto sí se valida.
 
 Nota de formato "wire" (verificado empíricamente contra `caja.py`/`runway.py`/
 `iva.py` + `tools.resultado_a_dict`, ronda 2 de revisión — corrige el supuesto de la
-ronda 1, que asumía dígitos pelados SIN decimales): las 3 tools NO devuelven enteros
-pelados. Cada una construye `valor` como `Decimal(money_str(x))` — primero cuantizan
-a 2 decimales con `money_str` (p.ej. `"704722003.00"`, `"36204698.10"`, `"4.20"`) y
-ese string se reconstruye a `Decimal`, que conserva la escala. `tools.resultado_a_dict`
-hace luego `str(r.valor)`, así que el modelo recibe literalmente `"704722003.00"` —
-un PUNTO decimal de 2 cifras, no dígitos pelados sin separador. Ese punto colisiona
-con el separador de miles es-CO (`"704.722.003"`), así que la normalización de
-montos (`_a_decimal_cop`) distingue los dos casos por REGLA DE FORMA (ver su
-docstring) — no por conteo de dígitos, que ya no basta para desambiguar."""
+ronda 1, que asumía dígitos pelados SIN decimales): las 3 tools construyen `valor`
+como `Decimal(money_str(x))` — primero cuantizan a 2 decimales con `money_str`
+(p.ej. `"704722003.00"`, `"36204698.10"`, `"4.20"`) y ese string se reconstruye a
+`Decimal`, que conserva la escala. El modelo ya no ve ese string (A2), pero
+`extraer_cifras` sigue reconociendo esa forma: si algo lo sortea y una cifra cruda
+llega al texto de todos modos (fuga, regresión de prompt, etc.), igual debe
+atraparse — por eso las funciones de detección de este módulo quedan intactas. Ese
+punto decimal colisiona con el separador de miles es-CO (`"704.722.003"`), así que
+la normalización de montos (`_a_decimal_cop`) distingue los dos casos por REGLA DE
+FORMA (ver su docstring) — no por conteo de dígitos, que ya no basta para
+desambiguar."""
 
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from app.cfo.calc.evidencia import ResultadoCFO
-
-_TOL_COP = Decimal("1")  # ±$1 COP por redondeo
-_TOL_MESES = Decimal("0.1")  # ±0,1 meses
 
 # Un "número" = corrida de dígitos con posibles separadores . , y $ opcional.
 _RE_NUM = re.compile(r"\$?\s?\d[\d.,]*\d|\$?\s?\d")
@@ -39,6 +46,9 @@ _RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
 # en la respuesta es una cifra auto-computada por el modelo, prohibida por regla
 # #1 (ver su uso en `extraer_cifras`, FIX 1 FINAL-REVIEW inc2).
 _RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
+# Cita de concepto: [[caja_hoy]] / [[runway]] / [[iva_cuatrimestre]]. El modelo cita,
+# no escribe números (inc3 Pieza A).
+_RE_TOKEN = re.compile(r"\[\[(\w+)\]\]")
 
 
 def _a_decimal_cop(token: str) -> Decimal | None:
@@ -86,6 +96,7 @@ def _es_monto(raw: str) -> bool:
 class Veredicto:
     ok: bool
     cifras_sin_evidencia: list[str]
+    tokens_invalidos: list[str]
 
 
 def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
@@ -131,48 +142,22 @@ def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
 
 
 def verificar(texto: str, resultados: list[ResultadoCFO]) -> Veredicto:
-    """Nota de alcance para T10 (servicio.py — el orquestador que llama esta
-    función): la evidencia se agrupa solo por `unidad` (COP / meses), NUNCA por
-    `concepto`. Una cifra en COP que caiga en tolerancia de CUALQUIER ResultadoCFO
-    en COP se considera respaldada, aunque sea el concepto equivocado (p.ej. una
-    respuesta que confunda caja con IVA pero coincida en valor no se atraparía
-    aquí). Verificación cifra→concepto (no solo cifra→valor) es un diseño
-    PENDIENTE, requerido antes de confiar en citas estructuradas; no implementado
-    en esta función a propósito — está fuera de la interfaz de este módulo
-    (`extraer_cifras` devuelve unidad, no concepto). Requiere CR si se necesita.
-
-    Huecos residuales aceptados para inc2 (compuerta apagada; FIX 2, FINAL-REVIEW
-    inc2) — mismo rigor que la nota anterior, documentados en vez de resueltos:
-    (a) los porcentajes ya NO son un hueco — se atrapan siempre como huérfanos
-    porque no existe (ni debe existir) un pool de evidencia "pct" (FIX 1,
-    `_RE_PORCENTAJE`); se listan aquí por trazabilidad de la ronda que los cerró;
-    (b) un entero pelado de MENOS de 5 dígitos nunca se trata como monto
-    (`_es_monto`) — los montos COP reales de RODDOS son de 7+ dígitos, así que el
-    daño esperado es bajo, pero un monto chico inventado sin separadores ('500'
-    en vez de '$500') pasaría sin marcarse; (c) números en palabras ('mil
-    millones', 'cien mil') no los parsea ningún regex de este módulo, solo
-    dígitos. Los tres puntos se aceptan así para inc2 con la compuerta apagada;
-    la verificación cifra→concepto de arriba y (b)/(c) con el mismo rigor que hoy
-    tiene COP/meses quedan como UNA sola CR de "verificación concept-aware"
-    antes de encender la compuerta (flag on) — no como deuda dispersa."""
-    ev_cop = [
-        r.valor
-        for r in resultados
-        if r.disponible and r.valor is not None and r.unidad == "COP"
+    """Contrato inc3 Pieza A (citación estructurada): el modelo NO escribe cifras,
+    cita conceptos con `[[concepto]]`. Veredicto ok sii (1) NO hay ninguna cifra
+    cruda (COP/meses/%) en el texto — cualquier número es violación, el modelo debió
+    usar un token — y (2) todo token `[[X]]` referencia un concepto con evidencia
+    disponible ESTE turno (frescura por turno). Esto cierra el hueco cifra→concepto
+    de inc2 por construcción: el modelo no puede mal-etiquetar un valor porque no
+    escribe valores. El servicio sustituye los tokens por el valor concept-bound
+    DESPUÉS de este veredicto (el texto sustituido nunca se re-verifica)."""
+    crudas = [token for _, _, token in extraer_cifras(texto)]
+    disponibles = {
+        r.concepto for r in resultados if r.disponible and r.valor is not None
+    }
+    tokens_invalidos = [
+        m.group(0) for m in _RE_TOKEN.finditer(texto) if m.group(1) not in disponibles
     ]
-    ev_meses = [
-        r.valor
-        for r in resultados
-        if r.disponible and r.valor is not None and r.unidad == "meses"
-    ]
-    huerfanas: list[str] = []
-    for valor, unidad, token in extraer_cifras(texto):
-        if unidad == "COP":
-            pool, tol = ev_cop, _TOL_COP
-        elif unidad == "meses":
-            pool, tol = ev_meses, _TOL_MESES
-        else:  # "pct" u otra unidad sin evidencia posible → siempre huérfano
-            pool, tol = [], _TOL_COP
-        if not any(abs(valor - e) <= tol for e in pool):
-            huerfanas.append(token)
-    return Veredicto(ok=not huerfanas, cifras_sin_evidencia=huerfanas)
+    ok = not crudas and not tokens_invalidos
+    return Veredicto(
+        ok=ok, cifras_sin_evidencia=crudas, tokens_invalidos=tokens_invalidos
+    )

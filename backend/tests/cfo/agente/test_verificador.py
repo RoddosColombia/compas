@@ -1,9 +1,21 @@
 # backend/tests/cfo/agente/test_verificador.py
-"""FABS · batería adversarial del verificador cifra→evidencia (control crítico).
+"""FABS · batería del verificador cifra→concepto (control crítico, inc3 Pieza A).
 
-Cada caso ataca un modo de falla real de LLMs con cifras (monto inventado, suma
-inventada, $0 falso, meses fuera de tolerancia, evidencia abstenida) o un falso
-positivo que NO debe disparar el veredicto (años, fechas, tolerancia de redondeo)."""
+Contrato NUEVO — reemplaza el de inc2 (historial en git para la versión previa): el
+modelo nunca escribe una cifra cruda, cita conceptos con `[[concepto]]`. Por eso esta
+batería ya NO tiene casos "cifra con evidencia real → pasa": bajo el contrato nuevo
+TODA cifra cruda es violación, tenga o no evidencia real detrás — eso es precisamente
+lo que cierra el hueco de inc2 (una cifra de IVA mal-etiquetada como caja pasaba si el
+valor caía en tolerancia de algún ResultadoCFO en COP; ahora no hay pool de tolerancia
+que la respalde, período).
+
+Los casos de inc2 que probaban "cifra inventada/sumada/en formato wire se atrapa" se
+preservan reexpresados más abajo: bajo el contrato nuevo se atrapan por la MISMA regla
+que una cifra correcta (cualquier cifra cruda = rechazo), así que quedan como
+demostraciones del mecanismo — ya no como casos con lógica de comparación propia. Se
+preserva también la cobertura de porcentajes (COMPAS no tiene ese concepto) y se
+añade la validación de tokens (concepto inexistente / no disponible este turno), que
+es la pieza nueva de este contrato."""
 
 from decimal import Decimal
 
@@ -11,27 +23,157 @@ from app.cfo.agente.verificador import extraer_cifras, verificar
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
 
 
-def _cop(valor):
+def _r(concepto, valor, unidad, disp=True):
     return ResultadoCFO(
-        concepto="caja_hoy",
+        concepto=concepto,
         valor=valor,
-        unidad="COP",
-        disponible=True,
-        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="2026-08"),
+        unidad=unidad,
+        disponible=disp,
+        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="x"),
     )
 
 
-def _meses(valor):
-    return ResultadoCFO(
-        concepto="runway",
-        valor=valor,
-        unidad="meses",
-        disponible=True,
-        evidencia=Evidencia(fuente="f", fecha_corte=None, ref="2026-08"),
+def _caja():
+    return _r("caja_hoy", Decimal("704722003.00"), "COP")
+
+
+def _iva():
+    return _r("iva_cuatrimestre", Decimal("36204698.10"), "COP")
+
+
+# --- Contrato nuevo: tokens válidos pasan; cifras crudas y tokens inválidos no ----
+
+
+def test_tokens_validos_pasan():
+    v = verificar(
+        "Tu caja es [[caja_hoy]] y el IVA es [[iva_cuatrimestre]].", [_caja(), _iva()]
     )
+    assert v.ok is True
+    assert v.cifras_sin_evidencia == [] and v.tokens_invalidos == []
+
+
+def test_cifra_cruda_se_rechaza():
+    # el modelo escribió un número en vez de un token
+    v = verificar("Tu caja es $704.722.003.", [_caja()])
+    assert v.ok is False
+    assert any("704.722.003" in c for c in v.cifras_sin_evidencia)
+
+
+def test_el_caso_vinculante_caja_con_valor_de_iva_se_rechaza():
+    # el modelo escribe crudo el valor del IVA bajo la etiqueta 'caja'. Este es EL
+    # hueco de inc2: con el contrato viejo (evidencia agrupada por `unidad`, nunca por
+    # `concepto`) esto PASABA porque $36.204.698 cae en tolerancia de ALGÚN
+    # ResultadoCFO en COP del turno (el de IVA), sin importar que el texto lo
+    # etiquete como caja. El contrato nuevo lo cierra por construcción: ya no existe
+    # el camino "está en el pool COP" porque no hay pool — toda cifra cruda se
+    # rechaza sin mirar su valor.
+    v = verificar("Tu caja es $36.204.698.", [_caja(), _iva()])
+    assert v.ok is False  # ya no puede pasar por 'está en el pool COP'
+
+
+def test_token_de_concepto_inexistente_se_rechaza():
+    v = verificar("Las ventas fueron [[ventas]].", [_caja()])
+    assert v.ok is False
+    assert "[[ventas]]" in v.tokens_invalidos
+
+
+def test_token_de_concepto_no_disponible_se_rechaza():
+    v = verificar(
+        "El runway es [[runway]].", [_caja(), _r("runway", None, "meses", disp=False)]
+    )
+    assert v.ok is False
+    assert "[[runway]]" in v.tokens_invalidos
+
+
+def test_porcentaje_crudo_se_rechaza():
+    # COMPAS no tiene concepto de "porcentaje": ninguna tool lo calcula ni lo
+    # devuelve, así que un % en la respuesta es siempre auto-cálculo del modelo.
+    v = verificar("El IVA es el 25% de tus ingresos.", [_caja()])
+    assert v.ok is False
+
+
+def test_porcentaje_con_decimal_y_espacio_tambien_se_rechaza():
+    v = verificar("Tu carga tributaria es 12,5 % del flujo.", [_caja()])
+    assert v.ok is False
+
+
+def test_respuesta_sin_cifras_ni_tokens_pasa():
+    v = verificar("Con los datos disponibles no puedo confirmar eso.", [])
+    assert v.ok is True
+
+
+# --- Reexpresados de inc2 --------------------------------------------------------
+# extraer_cifras/_es_monto/_a_decimal_* (detección) no cambiaron, así que estos casos
+# siguen demostrando que una cifra fabricada/sumada/en formato wire se atrapa — ahora
+# por la MISMA regla que cualquier cifra cruda, no por comparación de valor contra un
+# pool. Donde el caso viejo afirmaba "... y por eso PASA", aquí se invierte a propósito
+# (queda documentado el porqué): es la diferencia central del contrato nuevo.
+
+
+def test_monto_inventado_se_atrapa_aunque_haya_uno_real_al_lado():
+    texto = "La caja hoy es $704.722.003, pero podrías tener hasta $50.000.000 extra."
+    v = verificar(texto, [_caja()])
+    assert v.ok is False
+    assert any("50.000.000" in c for c in v.cifras_sin_evidencia)
+
+
+def test_suma_inventada_se_atrapa():
+    # el modelo sumó caja + IVA en un tercer número que ninguna tool devolvió
+    v = verificar("En total tienes $740.926.701 entre caja e IVA.", [_caja(), _iva()])
+    assert v.ok is False
+
+
+def test_dolares_cero_crudo_se_rechaza():
+    # un $0 crudo es cifra prohibida aunque "suene" inocuo (regla #3 del prompt:
+    # jamás un $0 falso).
+    v = verificar("No debes nada: $0.", [_caja()])
+    assert v.ok is False
+
+
+def test_cero_real_tambien_debe_citarse_por_token_no_escribirse_crudo():
+    # a diferencia de inc2 (donde un $0 que coincidía con la evidencia real pasaba),
+    # aquí el valor verdadero SÍ es 0 y el veredicto sigue siendo ok=False: el
+    # contrato exige [[caja_hoy]], nunca "$0" escrito a mano — sea correcto o no.
+    v = verificar("La caja hoy es $0.", [_r("caja_hoy", Decimal("0"), "COP")])
+    assert v.ok is False
+
+
+def test_multiples_cifras_correctas_se_rechazan_todas_por_ser_crudas():
+    # las DOS cifras son exactamente correctas y aun así el veredicto es ok=False:
+    # el contrato no perdona una cifra cruda por tener respaldo real detrás, siempre
+    # exige el token.
+    texto = "Caja $704.722.003 y el IVA del cuatrimestre es $36.204.698."
+    v = verificar(texto, [_caja(), _iva()])
+    assert v.ok is False
+    assert len(v.cifras_sin_evidencia) == 2
+
+
+def test_meses_crudo_se_rechaza_aunque_coincida_con_la_evidencia():
+    v = verificar("El runway es de 4,2 meses.", [_r("runway", Decimal("4.2"), "meses")])
+    assert v.ok is False
+    assert any("meses" in c for c in v.cifras_sin_evidencia)
+
+
+def test_cifra_en_formato_wire_tambien_se_rechaza():
+    # formato real que devuelven las tools (str(Decimal(money_str(x))): sin '$' ni
+    # separador de miles, punto decimal de 2 cifras). El modelo ya no lo ve (A2:
+    # tools.py deja de exponer `valor`), pero si de algún modo una cifra cruda llega
+    # al texto en esta forma, debe rechazarse igual que cualquier otra.
+    v = verificar("La caja hoy es 704722003.00.", [_caja()])
+    assert v.ok is False
+
+
+def test_numero_sin_formato_de_dinero_no_se_marca():
+    # un nº de cuenta pelado y corto no es un monto (sin '$'/separador y menos de 5
+    # dígitos): no debe generar un falso positivo. Sesgo conservador del módulo: no
+    # abstenerse de lo inocuo.
+    v = verificar("Según la cuenta 5493, no tengo esa cifra a mano.", [_caja()])
+    assert v.ok is True
 
 
 def test_extrae_montos_y_meses_ignora_anios_y_fechas():
+    # extraer_cifras no cambió (sigue siendo el detector de cifras crudas); esta
+    # regresión de inc2 sigue vigente tal cual.
     texto = (
         "En 2026, al 10 de septiembre, la caja es $704.722.003 y el runway "
         "es de 4,2 meses. Período C2."
@@ -41,181 +183,3 @@ def test_extrae_montos_y_meses_ignora_anios_y_fechas():
     assert (Decimal("4.2"), "meses") in cifras
     # 2026 (año), 10 (día), C2 (etiqueta) NO son cifras monetarias/unitarias
     assert all(not (v == Decimal("2026")) for v, _, _ in extraer_cifras(texto))
-
-
-def test_ok_cuando_toda_cifra_tiene_evidencia():
-    texto = "La caja hoy es $704.722.003 (al 2026-08-11)."
-    v = verificar(texto, [_cop(Decimal("704722003"))])
-    assert v.ok is True
-    assert v.cifras_sin_evidencia == []
-
-
-def test_atrapa_monto_inventado():
-    texto = "La caja hoy es $704.722.003, pero podrías tener hasta $50.000.000 extra."
-    v = verificar(texto, [_cop(Decimal("704722003"))])
-    assert v.ok is False
-    assert any("50.000.000" in t for t in v.cifras_sin_evidencia)
-
-
-def test_atrapa_suma_inventada():
-    # el modelo sumó dos evidencias — resultado sin respaldo directo
-    texto = "En total son $740.926.701."
-    v = verificar(texto, [_cop(Decimal("704722003")), _cop(Decimal("36204698"))])
-    assert v.ok is False
-
-
-def test_tolerancia_cop_1_peso():
-    texto = "Caja $704.722.004."  # +1 por redondeo
-    v = verificar(texto, [_cop(Decimal("704722003"))])
-    assert v.ok is True
-
-
-def test_meses_fuera_de_tolerancia_falla():
-    texto = "El runway es de 6 meses."
-    v = verificar(texto, [_meses(Decimal("4.2"))])
-    assert v.ok is False
-
-
-def test_evidencia_no_disponible_no_respalda_cifra():
-    # un ResultadoCFO abstenido NO respalda ninguna cifra
-    r = ResultadoCFO(
-        concepto="iva_cuatrimestre",
-        valor=None,
-        unidad="COP",
-        disponible=False,
-        evidencia=Evidencia(fuente="f", fecha_corte=None, ref="x"),
-    )
-    v = verificar("El IVA es $36.204.698.", [r])
-    assert v.ok is False
-
-
-def test_dolares_cero_falso_es_atrapado():
-    v = verificar("No debes nada: $0.", [_cop(Decimal("704722003"))])
-    assert v.ok is False
-
-
-# --- Regresión / hardening (Task 7 hardening pass) ---------------------------
-# Fijan la intención de la heurística: no castigar lo inocuo (cero legítimo,
-# números pelados sin formato de dinero) y seguir atrapando lo inventado
-# (monto grande junto a uno real, múltiples cifras con múltiple evidencia).
-
-
-def test_cero_legitimo_con_evidencia_pasa():
-    # un $0 que SÍ tiene evidencia (caja realmente en 0) no debe marcarse
-    v = verificar("La caja hoy es $0.", [_cop(Decimal("0"))])
-    assert v.ok is True
-    assert v.cifras_sin_evidencia == []
-
-
-def test_entero_pelado_sin_formato_no_se_marca():
-    # números sin formato de dinero (nº de cuenta) no son candidatos → no molestan
-    texto = "Según la cuenta 5493, la caja es $704.722.003."
-    v = verificar(texto, [_cop(Decimal("704722003"))])
-    assert v.ok is True
-
-
-def test_monto_grande_inventado_junto_a_uno_real_se_atrapa():
-    texto = "La caja es $704.722.003; proyecto ingresos de $1.200.000.000."
-    v = verificar(texto, [_cop(Decimal("704722003"))])
-    assert v.ok is False
-    assert any("1.200.000.000" in t for t in v.cifras_sin_evidencia)
-
-
-def test_multiples_cifras_todas_respaldadas_pasa():
-    texto = "Caja $704.722.003 y el IVA del cuatrimestre es $36.204.698."
-    v = verificar(texto, [_cop(Decimal("704722003")), _cop(Decimal("36204698"))])
-    assert v.ok is True
-    assert v.cifras_sin_evidencia == []
-
-
-# --- Robustez formato "wire" (hallazgo de revisión sobre commit 80b70cd) -----
-# tools.resultado_a_dict serializa valor como str(Decimal(...)): dígitos pelados
-# sin separador de miles para COP ("704722003") y con PUNTO decimal para meses
-# ("4.2") — no el formato es-CO con "$"/miles/coma que asumía la heurística
-# original. El prompt (regla #1) exige reproducir las cifras LITERALMENTE, así
-# que la respuesta real del modelo llega mayoritariamente en formato wire.
-
-
-def test_bare_digit_wire_inventado_se_atrapa():
-    # monto fabricado en formato wire (sin $, sin separadores) DEBE atraparse
-    v = verificar("el flujo proyectado es 950000000", [_cop(Decimal("704722003"))])
-    assert v.ok is False
-    assert any("950000000" in t for t in v.cifras_sin_evidencia)
-
-
-def test_bare_digit_wire_que_coincide_pasa():
-    v = verificar("la caja es 704722003", [_cop(Decimal("704722003"))])
-    assert v.ok is True
-
-
-def test_anio_no_marcado_pese_a_nuevo_regex():
-    # el umbral de 5+ dígitos pelados no debe empezar a atrapar años de 4 dígitos
-    cifras = extraer_cifras("En 2026 la caja subió")
-    assert all(v != Decimal("2026") for v, _, _ in cifras)
-
-
-def test_runway_wire_punto_decimal_pasa():
-    # str(Decimal("4.2")) usa PUNTO — el runway real del modelo llega así
-    v = verificar("El runway es de 4.2 meses.", [_meses(Decimal("4.2"))])
-    assert v.ok is True
-
-
-def test_runway_coma_decimal_sigue_pasando():
-    v = verificar("El runway es de 4,2 meses.", [_meses(Decimal("4.2"))])
-    assert v.ok is True
-
-
-# --- Formato wire REAL (ronda 2 de revisión) ---------------------------------
-# La ronda 1 asumió dígitos pelados SIN decimales. Verificado empíricamente
-# contra caja.py/runway.py/iva.py: las 3 tools construyen `valor` como
-# Decimal(money_str(x)) -> SIEMPRE 2 decimales ("704722003.00", "36204698.10",
-# "4.20"). El '.' de wire colisiona con el '.' de miles es-CO; estos tests fijan
-# la regla de forma que los distingue (_a_decimal_cop).
-
-
-def test_wire_caja_dos_decimales_con_evidencia_pasa():
-    # formato REAL de las tools: str(Decimal(money_str(x))) -> "704722003.00"
-    v = verificar("La caja hoy es 704722003.00.", [_cop(Decimal("704722003.00"))])
-    assert v.ok is True
-
-
-def test_wire_iva_dos_decimales_con_evidencia_pasa():
-    v = verificar(
-        "El IVA del cuatrimestre es 36204698.10.", [_cop(Decimal("36204698.10"))]
-    )
-    assert v.ok is True
-
-
-def test_wire_fabricado_dos_decimales_se_atrapa():
-    v = verificar("Proyecto un flujo de 950000000.00.", [_cop(Decimal("704722003.00"))])
-    assert v.ok is False
-    assert any("950000000.00" in t for t in v.cifras_sin_evidencia)
-
-
-def test_wire_runway_dos_decimales_pasa():
-    v = verificar("El runway es de 4.20 meses.", [_meses(Decimal("4.20"))])
-    assert v.ok is True
-
-
-def test_es_co_con_centavos_coma_pasa():
-    v = verificar("La caja es $704.722.003,00.", [_cop(Decimal("704722003.00"))])
-    assert v.ok is True
-
-
-# --- Porcentajes (FIX 1, FINAL-REVIEW inc2) ----------------------------------
-# COMPAS no tiene concepto de "porcentaje": cualquier % que el modelo emita es una
-# cifra auto-calculada, prohibida por regla #1. No existe (ni debe existir) un pool
-# de evidencia "pct", así que todo % debe quedar huérfano SIEMPRE, sin excepción.
-
-
-def test_porcentaje_inventado_se_atrapa():
-    v = verificar("El IVA es el 25% de tus ingresos.", [_cop(Decimal("704722003.00"))])
-    assert v.ok is False
-    assert any("25%" in t for t in v.cifras_sin_evidencia)
-
-
-def test_porcentaje_con_decimal_tambien_se_atrapa():
-    v = verificar(
-        "Tu carga tributaria es 12,5 % del flujo.", [_cop(Decimal("704722003.00"))]
-    )
-    assert v.ok is False
