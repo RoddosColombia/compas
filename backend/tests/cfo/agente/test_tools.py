@@ -33,6 +33,14 @@ def test_resultado_a_dict_serializa_valor_a_string():
     assert d0["disponible"] is False
 
 
+def test_resultado_a_dict_cero_legitimo_es_cero_no_none():
+    # guard contra una futura regresión a `if r.valor:` (Decimal("0") es falsy en
+    # Python, pero caja/IVA en $0 es un dato legítimo, no "falta evidencia").
+    d = tools.resultado_a_dict(_res(Decimal("0")))
+    assert d["valor"] == "0"
+    assert d["disponible"] is True
+
+
 @pytest.mark.asyncio
 async def test_ejecutar_tool_despacha(monkeypatch):
     async def fake():

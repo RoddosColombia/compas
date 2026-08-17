@@ -34,6 +34,11 @@ _TOL_MESES = Decimal("0.1")  # ±0,1 meses
 _RE_NUM = re.compile(r"\$?\s?\d[\d.,]*\d|\$?\s?\d")
 # Meses: número (decimal con , o .) seguido de 'mes'/'meses'.
 _RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
+# Porcentaje: número (decimal con , o .) seguido de '%'. COMPAS no tiene concepto
+# de "porcentaje" — ninguna tool lo calcula ni lo devuelve — así que cualquier %
+# en la respuesta es una cifra auto-computada por el modelo, prohibida por regla
+# #1 (ver su uso en `extraer_cifras`, FIX 1 FINAL-REVIEW inc2).
+_RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
 
 
 def _a_decimal_cop(token: str) -> Decimal | None:
@@ -85,11 +90,13 @@ class Veredicto:
 
 def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
     cifras: list[tuple[Decimal, str, str]] = []
-    # Meses primero, y marcamos sus tramos para no re-capturar el número como monto
-    # COP. Ya NO es solo defensivo (como en la ronda 1): un decimal de meses como
-    # "4.20" también cumple `_es_monto` (tiene '.'), así que sin este guard se
+    # Meses y % primero, y marcamos sus tramos para no re-capturar el número como
+    # monto COP. Ya NO es solo defensivo (como en la ronda 1): un decimal de meses
+    # como "4.20" también cumple `_es_monto` (tiene '.'), así que sin este guard se
     # contaría dos veces con la unidad equivocada (buscaría "4.20" en la evidencia
-    # de COP, que nunca lo respalda, en vez de en la de meses).
+    # de COP, que nunca lo respalda, en vez de en la de meses). Lo mismo aplica a
+    # "%" desde FIX 1 (FINAL-REVIEW inc2): "12,5 %" tiene ',' y calificaría como
+    # monto COP si no se excluyera su tramo.
     #
     # El chequeo de solape es de INTERSECCIÓN de intervalos, no de contención del
     # punto de inicio: _RE_NUM permite un '\s?' inicial opcional, así que su match
@@ -98,15 +105,22 @@ def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
     # queda FUERA del tramo registrado y el guard nunca dispara (hallazgo de ronda
     # 2 vía tests reales, no traza manual: test_runway_wire_punto_decimal_pasa et
     # al. daban RED con la contención simple).
-    tramos_meses: list[tuple[int, int]] = []
+    tramos: list[tuple[int, int]] = []  # meses y % → no re-contar como monto COP
     for m in _RE_MESES.finditer(texto):
         val = _a_decimal_meses(m.group(1))
         if val is not None:
             cifras.append((val, "meses", m.group(0)))
-            tramos_meses.append((m.start(1), m.end(1)))
+            tramos.append((m.start(1), m.end(1)))
+    for m in _RE_PORCENTAJE.finditer(texto):
+        # COMPAS no calcula porcentajes: no existe pool "pct", así que TODO %
+        # queda huérfano → fuerza reintento/abstención (regla #1: el modelo no
+        # extrapola ratios).
+        val = _a_decimal_meses(m.group(0).rstrip("% ").strip()) or Decimal(0)
+        cifras.append((val, "pct", m.group(0)))
+        tramos.append((m.start(), m.end()))
     for m in _RE_NUM.finditer(texto):
-        if any(s < m.end() and m.start() < e for s, e in tramos_meses):
-            continue  # ya contado como meses (intervalos se solapan)
+        if any(s < m.end() and m.start() < e for s, e in tramos):
+            continue  # ya contado como meses o %
         raw = m.group(0)
         if not _es_monto(raw):
             continue  # año/día/ordinal pelado
@@ -125,7 +139,22 @@ def verificar(texto: str, resultados: list[ResultadoCFO]) -> Veredicto:
     aquí). Verificación cifra→concepto (no solo cifra→valor) es un diseño
     PENDIENTE, requerido antes de confiar en citas estructuradas; no implementado
     en esta función a propósito — está fuera de la interfaz de este módulo
-    (`extraer_cifras` devuelve unidad, no concepto). Requiere CR si se necesita."""
+    (`extraer_cifras` devuelve unidad, no concepto). Requiere CR si se necesita.
+
+    Huecos residuales aceptados para inc2 (compuerta apagada; FIX 2, FINAL-REVIEW
+    inc2) — mismo rigor que la nota anterior, documentados en vez de resueltos:
+    (a) los porcentajes ya NO son un hueco — se atrapan siempre como huérfanos
+    porque no existe (ni debe existir) un pool de evidencia "pct" (FIX 1,
+    `_RE_PORCENTAJE`); se listan aquí por trazabilidad de la ronda que los cerró;
+    (b) un entero pelado de MENOS de 5 dígitos nunca se trata como monto
+    (`_es_monto`) — los montos COP reales de RODDOS son de 7+ dígitos, así que el
+    daño esperado es bajo, pero un monto chico inventado sin separadores ('500'
+    en vez de '$500') pasaría sin marcarse; (c) números en palabras ('mil
+    millones', 'cien mil') no los parsea ningún regex de este módulo, solo
+    dígitos. Los tres puntos se aceptan así para inc2 con la compuerta apagada;
+    la verificación cifra→concepto de arriba y (b)/(c) con el mismo rigor que hoy
+    tiene COP/meses quedan como UNA sola CR de "verificación concept-aware"
+    antes de encender la compuerta (flag on) — no como deuda dispersa."""
     ev_cop = [
         r.valor
         for r in resultados
@@ -138,8 +167,12 @@ def verificar(texto: str, resultados: list[ResultadoCFO]) -> Veredicto:
     ]
     huerfanas: list[str] = []
     for valor, unidad, token in extraer_cifras(texto):
-        pool = ev_cop if unidad == "COP" else ev_meses
-        tol = _TOL_COP if unidad == "COP" else _TOL_MESES
+        if unidad == "COP":
+            pool, tol = ev_cop, _TOL_COP
+        elif unidad == "meses":
+            pool, tol = ev_meses, _TOL_MESES
+        else:  # "pct" u otra unidad sin evidencia posible → siempre huérfano
+            pool, tol = [], _TOL_COP
         if not any(abs(valor - e) <= tol for e in pool):
             huerfanas.append(token)
     return Veredicto(ok=not huerfanas, cifras_sin_evidencia=huerfanas)

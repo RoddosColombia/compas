@@ -200,3 +200,22 @@ def test_wire_runway_dos_decimales_pasa():
 def test_es_co_con_centavos_coma_pasa():
     v = verificar("La caja es $704.722.003,00.", [_cop(Decimal("704722003.00"))])
     assert v.ok is True
+
+
+# --- Porcentajes (FIX 1, FINAL-REVIEW inc2) ----------------------------------
+# COMPAS no tiene concepto de "porcentaje": cualquier % que el modelo emita es una
+# cifra auto-calculada, prohibida por regla #1. No existe (ni debe existir) un pool
+# de evidencia "pct", así que todo % debe quedar huérfano SIEMPRE, sin excepción.
+
+
+def test_porcentaje_inventado_se_atrapa():
+    v = verificar("El IVA es el 25% de tus ingresos.", [_cop(Decimal("704722003.00"))])
+    assert v.ok is False
+    assert any("25%" in t for t in v.cifras_sin_evidencia)
+
+
+def test_porcentaje_con_decimal_tambien_se_atrapa():
+    v = verificar(
+        "Tu carga tributaria es 12,5 % del flujo.", [_cop(Decimal("704722003.00"))]
+    )
+    assert v.ok is False
