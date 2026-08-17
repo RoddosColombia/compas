@@ -180,6 +180,17 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": "compas-api", "version": __version__}
 
     app.include_router(api_router, prefix="/api/v1")
+
+    # FABS (agente CFO) — solo con el flag encendido (doble barrera; apagado ⇒
+    # ausente). El router cfo ya trae el prefix /api/v1/cfo completo, así que se
+    # monta directo en `app` (no en api_router) para no duplicar el prefijo.
+    from app.cfo.config import cfo_enabled
+
+    if cfo_enabled():
+        from app.cfo.router import router as cfo_router
+
+        app.include_router(cfo_router)
+
     return app
 
 

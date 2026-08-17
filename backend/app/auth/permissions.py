@@ -22,6 +22,10 @@ PERMISSIONS: dict[str, frozenset[Role]] = {
     "facturas_emitidas:gestionar": frozenset({Role.financiero, Role.admin}),
     "evidencia:ver": frozenset({Role.financiero, Role.admin}),
     "capacidad_pago:ver": frozenset({Role.financiero, Role.directivo, Role.admin}),
+    # ── CR-CFO-1 (FABS inc2, T11): consultar al agente CFO. Mismo público que
+    # capacidad_pago:ver (ve cifras de plata). El endpoint está además tras el flag
+    # CFO_ENABLED (doble barrera: router condicional + guard 404 en el handler).
+    "cfo:consultar": frozenset({Role.financiero, Role.directivo, Role.admin}),
     # ── CR-S4 (C1 categorías administrables, GO Kimi PLAN-I 9.2) ──
     "rubros:gestionar": frozenset({Role.financiero, Role.admin}),
     # ── CR-S5 (C3 auto-clasificación, GO Kimi PLAN-I 9.3) ──

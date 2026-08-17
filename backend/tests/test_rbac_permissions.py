@@ -20,6 +20,8 @@ CANONICA: dict[str, set[Role]] = {
     "facturas_emitidas:gestionar": {Role.financiero, Role.admin},
     "evidencia:ver": {Role.financiero, Role.admin},
     "capacidad_pago:ver": {Role.financiero, Role.directivo, Role.admin},
+    # CR-CFO-1 (FABS inc2, T11): consultar al agente CFO (tras flag CFO_ENABLED)
+    "cfo:consultar": {Role.financiero, Role.directivo, Role.admin},
     # CR-S4 (C1 categorías administrables): gestión del catálogo de rubros
     "rubros:gestionar": {Role.financiero, Role.admin},
     # CR-S5 (C3 auto-clasificación): gestión de reglas de clasificación
@@ -67,6 +69,13 @@ def test_consulta_no_puede_exportar():
     # DoD #1: export denegado a Consulta.
     assert not perms.has_permission(Role.consulta, "export:reportes")
     assert perms.has_permission(Role.financiero, "export:reportes")
+
+
+def test_cfo_consultar_para_financiero_directivo_admin():
+    # T11 (FABS inc2): mismo público que capacidad_pago:ver (ve cifras de plata).
+    for rol in (Role.financiero, Role.directivo, Role.admin):
+        assert perms.has_permission(rol, "cfo:consultar")
+    assert not perms.has_permission(Role.consulta, "cfo:consultar")
 
 
 def test_aprobar_solo_admin():
