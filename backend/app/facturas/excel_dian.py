@@ -184,9 +184,7 @@ def parsear_excel(contenido: bytes) -> list[dict]:
             # bind explícito por default-arg (B023): la closure se consume en
             # este mismo ciclo, pero el bind elimina la clase entera de bug.
             idx = mapa.get(clave)
-            return (
-                _celdas[idx] if idx is not None and idx < len(_celdas) else None
-            )
+            return _celdas[idx] if idx is not None and idx < len(_celdas) else None
 
         try:
             prefijo = str(celda("prefijo") or "").strip()
@@ -222,9 +220,7 @@ def parsear_excel(contenido: bytes) -> list[dict]:
     return filas
 
 
-def campos_desde_fila(
-    fila: dict, *, nits_auteco: frozenset[str]
-) -> dict:
+def campos_desde_fila(fila: dict, *, nits_auteco: frozenset[str]) -> dict:
     """Fila cruda válida → campos del Document Factura (compra recibida).
 
     Misma semántica de deducibilidad que `ingesta.campos_desde_dian`: Auteco por

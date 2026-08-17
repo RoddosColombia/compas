@@ -174,9 +174,7 @@ async def test_sensibilidad_mide_la_misma_pista_que_la_pantalla(api):
     cambia el piso del tornado (el cache no puede servir el mundo sin factura)."""
     h = await _setup_config(api)
 
-    r0 = await api.get(
-        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
-    )
+    r0 = await api.get("/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h)
     piso_sin_factura = r0.json()["piso_base"]
 
     # obligación de facturación + factura grande que golpea la caja en nov-2026
@@ -209,9 +207,7 @@ async def test_sensibilidad_mide_la_misma_pista_que_la_pantalla(api):
         "/api/v1/proyeccion?mes_inicio=2026-07&horizonte_meses=60", headers=h
     )
     assert p.status_code == 200, p.text
-    s = await api.get(
-        "/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h
-    )
+    s = await api.get("/api/v1/proyeccion/sensibilidad?mes_inicio=2026-07", headers=h)
     assert s.status_code == 200, s.text
 
     # (a) misma pista que la pantalla

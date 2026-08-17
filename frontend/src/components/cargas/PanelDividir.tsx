@@ -9,7 +9,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Decimal from "decimal.js-light";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -190,6 +190,9 @@ export function PanelDividir({ gestor }: { gestor: boolean }) {
 }
 
 interface FilaParte {
+  /** Clave ESTABLE de React: las filas se agregan/quitan y el índice se recicla
+   * (noArrayIndexKey) — un contador por diálogo evita estados cruzados. */
+  key: number;
   rubro_id: string;
   valor: string;
 }
@@ -211,9 +214,10 @@ function DividirDialog({
     (r) => r.activo && r.tipo_flujo === mov.tipo_flujo,
   );
   const [filas, setFilas] = useState<FilaParte[]>([
-    { rubro_id: mov.rubro_id, valor: "" },
-    { rubro_id: "", valor: "" },
+    { key: 0, rubro_id: mov.rubro_id, valor: "" },
+    { key: 1, rubro_id: "", valor: "" },
   ]);
+  const siguienteKey = useRef(2);
   const [error, setError] = useState<string | null>(null);
   const [pendiente, setPendiente] = useState(false);
 
@@ -230,7 +234,10 @@ function DividirDialog({
       prev.map((f, idx) => (idx === i ? { ...f, [campo]: v } : f)),
     );
   const agregar = () =>
-    setFilas((prev) => [...prev, { rubro_id: "", valor: "" }]);
+    setFilas((prev) => [
+      ...prev,
+      { key: siguienteKey.current++, rubro_id: "", valor: "" },
+    ]);
   const quitar = (i: number) =>
     setFilas((prev) =>
       prev.length > 2 ? prev.filter((_, idx) => idx !== i) : prev,
@@ -286,7 +293,7 @@ function DividirDialog({
 
         <div className="flex flex-col gap-2 font-sans text-sm">
           {filas.map((f, i) => (
-            <div key={`parte-${i}`} className="flex items-center gap-2">
+            <div key={f.key} className="flex items-center gap-2">
               <select
                 aria-label={`Rubro parte ${i + 1}`}
                 className="min-w-0 flex-1 rounded-md border border-hairline bg-surface px-2 py-1.5 text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
@@ -336,8 +343,7 @@ function DividirDialog({
             className={`tabular font-medium ${cuadra ? "text-positivo" : "text-critico"}`}
             data-testid="suma-partes"
           >
-            {formatCOP(suma)}{" "}
-            {cuadra ? "✓" : `(faltan ${formatCOP(restante)})`}
+            {formatCOP(suma)} {cuadra ? "✓" : `(faltan ${formatCOP(restante)})`}
           </span>
         </div>
 

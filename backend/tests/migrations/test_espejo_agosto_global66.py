@@ -85,10 +85,14 @@ def test_construir_docs_ocurrencia_split_y_rubro_exacto():
     oid_g, oid_p = PydanticObjectId(), PydanticObjectId()
     rubros = {
         mig._norm("Garantía cupo"): {
-            "_id": oid_g, "nombre": "Garantía cupo", "tipo_flujo": "egreso"
+            "_id": oid_g,
+            "nombre": "Garantía cupo",
+            "tipo_flujo": "egreso",
         },
         mig._norm("Préstamos"): {
-            "_id": oid_p, "nombre": "Préstamos", "tipo_flujo": "egreso"
+            "_id": oid_p,
+            "nombre": "Préstamos",
+            "tipo_flujo": "egreso",
         },
     }
     docs = mig._construir_docs(movs, clasif, rubros, PydanticObjectId())
@@ -112,7 +116,9 @@ def test_construir_docs_falla_loud_tipo_incoherente():
     clasif = {("88", "1000.00", "credito"): "Impuestos"}
     rubros = {
         mig._norm("Impuestos"): {
-            "_id": PydanticObjectId(), "nombre": "Impuestos", "tipo_flujo": "egreso"
+            "_id": PydanticObjectId(),
+            "nombre": "Impuestos",
+            "tipo_flujo": "egreso",
         }
     }
     with pytest.raises(SystemExit):

@@ -13,10 +13,20 @@ description = "Credenciales efímeras del mongod de CI + inventario de secretos 
 regexes = [
   '''audit-pwd-16chars!''',
   '''rootpw''',
+  # Falso positivo de generic-api-key: el campo PLAN-52 `plan2_cuota_semanal`
+  # (una cuota en COP, no una credencial) matchea el patrón "…key/…al: valor".
+  '''plan2_cuota_semanal''',
 ]
 # Decisión del CEO (2026-07-20, repo privado sin cara al público): el inventario guarda los
 # valores reales de secretos y se exceptúa del escaneo. Se acepta su permanencia en el historial
 # de git (sacarlos exigiría rotarlos). NO hacer público el repo sin revisar ese archivo.
 paths = [
   '''docs/INVENTARIO-SECRETOS\.xlsx''',
+]
+# Canario del gate G1 (2026-07-20): commit que sembró A PROPÓSITO las claves de
+# EJEMPLO de la documentación de AWS (AKIAIOSFODNN7EXAMPLE) para verificar que
+# gitleaks bloquea. El archivo ya no existe en HEAD; el commit queda en el
+# historial. No es un secreto real.
+commits = [
+  "6842af5b9091b9fba4006b4ce211337ea19a3ac4",
 ]

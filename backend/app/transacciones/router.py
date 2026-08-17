@@ -318,9 +318,7 @@ async def deshacer_division(
 ):
     """PTS6-B: revierte una división (rubro vuelve al pre-división)."""
     try:
-        tx = await service.deshacer_division(
-            tx_id=transaccion_id, usuario_id=user.id
-        )
+        tx = await service.deshacer_division(tx_id=transaccion_id, usuario_id=user.id)
     except service.TransaccionManualError as e:
         raise HTTPException(e.status, e.detalle) from e
     return _serializar(tx)

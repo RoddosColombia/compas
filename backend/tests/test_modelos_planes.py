@@ -261,9 +261,7 @@ async def test_peso_fuera_de_rango_es_422(api):
 @pytest.mark.asyncio
 async def test_peso_menor_a_uno_sin_plan2_es_422(api):
     h = await _token(api)
-    r = await api.post(
-        "/api/v1/modelos-moto", json=_body(peso_plan1="0.70"), headers=h
-    )
+    r = await api.post("/api/v1/modelos-moto", json=_body(peso_plan1="0.70"), headers=h)
     assert r.status_code == 422
     assert "plan" in r.json()["detail"].lower()
 
@@ -325,9 +323,7 @@ async def test_proyeccion_con_dos_planes_particion_no_inventa_plata(api):
     r = await api.post("/api/v1/modelos-moto", json=_body(), headers=h)
     assert r.status_code == 201
     mid = r.json()["id"]
-    r = await api.put(
-        "/api/v1/parametros-proyeccion", json=_params_body(), headers=h
-    )
+    r = await api.put("/api/v1/parametros-proyeccion", json=_params_body(), headers=h)
     assert r.status_code == 200
 
     base = await api.get("/api/v1/proyeccion?horizonte_meses=12", headers=h)

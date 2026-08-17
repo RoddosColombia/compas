@@ -23,7 +23,10 @@ async def test_runner_ok_fallo_y_abstencion(db, monkeypatch):
 
     def _res(concepto, valor, unidad, disp=True):
         return ResultadoCFO(
-            concepto=concepto, valor=valor, unidad=unidad, disponible=disp,
+            concepto=concepto,
+            valor=valor,
+            unidad=unidad,
+            disponible=disp,
             evidencia=Evidencia(fuente="x", fecha_corte=None, ref="r"),
         )
 

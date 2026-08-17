@@ -111,7 +111,9 @@ describe("PanelDividir", () => {
       target: { value: "6000000" },
     });
     // botón deshabilitado mientras no cuadra
-    expect(within(dialogo).getByRole("button", { name: /^dividir$/i })).toBeDisabled();
+    expect(
+      within(dialogo).getByRole("button", { name: /^dividir$/i }),
+    ).toBeDisabled();
 
     // ahora cuadra: 14.000.000 + 6.123.787,47 = 20.123.787,47
     fireEvent.change(within(dialogo).getByLabelText("Monto parte 2"), {
@@ -134,7 +136,9 @@ describe("PanelDividir", () => {
     const dialogo = await screen.findByRole("dialog");
     const select = within(dialogo).getByLabelText("Rubro parte 2");
     // Recaudo (ingreso) NO debe estar entre las opciones
-    expect(within(select).queryByRole("option", { name: /Recaudo/ })).toBeNull();
+    expect(
+      within(select).queryByRole("option", { name: /Recaudo/ }),
+    ).toBeNull();
     expect(
       within(select).getByRole("option", { name: /Garantía cupo/ }),
     ).toBeInTheDocument();
