@@ -158,9 +158,7 @@ async def test_real_separado_inicial_vs_semanal_por_rubro(api):
     from app.domain.transaccion import ParteClasificacion, Transaccion
 
     h = await _token(api)
-    mc = await MesControl(
-        mes="2026-09-01", saldo_inicial_caja=Decimal("0")
-    ).insert()
+    mc = await MesControl(mes="2026-09-01", saldo_inicial_caja=Decimal("0")).insert()
     r0110 = await Rubro(
         grupo="ingresos_operativos",
         nombre="Recaudo de cartera",
@@ -186,15 +184,25 @@ async def test_real_separado_inicial_vs_semanal_por_rubro(api):
     ).insert()
     # recaudo semanal directo
     await Transaccion(
-        fecha="2026-09-03", descripcion="cuota semanal", valor=Decimal("50000000"),
-        tipo_flujo="ingreso", rubro_id=r0110.id, mes_id=mc.id,
-        banco="global66", id_banco="SEM|1",
+        fecha="2026-09-03",
+        descripcion="cuota semanal",
+        valor=Decimal("50000000"),
+        tipo_flujo="ingreso",
+        rubro_id=r0110.id,
+        mes_id=mc.id,
+        banco="global66",
+        id_banco="SEM|1",
     ).insert()
     # consignación MIXTA dividida: 12M cuota inicial (0120) + 8M recaudo (0110)
     await Transaccion(
-        fecha="2026-09-04", descripcion="mixta", valor=Decimal("20000000"),
-        tipo_flujo="ingreso", rubro_id=r0120.id, mes_id=mc.id,
-        banco="global66", id_banco="MIX|1",
+        fecha="2026-09-04",
+        descripcion="mixta",
+        valor=Decimal("20000000"),
+        tipo_flujo="ingreso",
+        rubro_id=r0120.id,
+        mes_id=mc.id,
+        banco="global66",
+        id_banco="MIX|1",
         partes=[
             ParteClasificacion(rubro_id=r0120.id, valor=Decimal("12000000")),
             ParteClasificacion(rubro_id=r0110.id, valor=Decimal("8000000")),
@@ -202,9 +210,14 @@ async def test_real_separado_inicial_vs_semanal_por_rubro(api):
     ).insert()
     # una reversa (neutro) que NO debe contar
     await Transaccion(
-        fecha="2026-09-05", descripcion="reversa", valor=Decimal("1000000"),
-        tipo_flujo="ingreso", rubro_id=reversas.id, mes_id=mc.id,
-        banco="global66", id_banco="REV|1",
+        fecha="2026-09-05",
+        descripcion="reversa",
+        valor=Decimal("1000000"),
+        tipo_flujo="ingreso",
+        rubro_id=reversas.id,
+        mes_id=mc.id,
+        banco="global66",
+        id_banco="REV|1",
     ).insert()
 
     await api.post(

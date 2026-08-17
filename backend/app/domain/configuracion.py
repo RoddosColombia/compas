@@ -115,6 +115,29 @@ class Configuracion(Document):
             )
         return self
 
+    @model_validator(mode="after")
+    def _nits_solo_digitos(self) -> "Configuracion":
+        """B-2 gate Kimi 9.4 (2026-08-13): los NITs de config van SIN dígito de
+        verificación, puntos ni espacios — la ingesta matchea por IGUALDAD EXACTA
+        contra el NIT emisor del documento, así que un NIT decorado jamás
+        deduciría (falla silenciosa de plata). Fail-loud al escribir: este
+        Document es el único camino de escritura (semilla/migraciones/scripts)."""
+        if self.clave not in (ClaveConfig.NIT_RODDOS, ClaveConfig.NIT_AUTECO):
+            return self
+        if not self.valor_json:
+            return self
+        valores = self.valor_json.get("nits")
+        if not isinstance(valores, list):
+            valores = [self.valor_json.get("nit")]
+        for v in valores:
+            if not isinstance(v, str) or not v.isdigit():
+                raise ValueError(
+                    f"NIT inválido en {self.clave.value}: {v!r} — debe ser un "
+                    "string de SOLO dígitos, sin dígito de verificación, puntos "
+                    "ni espacios (la ingesta compara por igualdad exacta)"
+                )
+        return self
+
 
 # --- Semilla real (fechas IVA de RODDOS, NIT 901012622 dígito 2) ---
 # ene–abr → 13-may-26 · may–ago → 10-sep-26 · sep–dic → 14-ene-27

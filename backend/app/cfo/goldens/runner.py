@@ -22,8 +22,14 @@ async def correr_goldens() -> dict:
     async for g in CFOGolden.find_all():
         fn = CONCEPTOS.get(g.concepto)
         if fn is None:
-            fallos.append({"concepto": g.concepto, "esperado": None,
-                           "obtenido": None, "delta": "concepto desconocido"})
+            fallos.append(
+                {
+                    "concepto": g.concepto,
+                    "esperado": None,
+                    "obtenido": None,
+                    "delta": "concepto desconocido",
+                }
+            )
             total += 1
             continue
         r = await fn()
@@ -32,17 +38,35 @@ async def correr_goldens() -> dict:
             if r.disponible is False and r.valor is None:
                 abst_ok += 1
             else:
-                fallos.append({"concepto": g.concepto, "esperado": "abstención",
-                               "obtenido": str(r.valor), "delta": "no abstuvo"})
+                fallos.append(
+                    {
+                        "concepto": g.concepto,
+                        "esperado": "abstención",
+                        "obtenido": str(r.valor),
+                        "delta": "no abstuvo",
+                    }
+                )
             continue
         if r.valor is None:
-            fallos.append({"concepto": g.concepto, "esperado": str(g.valor_esperado),
-                           "obtenido": None, "delta": "sin dato"})
+            fallos.append(
+                {
+                    "concepto": g.concepto,
+                    "esperado": str(g.valor_esperado),
+                    "obtenido": None,
+                    "delta": "sin dato",
+                }
+            )
             continue
         delta = (Decimal(r.valor) - Decimal(g.valor_esperado)).copy_abs()
         if delta <= Decimal(g.tolerancia):
             ok += 1
         else:
-            fallos.append({"concepto": g.concepto, "esperado": str(g.valor_esperado),
-                           "obtenido": str(r.valor), "delta": str(delta)})
+            fallos.append(
+                {
+                    "concepto": g.concepto,
+                    "esperado": str(g.valor_esperado),
+                    "obtenido": str(r.valor),
+                    "delta": str(delta),
+                }
+            )
     return {"total": total, "ok": ok, "fallos": fallos, "abstenciones_ok": abst_ok}

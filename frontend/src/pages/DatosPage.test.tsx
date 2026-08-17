@@ -101,6 +101,9 @@ const MODELO = {
   plazo_semanas: 78,
   matricula: "500000",
   participacion_mix: "1",
+  plan2_plazo_semanas: null,
+  plan2_cuota_semanal: null,
+  peso_plan1: "1",
   activo: true,
   es_sistema: false,
 };

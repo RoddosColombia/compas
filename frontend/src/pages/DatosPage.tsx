@@ -1594,6 +1594,21 @@ const CAMPOS_MODELO: { key: keyof ModeloEditarInput; label: string }[] = [
   { key: "participacion_mix", label: "Participación en ventas (%)" },
 ];
 
+// PLAN-52: campos del segundo plan (vacíos ambos = el modelo vuelve a un solo plan)
+const CAMPOS_PLAN2: {
+  key: keyof ModeloEditarInput;
+  label: string;
+  hint?: string;
+}[] = [
+  { key: "plan2_plazo_semanas", label: "Plan 2 · plazo (semanas)" },
+  { key: "plan2_cuota_semanal", label: "Plan 2 · cuota semanal" },
+  {
+    key: "peso_plan1",
+    label: "Peso del plan 1",
+    hint: "fracción — ej: 0.7 = 70 % de las ventas del modelo al plan 1, el resto al plan 2",
+  },
+];
+
 function EditarModeloDialog({
   m,
   guardando,
@@ -1607,24 +1622,22 @@ function EditarModeloDialog({
   onCerrar: () => void;
   onGuardar: (cambios: ModeloEditarInput) => void;
 }) {
-  const [v, setV] = useState<Record<string, string>>({
-    nombre: m.nombre,
-    cuota_semanal: m.cuota_semanal,
-    cuota_inicial: m.cuota_inicial,
-    plazo_semanas: String(m.plazo_semanas),
-    costo_auteco: m.costo_auteco,
-    precio_venta_con_iva: m.precio_venta_con_iva,
-    participacion_mix: m.participacion_mix,
+  const valores = (mm: ModeloMoto): Record<string, string> => ({
+    nombre: mm.nombre,
+    cuota_semanal: mm.cuota_semanal,
+    cuota_inicial: mm.cuota_inicial,
+    plazo_semanas: String(mm.plazo_semanas),
+    costo_auteco: mm.costo_auteco,
+    precio_venta_con_iva: mm.precio_venta_con_iva,
+    participacion_mix: mm.participacion_mix,
+    plan2_plazo_semanas: mm.plan2_plazo_semanas
+      ? String(mm.plan2_plazo_semanas)
+      : "",
+    plan2_cuota_semanal: mm.plan2_cuota_semanal ?? "",
+    peso_plan1: mm.peso_plan1 ?? "1",
   });
-  const actual: Record<string, string> = {
-    nombre: m.nombre,
-    cuota_semanal: m.cuota_semanal,
-    cuota_inicial: m.cuota_inicial,
-    plazo_semanas: String(m.plazo_semanas),
-    costo_auteco: m.costo_auteco,
-    precio_venta_con_iva: m.precio_venta_con_iva,
-    participacion_mix: m.participacion_mix,
-  };
+  const [v, setV] = useState<Record<string, string>>(valores(m));
+  const actual: Record<string, string> = valores(m);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -1634,6 +1647,25 @@ function EditarModeloDialog({
       if (nuevo !== actual[key]) {
         cambios[key] = key === "plazo_semanas" ? Number(nuevo) : nuevo;
       }
+    }
+    // PLAN-52: los dos campos del plan 2 vacíos = quitar el plan (peso vuelve a 1);
+    // si hay valores, solo viajan los que cambian (el backend valida coherencia).
+    const p2Plazo = (v.plan2_plazo_semanas ?? "").trim();
+    const p2Cuota = (v.plan2_cuota_semanal ?? "").trim();
+    const teniaPlan2 = m.plan2_plazo_semanas !== null;
+    if (!p2Plazo && !p2Cuota) {
+      if (teniaPlan2) cambios.quitar_plan2 = true;
+    } else {
+      if (p2Plazo !== actual.plan2_plazo_semanas) {
+        cambios.plan2_plazo_semanas = Number(p2Plazo);
+      }
+      if (p2Cuota !== actual.plan2_cuota_semanal) {
+        cambios.plan2_cuota_semanal = p2Cuota;
+      }
+    }
+    const peso = (v.peso_plan1 ?? "").trim();
+    if (peso && peso !== actual.peso_plan1 && !cambios.quitar_plan2) {
+      cambios.peso_plan1 = peso;
     }
     onGuardar(cambios as unknown as ModeloEditarInput);
   }
@@ -1658,6 +1690,21 @@ function EditarModeloDialog({
                   c.key === "cuota_inicial" ? CONTRATO_CUOTA_INICIAL : undefined
                 }
                 inputMode={c.key === "nombre" ? undefined : "decimal"}
+                value={v[c.key] ?? ""}
+                onChange={(nv) => setV((s) => ({ ...s, [c.key]: nv }))}
+              />
+            ))}
+          </div>
+          <p className="mt-4 mb-2 font-sans text-apoyo font-semibold tracking-wider text-ink-faint uppercase">
+            Segundo plan de pago (opcional — vacío = un solo plan)
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {CAMPOS_PLAN2.map((c) => (
+              <CampoModelo
+                key={c.key}
+                label={c.label}
+                hint={c.hint}
+                inputMode="decimal"
                 value={v[c.key] ?? ""}
                 onChange={(nv) => setV((s) => ({ ...s, [c.key]: nv }))}
               />
@@ -1707,6 +1754,11 @@ function ModeloFila({
       </td>
       <td className="tabular px-3 py-2 text-right text-ink-soft">
         {formatCOP(m.cuota_semanal)}
+        {m.plan2_cuota_semanal ? (
+          <div className="text-ink-faint">
+            {formatCOP(m.plan2_cuota_semanal)}
+          </div>
+        ) : null}
       </td>
       <td
         className="tabular px-3 py-2 text-right text-ink-soft"
@@ -1716,9 +1768,20 @@ function ModeloFila({
       </td>
       <td className="tabular px-3 py-2 text-right text-ink-soft">
         {m.plazo_semanas} sem
+        {m.plan2_plazo_semanas ? (
+          <div className="text-ink-faint">{m.plan2_plazo_semanas} sem</div>
+        ) : null}
       </td>
       <td className="tabular px-3 py-2 text-right text-ink-soft">
         {m.participacion_mix}
+        {m.plan2_plazo_semanas ? (
+          <div
+            className="text-ink-faint"
+            title={`Reparto entre planes: ${m.peso_plan1} del mix al plan de ${m.plazo_semanas} sem; el resto al de ${m.plan2_plazo_semanas} sem`}
+          >
+            peso {m.peso_plan1}
+          </div>
+        ) : null}
       </td>
       <td className="px-3 py-2">
         <span

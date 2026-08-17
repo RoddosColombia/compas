@@ -443,11 +443,7 @@ function MetaDialog({
   modo: "crear" | "editar";
   mesInicial: string;
   metaInicial: Meta | null;
-  onGuardar: (
-    mes: string,
-    valor: string,
-    lineas: LineaMeta[],
-  ) => Promise<void>;
+  onGuardar: (mes: string, valor: string, lineas: LineaMeta[]) => Promise<void>;
   onCerrar: () => void;
 }) {
   const lineaInicial = (nombre: string) =>

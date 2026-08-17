@@ -41,6 +41,10 @@ class ModeloCrearBody(BaseModel):
     plazo_semanas: int = Field(gt=0)
     matricula: str
     participacion_mix: str
+    # PLAN-52: segundo plan opcional (plazo + cuota juntos) y reparto entre planes
+    plan2_plazo_semanas: int | None = Field(default=None, gt=0)
+    plan2_cuota_semanal: str | None = None
+    peso_plan1: str = "1"
 
 
 class ModeloEditarBody(BaseModel):
@@ -49,6 +53,8 @@ class ModeloEditarBody(BaseModel):
     nombre: str | None = Field(default=None, min_length=1, max_length=60)
     orden: int | None = None
     plazo_semanas: int | None = Field(default=None, gt=0)
+    plan2_plazo_semanas: int | None = Field(default=None, gt=0)
+    quitar_plan2: bool = False  # PLAN-52: vuelve a un solo plan (peso regresa a 1)
     activo: bool | None = None  # solo true (reactivar, B-3); false → 422
     costo_auteco: str | None = None
     precio_venta_con_iva: str | None = None
@@ -56,6 +62,8 @@ class ModeloEditarBody(BaseModel):
     cuota_semanal: str | None = None
     matricula: str | None = None
     participacion_mix: str | None = None
+    plan2_cuota_semanal: str | None = None
+    peso_plan1: str | None = None
 
 
 def _serializar(m: ModeloMoto) -> dict:
@@ -69,6 +77,11 @@ def _serializar(m: ModeloMoto) -> dict:
         "plazo_semanas": m.plazo_semanas,
         "matricula": str(m.matricula),
         "participacion_mix": str(m.participacion_mix),
+        "plan2_plazo_semanas": m.plan2_plazo_semanas,
+        "plan2_cuota_semanal": (
+            str(m.plan2_cuota_semanal) if m.plan2_cuota_semanal is not None else None
+        ),
+        "peso_plan1": str(m.peso_plan1),
         "orden": m.orden,
         "activo": m.activo,
         "es_sistema": m.es_sistema,
@@ -103,6 +116,13 @@ async def crear(
             matricula=_dec(body.matricula, "matricula"),
             participacion_mix=_dec(body.participacion_mix, "participacion_mix"),
             usuario_id=user.id,
+            plan2_plazo_semanas=body.plan2_plazo_semanas,
+            plan2_cuota_semanal=(
+                _dec(body.plan2_cuota_semanal, "plan2_cuota_semanal")
+                if body.plan2_cuota_semanal is not None
+                else None
+            ),
+            peso_plan1=_dec(body.peso_plan1, "peso_plan1"),
         )
     except service.ModelosMotoError as e:
         raise HTTPException(e.status, e.detalle) from e
@@ -128,6 +148,8 @@ async def editar(
             nombre=body.nombre,
             orden=body.orden,
             plazo_semanas=body.plazo_semanas,
+            plan2_plazo_semanas=body.plan2_plazo_semanas,
+            quitar_plan2=body.quitar_plan2,
             activo=body.activo,
             campos_money=campos_money or None,
         )

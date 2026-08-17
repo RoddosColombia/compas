@@ -110,7 +110,8 @@ describe("TablaEgreso — V1 §3", () => {
     // el ajuste se muestra (negativo) y la fila reconcilia a la vista:
     // 145.640.000 + 43.531.000 + (−9.080.208) = 180.090.792 = Ingreso
     expect(
-      screen.getAllByText((t) => t.replace(/\s/g, " ") === "-$ 9.080.208").length,
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "-$ 9.080.208")
+        .length,
     ).toBeGreaterThan(0);
     expect(
       screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 180.090.792")

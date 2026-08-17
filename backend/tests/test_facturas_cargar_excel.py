@@ -251,9 +251,7 @@ async def test_encabezados_desconocidos_falla_listando(api):
     """Regla 7: si el archivo real de la DIAN trae otros encabezados, el error DEBE
     listar esperado vs encontrado — ese mensaje es el punto de calibración."""
     h = await _token(api)
-    r = await _cargar(
-        api, h, _xlsx([_fila()], encabezados=["Col A", "Col B", "Col C"])
-    )
+    r = await _cargar(api, h, _xlsx([_fila()], encabezados=["Col A", "Col B", "Col C"]))
     assert r.status_code == 422
     assert "encabezados" in r.json()["detail"].lower()
     assert "cufe" in r.json()["detail"].lower()  # dice qué esperaba

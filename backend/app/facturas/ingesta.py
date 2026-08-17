@@ -411,9 +411,7 @@ async def procesar_lote(archivos: list[UploadFile], *, usuario_id: str) -> dict:
     return {"resultados": resultados, "resumen": resumen}
 
 
-async def procesar_lote_excel(
-    contenido: bytes, *, usuario_id: str
-) -> dict:
+async def procesar_lote_excel(contenido: bytes, *, usuario_id: str) -> dict:
     """C2' — import masivo del Excel de documentos recibidos del portal DIAN.
     Resultado POR FILA con los mismos estados del lote PDF (el frontend pinta
     ambos con el mismo componente); `EncabezadosNoReconocidos` sube al router
