@@ -65,6 +65,44 @@ def test_umbral_no_admite_float():
         )
 
 
+# ---- B-2 gate Kimi 9.4 (2026-08-13): NITs de config = SOLO dígitos ----
+# Un NIT con guión, espacios o dígito de verificación jamás matchearía la
+# igualdad exacta de la ingesta → deducción perdida en silencio. Fail-loud al
+# ESCRIBIR la config (este Document es el único camino de escritura: semilla,
+# migraciones y scripts construyen Configuracion).
+
+
+def test_nit_config_solo_digitos_ok():
+    c = Configuracion(
+        clave="NIT_AUTECO",
+        valor_json={"nits": ["860024781", "890900317"]},
+        vigente_desde="2026-01-01",
+    )
+    assert c.valor_json["nits"] == ["860024781", "890900317"]
+    c2 = Configuracion(
+        clave="NIT_RODDOS",
+        valor_json={"nit": "901012622"},
+        vigente_desde="2026-01-01",
+    )
+    assert c2.valor_json["nit"] == "901012622"
+
+
+@pytest.mark.parametrize(
+    "valor_json",
+    [
+        {"nit": "901012622-1"},  # con dígito de verificación
+        {"nit": "901 012 622"},  # con espacios
+        {"nits": ["860024781", "890.900.317"]},  # con puntos en la lista
+        {"nits": ["860024781", ""]},  # vacío en la lista
+        {"nit": ""},  # vacío
+    ],
+)
+def test_nit_config_malformado_falla_al_escribir(valor_json):
+    clave = "NIT_AUTECO" if "nits" in valor_json else "NIT_RODDOS"
+    with pytest.raises(ValidationError):
+        Configuracion(clave=clave, valor_json=valor_json, vigente_desde="2026-01-01")
+
+
 # ---- Semilla ----
 
 
