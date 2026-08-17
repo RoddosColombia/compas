@@ -163,6 +163,17 @@ def test_cifra_en_formato_wire_tambien_se_rechaza():
     assert v.ok is False
 
 
+def test_bare_digit_inventado_se_atrapa():
+    # cifra fabricada en dígitos pelados (sin $, sin separadores, >=5 dígitos) →
+    # cruda → rechazo. Ningún otro caso de la batería ejercita esta rama de
+    # `_es_monto` (todos usan '$' o un separador, que la cortocircuitan antes):
+    # sin este caso, un monto fabricado en esta forma exacta no tendría cobertura
+    # de que SÍ se atrapa.
+    v = verificar("Tu caja es 950000000.", [_caja()])
+    assert v.ok is False
+    assert any("950000000" in c for c in v.cifras_sin_evidencia)
+
+
 def test_numero_sin_formato_de_dinero_no_se_marca():
     # un nº de cuenta pelado y corto no es un monto (sin '$'/separador y menos de 5
     # dígitos): no debe generar un falso positivo. Sesgo conservador del módulo: no

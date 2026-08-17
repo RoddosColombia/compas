@@ -17,6 +17,19 @@ IVA mal-etiquetada como caja pasaba si el VALOR caía en tolerancia de CUALQUIER
 ResultadoCFO en COP del turno. Ahora el modelo no puede mal-etiquetar un valor porque
 no escribe valores — solo cita conceptos, y el concepto sí se valida.
 
+Huecos de detección residuales (aceptados, sin cambio respecto a inc2 — a diferencia
+de los porcentajes, que YA NO son un hueco: se atrapan siempre, ver `_RE_PORCENTAJE`
+arriba): el contrato de este módulo es "ninguna cifra cruda DETECTADA + tokens
+válidos", no una garantía matemática contra toda forma de número. Los regex de
+`extraer_cifras` no parsean (b) un entero pelado de MENOS de 5 dígitos sin separador
+(`"500"` en vez de `"$500"`, ver `_es_monto`) ni (c) números en palabras (`"mil
+millones"`, `"cien mil"`) — solo dígitos, con separador o pelados de 5+. Tampoco se
+caza la aritmética hecha en prosa sin cifra ("el doble de tu caja", "bastante más
+que ayer"): no hay número que capturar. La mitigación de los tres es la misma que en
+inc2 — la regla #1 del prompt (el modelo no calcula ni extrapola) y la abstención
+honesta — no un regex más agresivo; quedan como radar del piloto para una eventual
+CR de "verificación concept-aware" con más rigor antes de encender la compuerta.
+
 Nota de formato "wire" (verificado empíricamente contra `caja.py`/`runway.py`/
 `iva.py` + `tools.resultado_a_dict`, ronda 2 de revisión — corrige el supuesto de la
 ronda 1, que asumía dígitos pelados SIN decimales): las 3 tools construyen `valor`
