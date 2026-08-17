@@ -1,0 +1,53 @@
+from datetime import date
+from decimal import Decimal
+
+from app.cfo.agente.conceptos import CONCEPTOS_CITABLES, formatear, sustituir_tokens
+from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
+
+
+def _r(concepto, valor, unidad, fecha):
+    return ResultadoCFO(
+        concepto=concepto,
+        valor=valor,
+        unidad=unidad,
+        disponible=True,
+        evidencia=Evidencia(fuente="f", fecha_corte=fecha, ref="x"),
+    )
+
+
+def test_citables():
+    assert CONCEPTOS_CITABLES == frozenset({"caja_hoy", "runway", "iva_cuatrimestre"})
+
+
+def test_formatear_caja_money_es_co_con_fecha():
+    r = _r("caja_hoy", Decimal("704722003.00"), "COP", "2026-08-11")
+    assert formatear(r) == "$704.722.003 (al 2026-08-11)"
+
+
+def test_formatear_runway_meses_coma():
+    r = _r("runway", Decimal("4.20"), "meses", None)
+    assert formatear(r) == "4,2 meses"
+
+
+def test_formatear_iva_vencimiento_y_dias():
+    r = _r("iva_cuatrimestre", Decimal("36204698.10"), "COP", "2026-09-10")
+    # hoy fijo para que 'en N días' sea determinista
+    assert formatear(r, hoy=date(2026, 8, 17)) == (
+        "$36.204.698 (vence el 2026-09-10, en 24 días)"
+    )
+
+
+def test_sustituir_multiple():
+    caja = _r("caja_hoy", Decimal("704722003.00"), "COP", "2026-08-11")
+    iva = _r("iva_cuatrimestre", Decimal("36204698.10"), "COP", "2026-09-10")
+    texto = "Tu caja es [[caja_hoy]] y el IVA es [[iva_cuatrimestre]]."
+    out = sustituir_tokens(texto, [caja, iva], hoy=date(2026, 8, 17))
+    assert out == (
+        "Tu caja es $704.722.003 (al 2026-08-11) y el IVA es "
+        "$36.204.698 (vence el 2026-09-10, en 24 días)."
+    )
+
+
+def test_sustituir_token_desconocido_se_deja_igual():
+    # defensivo: verificar ya garantiza validez; un token sin resultado se deja tal cual
+    assert sustituir_tokens("x [[ventas]] y", []) == "x [[ventas]] y"
