@@ -148,3 +148,21 @@ async def test_ruta_ausente_si_flag_apagado_al_construir_la_app(monkeypatch):
     assert r.status_code == 404
     assert r.json() == {"detail": "Not Found"}
     get_settings.cache_clear()
+
+
+def test_flag_off_no_monta_router_en_app_routes(monkeypatch):
+    """T12 (cierre inc2) · flag-off = COMPAS byte-idéntico: verificación
+    ESTRUCTURAL, no solo conductual — con CFO_ENABLED ausente/false,
+    create_app() no debe registrar /api/v1/cfo en app.routes en absoluto (el
+    router nunca se incluye; no es que responda 404, es que la ruta no existe
+    como tal). Complementa la prueba conductual de arriba (barrera 1)."""
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("JWT_SECRET", "x" * 40)
+    monkeypatch.delenv("CFO_ENABLED", raising=False)
+    get_settings.cache_clear()
+
+    app = create_app()
+    rutas = {r.path for r in app.routes}
+    assert "/api/v1/cfo" not in rutas
+
+    get_settings.cache_clear()

@@ -1,13 +1,16 @@
-"""S1: cfo/calc y cfo/goldens NO importan modelos de dominio ajenos ni tocan el driver
-de Mongo; la única subruta que persiste es cfo/datos/repositorios.py y solo cfo_*."""
+"""S1: cfo/calc, cfo/goldens, cfo/agente y cfo/router.py NO importan modelos de
+dominio ajenos ni tocan el driver de Mongo; la única subruta que persiste es
+cfo/datos/repositorios.py y solo cfo_*."""
 
 import pathlib
 import re
 
 CFO = pathlib.Path(__file__).resolve().parents[2] / "app" / "cfo"
 
-# Subrutas que NO pueden tocar Mongo directamente ni importar modelos de dominio ajenos.
-LOGICA = [CFO / "calc", CFO / "goldens"]
+# Subrutas/archivos que NO pueden tocar Mongo directamente ni importar modelos de
+# dominio ajenos. inc2 (FABS) añade agente/ (loop LLM<->tools) y router.py (endpoint):
+# ninguno de los dos persiste ni conoce dominio ajeno, solo leen vía cfo/datos.
+LOGICA = [CFO / "calc", CFO / "goldens", CFO / "agente", CFO / "router.py"]
 PROHIBIDO_IMPORT = re.compile(
     r"from app\.domain\.(?!__init__)"
 )  # modelos de dominio ajenos
@@ -15,6 +18,9 @@ PROHIBIDO_DRIVER = re.compile(r"get_pymongo_collection|motor|AsyncIOMotor")
 
 
 def _py_files(base):
+    # LOGICA mezcla directorios (calc/goldens/agente) y un archivo suelto (router.py).
+    if base.is_file():
+        return [] if base.name == "__init__.py" else [base]
     return [p for p in base.rglob("*.py") if p.name != "__init__.py"]
 
 
