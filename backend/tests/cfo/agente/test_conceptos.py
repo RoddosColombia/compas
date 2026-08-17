@@ -37,6 +37,14 @@ def test_formatear_iva_vencimiento_y_dias():
     )
 
 
+def test_formatear_iva_usa_today_bogota_cuando_hoy_es_none(monkeypatch):
+    import app.cfo.agente.conceptos as c
+
+    monkeypatch.setattr(c, "today_bogota", lambda: date(2026, 8, 17))
+    r = _r("iva_cuatrimestre", Decimal("36204698.10"), "COP", "2026-09-10")
+    assert formatear(r) == "$36.204.698 (vence el 2026-09-10, en 24 días)"
+
+
 def test_sustituir_multiple():
     caja = _r("caja_hoy", Decimal("704722003.00"), "COP", "2026-08-11")
     iva = _r("iva_cuatrimestre", Decimal("36204698.10"), "COP", "2026-09-10")
