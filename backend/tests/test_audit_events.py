@@ -15,13 +15,16 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_64_eventos():
+def test_catalogo_tiene_exactamente_66_eventos():
     # 59 + factura_obligacion.pagada (D2 §7, GO CEO 2026-08-04)
     # + transaccion.dividida + transaccion.division_deshecha (PTS6-B, CR división de
     #   clasificación, GO CEO 2026-08-10) = 62
-    # + cfo.consulta + cfo.respuesta (CR-CFO-1, FABS incremento 2, GO CEO 2026-08-11).
-    assert len(AuditEvento) == 64
-    assert len(CATALOGO_EVENTOS) == 64
+    # + cfo.consulta + cfo.respuesta (CR-CFO-1, FABS incremento 2,
+    #   GO CEO 2026-08-11) = 64
+    # + cfo.vinculo_creado + cfo.vinculo_eliminado (CR-CFO-2, FABS inc3 Pieza B —
+    #   canal Telegram, GO CEO 2026-08-17) = 66.
+    assert len(AuditEvento) == 66
+    assert len(CATALOGO_EVENTOS) == 66
     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
     assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
     assert AuditEvento.transaccion_dividida.value == "transaccion.dividida"
@@ -31,6 +34,8 @@ def test_catalogo_tiene_exactamente_64_eventos():
     )
     assert "cfo.consulta" in CATALOGO_EVENTOS
     assert "cfo.respuesta" in CATALOGO_EVENTOS
+    assert "cfo.vinculo_creado" in CATALOGO_EVENTOS
+    assert "cfo.vinculo_eliminado" in CATALOGO_EVENTOS
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():

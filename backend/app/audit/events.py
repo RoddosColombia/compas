@@ -139,6 +139,13 @@ class AuditEvento(StrEnum):
     cfo_consulta = "cfo.consulta"
     cfo_respuesta = "cfo.respuesta"
 
+    # ── CR-CFO-2 (2) — FABS inc3 Pieza B (canal Telegram, GO CEO 2026-08-17) ──
+    # Alta/baja del vínculo telegram_id↔user_id (allowlist, solo admin). El Q&A por
+    # Telegram REUSA cfo.consulta/cfo.respuesta con metadata.canal="telegram" — sin
+    # eventos nuevos para eso. Catálogo 64 -> 66.
+    cfo_vinculo_creado = "cfo.vinculo_creado"
+    cfo_vinculo_eliminado = "cfo.vinculo_eliminado"
+
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)
