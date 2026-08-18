@@ -59,3 +59,14 @@ def test_sustituir_multiple():
 def test_sustituir_token_desconocido_se_deja_igual():
     # defensivo: verificar ya garantiza validez; un token sin resultado se deja tal cual
     assert sustituir_tokens("x [[ventas]] y", []) == "x [[ventas]] y"
+
+
+def test_sustituir_token_con_espacios_se_resuelve():
+    # RE_TOKEN (hardening FINAL-REVIEW) es tolerante a espacios internos: un token
+    # como "[[ caja_hoy ]]" debe sustituirse igual que "[[caja_hoy]]" — antes del
+    # fix ninguna de las dos regex (verificador/conceptos, antes duplicadas) lo
+    # reconocía, así que el placeholder crudo se filtraba tal cual al usuario.
+    caja = _r("caja_hoy", Decimal("704722003.00"), "COP", "2026-08-11")
+    out = sustituir_tokens("Caja: [[ caja_hoy ]].", [caja], hoy=date(2026, 8, 17))
+    assert out == "Caja: $704.722.003 (al 2026-08-11)."
+    assert "[[" not in out

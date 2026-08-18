@@ -16,7 +16,14 @@ CONCEPTOS_CITABLES: frozenset[str] = frozenset(
     {"caja_hoy", "runway", "iva_cuatrimestre"}
 )
 
-_RE_TOKEN = re.compile(r"\[\[(\w+)\]\]")
+# Compartida con verificador.py (import directo, NUNCA redefinir ahí): ambos deben
+# reconocer EXACTAMENTE el mismo token o se abre un hueco — verificado-pero-no-
+# sustituido (fuga de placeholder) o sustituido-pero-no-verificado (hueco de
+# seguridad real). Tolerante a espacios internos ("[[ caja_hoy ]]") — hardening
+# FINAL-REVIEW: sin '\s*' un token espaciado no calzaba en NINGUNA de las dos regex
+# (antes duplicadas), así que pasaba el veredicto (nada que marcar inválido) y
+# además se filtraba crudo al usuario (nada que sustituir).
+RE_TOKEN = re.compile(r"\[\[\s*(\w+)\s*\]\]")
 
 
 def _money_es(d: Decimal) -> str:
@@ -55,4 +62,4 @@ def sustituir_tokens(
         r = por_concepto.get(m.group(1))
         return formatear(r, hoy) if r is not None else m.group(0)
 
-    return _RE_TOKEN.sub(_repl, texto)
+    return RE_TOKEN.sub(_repl, texto)

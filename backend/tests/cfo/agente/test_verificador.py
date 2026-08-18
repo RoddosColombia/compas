@@ -85,6 +85,29 @@ def test_token_de_concepto_no_disponible_se_rechaza():
     assert "[[runway]]" in v.tokens_invalidos
 
 
+def test_token_valido_con_espacios_se_reconoce():
+    # RE_TOKEN (compartido con conceptos.sustituir_tokens, hardening FINAL-REVIEW)
+    # es tolerante a espacios internos: "[[ caja_hoy ]]" debe reconocerse como
+    # token válido igual que "[[caja_hoy]]". Antes del fix, la regex sin '\s*' no
+    # lo reconocía como token EN ABSOLUTO (ni válido ni inválido) — pasaba el
+    # veredicto por accidente (no había nada que marcar como inválido) pero luego
+    # conceptos.sustituir_tokens tampoco lo sustituía: el placeholder crudo se
+    # filtraba al usuario pese a ok=True.
+    v = verificar("Tu caja es [[ caja_hoy ]].", [_caja()])
+    assert v.ok is True
+    assert v.cifras_sin_evidencia == [] and v.tokens_invalidos == []
+
+
+def test_token_invalido_con_espacios_tambien_se_rechaza():
+    # a diferencia del caso anterior, este SÍ distingue pre/post-fix: un concepto
+    # inexistente con espacios debe rechazarse igual que sin espacios. Antes del
+    # fix no se reconocía como token en absoluto, así que no caía en
+    # tokens_invalidos y el veredicto pasaba ok=True indebidamente.
+    v = verificar("Las ventas fueron [[ ventas ]].", [_caja()])
+    assert v.ok is False
+    assert "[[ ventas ]]" in v.tokens_invalidos
+
+
 def test_porcentaje_crudo_se_rechaza():
     # COMPAS no tiene concepto de "porcentaje": ninguna tool lo calcula ni lo
     # devuelve, así que un % en la respuesta es siempre auto-cálculo del modelo.

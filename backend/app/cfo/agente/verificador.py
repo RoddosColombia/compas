@@ -48,6 +48,7 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from app.cfo.agente.conceptos import RE_TOKEN
 from app.cfo.calc.evidencia import ResultadoCFO
 
 # Un "número" = corrida de dígitos con posibles separadores . , y $ opcional.
@@ -60,8 +61,10 @@ _RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
 # #1 (ver su uso en `extraer_cifras`, FIX 1 FINAL-REVIEW inc2).
 _RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
 # Cita de concepto: [[caja_hoy]] / [[runway]] / [[iva_cuatrimestre]]. El modelo cita,
-# no escribe números (inc3 Pieza A).
-_RE_TOKEN = re.compile(r"\[\[(\w+)\]\]")
+# no escribe números (inc3 Pieza A). RE_TOKEN vive en conceptos.py (import directo,
+# NUNCA redefinir aquí): debe ser BYTE-IDÉNTICA a la que usa sustituir_tokens, o un
+# token válido para uno queda inválido/sin sustituir para el otro (fuga de
+# placeholder o hueco de seguridad, ver docstring de RE_TOKEN en conceptos.py).
 
 
 def _a_decimal_cop(token: str) -> Decimal | None:
@@ -168,7 +171,7 @@ def verificar(texto: str, resultados: list[ResultadoCFO]) -> Veredicto:
         r.concepto for r in resultados if r.disponible and r.valor is not None
     }
     tokens_invalidos = [
-        m.group(0) for m in _RE_TOKEN.finditer(texto) if m.group(1) not in disponibles
+        m.group(0) for m in RE_TOKEN.finditer(texto) if m.group(1) not in disponibles
     ]
     ok = not crudas and not tokens_invalidos
     return Veredicto(
