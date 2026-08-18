@@ -44,13 +44,14 @@ app/main.py                  montar el router telegram SOLO si cfo_enabled()
 - Tests con un `ClienteTelegramFake` (registra los envíos; sin red).
 
 ### 3.2 Allowlist + vínculos (`modelos.py`, `repositorio.py`, `vinculos.py`)
-- `VinculoTelegram(Document)`: `telegram_id: int` (índice **único**), `user_id: str`, `creado_por: str`, `creado_at: datetime`. Colección `cfo_vinculos_telegram`.
+- `VinculoTelegram(Document)`: `telegram_id: int` (índice **único**), `user_id: str` (índice **único** también), `creado_por: str`, `creado_at: datetime`. Colección `cfo_vinculos_telegram`.
+- **B-3 (decisión documentada):** el vínculo es **uno-a-uno** — único en `telegram_id` Y en `user_id`. Una persona tiene una sola cuenta de Telegram (un `telegram_id` por cuenta, en todos sus dispositivos), y para el piloto no hay razón para dos cuentas por usuario. Vincular un `telegram_id`/`user_id` ya vinculado → error claro (el admin debe desvincular primero). Si en el futuro un usuario necesita 2 cuentas, se relaja el único de `user_id`.
 - `repositorio.py`: `crear_vinculo`, `eliminar_vinculo`, `resolver_usuario(telegram_id) -> str | None` (única puerta de escritura/lectura, S1).
 - `vinculos.py`: la lógica (validar el `user_id` existe y está activo antes de vincular; resolver).
 - **Endpoint admin** (`router.py`): `POST /api/v1/cfo/telegram/vinculos` `{telegram_id, user_id}` (`require_role(Role.admin)`) → crea + audita `cfo.vinculo_creado`; `GET` lista; `DELETE /{telegram_id}` → audita `cfo.vinculo_eliminado`. Body strict.
 
 ### 3.3 Hilos (`modelos.py`, `repositorio.py`) — guardan TOKENS, no valores (el punto clave)
-- `HiloCFO(Document)`: `user_id: str` (índice único), `turnos: list[dict]` (`{"rol": "user"|"assistant", "contenido": str}`), `actualizado_at: datetime`. Colección `cfo_hilos`.
+- `HiloCFO(Document)`: `user_id: str` (índice único), `turnos: list[dict]` (`{"rol": "user"|"assistant", "contenido": str}`), `ultimo_update_id: int | None`, `ultimo_envio: str | None` (para el dedup B-1/B-2, §3.5), `actualizado_at: datetime`. Colección `cfo_hilos`.
 - **Qué se guarda:** por turno, `{user: pregunta}` + `{assistant: texto_crudo}` — el `texto_crudo` es la respuesta del modelo **ANTES de sustituir** (con `[[tokens]]`, sin valores). Así, al re-alimentar el historial, el modelo ve su propia cita `[[caja_hoy]]`, **nunca el número** → no puede re-exponer ni comparar cifras (la garantía de Pieza A se mantiene entre turnos).
 - **Ventana acotada (costo):** al construir el historial para el loop se toman los **últimos `cfo_hilo_ventana` turnos** (default configurable, p.ej. 8 mensajes). El hilo **persiste completo** (o hasta un máximo alto); **sin TTL naïve** (no expira por reloj). Reset de hilo = fuera de alcance del piloto (comando futuro).
 
@@ -71,7 +72,7 @@ app/main.py                  montar el router telegram SOLO si cfo_enabled()
 8. Formatear la respuesta: `resp.texto` (narración sustituida) + un bloque **"Cifras (con su fuente)"** con las `resp.cifras` concept-bound (la mitigación de Pieza A: las cifras autoritativas al lado). Abstención → solo el texto.
 9. `cliente_telegram.enviar(chat_id, respuesta)` → **200** (Telegram espera 200; procesamiento síncrono es aceptable para el piloto de 3 personas).
 
-**Radar del piloto (idempotencia):** Telegram **reintenta** el mismo update (mismo `update_id`) si el webhook no responde 200 a tiempo. Con la llamada al LLM síncrona (2-10 s) rara vez pasa, pero si pasa habría doble respuesta + doble turno en el hilo. Mitigación barata incluida: **antes de procesar, si el último turno `user` del hilo es idéntico a esta `pregunta`, se ignora** (dedup de duplicados adyacentes). Un fast-200 + proceso async es un refinamiento posterior (no en el piloto).
+**Idempotencia — dedup por `update_id` (B-1/B-2 del gate, NO por texto):** Telegram **reintenta** el mismo update (mismo `update_id`) si el webhook no responde 200 a tiempo. La dedup correcta es por `update_id`, no por "texto idéntico" — preguntar "¿cuál es mi caja?" dos veces seguidas es legítimo y debe responderse fresco. Mecánica: `HiloCFO` guarda `ultimo_update_id` + `ultimo_envio` (la última respuesta enviada). En el paso 5, **si `update.update_id == hilo.ultimo_update_id`** (ya procesado, es un reintento) → **reenvía `ultimo_envio`** (no procesa de nuevo, no llama al LLM, **no es silencioso** — B-2) y 200. Si es nuevo → procesa (pasos 6-8) y guarda `ultimo_update_id` + la respuesta enviada. Un `update_id` es monotónico por bot, así que basta comparar con el último. (Un fast-200 + proceso async es refinamiento posterior, no en el piloto.)
 
 ## 4. Config (`app/cfo/config.py`)
 - `telegram_bot_token() -> str | None` (env `TELEGRAM_BOT_TOKEN`; None ⇒ cliente None).
@@ -106,11 +107,13 @@ El Q&A **reusa** `cfo.consulta`/`cfo.respuesta` (ya en el catálogo) con `metada
 
 ## 9. DoD
 1. Webhook seguro (secret verificado), reactivo, responde 200; no-vinculado rehúsa sin llamar al servicio.
-2. Vínculo por endpoint admin (RBAC admin + auditoría CR-CFO-2); allowlist en `cfo_*`.
+2. Vínculo por endpoint admin (RBAC admin + auditoría CR-CFO-2); allowlist en `cfo_*`; **uno-a-uno (único en telegram_id y user_id, B-3)**.
 3. Hilos guardan tokens (no valores) y la garantía de Pieza A se mantiene entre turnos (test explícito); ventana acotada; sin TTL naïve.
-4. Servicio extendido aditivamente (historial + texto_crudo); el endpoint `/api/v1/cfo` de inc2 sin cambio de comportamiento.
-5. Flag-off ⇒ COMPAS idéntico; `motor.py` 0 diffs; S1 cubre telegram/; Decimal/cero float; ruff; suite verde. Todo con mocks (sin tokens/key).
-6. Roadmap + paquete Kimi de código (`planning/phases/fabs/auditorias/INC3B-I/`).
+4. **Dedup por `update_id` (B-1)**, no por texto; reintento → reenvía `ultimo_envio` (no silencioso, B-2), sin re-llamar al LLM (test).
+5. Servicio extendido aditivamente (historial + texto_crudo); el endpoint `/api/v1/cfo` de inc2 sin cambio de comportamiento.
+6. `cfo.vinculo_creado`/`cfo.vinculo_eliminado` al catálogo — **verificar el conteo real primero** (inc2 CR-CFO-1 lo dejó en 64; +2 ⇒ 66; ajustar el test de completitud como haga falta, lección del drift de inc2).
+7. Flag-off ⇒ COMPAS idéntico; `motor.py` 0 diffs; S1 cubre telegram/; Decimal/cero float; ruff; suite verde. Todo con mocks (sin tokens/key).
+8. Roadmap + paquete Kimi de código en `planning/phases/fabs/auditorias/INC3B-I/`. **La EVIDENCIA EMBEBE el diff COMPLETO pegado** (el repo es privado; Kimi verifica contra el texto del PDF, no contra GitHub) — requisito de gobernanza del gate.
 
 ---
 *Pieza B de inc3. Ante conflicto de alcance mandan `COMPAS_NORTE.md`, `CLAUDE.md`, el roadmap de FABS. El flag sigue apagado hasta el go-live (§8) + decisión del CEO.*
