@@ -1,0 +1,1027 @@
+diff --git a/backend/app/cfo/agente/conceptos.py b/backend/app/cfo/agente/conceptos.py
+new file mode 100644
+index 0000000..b20a4a9
+--- /dev/null
++++ b/backend/app/cfo/agente/conceptos.py
+@@ -0,0 +1,65 @@
++"""FABS · conceptos citables + formateo server-bound + sustitución de tokens.
++
++El modelo cita conceptos con `[[concepto]]` (sin ver valores); tras verificar, el
++servicio sustituye cada token por el valor concept-bound, ya formateado es-CO y con
++el contexto interpretativo que COMPAS computa (runway=duración; IVA=vencimiento+días,
++D-1 del gate de diseño). Money=Decimal, formateo con `decimal`/`int`, cero float."""
++
++import re
++from datetime import date
++from decimal import Decimal
++
++from app.cfo.calc.evidencia import ResultadoCFO
++from app.core.time import today_bogota
++
++CONCEPTOS_CITABLES: frozenset[str] = frozenset(
++    {"caja_hoy", "runway", "iva_cuatrimestre"}
++)
++
++# Compartida con verificador.py (import directo, NUNCA redefinir ahí): ambos deben
++# reconocer EXACTAMENTE el mismo token o se abre un hueco — verificado-pero-no-
++# sustituido (fuga de placeholder) o sustituido-pero-no-verificado (hueco de
++# seguridad real). Tolerante a espacios internos ("[[ caja_hoy ]]") — hardening
++# FINAL-REVIEW: sin '\s*' un token espaciado no calzaba en NINGUNA de las dos regex
++# (antes duplicadas), así que pasaba el veredicto (nada que marcar inválido) y
++# además se filtraba crudo al usuario (nada que sustituir).
++RE_TOKEN = re.compile(r"\[\[\s*(\w+)\s*\]\]")
++
++
++def _money_es(d: Decimal) -> str:
++    # COP para display: parte entera con separador de miles es-CO ('.'), sin centavos.
++    entero = int(d)
++    return "$" + f"{entero:,}".replace(",", ".")
++
++
++def _meses_es(d: Decimal) -> str:
++    return f"{d:.1f}".replace(".", ",") + " meses"
++
++
++def formatear(r: ResultadoCFO, hoy: date | None = None) -> str:
++    """Valor concept-bound listo para prosa, con su contexto server-bound."""
++    if r.concepto == "runway":
++        return _meses_es(r.valor)
++    base = _money_es(r.valor)
++    fecha = r.evidencia.fecha_corte
++    if r.concepto == "iva_cuatrimestre":
++        if fecha:
++            dias = (date.fromisoformat(fecha) - (hoy or today_bogota())).days
++            return f"{base} (vence el {fecha}, en {dias} días)"
++        return base
++    # caja_hoy (y cualquier otro COP con fecha de corte)
++    return f"{base} (al {fecha})" if fecha else base
++
++
++def sustituir_tokens(
++    texto: str, resultados: list[ResultadoCFO], hoy: date | None = None
++) -> str:
++    por_concepto = {
++        r.concepto: r for r in resultados if r.disponible and r.valor is not None
++    }
++
++    def _repl(m: re.Match) -> str:
++        r = por_concepto.get(m.group(1))
++        return formatear(r, hoy) if r is not None else m.group(0)
++
++    return RE_TOKEN.sub(_repl, texto)
+diff --git a/backend/app/cfo/agente/prompt.py b/backend/app/cfo/agente/prompt.py
+index 7d371be..e387a70 100644
+--- a/backend/app/cfo/agente/prompt.py
++++ b/backend/app/cfo/agente/prompt.py
+@@ -1,34 +1,51 @@
+ # backend/app/cfo/agente/prompt.py
+-"""FABS · system prompt. Codifica la regla #1: el modelo NUNCA calcula ni inventa;
+-solo narra los valores que devuelven las herramientas, con su fecha de corte; si un
+-dato no está disponible, se abstiene honestamente."""
++"""FABS · system prompt (inc3 Pieza A: citacion estructurada por concepto). Codifica
++la regla #1: el modelo NUNCA escribe, calcula ni estima una cifra el mismo -- cita
++cada concepto con su TOKEN [[concepto]] (sin espacios) y el sistema sustituye el
++token por el valor real, con su fecha de corte, DESPUES de verificar la respuesta
++(ver app.cfo.agente.verificador). Si un concepto no esta disponible este turno, el
++modelo se abstiene honestamente en vez de citarlo."""
+ 
+ SYSTEM_PROMPT = (
+     "Eres FABS, el analista financiero de IA de RODDOS S.A.S. Complementas al CFO "
+     "humano; no lo reemplazas. Respondes en español, claro y conciso.\n\n"
+     "REGLAS INQUEBRANTABLES:\n"
+-    "1. NUNCA calculas, sumas, estimas ni extrapolas cifras. Toda cifra que menciones "
+-    "debe provenir LITERALMENTE del resultado de una herramienta. Si necesitas un "
+-    "número, llama la herramienta correspondiente.\n"
+-    "2. Cada herramienta devuelve un valor con su evidencia (fuente + fecha de corte). "
+-    "Al dar una cifra, menciona su fecha de corte.\n"
+-    "3. Si una herramienta responde disponible=false, NO inventes un número: "
+-    "abstente honestamente ('con los datos disponibles no puedo confirmar X'). "
+-    "Jamás un $0 falso.\n"
+-    "4. Si la pregunta requiere algo para lo que no tienes herramienta, dilo con "
++    "1. NUNCA calcules, sumes, estimes ni extrapoles cifras (montos, meses, "
++    "porcentajes). Ninguna cifra sale de tu propia cabeza: toda cifra viene de una "
++    "herramienta.\n"
++    "2. NUNCA escribas una cifra directamente en tu respuesta. Para mencionar "
++    "cualquier número, cita su TOKEN DE CONCEPTO entre dobles corchetes, "
++    "EXACTAMENTE así y SIN espacios dentro de los corchetes: [[caja_hoy]], "
++    "[[runway]], [[iva_cuatrimestre]]. Un token mal escrito como [[ caja_hoy ]] "
++    "(con espacios) no se reconoce: el verificador y el sustituidor buscan el "
++    "token pegado, y uno con espacios se filtra crudo, sin reemplazar, hacia el "
++    "usuario. El sistema reemplaza cada token por el valor real, con su fecha de "
++    "corte, después de verificar tu respuesta. Tú nunca ves ni escribes el "
++    "número.\n"
++    "3. Solo cita un concepto si su herramienta lo devolvió como disponible en "
++    "ESTE turno. Si un concepto no está disponible, dilo con honestidad y NO lo "
++    "cites: nunca cites un token a ciegas.\n"
++    "4. Si una herramienta responde disponible=false, abstente honestamente ('con "
++    "los datos disponibles no puedo confirmar X'). Jamás un dato falso ni un "
++    "token sin respaldo.\n"
++    "5. Si la pregunta requiere algo para lo que no tienes herramienta, dilo con "
+     "claridad; no improvises.\n"
+-    "5. No mueves dinero ni ejecutas operaciones: solo informas.\n"
+-    "6. NUNCA das porcentajes, tasas o proporciones que calcules tú mismo (p.ej. "
++    "6. No mueves dinero ni ejecutas operaciones: solo informas.\n"
++    "7. NUNCA des porcentajes, tasas o proporciones que calcules tú mismo (p.ej. "
+     "qué % representan tus gastos sobre tus ingresos). COMPAS no tiene ese "
+-    "concepto: ninguna herramienta devuelve porcentajes. Si te preguntan por un % "
++    "concepto: ninguna herramienta ni token lo devuelve. Si te preguntan por un % "
+     "que ninguna herramienta te da, dilo con honestidad; no lo estimes.\n\n"
+-    "Herramientas disponibles: caja disponible hoy, runway (meses de caja), IVA del "
+-    "cuatrimestre. Úsalas para responder con cifras reales y trazables."
++    "Herramientas disponibles: caja disponible hoy ([[caja_hoy]]), runway/meses "
++    "de caja ([[runway]]), IVA del cuatrimestre ([[iva_cuatrimestre]]). Llámalas "
++    "y cita el token del concepto que devuelvan disponible; nunca escribas ni "
++    "calcules el número tú mismo."
+ )
+ 
+ CORRECTIVO = (
+-    "Tu respuesta anterior incluyó cifras que NO provienen de ninguna herramienta: "
+-    "{cifras}. Reescribe la respuesta usando EXCLUSIVAMENTE estos valores verificados: "
+-    "{valores}. Si no puedes responder con ellos, abstente honestamente. No inventes "
+-    "números."
++    "Tu respuesta anterior escribió cifras crudas ({cifras}) o citó tokens de "
++    "concepto no disponibles este turno ({tokens}). NO escribas ni calcules "
++    "ningún número. Cita únicamente estos tokens de concepto disponibles, "
++    "escritos exactamente así y sin espacios internos: {disponibles}. El sistema "
++    "los reemplaza por el valor real. Si el dato que necesitas no está en esa "
++    "lista, dilo sin cifra: abstente honestamente."
+ )
+diff --git a/backend/app/cfo/agente/servicio.py b/backend/app/cfo/agente/servicio.py
+index 0734c79..c10d6fd 100644
+--- a/backend/app/cfo/agente/servicio.py
++++ b/backend/app/cfo/agente/servicio.py
+@@ -45,6 +45,7 @@ from app.audit.events import AuditEvento
+ from app.audit.service import emit_audit
+ from app.cfo import config
+ from app.cfo.agente.cliente import ClienteLLM, crear_cliente
++from app.cfo.agente.conceptos import sustituir_tokens
+ from app.cfo.agente.loop import ResultadoLoop, conversar
+ from app.cfo.agente.modelos import CifraPublicada, RespuestaCFO, UsoLLM
+ from app.cfo.agente.prompt import CORRECTIVO
+@@ -146,17 +147,19 @@ async def consultar(
+         # magnitud entre caja/IVA prácticamente imposible); CR aparte para cerrarlo.
+         veredicto = verificar(res.texto, res.resultados)
+         if not veredicto.ok:
+-            # UN reintento correctivo con los valores válidos
+-            valores = (
+-                "; ".join(
+-                    f"{r.concepto}={r.valor} {r.unidad}"
++            # UN reintento correctivo con los TOKENS disponibles (nunca valores).
++            disponibles = (
++                ", ".join(
++                    f"[[{r.concepto}]]"
+                     for r in res.resultados
+                     if r.disponible and r.valor is not None
+                 )
+                 or "(ninguno disponible)"
+             )
+             correccion = CORRECTIVO.format(
+-                cifras=", ".join(veredicto.cifras_sin_evidencia), valores=valores
++                cifras=", ".join(veredicto.cifras_sin_evidencia) or "(ninguna)",
++                tokens=", ".join(veredicto.tokens_invalidos) or "(ninguno)",
++                disponibles=disponibles,
+             )
+             mensajes = [
+                 {"role": "user", "content": pregunta},
+@@ -187,6 +190,10 @@ async def consultar(
+         else:
+             texto_final = res.texto
+ 
++        # Verificación ya pasó sobre el texto con TOKENS (arriba); el texto sustituido
++        # NUNCA se re-verifica (ver verificador.verificar). Sustituir es lo último
++        # antes de publicar.
++        texto_final = sustituir_tokens(texto_final, res.resultados)
+         r = RespuestaCFO(
+             texto=texto_final,
+             abstuvo=False,
+diff --git a/backend/app/cfo/agente/tools.py b/backend/app/cfo/agente/tools.py
+index 64e60fd..cd899b3 100644
+--- a/backend/app/cfo/agente/tools.py
++++ b/backend/app/cfo/agente/tools.py
+@@ -2,7 +2,10 @@
+ """FABS · tools de SOLO LECTURA que el modelo puede invocar. Cada tool envuelve un
+ concepto de `app.cfo.calc` y devuelve su ResultadoCFO completo (incl. disponible y
+ evidencia). El dispatcher es cerrado: una tool desconocida es error, nunca se inventa.
+-Serialización para el modelo: valor→string (regla 1, jamás float)."""
++Serialización para el modelo (`resultado_a_dict`): sin `valor` ni `detalle` (inc3 Pieza
++A) — el modelo cita conceptos con [[token]] y el servicio sustituye el valor
++concept-bound tras verificar. El `ResultadoCFO` completo (con `valor`) sigue viajando
++por el loop sin serializar."""
+ 
+ from collections.abc import Awaitable, Callable
+ 
+@@ -61,15 +64,16 @@ async def ejecutar_tool(nombre: str) -> ResultadoCFO:
+ 
+ 
+ def resultado_a_dict(r: ResultadoCFO) -> dict:
++    # El modelo NO ve valores: cita conceptos con [[token]] y el servicio sustituye el
++    # valor concept-bound tras verificar (inc3 Pieza A). Sin `valor` no puede fabricar,
++    # mal-etiquetar ni calcular.
+     return {
+         "concepto": r.concepto,
+         "disponible": r.disponible,
+-        "valor": str(r.valor) if r.valor is not None else None,
+         "unidad": r.unidad,
+         "evidencia": {
+             "fuente": r.evidencia.fuente,
+             "fecha_corte": r.evidencia.fecha_corte,
+             "ref": r.evidencia.ref,
+         },
+-        "detalle": r.detalle,
+     }
+diff --git a/backend/app/cfo/agente/verificador.py b/backend/app/cfo/agente/verificador.py
+index d9f9d2f..6c48b6f 100644
+--- a/backend/app/cfo/agente/verificador.py
++++ b/backend/app/cfo/agente/verificador.py
+@@ -1,35 +1,56 @@
+ # backend/app/cfo/agente/verificador.py
+-"""FABS · verificador cifra→evidencia (EL control crítico, lección Deloitte).
+-
+-Toda cifra monetaria o con unidad que aparezca en la respuesta del modelo debe estar
+-dentro de tolerancia de ALGÚN valor devuelto por las tools de este turno (conjunto
+-cerrado de evidencias). Si una cifra no tiene respaldo, el veredicto es `ok=False` y
+-esa cifra no debe publicarse (regla #1). Heurística conservadora: exige evidencia a
+-los montos ($ / separador de miles / decimal / entero pelado de 5+) y a los números
+-con unidad de meses; ignora años, fechas y ordinales pequeños sin formato de dinero
+-(para no abstenerse de lo inocuo).
++"""FABS · verificador cifra→concepto (EL control crítico, lección Deloitte + inc3
++Pieza A: citación estructurada).
++
++Contrato: el modelo NUNCA escribe una cifra cruda (monto/meses/%) en su respuesta —
++cita el concepto con `[[concepto]]` (A2: `tools.py` ya no expone `valor` al modelo,
++así que no tiene un número que copiar) y el servicio sustituye cada token por el
++valor concept-bound DESPUÉS de este veredicto (A5; el texto sustituido nunca se
++re-verifica). El veredicto es `ok=True` sii (1) NO hay ninguna cifra cruda en el
++texto — cualquier número detectado es violación, sin excepción, ya no hay pool de
++tolerancia que la respalde — y (2) todo token `[[X]]` referencia un concepto con
++evidencia disponible ESTE turno (frescura por turno).
++
++Esto cierra por construcción el hueco de inc2: la verificación agrupaba la evidencia
++disponible solo por `unidad` (COP/meses), nunca por `concepto`, así que una cifra de
++IVA mal-etiquetada como caja pasaba si el VALOR caía en tolerancia de CUALQUIER
++ResultadoCFO en COP del turno. Ahora el modelo no puede mal-etiquetar un valor porque
++no escribe valores — solo cita conceptos, y el concepto sí se valida.
++
++Huecos de detección residuales (aceptados, sin cambio respecto a inc2 — a diferencia
++de los porcentajes, que YA NO son un hueco: se atrapan siempre, ver `_RE_PORCENTAJE`
++arriba): el contrato de este módulo es "ninguna cifra cruda DETECTADA + tokens
++válidos", no una garantía matemática contra toda forma de número. Los regex de
++`extraer_cifras` no parsean (b) un entero pelado de MENOS de 5 dígitos sin separador
++(`"500"` en vez de `"$500"`, ver `_es_monto`) ni (c) números en palabras (`"mil
++millones"`, `"cien mil"`) — solo dígitos, con separador o pelados de 5+. Tampoco se
++caza la aritmética hecha en prosa sin cifra ("el doble de tu caja", "bastante más
++que ayer"): no hay número que capturar. La mitigación de los tres es la misma que en
++inc2 — la regla #1 del prompt (el modelo no calcula ni extrapola) y la abstención
++honesta — no un regex más agresivo; quedan como radar del piloto para una eventual
++CR de "verificación concept-aware" con más rigor antes de encender la compuerta.
+ 
+ Nota de formato "wire" (verificado empíricamente contra `caja.py`/`runway.py`/
+ `iva.py` + `tools.resultado_a_dict`, ronda 2 de revisión — corrige el supuesto de la
+-ronda 1, que asumía dígitos pelados SIN decimales): las 3 tools NO devuelven enteros
+-pelados. Cada una construye `valor` como `Decimal(money_str(x))` — primero cuantizan
+-a 2 decimales con `money_str` (p.ej. `"704722003.00"`, `"36204698.10"`, `"4.20"`) y
+-ese string se reconstruye a `Decimal`, que conserva la escala. `tools.resultado_a_dict`
+-hace luego `str(r.valor)`, así que el modelo recibe literalmente `"704722003.00"` —
+-un PUNTO decimal de 2 cifras, no dígitos pelados sin separador. Ese punto colisiona
+-con el separador de miles es-CO (`"704.722.003"`), así que la normalización de
+-montos (`_a_decimal_cop`) distingue los dos casos por REGLA DE FORMA (ver su
+-docstring) — no por conteo de dígitos, que ya no basta para desambiguar."""
++ronda 1, que asumía dígitos pelados SIN decimales): las 3 tools construyen `valor`
++como `Decimal(money_str(x))` — primero cuantizan a 2 decimales con `money_str`
++(p.ej. `"704722003.00"`, `"36204698.10"`, `"4.20"`) y ese string se reconstruye a
++`Decimal`, que conserva la escala. El modelo ya no ve ese string (A2), pero
++`extraer_cifras` sigue reconociendo esa forma: si algo lo sortea y una cifra cruda
++llega al texto de todos modos (fuga, regresión de prompt, etc.), igual debe
++atraparse — por eso las funciones de detección de este módulo quedan intactas. Ese
++punto decimal colisiona con el separador de miles es-CO (`"704.722.003"`), así que
++la normalización de montos (`_a_decimal_cop`) distingue los dos casos por REGLA DE
++FORMA (ver su docstring) — no por conteo de dígitos, que ya no basta para
++desambiguar."""
+ 
+ import re
+ from dataclasses import dataclass
+ from decimal import Decimal, InvalidOperation
+ 
++from app.cfo.agente.conceptos import RE_TOKEN
+ from app.cfo.calc.evidencia import ResultadoCFO
+ 
+-_TOL_COP = Decimal("1")  # ±$1 COP por redondeo
+-_TOL_MESES = Decimal("0.1")  # ±0,1 meses
+-
+ # Un "número" = corrida de dígitos con posibles separadores . , y $ opcional.
+ _RE_NUM = re.compile(r"\$?\s?\d[\d.,]*\d|\$?\s?\d")
+ # Meses: número (decimal con , o .) seguido de 'mes'/'meses'.
+@@ -39,6 +60,11 @@ _RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
+ # en la respuesta es una cifra auto-computada por el modelo, prohibida por regla
+ # #1 (ver su uso en `extraer_cifras`, FIX 1 FINAL-REVIEW inc2).
+ _RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
++# Cita de concepto: [[caja_hoy]] / [[runway]] / [[iva_cuatrimestre]]. El modelo cita,
++# no escribe números (inc3 Pieza A). RE_TOKEN vive en conceptos.py (import directo,
++# NUNCA redefinir aquí): debe ser BYTE-IDÉNTICA a la que usa sustituir_tokens, o un
++# token válido para uno queda inválido/sin sustituir para el otro (fuga de
++# placeholder o hueco de seguridad, ver docstring de RE_TOKEN en conceptos.py).
+ 
+ 
+ def _a_decimal_cop(token: str) -> Decimal | None:
+@@ -86,6 +112,7 @@ def _es_monto(raw: str) -> bool:
+ class Veredicto:
+     ok: bool
+     cifras_sin_evidencia: list[str]
++    tokens_invalidos: list[str]
+ 
+ 
+ def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
+@@ -131,48 +158,22 @@ def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
+ 
+ 
+ def verificar(texto: str, resultados: list[ResultadoCFO]) -> Veredicto:
+-    """Nota de alcance para T10 (servicio.py — el orquestador que llama esta
+-    función): la evidencia se agrupa solo por `unidad` (COP / meses), NUNCA por
+-    `concepto`. Una cifra en COP que caiga en tolerancia de CUALQUIER ResultadoCFO
+-    en COP se considera respaldada, aunque sea el concepto equivocado (p.ej. una
+-    respuesta que confunda caja con IVA pero coincida en valor no se atraparía
+-    aquí). Verificación cifra→concepto (no solo cifra→valor) es un diseño
+-    PENDIENTE, requerido antes de confiar en citas estructuradas; no implementado
+-    en esta función a propósito — está fuera de la interfaz de este módulo
+-    (`extraer_cifras` devuelve unidad, no concepto). Requiere CR si se necesita.
+-
+-    Huecos residuales aceptados para inc2 (compuerta apagada; FIX 2, FINAL-REVIEW
+-    inc2) — mismo rigor que la nota anterior, documentados en vez de resueltos:
+-    (a) los porcentajes ya NO son un hueco — se atrapan siempre como huérfanos
+-    porque no existe (ni debe existir) un pool de evidencia "pct" (FIX 1,
+-    `_RE_PORCENTAJE`); se listan aquí por trazabilidad de la ronda que los cerró;
+-    (b) un entero pelado de MENOS de 5 dígitos nunca se trata como monto
+-    (`_es_monto`) — los montos COP reales de RODDOS son de 7+ dígitos, así que el
+-    daño esperado es bajo, pero un monto chico inventado sin separadores ('500'
+-    en vez de '$500') pasaría sin marcarse; (c) números en palabras ('mil
+-    millones', 'cien mil') no los parsea ningún regex de este módulo, solo
+-    dígitos. Los tres puntos se aceptan así para inc2 con la compuerta apagada;
+-    la verificación cifra→concepto de arriba y (b)/(c) con el mismo rigor que hoy
+-    tiene COP/meses quedan como UNA sola CR de "verificación concept-aware"
+-    antes de encender la compuerta (flag on) — no como deuda dispersa."""
+-    ev_cop = [
+-        r.valor
+-        for r in resultados
+-        if r.disponible and r.valor is not None and r.unidad == "COP"
+-    ]
+-    ev_meses = [
+-        r.valor
+-        for r in resultados
+-        if r.disponible and r.valor is not None and r.unidad == "meses"
++    """Contrato inc3 Pieza A (citación estructurada): el modelo NO escribe cifras,
++    cita conceptos con `[[concepto]]`. Veredicto ok sii (1) NO hay ninguna cifra
++    cruda (COP/meses/%) en el texto — cualquier número es violación, el modelo debió
++    usar un token — y (2) todo token `[[X]]` referencia un concepto con evidencia
++    disponible ESTE turno (frescura por turno). Esto cierra el hueco cifra→concepto
++    de inc2 por construcción: el modelo no puede mal-etiquetar un valor porque no
++    escribe valores. El servicio sustituye los tokens por el valor concept-bound
++    DESPUÉS de este veredicto (el texto sustituido nunca se re-verifica)."""
++    crudas = [token for _, _, token in extraer_cifras(texto)]
++    disponibles = {
++        r.concepto for r in resultados if r.disponible and r.valor is not None
++    }
++    tokens_invalidos = [
++        m.group(0) for m in RE_TOKEN.finditer(texto) if m.group(1) not in disponibles
+     ]
+-    huerfanas: list[str] = []
+-    for valor, unidad, token in extraer_cifras(texto):
+-        if unidad == "COP":
+-            pool, tol = ev_cop, _TOL_COP
+-        elif unidad == "meses":
+-            pool, tol = ev_meses, _TOL_MESES
+-        else:  # "pct" u otra unidad sin evidencia posible → siempre huérfano
+-            pool, tol = [], _TOL_COP
+-        if not any(abs(valor - e) <= tol for e in pool):
+-            huerfanas.append(token)
+-    return Veredicto(ok=not huerfanas, cifras_sin_evidencia=huerfanas)
++    ok = not crudas and not tokens_invalidos
++    return Veredicto(
++        ok=ok, cifras_sin_evidencia=crudas, tokens_invalidos=tokens_invalidos
++    )
+diff --git a/backend/tests/cfo/agente/test_conceptos.py b/backend/tests/cfo/agente/test_conceptos.py
+new file mode 100644
+index 0000000..5b4b3f9
+--- /dev/null
++++ b/backend/tests/cfo/agente/test_conceptos.py
+@@ -0,0 +1,72 @@
++from datetime import date
++from decimal import Decimal
++
++from app.cfo.agente.conceptos import CONCEPTOS_CITABLES, formatear, sustituir_tokens
++from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
++
++
++def _r(concepto, valor, unidad, fecha):
++    return ResultadoCFO(
++        concepto=concepto,
++        valor=valor,
++        unidad=unidad,
++        disponible=True,
++        evidencia=Evidencia(fuente="f", fecha_corte=fecha, ref="x"),
++    )
++
++
++def test_citables():
++    assert CONCEPTOS_CITABLES == frozenset({"caja_hoy", "runway", "iva_cuatrimestre"})
++
++
++def test_formatear_caja_money_es_co_con_fecha():
++    r = _r("caja_hoy", Decimal("704722003.00"), "COP", "2026-08-11")
++    assert formatear(r) == "$704.722.003 (al 2026-08-11)"
++
++
++def test_formatear_runway_meses_coma():
++    r = _r("runway", Decimal("4.20"), "meses", None)
++    assert formatear(r) == "4,2 meses"
++
++
++def test_formatear_iva_vencimiento_y_dias():
++    r = _r("iva_cuatrimestre", Decimal("36204698.10"), "COP", "2026-09-10")
++    # hoy fijo para que 'en N días' sea determinista
++    assert formatear(r, hoy=date(2026, 8, 17)) == (
++        "$36.204.698 (vence el 2026-09-10, en 24 días)"
++    )
++
++
++def test_formatear_iva_usa_today_bogota_cuando_hoy_es_none(monkeypatch):
++    import app.cfo.agente.conceptos as c
++
++    monkeypatch.setattr(c, "today_bogota", lambda: date(2026, 8, 17))
++    r = _r("iva_cuatrimestre", Decimal("36204698.10"), "COP", "2026-09-10")
++    assert formatear(r) == "$36.204.698 (vence el 2026-09-10, en 24 días)"
++
++
++def test_sustituir_multiple():
++    caja = _r("caja_hoy", Decimal("704722003.00"), "COP", "2026-08-11")
++    iva = _r("iva_cuatrimestre", Decimal("36204698.10"), "COP", "2026-09-10")
++    texto = "Tu caja es [[caja_hoy]] y el IVA es [[iva_cuatrimestre]]."
++    out = sustituir_tokens(texto, [caja, iva], hoy=date(2026, 8, 17))
++    assert out == (
++        "Tu caja es $704.722.003 (al 2026-08-11) y el IVA es "
++        "$36.204.698 (vence el 2026-09-10, en 24 días)."
++    )
++
++
++def test_sustituir_token_desconocido_se_deja_igual():
++    # defensivo: verificar ya garantiza validez; un token sin resultado se deja tal cual
++    assert sustituir_tokens("x [[ventas]] y", []) == "x [[ventas]] y"
++
++
++def test_sustituir_token_con_espacios_se_resuelve():
++    # RE_TOKEN (hardening FINAL-REVIEW) es tolerante a espacios internos: un token
++    # como "[[ caja_hoy ]]" debe sustituirse igual que "[[caja_hoy]]" — antes del
++    # fix ninguna de las dos regex (verificador/conceptos, antes duplicadas) lo
++    # reconocía, así que el placeholder crudo se filtraba tal cual al usuario.
++    caja = _r("caja_hoy", Decimal("704722003.00"), "COP", "2026-08-11")
++    out = sustituir_tokens("Caja: [[ caja_hoy ]].", [caja], hoy=date(2026, 8, 17))
++    assert out == "Caja: $704.722.003 (al 2026-08-11)."
++    assert "[[" not in out
+diff --git a/backend/tests/cfo/agente/test_prompt.py b/backend/tests/cfo/agente/test_prompt.py
+index 1085f2d..ddc62b8 100644
+--- a/backend/tests/cfo/agente/test_prompt.py
++++ b/backend/tests/cfo/agente/test_prompt.py
+@@ -10,11 +10,37 @@ def test_system_prompt_fija_invariantes():
+ 
+ 
+ def test_correctivo_es_formateable():
+-    out = CORRECTIVO.format(cifras="$999", valores="caja=$704.722.003")
+-    assert "$999" in out and "704.722.003" in out
++    out = CORRECTIVO.format(
++        cifras="$999",
++        tokens="[[ventas_totales]]",
++        disponibles="[[caja_hoy]]; [[runway]]",
++    )
++    assert "$999" in out
++    assert "[[ventas_totales]]" in out
++    assert "[[caja_hoy]]; [[runway]]" in out
+ 
+ 
+ def test_system_prompt_prohibe_porcentajes_calculados():
+     # COMPAS no tiene concepto de "porcentaje": el modelo no debe calcular ni dar
+     # porcentajes/ratios propios (regla #1, FIX 1 FINAL-REVIEW inc2).
+     assert "%" in SYSTEM_PROMPT or "porcentaje" in SYSTEM_PROMPT.lower()
++
++
++def test_prompt_exige_tokens_de_concepto():
++    p = SYSTEM_PROMPT
++    assert "[[caja_hoy]]" in p and "[[runway]]" in p and "[[iva_cuatrimestre]]" in p
++    assert "nunca escrib" in p.lower() or "no escrib" in p.lower()  # no escribe numeros
++
++
++def test_correctivo_formateable_con_tokens():
++    out = CORRECTIVO.format(
++        cifras="$999", tokens="[[ventas]]", disponibles="[[caja_hoy]]"
++    )
++    assert "$999" in out and "[[ventas]]" in out and "[[caja_hoy]]" in out
++
++
++def test_prompt_advierte_no_espacios_en_el_token():
++    # Hueco residual de A3 (deferred): "[[ caja_hoy ]]" con espacios pasa los regex
++    # del verificador sin violar la regla anti-alucinacion, pero el token queda sin
++    # sustituir y se filtra crudo al usuario. Se cierra por instruccion al modelo.
++    assert "espacio" in SYSTEM_PROMPT.lower()
+diff --git a/backend/tests/cfo/agente/test_servicio.py b/backend/tests/cfo/agente/test_servicio.py
+index 948722e..cc4d8a3 100644
+--- a/backend/tests/cfo/agente/test_servicio.py
++++ b/backend/tests/cfo/agente/test_servicio.py
+@@ -43,6 +43,7 @@ async def test_camino_feliz(monkeypatch, _audit):
+         return _res()
+ 
+     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
++    # inc3 Pieza A: el modelo cita el TOKEN del concepto, nunca escribe la cifra cruda.
+     guiones = [
+         RespuestaLLM(
+             "tool_use",
+@@ -51,11 +52,13 @@ async def test_camino_feliz(monkeypatch, _audit):
+             3,
+         ),
+         RespuestaLLM(
+-            "end_turn", [BloqueTexto(texto="La caja hoy es $704.722.003.")], 4, 8
++            "end_turn", [BloqueTexto(texto="Tu caja hoy es [[caja_hoy]].")], 4, 8
+         ),
+     ]
+     r = await srv.consultar("¿caja?", actor_id="u1", cliente=ClienteFake(guiones))
+     assert r.abstuvo is False
++    assert "[[caja_hoy]]" not in r.texto
++    assert "$704.722.003 (al 2026-08-11)" in r.texto
+     assert r.cifras[0].valor == "704722003"
+     assert "caja_hoy" in r.conceptos_usados
+     resp_meta = [m for e, m in _audit if e == "cfo.respuesta"][0]
+@@ -79,8 +82,60 @@ async def test_alucinacion_reintento_falla_abstiene(monkeypatch, _audit):
+         RespuestaLLM("end_turn", [BloqueTexto(texto="Tienes $999.999.999.")], 1, 1),
+         RespuestaLLM("end_turn", [BloqueTexto(texto="Bueno, $888.888.888.")], 1, 1),
+     ]
++    fake = ClienteFake(guiones)
++    r = await srv.consultar("¿caja?", actor_id="u1", cliente=fake)
++    assert r.abstuvo is True and r.motivo == "verificacion"
++    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
++
++
++@pytest.mark.asyncio
++async def test_publica_con_tokens_sustituidos(monkeypatch, _audit):
++    async def fake_tool(nombre):
++        return _res()
++
++    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
++            1,
++            1,
++        ),
++        RespuestaLLM(
++            "end_turn", [BloqueTexto(texto="Tu caja hoy es [[caja_hoy]].")], 1, 1
++        ),
++    ]
+     r = await srv.consultar("¿caja?", actor_id="u1", cliente=ClienteFake(guiones))
++    assert r.abstuvo is False
++    assert "[[caja_hoy]]" not in r.texto
++    assert "$704.722.003 (al 2026-08-11)" in r.texto
++
++
++@pytest.mark.asyncio
++async def test_reincidencia_en_cifra_cruda_abstiene_un_solo_reintento(
++    monkeypatch, _audit
++):
++    async def fake_tool(nombre):
++        return _res()
++
++    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
++    # 1ª: tool + cifra cruda (aunque numéricamente correcta); reintento: vuelve a
++    # escribir cruda en vez de citar el token → abstención, jamás loop (D-3).
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
++            1,
++            1,
++        ),
++        RespuestaLLM("end_turn", [BloqueTexto(texto="Tu caja es $704.722.003.")], 1, 1),
++        RespuestaLLM("end_turn", [BloqueTexto(texto="Perdón: $704.722.003.")], 1, 1),
++    ]
++    fake = ClienteFake(guiones)
++    r = await srv.consultar("¿caja?", actor_id="u1", cliente=fake)
+     assert r.abstuvo is True and r.motivo == "verificacion"
++    # consumió exactamente 3 respuestas (1ª: tool+texto; reintento: 1 texto), no más
++    assert fake._guiones == []
+ 
+ 
+ @pytest.mark.asyncio
+diff --git a/backend/tests/cfo/agente/test_tools.py b/backend/tests/cfo/agente/test_tools.py
+index 923c0e7..abf4762 100644
+--- a/backend/tests/cfo/agente/test_tools.py
++++ b/backend/tests/cfo/agente/test_tools.py
+@@ -23,22 +23,21 @@ def test_schema_tres_tools_sin_parametros():
+         assert t["input_schema"]["properties"] == {}
+ 
+ 
+-def test_resultado_a_dict_serializa_valor_a_string():
++def test_resultado_a_dict_no_expone_valor_ni_detalle():
++    # inc3 Pieza A: el modelo ya no ve `valor` — cita conceptos con [[token]] y el
++    # servicio sustituye el valor concept-bound tras verificar. Sin `valor` no puede
++    # fabricar, mal-etiquetar ni calcular.
+     d = tools.resultado_a_dict(_res(Decimal("704722003")))
+-    assert d["valor"] == "704722003"
+-    assert d["disponible"] is True
+-    assert d["evidencia"]["ref"] == "2026-08"
+-    d0 = tools.resultado_a_dict(_res(None))
+-    assert d0["valor"] is None
+-    assert d0["disponible"] is False
+-
+-
+-def test_resultado_a_dict_cero_legitimo_es_cero_no_none():
+-    # guard contra una futura regresión a `if r.valor:` (Decimal("0") es falsy en
+-    # Python, pero caja/IVA en $0 es un dato legítimo, no "falta evidencia").
+-    d = tools.resultado_a_dict(_res(Decimal("0")))
+-    assert d["valor"] == "0"
++    assert "valor" not in d
++    assert "detalle" not in d
++    assert d["concepto"] == "caja_hoy"
+     assert d["disponible"] is True
++    assert d["unidad"] == "COP"
++    assert d["evidencia"] == {
++        "fuente": "f",
++        "fecha_corte": "2026-08-11",
++        "ref": "2026-08",
++    }
+ 
+ 
+ @pytest.mark.asyncio
+diff --git a/backend/tests/cfo/agente/test_verificador.py b/backend/tests/cfo/agente/test_verificador.py
+index 9fb9e1b..80d34c3 100644
+--- a/backend/tests/cfo/agente/test_verificador.py
++++ b/backend/tests/cfo/agente/test_verificador.py
+@@ -1,9 +1,21 @@
+ # backend/tests/cfo/agente/test_verificador.py
+-"""FABS · batería adversarial del verificador cifra→evidencia (control crítico).
+-
+-Cada caso ataca un modo de falla real de LLMs con cifras (monto inventado, suma
+-inventada, $0 falso, meses fuera de tolerancia, evidencia abstenida) o un falso
+-positivo que NO debe disparar el veredicto (años, fechas, tolerancia de redondeo)."""
++"""FABS · batería del verificador cifra→concepto (control crítico, inc3 Pieza A).
++
++Contrato NUEVO — reemplaza el de inc2 (historial en git para la versión previa): el
++modelo nunca escribe una cifra cruda, cita conceptos con `[[concepto]]`. Por eso esta
++batería ya NO tiene casos "cifra con evidencia real → pasa": bajo el contrato nuevo
++TODA cifra cruda es violación, tenga o no evidencia real detrás — eso es precisamente
++lo que cierra el hueco de inc2 (una cifra de IVA mal-etiquetada como caja pasaba si el
++valor caía en tolerancia de algún ResultadoCFO en COP; ahora no hay pool de tolerancia
++que la respalde, período).
++
++Los casos de inc2 que probaban "cifra inventada/sumada/en formato wire se atrapa" se
++preservan reexpresados más abajo: bajo el contrato nuevo se atrapan por la MISMA regla
++que una cifra correcta (cualquier cifra cruda = rechazo), así que quedan como
++demostraciones del mecanismo — ya no como casos con lógica de comparación propia. Se
++preserva también la cobertura de porcentajes (COMPAS no tiene ese concepto) y se
++añade la validación de tokens (concepto inexistente / no disponible este turno), que
++es la pieza nueva de este contrato."""
+ 
+ from decimal import Decimal
+ 
+@@ -11,211 +23,197 @@ from app.cfo.agente.verificador import extraer_cifras, verificar
+ from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
+ 
+ 
+-def _cop(valor):
++def _r(concepto, valor, unidad, disp=True):
+     return ResultadoCFO(
+-        concepto="caja_hoy",
++        concepto=concepto,
+         valor=valor,
+-        unidad="COP",
+-        disponible=True,
+-        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="2026-08"),
++        unidad=unidad,
++        disponible=disp,
++        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="x"),
+     )
+ 
+ 
+-def _meses(valor):
+-    return ResultadoCFO(
+-        concepto="runway",
+-        valor=valor,
+-        unidad="meses",
+-        disponible=True,
+-        evidencia=Evidencia(fuente="f", fecha_corte=None, ref="2026-08"),
+-    )
++def _caja():
++    return _r("caja_hoy", Decimal("704722003.00"), "COP")
+ 
+ 
+-def test_extrae_montos_y_meses_ignora_anios_y_fechas():
+-    texto = (
+-        "En 2026, al 10 de septiembre, la caja es $704.722.003 y el runway "
+-        "es de 4,2 meses. Período C2."
+-    )
+-    cifras = {(v, u) for v, u, _ in extraer_cifras(texto)}
+-    assert (Decimal("704722003"), "COP") in cifras
+-    assert (Decimal("4.2"), "meses") in cifras
+-    # 2026 (año), 10 (día), C2 (etiqueta) NO son cifras monetarias/unitarias
+-    assert all(not (v == Decimal("2026")) for v, _, _ in extraer_cifras(texto))
++def _iva():
++    return _r("iva_cuatrimestre", Decimal("36204698.10"), "COP")
+ 
+ 
+-def test_ok_cuando_toda_cifra_tiene_evidencia():
+-    texto = "La caja hoy es $704.722.003 (al 2026-08-11)."
+-    v = verificar(texto, [_cop(Decimal("704722003"))])
+-    assert v.ok is True
+-    assert v.cifras_sin_evidencia == []
++# --- Contrato nuevo: tokens válidos pasan; cifras crudas y tokens inválidos no ----
+ 
+ 
+-def test_atrapa_monto_inventado():
+-    texto = "La caja hoy es $704.722.003, pero podrías tener hasta $50.000.000 extra."
+-    v = verificar(texto, [_cop(Decimal("704722003"))])
+-    assert v.ok is False
+-    assert any("50.000.000" in t for t in v.cifras_sin_evidencia)
++def test_tokens_validos_pasan():
++    v = verificar(
++        "Tu caja es [[caja_hoy]] y el IVA es [[iva_cuatrimestre]].", [_caja(), _iva()]
++    )
++    assert v.ok is True
++    assert v.cifras_sin_evidencia == [] and v.tokens_invalidos == []
+ 
+ 
+-def test_atrapa_suma_inventada():
+-    # el modelo sumó dos evidencias — resultado sin respaldo directo
+-    texto = "En total son $740.926.701."
+-    v = verificar(texto, [_cop(Decimal("704722003")), _cop(Decimal("36204698"))])
++def test_cifra_cruda_se_rechaza():
++    # el modelo escribió un número en vez de un token
++    v = verificar("Tu caja es $704.722.003.", [_caja()])
+     assert v.ok is False
++    assert any("704.722.003" in c for c in v.cifras_sin_evidencia)
+ 
+ 
+-def test_tolerancia_cop_1_peso():
+-    texto = "Caja $704.722.004."  # +1 por redondeo
+-    v = verificar(texto, [_cop(Decimal("704722003"))])
+-    assert v.ok is True
++def test_el_caso_vinculante_caja_con_valor_de_iva_se_rechaza():
++    # el modelo escribe crudo el valor del IVA bajo la etiqueta 'caja'. Este es EL
++    # hueco de inc2: con el contrato viejo (evidencia agrupada por `unidad`, nunca por
++    # `concepto`) esto PASABA porque $36.204.698 cae en tolerancia de ALGÚN
++    # ResultadoCFO en COP del turno (el de IVA), sin importar que el texto lo
++    # etiquete como caja. El contrato nuevo lo cierra por construcción: ya no existe
++    # el camino "está en el pool COP" porque no hay pool — toda cifra cruda se
++    # rechaza sin mirar su valor.
++    v = verificar("Tu caja es $36.204.698.", [_caja(), _iva()])
++    assert v.ok is False  # ya no puede pasar por 'está en el pool COP'
+ 
+ 
+-def test_meses_fuera_de_tolerancia_falla():
+-    texto = "El runway es de 6 meses."
+-    v = verificar(texto, [_meses(Decimal("4.2"))])
++def test_token_de_concepto_inexistente_se_rechaza():
++    v = verificar("Las ventas fueron [[ventas]].", [_caja()])
+     assert v.ok is False
++    assert "[[ventas]]" in v.tokens_invalidos
+ 
+ 
+-def test_evidencia_no_disponible_no_respalda_cifra():
+-    # un ResultadoCFO abstenido NO respalda ninguna cifra
+-    r = ResultadoCFO(
+-        concepto="iva_cuatrimestre",
+-        valor=None,
+-        unidad="COP",
+-        disponible=False,
+-        evidencia=Evidencia(fuente="f", fecha_corte=None, ref="x"),
++def test_token_de_concepto_no_disponible_se_rechaza():
++    v = verificar(
++        "El runway es [[runway]].", [_caja(), _r("runway", None, "meses", disp=False)]
+     )
+-    v = verificar("El IVA es $36.204.698.", [r])
+     assert v.ok is False
++    assert "[[runway]]" in v.tokens_invalidos
++
++
++def test_token_valido_con_espacios_se_reconoce():
++    # RE_TOKEN (compartido con conceptos.sustituir_tokens, hardening FINAL-REVIEW)
++    # es tolerante a espacios internos: "[[ caja_hoy ]]" debe reconocerse como
++    # token válido igual que "[[caja_hoy]]". Antes del fix, la regex sin '\s*' no
++    # lo reconocía como token EN ABSOLUTO (ni válido ni inválido) — pasaba el
++    # veredicto por accidente (no había nada que marcar como inválido) pero luego
++    # conceptos.sustituir_tokens tampoco lo sustituía: el placeholder crudo se
++    # filtraba al usuario pese a ok=True.
++    v = verificar("Tu caja es [[ caja_hoy ]].", [_caja()])
++    assert v.ok is True
++    assert v.cifras_sin_evidencia == [] and v.tokens_invalidos == []
+ 
+ 
+-def test_dolares_cero_falso_es_atrapado():
+-    v = verificar("No debes nada: $0.", [_cop(Decimal("704722003"))])
++def test_token_invalido_con_espacios_tambien_se_rechaza():
++    # a diferencia del caso anterior, este SÍ distingue pre/post-fix: un concepto
++    # inexistente con espacios debe rechazarse igual que sin espacios. Antes del
++    # fix no se reconocía como token en absoluto, así que no caía en
++    # tokens_invalidos y el veredicto pasaba ok=True indebidamente.
++    v = verificar("Las ventas fueron [[ ventas ]].", [_caja()])
+     assert v.ok is False
++    assert "[[ ventas ]]" in v.tokens_invalidos
+ 
+ 
+-# --- Regresión / hardening (Task 7 hardening pass) ---------------------------
+-# Fijan la intención de la heurística: no castigar lo inocuo (cero legítimo,
+-# números pelados sin formato de dinero) y seguir atrapando lo inventado
+-# (monto grande junto a uno real, múltiples cifras con múltiple evidencia).
+-
+-
+-def test_cero_legitimo_con_evidencia_pasa():
+-    # un $0 que SÍ tiene evidencia (caja realmente en 0) no debe marcarse
+-    v = verificar("La caja hoy es $0.", [_cop(Decimal("0"))])
+-    assert v.ok is True
+-    assert v.cifras_sin_evidencia == []
+-
+-
+-def test_entero_pelado_sin_formato_no_se_marca():
+-    # números sin formato de dinero (nº de cuenta) no son candidatos → no molestan
+-    texto = "Según la cuenta 5493, la caja es $704.722.003."
+-    v = verificar(texto, [_cop(Decimal("704722003"))])
+-    assert v.ok is True
++def test_porcentaje_crudo_se_rechaza():
++    # COMPAS no tiene concepto de "porcentaje": ninguna tool lo calcula ni lo
++    # devuelve, así que un % en la respuesta es siempre auto-cálculo del modelo.
++    v = verificar("El IVA es el 25% de tus ingresos.", [_caja()])
++    assert v.ok is False
+ 
+ 
+-def test_monto_grande_inventado_junto_a_uno_real_se_atrapa():
+-    texto = "La caja es $704.722.003; proyecto ingresos de $1.200.000.000."
+-    v = verificar(texto, [_cop(Decimal("704722003"))])
++def test_porcentaje_con_decimal_y_espacio_tambien_se_rechaza():
++    v = verificar("Tu carga tributaria es 12,5 % del flujo.", [_caja()])
+     assert v.ok is False
+-    assert any("1.200.000.000" in t for t in v.cifras_sin_evidencia)
+ 
+ 
+-def test_multiples_cifras_todas_respaldadas_pasa():
+-    texto = "Caja $704.722.003 y el IVA del cuatrimestre es $36.204.698."
+-    v = verificar(texto, [_cop(Decimal("704722003")), _cop(Decimal("36204698"))])
++def test_respuesta_sin_cifras_ni_tokens_pasa():
++    v = verificar("Con los datos disponibles no puedo confirmar eso.", [])
+     assert v.ok is True
+-    assert v.cifras_sin_evidencia == []
+ 
+ 
+-# --- Robustez formato "wire" (hallazgo de revisión sobre commit 80b70cd) -----
+-# tools.resultado_a_dict serializa valor como str(Decimal(...)): dígitos pelados
+-# sin separador de miles para COP ("704722003") y con PUNTO decimal para meses
+-# ("4.2") — no el formato es-CO con "$"/miles/coma que asumía la heurística
+-# original. El prompt (regla #1) exige reproducir las cifras LITERALMENTE, así
+-# que la respuesta real del modelo llega mayoritariamente en formato wire.
++# --- Reexpresados de inc2 --------------------------------------------------------
++# extraer_cifras/_es_monto/_a_decimal_* (detección) no cambiaron, así que estos casos
++# siguen demostrando que una cifra fabricada/sumada/en formato wire se atrapa — ahora
++# por la MISMA regla que cualquier cifra cruda, no por comparación de valor contra un
++# pool. Donde el caso viejo afirmaba "... y por eso PASA", aquí se invierte a propósito
++# (queda documentado el porqué): es la diferencia central del contrato nuevo.
+ 
+ 
+-def test_bare_digit_wire_inventado_se_atrapa():
+-    # monto fabricado en formato wire (sin $, sin separadores) DEBE atraparse
+-    v = verificar("el flujo proyectado es 950000000", [_cop(Decimal("704722003"))])
++def test_monto_inventado_se_atrapa_aunque_haya_uno_real_al_lado():
++    texto = "La caja hoy es $704.722.003, pero podrías tener hasta $50.000.000 extra."
++    v = verificar(texto, [_caja()])
+     assert v.ok is False
+-    assert any("950000000" in t for t in v.cifras_sin_evidencia)
++    assert any("50.000.000" in c for c in v.cifras_sin_evidencia)
+ 
+ 
+-def test_bare_digit_wire_que_coincide_pasa():
+-    v = verificar("la caja es 704722003", [_cop(Decimal("704722003"))])
+-    assert v.ok is True
+-
+-
+-def test_anio_no_marcado_pese_a_nuevo_regex():
+-    # el umbral de 5+ dígitos pelados no debe empezar a atrapar años de 4 dígitos
+-    cifras = extraer_cifras("En 2026 la caja subió")
+-    assert all(v != Decimal("2026") for v, _, _ in cifras)
+-
+-
+-def test_runway_wire_punto_decimal_pasa():
+-    # str(Decimal("4.2")) usa PUNTO — el runway real del modelo llega así
+-    v = verificar("El runway es de 4.2 meses.", [_meses(Decimal("4.2"))])
+-    assert v.ok is True
++def test_suma_inventada_se_atrapa():
++    # el modelo sumó caja + IVA en un tercer número que ninguna tool devolvió
++    v = verificar("En total tienes $740.926.701 entre caja e IVA.", [_caja(), _iva()])
++    assert v.ok is False
+ 
+ 
+-def test_runway_coma_decimal_sigue_pasando():
+-    v = verificar("El runway es de 4,2 meses.", [_meses(Decimal("4.2"))])
+-    assert v.ok is True
++def test_dolares_cero_crudo_se_rechaza():
++    # un $0 crudo es cifra prohibida aunque "suene" inocuo (regla #3 del prompt:
++    # jamás un $0 falso).
++    v = verificar("No debes nada: $0.", [_caja()])
++    assert v.ok is False
+ 
+ 
+-# --- Formato wire REAL (ronda 2 de revisión) ---------------------------------
+-# La ronda 1 asumió dígitos pelados SIN decimales. Verificado empíricamente
+-# contra caja.py/runway.py/iva.py: las 3 tools construyen `valor` como
+-# Decimal(money_str(x)) -> SIEMPRE 2 decimales ("704722003.00", "36204698.10",
+-# "4.20"). El '.' de wire colisiona con el '.' de miles es-CO; estos tests fijan
+-# la regla de forma que los distingue (_a_decimal_cop).
++def test_cero_real_tambien_debe_citarse_por_token_no_escribirse_crudo():
++    # a diferencia de inc2 (donde un $0 que coincidía con la evidencia real pasaba),
++    # aquí el valor verdadero SÍ es 0 y el veredicto sigue siendo ok=False: el
++    # contrato exige [[caja_hoy]], nunca "$0" escrito a mano — sea correcto o no.
++    v = verificar("La caja hoy es $0.", [_r("caja_hoy", Decimal("0"), "COP")])
++    assert v.ok is False
+ 
+ 
+-def test_wire_caja_dos_decimales_con_evidencia_pasa():
+-    # formato REAL de las tools: str(Decimal(money_str(x))) -> "704722003.00"
+-    v = verificar("La caja hoy es 704722003.00.", [_cop(Decimal("704722003.00"))])
+-    assert v.ok is True
++def test_multiples_cifras_correctas_se_rechazan_todas_por_ser_crudas():
++    # las DOS cifras son exactamente correctas y aun así el veredicto es ok=False:
++    # el contrato no perdona una cifra cruda por tener respaldo real detrás, siempre
++    # exige el token.
++    texto = "Caja $704.722.003 y el IVA del cuatrimestre es $36.204.698."
++    v = verificar(texto, [_caja(), _iva()])
++    assert v.ok is False
++    assert len(v.cifras_sin_evidencia) == 2
+ 
+ 
+-def test_wire_iva_dos_decimales_con_evidencia_pasa():
+-    v = verificar(
+-        "El IVA del cuatrimestre es 36204698.10.", [_cop(Decimal("36204698.10"))]
+-    )
+-    assert v.ok is True
++def test_meses_crudo_se_rechaza_aunque_coincida_con_la_evidencia():
++    v = verificar("El runway es de 4,2 meses.", [_r("runway", Decimal("4.2"), "meses")])
++    assert v.ok is False
++    assert any("meses" in c for c in v.cifras_sin_evidencia)
+ 
+ 
+-def test_wire_fabricado_dos_decimales_se_atrapa():
+-    v = verificar("Proyecto un flujo de 950000000.00.", [_cop(Decimal("704722003.00"))])
++def test_cifra_en_formato_wire_tambien_se_rechaza():
++    # formato real que devuelven las tools (str(Decimal(money_str(x))): sin '$' ni
++    # separador de miles, punto decimal de 2 cifras). El modelo ya no lo ve (A2:
++    # tools.py deja de exponer `valor`), pero si de algún modo una cifra cruda llega
++    # al texto en esta forma, debe rechazarse igual que cualquier otra.
++    v = verificar("La caja hoy es 704722003.00.", [_caja()])
+     assert v.ok is False
+-    assert any("950000000.00" in t for t in v.cifras_sin_evidencia)
+ 
+ 
+-def test_wire_runway_dos_decimales_pasa():
+-    v = verificar("El runway es de 4.20 meses.", [_meses(Decimal("4.20"))])
+-    assert v.ok is True
++def test_bare_digit_inventado_se_atrapa():
++    # cifra fabricada en dígitos pelados (sin $, sin separadores, >=5 dígitos) →
++    # cruda → rechazo. Ningún otro caso de la batería ejercita esta rama de
++    # `_es_monto` (todos usan '$' o un separador, que la cortocircuitan antes):
++    # sin este caso, un monto fabricado en esta forma exacta no tendría cobertura
++    # de que SÍ se atrapa.
++    v = verificar("Tu caja es 950000000.", [_caja()])
++    assert v.ok is False
++    assert any("950000000" in c for c in v.cifras_sin_evidencia)
+ 
+ 
+-def test_es_co_con_centavos_coma_pasa():
+-    v = verificar("La caja es $704.722.003,00.", [_cop(Decimal("704722003.00"))])
++def test_numero_sin_formato_de_dinero_no_se_marca():
++    # un nº de cuenta pelado y corto no es un monto (sin '$'/separador y menos de 5
++    # dígitos): no debe generar un falso positivo. Sesgo conservador del módulo: no
++    # abstenerse de lo inocuo.
++    v = verificar("Según la cuenta 5493, no tengo esa cifra a mano.", [_caja()])
+     assert v.ok is True
+ 
+ 
+-# --- Porcentajes (FIX 1, FINAL-REVIEW inc2) ----------------------------------
+-# COMPAS no tiene concepto de "porcentaje": cualquier % que el modelo emita es una
+-# cifra auto-calculada, prohibida por regla #1. No existe (ni debe existir) un pool
+-# de evidencia "pct", así que todo % debe quedar huérfano SIEMPRE, sin excepción.
+-
+-
+-def test_porcentaje_inventado_se_atrapa():
+-    v = verificar("El IVA es el 25% de tus ingresos.", [_cop(Decimal("704722003.00"))])
+-    assert v.ok is False
+-    assert any("25%" in t for t in v.cifras_sin_evidencia)
+-
+-
+-def test_porcentaje_con_decimal_tambien_se_atrapa():
+-    v = verificar(
+-        "Tu carga tributaria es 12,5 % del flujo.", [_cop(Decimal("704722003.00"))]
++def test_extrae_montos_y_meses_ignora_anios_y_fechas():
++    # extraer_cifras no cambió (sigue siendo el detector de cifras crudas); esta
++    # regresión de inc2 sigue vigente tal cual.
++    texto = (
++        "En 2026, al 10 de septiembre, la caja es $704.722.003 y el runway "
++        "es de 4,2 meses. Período C2."
+     )
+-    assert v.ok is False
++    cifras = {(v, u) for v, u, _ in extraer_cifras(texto)}
++    assert (Decimal("704722003"), "COP") in cifras
++    assert (Decimal("4.2"), "meses") in cifras
++    # 2026 (año), 10 (día), C2 (etiqueta) NO son cifras monetarias/unitarias
++    assert all(not (v == Decimal("2026")) for v, _, _ in extraer_cifras(texto))
