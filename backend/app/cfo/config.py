@@ -31,3 +31,22 @@ def cfo_max_tokens() -> int:
 
 def cfo_timeout_s() -> float:
     return float(os.environ.get("CFO_TIMEOUT_S", "60"))
+
+
+def telegram_bot_token() -> str | None:
+    """Token del bot de Telegram (SOLO env var; nunca en repo). Vacío ⇒ None."""
+    v = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    return v or None
+
+
+def telegram_webhook_secret() -> str | None:
+    """Secreto para validar que el webhook entrante viene de Telegram
+    (header `X-Telegram-Bot-Api-Secret-Token`). Vacío ⇒ None."""
+    v = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    return v or None
+
+
+def cfo_hilo_ventana() -> int:
+    """Cuántos mensajes previos del hilo se anteponen como `historial` en cada
+    consulta nueva (ventana deslizante; default 8)."""
+    return int(os.environ.get("CFO_HILO_VENTANA", "8"))

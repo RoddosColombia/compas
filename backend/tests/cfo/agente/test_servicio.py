@@ -148,3 +148,31 @@ async def test_error_interno_no_revienta_y_audita(monkeypatch, _audit):
     r = await srv.consultar("¿caja?", actor_id="u1")  # NO debe levantar
     assert r.abstuvo is True and r.motivo == "error"
     assert [e[0] for e in _audit] == ["cfo.consulta", "cfo.respuesta"]
+
+
+@pytest.mark.asyncio
+async def test_consultar_usa_historial_y_expone_texto_crudo(monkeypatch, _audit):
+    async def fake_tool(nombre):
+        return _res()  # ResultadoCFO caja_hoy disponible
+
+    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
+            1,
+            1,
+        ),
+        RespuestaLLM("end_turn", [BloqueTexto(texto="Tu caja es [[caja_hoy]].")], 1, 1),
+    ]
+    fake = ClienteFake(guiones)
+    historial = [
+        {"role": "user", "content": "hola"},
+        {"role": "assistant", "content": "¿en qué te ayudo?"},
+    ]
+    r = await srv.consultar("¿caja?", actor_id="u1", cliente=fake, historial=historial)
+    # el historial se antepuso (el primer mensaje que vio el cliente lo incluye)
+    assert fake.llamadas[0]["messages"][0]["content"] == "hola"
+    # texto publicado = sustituido; texto_crudo = con token (para guardar en el hilo)
+    assert "[[caja_hoy]]" not in r.texto and "$704.722.003" in r.texto
+    assert r.texto_crudo == "Tu caja es [[caja_hoy]]."

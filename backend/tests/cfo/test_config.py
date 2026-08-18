@@ -34,3 +34,18 @@ def test_cfo_limites_default(monkeypatch):
     assert cfo_config.cfo_max_iter() == 3
     assert cfo_config.cfo_max_tokens() == 1024
     assert cfo_config.cfo_timeout_s() == 60.0
+
+
+def test_telegram_config(monkeypatch):
+    from app.cfo import config as c
+
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    assert c.telegram_bot_token() is None
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "botX")
+    assert c.telegram_bot_token() == "botX"
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "sek")
+    assert c.telegram_webhook_secret() == "sek"
+    monkeypatch.delenv("CFO_HILO_VENTANA", raising=False)
+    assert c.cfo_hilo_ventana() == 8
+    monkeypatch.setenv("CFO_HILO_VENTANA", "4")
+    assert c.cfo_hilo_ventana() == 4

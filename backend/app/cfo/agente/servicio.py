@@ -86,6 +86,7 @@ def _abstencion(motivo: str, res: ResultadoLoop | None, actor_id: str) -> Respue
         texto=_ABSTENCION,
         abstuvo=True,
         motivo=motivo,
+        texto_crudo=_ABSTENCION,
         conceptos_usados=[],
         cifras=[],
         uso=uso,
@@ -110,7 +111,11 @@ def _meta(r: RespuestaCFO) -> dict:
 
 
 async def consultar(
-    pregunta: str, *, actor_id: str, cliente: ClienteLLM | None = None
+    pregunta: str,
+    *,
+    actor_id: str,
+    cliente: ClienteLLM | None = None,
+    historial: list[dict] | None = None,
 ) -> RespuestaCFO:
     # cfo.consulta ANTES de todo (rastro de la pregunta aunque algo falle después)
     await _audit_soft(
@@ -128,7 +133,7 @@ async def consultar(
         try:
             res = await conversar(
                 cliente,
-                [{"role": "user", "content": pregunta}],
+                [*(historial or []), {"role": "user", "content": pregunta}],
                 max_iter=config.cfo_max_iter(),
             )
         except Exception:  # noqa: BLE001 — fallo del LLM
@@ -162,6 +167,7 @@ async def consultar(
                 disponibles=disponibles,
             )
             mensajes = [
+                *(historial or []),
                 {"role": "user", "content": pregunta},
                 {"role": "assistant", "content": res.texto},
                 {"role": "user", "content": correccion},
@@ -192,12 +198,15 @@ async def consultar(
 
         # Verificación ya pasó sobre el texto con TOKENS (arriba); el texto sustituido
         # NUNCA se re-verifica (ver verificador.verificar). Sustituir es lo último
-        # antes de publicar.
+        # antes de publicar. `texto_crudo` guarda el texto CON tokens (pre-sustitución)
+        # para que el hilo persista citas, nunca valores (inc3 Pieza B).
+        texto_crudo = texto_final
         texto_final = sustituir_tokens(texto_final, res.resultados)
         r = RespuestaCFO(
             texto=texto_final,
             abstuvo=False,
             motivo=None,
+            texto_crudo=texto_crudo,
             conceptos_usados=[x.concepto for x in res.resultados],
             cifras=_cifras(res.resultados),
             uso=UsoLLM(
