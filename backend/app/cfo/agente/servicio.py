@@ -45,6 +45,7 @@ from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
 from app.cfo import config
 from app.cfo.agente.cliente import ClienteLLM, crear_cliente
+from app.cfo.agente.conceptos import sustituir_tokens
 from app.cfo.agente.loop import ResultadoLoop, conversar
 from app.cfo.agente.modelos import CifraPublicada, RespuestaCFO, UsoLLM
 from app.cfo.agente.prompt import CORRECTIVO
@@ -146,17 +147,19 @@ async def consultar(
         # magnitud entre caja/IVA prácticamente imposible); CR aparte para cerrarlo.
         veredicto = verificar(res.texto, res.resultados)
         if not veredicto.ok:
-            # UN reintento correctivo con los valores válidos
-            valores = (
-                "; ".join(
-                    f"{r.concepto}={r.valor} {r.unidad}"
+            # UN reintento correctivo con los TOKENS disponibles (nunca valores).
+            disponibles = (
+                ", ".join(
+                    f"[[{r.concepto}]]"
                     for r in res.resultados
                     if r.disponible and r.valor is not None
                 )
                 or "(ninguno disponible)"
             )
             correccion = CORRECTIVO.format(
-                cifras=", ".join(veredicto.cifras_sin_evidencia), valores=valores
+                cifras=", ".join(veredicto.cifras_sin_evidencia) or "(ninguna)",
+                tokens=", ".join(veredicto.tokens_invalidos) or "(ninguno)",
+                disponibles=disponibles,
             )
             mensajes = [
                 {"role": "user", "content": pregunta},
@@ -187,6 +190,10 @@ async def consultar(
         else:
             texto_final = res.texto
 
+        # Verificación ya pasó sobre el texto con TOKENS (arriba); el texto sustituido
+        # NUNCA se re-verifica (ver verificador.verificar). Sustituir es lo último
+        # antes de publicar.
+        texto_final = sustituir_tokens(texto_final, res.resultados)
         r = RespuestaCFO(
             texto=texto_final,
             abstuvo=False,

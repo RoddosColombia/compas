@@ -43,6 +43,7 @@ async def test_camino_feliz(monkeypatch, _audit):
         return _res()
 
     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+    # inc3 Pieza A: el modelo cita el TOKEN del concepto, nunca escribe la cifra cruda.
     guiones = [
         RespuestaLLM(
             "tool_use",
@@ -51,11 +52,13 @@ async def test_camino_feliz(monkeypatch, _audit):
             3,
         ),
         RespuestaLLM(
-            "end_turn", [BloqueTexto(texto="La caja hoy es $704.722.003.")], 4, 8
+            "end_turn", [BloqueTexto(texto="Tu caja hoy es [[caja_hoy]].")], 4, 8
         ),
     ]
     r = await srv.consultar("¿caja?", actor_id="u1", cliente=ClienteFake(guiones))
     assert r.abstuvo is False
+    assert "[[caja_hoy]]" not in r.texto
+    assert "$704.722.003 (al 2026-08-11)" in r.texto
     assert r.cifras[0].valor == "704722003"
     assert "caja_hoy" in r.conceptos_usados
     resp_meta = [m for e, m in _audit if e == "cfo.respuesta"][0]
@@ -79,8 +82,60 @@ async def test_alucinacion_reintento_falla_abstiene(monkeypatch, _audit):
         RespuestaLLM("end_turn", [BloqueTexto(texto="Tienes $999.999.999.")], 1, 1),
         RespuestaLLM("end_turn", [BloqueTexto(texto="Bueno, $888.888.888.")], 1, 1),
     ]
-    r = await srv.consultar("¿caja?", actor_id="u1", cliente=ClienteFake(guiones))
+    fake = ClienteFake(guiones)
+    r = await srv.consultar("¿caja?", actor_id="u1", cliente=fake)
     assert r.abstuvo is True and r.motivo == "verificacion"
+    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
+
+
+@pytest.mark.asyncio
+async def test_publica_con_tokens_sustituidos(monkeypatch, _audit):
+    async def fake_tool(nombre):
+        return _res()
+
+    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
+            1,
+            1,
+        ),
+        RespuestaLLM(
+            "end_turn", [BloqueTexto(texto="Tu caja hoy es [[caja_hoy]].")], 1, 1
+        ),
+    ]
+    r = await srv.consultar("¿caja?", actor_id="u1", cliente=ClienteFake(guiones))
+    assert r.abstuvo is False
+    assert "[[caja_hoy]]" not in r.texto
+    assert "$704.722.003 (al 2026-08-11)" in r.texto
+
+
+@pytest.mark.asyncio
+async def test_reincidencia_en_cifra_cruda_abstiene_un_solo_reintento(
+    monkeypatch, _audit
+):
+    async def fake_tool(nombre):
+        return _res()
+
+    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+    # 1ª: tool + cifra cruda (aunque numéricamente correcta); reintento: vuelve a
+    # escribir cruda en vez de citar el token → abstención, jamás loop (D-3).
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
+            1,
+            1,
+        ),
+        RespuestaLLM("end_turn", [BloqueTexto(texto="Tu caja es $704.722.003.")], 1, 1),
+        RespuestaLLM("end_turn", [BloqueTexto(texto="Perdón: $704.722.003.")], 1, 1),
+    ]
+    fake = ClienteFake(guiones)
+    r = await srv.consultar("¿caja?", actor_id="u1", cliente=fake)
+    assert r.abstuvo is True and r.motivo == "verificacion"
+    # consumió exactamente 3 respuestas (1ª: tool+texto; reintento: 1 texto), no más
+    assert fake._guiones == []
 
 
 @pytest.mark.asyncio
