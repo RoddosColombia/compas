@@ -8,6 +8,7 @@ el ODM general.
 """
 
 from app.cfo.goldens.modelo import CFOGolden
+from app.cfo.telegram.modelos import HiloCFO, VinculoTelegram
 from app.domain.carga import CargaBancaria
 from app.domain.cartera_previa import CarteraPreviaRecaudo
 from app.domain.configuracion import Configuracion
@@ -47,6 +48,8 @@ DOMAIN_DOCUMENTS: list[type] = [
     FacturaObligacion,
     MetaIngreso,
     CFOGolden,
+    VinculoTelegram,
+    HiloCFO,
 ]
 
 __all__ = [
@@ -70,5 +73,7 @@ __all__ = [
     "FacturaObligacion",
     "MetaIngreso",
     "CFOGolden",
+    "VinculoTelegram",
+    "HiloCFO",
     "DOMAIN_DOCUMENTS",
 ]
