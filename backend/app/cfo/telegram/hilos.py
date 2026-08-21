@@ -19,7 +19,7 @@ _MAX_TURNOS = 40  # se persiste hasta esto; se re-alimenta solo la ventana
 def historial_para_loop(hilo: HiloCFO | None, ventana: int) -> list[dict]:
     if hilo is None or not hilo.turnos:
         return []
-    ult = hilo.turnos[-ventana:]
+    ult = hilo.turnos[-ventana:] if ventana > 0 else []
     if ult and ult[0]["rol"] == "assistant":
         ult = ult[1:]  # ventana desalineada: no empezar el mensaje en 'assistant'
     return [{"role": t["rol"], "content": t["contenido"]} for t in ult]

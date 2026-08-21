@@ -32,6 +32,19 @@ def test_historial_none_es_vacio():
     assert hilos.historial_para_loop(None, ventana=8) == []
 
 
+def test_historial_ventana_cero_es_vacia():
+    """ventana=0 debe devolver [] explícitamente. Bug: `lista[-0:]` en Python es
+    `lista[0:]` (la lista COMPLETA, porque -0 == 0) — sin guarda, ventana=0
+    devolvía todo el hilo en vez de una ventana acotada (vacía)."""
+    turnos = [{"rol": "user", "contenido": f"q{i}"} for i in range(5)]
+    assert hilos.historial_para_loop(_hilo(turnos), ventana=0) == []
+
+
+def test_historial_ventana_negativa_es_vacia():
+    turnos = [{"rol": "user", "contenido": f"q{i}"} for i in range(5)]
+    assert hilos.historial_para_loop(_hilo(turnos), ventana=-1) == []
+
+
 def test_historial_ventana_desalineada_no_empieza_en_assistant():
     """CARRY de la revisión B1 (Task 1): los turnos se guardan en pares
     [user, assistant]. La API de Anthropic exige que la lista de mensajes

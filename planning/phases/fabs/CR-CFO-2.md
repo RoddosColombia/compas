@@ -9,10 +9,20 @@
 ## Eventos nuevos
 
 - `cfo.vinculo_creado` — se emite cuando un admin vincula un `telegram_id` a un
-  `user_id` (alta en la allowlist del canal Telegram de FABS). `entidad="cfo"`,
+  `user_id` (alta en la allowlist del canal Telegram de FABS).
+  `entidad="cfo_vinculo_telegram"`, `entidad_id=telegram_id` (como str),
   `actor_id`=admin autenticado real, `metadata={telegram_id, user_id}`.
 - `cfo.vinculo_eliminado` — se emite al desvincular (baja del allowlist,
-  `repositorio.eliminar_vinculo`). `actor_id`=admin, `metadata={telegram_id}`.
+  `repositorio.eliminar_vinculo`). `entidad="cfo_vinculo_telegram"`,
+  `entidad_id=telegram_id` (como str), `actor_id`=admin, `metadata={telegram_id}`.
+
+Ambos usan `entidad` específica + `entidad_id` (NO `entidad="cfo"` genérica):
+siguen la convención de operación de estado del repo — mismo patrón que
+`user.creado` / `user.desactivado` ya citado arriba en "Política de fallo" — y
+alimentan el índice forense `(entidad, entidad_id, timestamp)`
+(`backend/app/audit/models.py`). La `entidad="cfo"` genérica queda reservada
+para el path de lectura fail-soft del Q&A (`app/cfo/agente/servicio.py`), que
+no es una operación de estado.
 
 Ambos se emiten desde el endpoint admin (`POST` / `DELETE /api/v1/cfo/telegram/vinculos`),
 protegido con `require_role(Role.admin)`. El vínculo es **uno-a-uno** (único en

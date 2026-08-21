@@ -40,6 +40,7 @@ async def test_vincular_audita_con_metadata_y_actor(monkeypatch):
             {
                 "evento": str(evento),
                 "entidad": entidad,
+                "entidad_id": entidad_id,
                 "actor_id": actor_id,
                 "metadata": metadata,
             }
@@ -51,6 +52,11 @@ async def test_vincular_audita_con_metadata_y_actor(monkeypatch):
     monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit)
     await vinculos.vincular(222, "u2", admin_id="admin-1")
     e = eventos[0]
+    # Convención state-op del repo (mismo patrón que entidad="user" en auth/service.py):
+    # entidad específica + entidad_id=str(id), NO entidad="cfo" genérica (esa es solo
+    # para el Q&A fail-soft en cfo/agente/servicio.py).
+    assert e["entidad"] == "cfo_vinculo_telegram"
+    assert e["entidad_id"] == str(222)
     assert e["actor_id"] == "admin-1"
     assert e["metadata"] == {"telegram_id": 222, "user_id": "u2"}
 
@@ -110,7 +116,7 @@ async def test_desvincular_elimina_y_audita(monkeypatch):
     eventos = []
 
     async def fake_emit(evento, entidad, entidad_id=None, actor_id=None, metadata=None):
-        eventos.append((str(evento), metadata, actor_id))
+        eventos.append((str(evento), metadata, actor_id, entidad, entidad_id))
 
     monkeypatch.setattr(
         "app.cfo.telegram.vinculos.repositorio.eliminar_vinculo", fake_eliminar
@@ -123,6 +129,9 @@ async def test_desvincular_elimina_y_audita(monkeypatch):
     assert eventos[0][0] == "cfo.vinculo_eliminado"
     assert eventos[0][1] == {"telegram_id": 111}
     assert eventos[0][2] == "admin"
+    # Convención state-op (igual que vincular arriba): entidad específica + entidad_id.
+    assert eventos[0][3] == "cfo_vinculo_telegram"
+    assert eventos[0][4] == str(111)
 
 
 @pytest.mark.asyncio

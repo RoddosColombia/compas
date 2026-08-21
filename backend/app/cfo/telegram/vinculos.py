@@ -22,7 +22,8 @@ async def vincular(telegram_id: int, user_id: str, admin_id: str) -> None:
     await repositorio.crear_vinculo(v)  # DuplicateKeyError si ya existe (uno-a-uno)
     await emit_audit(
         AuditEvento.cfo_vinculo_creado,
-        entidad="cfo",
+        entidad="cfo_vinculo_telegram",
+        entidad_id=str(telegram_id),
         actor_id=admin_id,
         metadata={"telegram_id": telegram_id, "user_id": user_id},
     )
@@ -33,7 +34,8 @@ async def desvincular(telegram_id: int, admin_id: str) -> bool:
     if ok:
         await emit_audit(
             AuditEvento.cfo_vinculo_eliminado,
-            entidad="cfo",
+            entidad="cfo_vinculo_telegram",
+            entidad_id=str(telegram_id),
             actor_id=admin_id,
             metadata={"telegram_id": telegram_id},
         )
