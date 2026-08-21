@@ -23,9 +23,9 @@ class ClienteTelegram:
         self._timeout = timeout_s
 
     async def enviar(self, chat_id: int, texto: str) -> None:
-        import httpx  # import perezoso
-
         try:
+            import httpx  # import perezoso
+
             async with httpx.AsyncClient(timeout=self._timeout) as c:
                 r = await c.post(
                     _API.format(token=self._token),
