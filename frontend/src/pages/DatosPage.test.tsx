@@ -89,6 +89,9 @@ const VIGENTE: Parametros = {
     { nombre: "Colchón/otros", valor: "17905", activo: true, orden: 4 },
   ],
   rampa_unidades: {},
+  // SUP-1: sin segundo tramo de crecimiento (comportamiento histórico)
+  crec_pct_mensual_2: null,
+  crec_mes_corte: null,
 };
 
 const MODELO = {

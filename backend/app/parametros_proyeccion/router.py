@@ -80,6 +80,9 @@ class ParametrosCampos(BaseModel):
     componentes_alistamiento: list["ComponenteBody"] | None = None
     # FIX-L: rampa de colocación por mes (YYYY-MM → unidades enteras ≥0). Default {}.
     rampa_unidades: dict[str, int] = Field(default_factory=dict)
+    # SUP-1: segundo tramo de crecimiento (van JUNTOS; None/None = sin tramo 2).
+    crec_pct_mensual_2: str | None = None
+    crec_mes_corte: int | None = Field(default=None, gt=0, le=180)
 
 
 class ComponenteBody(BaseModel):
@@ -147,6 +150,30 @@ def parsear_campos(body: ParametrosCampos) -> dict:
         if unidades < 0:
             raise HTTPException(422, f"rampa_unidades: unidades negativas en {mes}")
     campos["rampa_unidades"] = dict(body.rampa_unidades)
+    # SUP-1: segundo tramo de crecimiento. Los dos campos van JUNTOS (422 fail-loud);
+    # el Decimal se parsea aquí (regla 1: el monto/pct viaja como string).
+    if (body.crec_pct_mensual_2 is None) != (body.crec_mes_corte is None):
+        raise HTTPException(
+            422,
+            "segundo tramo de crecimiento incompleto: crec_pct_mensual_2 y "
+            "crec_mes_corte van juntos (o ninguno)",
+        )
+    if body.crec_pct_mensual_2 is not None:
+        try:
+            tasa2 = Decimal(body.crec_pct_mensual_2)
+            if not tasa2.is_finite():
+                raise InvalidOperation
+        except (InvalidOperation, ValueError):
+            raise HTTPException(
+                422, "crec_pct_mensual_2 debe ser un decimal en string"
+            ) from None
+        if tasa2 < 0:
+            raise HTTPException(422, "crec_pct_mensual_2 no puede ser negativo")
+        campos["crec_pct_mensual_2"] = tasa2
+        campos["crec_mes_corte"] = body.crec_mes_corte
+    else:
+        campos["crec_pct_mensual_2"] = None
+        campos["crec_mes_corte"] = None
     return campos
 
 
@@ -170,6 +197,11 @@ def _serializar(p: ParametrosProyeccion) -> dict:
         else None
     )
     out["rampa_unidades"] = dict(p.rampa_unidades)  # FIX-L
+    # SUP-1: segundo tramo (pct como string, regla 1; None cuando no hay tramo 2)
+    out["crec_pct_mensual_2"] = (
+        str(p.crec_pct_mensual_2) if p.crec_pct_mensual_2 is not None else None
+    )
+    out["crec_mes_corte"] = p.crec_mes_corte
     out["modificado_por"] = p.modificado_por
     return out
 

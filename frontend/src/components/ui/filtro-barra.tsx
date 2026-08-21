@@ -20,7 +20,14 @@ export interface FiltroSelect {
 }
 
 /** Opciones de horizonte del producto (§9): 18 m default · 3 años · 5 años · todo. */
+// SUP-1 (CEO 2026-08-17): granularidad CORTA para leer el arranque del trimestre y
+// del año (3/6/9/12/15) sin perder las ventanas largas de decisión estructural.
 export const OPCIONES_HORIZONTE: OpcionFiltro[] = [
+  { valor: "3", label: "3 meses" },
+  { valor: "6", label: "6 meses" },
+  { valor: "9", label: "9 meses" },
+  { valor: "12", label: "12 meses" },
+  { valor: "15", label: "15 meses" },
   { valor: "18", label: "18 meses" },
   { valor: "36", label: "3 años" },
   { valor: "60", label: "5 años" },

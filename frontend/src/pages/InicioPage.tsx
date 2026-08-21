@@ -23,6 +23,7 @@ import { Cargando } from "@/components/ui/cargando";
 import { ChartCard } from "@/components/ui/chart-card";
 import { ErrorEstado } from "@/components/ui/error-estado";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
+import { FiltroBarra, OPCIONES_HORIZONTE } from "@/components/ui/filtro-barra";
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { type Mes, listarMeses, mesEnEjecucion } from "@/lib/meses";
 import {
@@ -137,14 +138,16 @@ function Pulso({
   data: Proyeccion;
   mesActivo: Mes | undefined;
 }) {
+  const [ventanaMeses, setVentanaMeses] = useState(VENTANA_GRAFICO);
   const perforada = data.meses_bajo_minimo > 0;
   const requiereCapital = !parseMonto(data.capital_requerido).isZero();
   const piso = parseMonto(data.piso_caja);
   const vsUmbral = piso.minus(parseMonto(data.caja_minima));
   const caja = cajaHoy(mesActivo);
 
-  // Ventana del gráfico (18 m); el juicio de arriba ya miró los 60.
-  const ventana = data.meses.slice(0, VENTANA_GRAFICO);
+  // Ventana del gráfico; el juicio de arriba SIEMPRE mira los 60 (patrón F1: una
+  // ventana corta no puede producir un ✓ falso). SUP-1: la elige el CEO.
+  const ventana = data.meses.slice(0, ventanaMeses);
   const criticoFuera =
     perforada && data.mes_mas_ajustado > ventana[ventana.length - 1].mes;
 
@@ -217,13 +220,28 @@ function Pulso({
         }
         protagonista
         acciones={
-          <Link
-            to="/proyeccion"
-            className="inline-flex items-center gap-1 font-sans text-cuerpo font-semibold text-cyan transition-colors hover:text-cyan/80"
-          >
-            Ver proyección completa
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* SUP-1: filtrar la gráfica por tiempo también en Inicio */}
+            <FiltroBarra
+              filtros={[
+                {
+                  id: "ventana-inicio",
+                  label: "Ver",
+                  opciones: OPCIONES_HORIZONTE,
+                  valor: String(ventanaMeses),
+                  porDefecto: String(VENTANA_GRAFICO),
+                  onChange: (v) => setVentanaMeses(Number(v)),
+                },
+              ]}
+            />
+            <Link
+              to="/proyeccion"
+              className="inline-flex items-center gap-1 font-sans text-cuerpo font-semibold text-cyan transition-colors hover:text-cyan/80"
+            >
+              Ver proyección completa
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         }
       >
         <CashCurve meses={ventana} umbral={data.caja_minima} anotada />

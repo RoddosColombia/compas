@@ -50,6 +50,13 @@ export type CamposParametros = { [K in MoneyKey]: string } & {
 } & { componentes_alistamiento: ComponenteAlistamiento[] | null } & {
   /** FIX-L: rampa de colocación por mes (YYYY-MM → unidades enteras ≥0). Default {}. */
   rampa_unidades: Record<string, number>;
+  /**
+   * SUP-1: segundo tramo de crecimiento. `crec_mes_corte = 18` → los meses 1..18
+   * crecen con `crec_pct_mensual` y del 19 en adelante con `crec_pct_mensual_2`.
+   * Van JUNTOS; null/null = un solo tramo (comportamiento histórico).
+   */
+  crec_pct_mensual_2: string | null;
+  crec_mes_corte: number | null;
 };
 
 export type Parametros = {

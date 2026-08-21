@@ -81,6 +81,8 @@ def colocacion_mensual(
     crec_pct_mensual: Decimal,
     horizonte_meses: int,
     rampa: list[int] | None = None,
+    crec_pct_mensual_2: Decimal | None = None,
+    crec_mes_corte: int | None = None,
 ) -> list[int]:
     """Serie de motos colocadas por mes (unidades enteras).
 
@@ -88,10 +90,17 @@ def colocacion_mensual(
     crec))` mes a mes (con 1% da 50,51,52,53…, distinto de `ROUND(50 × 1.01^k)`).
     `rampa` = colocación REAL de los primeros meses (override); el primer mes
     post-rampa reinicia en `motos_base` y de ahí crece encadenado. `crec_pct_mensual`
-    es fracción (0.01 = 1%). Redondeo half-up (Math.floor(x+0.5) del artefacto)."""
+    es fracción (0.01 = 1%). Redondeo half-up (Math.floor(x+0.5) del artefacto).
+
+    SUP-1 (CEO 2026-08-17) — crecimiento por TRAMOS, aditivo y opcional: con
+    `crec_mes_corte = 18` los meses 1..18 crecen con `crec_pct_mensual` y del 19 en
+    adelante con `crec_pct_mensual_2` (una tasa de largo plazo más sobria: 15%
+    mensual compuesto a 10 años da cifras irreales). Ambos None → serie IDÉNTICA a
+    la de siempre (candado en tests + golden master)."""
     rampa = rampa or []
     serie: list[int] = []
     encadenada = motos_base
+    hay_tramo2 = crec_pct_mensual_2 is not None and crec_mes_corte is not None
     for m in range(horizonte_meses):
         if m < len(rampa):
             serie.append(rampa[m])
@@ -99,7 +108,13 @@ def colocacion_mensual(
         if m == len(rampa):
             encadenada = motos_base
         else:
-            crudo = Decimal(encadenada) * (Decimal(1) + crec_pct_mensual)
+            # el tramo 2 aplica DESPUÉS del mes de corte (corte=18 → desde el 19)
+            crec = (
+                crec_pct_mensual_2
+                if hay_tramo2 and m >= crec_mes_corte
+                else crec_pct_mensual
+            )
+            crudo = Decimal(encadenada) * (Decimal(1) + crec)
             encadenada = int(crudo.quantize(Decimal(1), rounding=ROUND_HALF_UP))
         serie.append(encadenada)
     return serie
@@ -549,6 +564,10 @@ class ParametrosMotor:
     overrides_default: dict[int, Decimal] | None
     caja_inicial: Decimal
     caja_minima: Decimal
+    # SUP-1 (CEO 2026-08-17): segundo tramo de crecimiento, opcional y aditivo.
+    # Ver `colocacion_mensual`; ambos None = comportamiento histórico exacto.
+    crec_pct_mensual_2: Decimal | None = None
+    crec_mes_corte: int | None = None
     # Cartera previa (111 créditos preexistentes): serie semanal REAL del LoanTape.
     # semana global → recaudo / nº activos. Default None = sin cartera previa.
     recaudo_previo_por_semana: dict[int, Decimal] | None = None
@@ -617,7 +636,12 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
     (provisión fuera del flujo) y horizonte configurable. Compute-only, todo Decimal."""
     meses_ym = _meses_del_horizonte(p.mes_inicio, p.horizonte_meses)
     colocacion = colocacion_mensual(
-        p.motos_base, p.crec_pct_mensual, p.horizonte_meses, p.rampa
+        p.motos_base,
+        p.crec_pct_mensual,
+        p.horizonte_meses,
+        p.rampa,
+        p.crec_pct_mensual_2,
+        p.crec_mes_corte,
     )
     recaudo = recaudo_credito_mensual(
         colocacion,
