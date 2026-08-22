@@ -51,6 +51,11 @@ PERMISSIONS: dict[str, frozenset[Role]] = {
     "ciclo:confirmar_cierre": frozenset({Role.admin}),
     "ciclo:reabrir": frozenset({Role.admin}),  # + step-up MFA (0b)
     "ciclo:config": frozenset({Role.admin}),  # + step-up MFA (0b)
+    # ── CR-CFO-2 (FABS inc3 Pieza B, canal Telegram, GO CEO 2026-08-17): administrar
+    # la allowlist telegram_id<->user_id. SOLO admin. `require_role` queda reservado
+    # para /users (H-1, ver docstring de app/auth/deps.py) — administrar el canal es
+    # un endpoint de NEGOCIO, así que se gatea con require_permission, como el resto.
+    "cfo:telegram_administrar": frozenset({Role.admin}),
 }
 
 CAPABILITIES: frozenset[str] = frozenset(PERMISSIONS)

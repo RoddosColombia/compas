@@ -44,6 +44,9 @@ CANONICA: dict[str, set[Role]] = {
     "ciclo:confirmar_cierre": {Role.admin},
     "ciclo:reabrir": {Role.admin},  # + step-up MFA (Sprint 0b)
     "ciclo:config": {Role.admin},  # + step-up MFA (Sprint 0b)
+    # CR-CFO-2 (FABS inc3 Pieza B, canal Telegram): administrar la allowlist
+    # telegram_id<->user_id (tras flag CFO_ENABLED). SOLO admin.
+    "cfo:telegram_administrar": {Role.admin},
 }
 
 

@@ -188,8 +188,10 @@ def create_app() -> FastAPI:
 
     if cfo_enabled():
         from app.cfo.router import router as cfo_router
+        from app.cfo.telegram.router import router as cfo_telegram_router
 
         app.include_router(cfo_router)
+        app.include_router(cfo_telegram_router)
 
     return app
 
