@@ -23,6 +23,9 @@ export const PARAMS_MONEY = [
   "pct_recuperacion",
   "pct_default",
   "pct_provision",
+  // SUP-2: fracción del pago de IVA que se prefondea + fondo AVAL (% del recaudo)
+  "pct_prefondeo_iva",
+  "pct_aval_recaudo",
 ] as const;
 
 export const PARAMS_INT = [
@@ -32,6 +35,8 @@ export const PARAMS_INT = [
   "base_auteco_dias",
   "mes_inicio_deuda",
   "meses_deuda",
+  // SUP-2: meses de rezago de la recuperación de mora (0 = el mismo mes)
+  "meses_rezago_recuperacion",
 ] as const;
 
 type MoneyKey = (typeof PARAMS_MONEY)[number];
@@ -57,6 +62,15 @@ export type CamposParametros = { [K in MoneyKey]: string } & {
    */
   crec_pct_mensual_2: string | null;
   crec_mes_corte: number | null;
+  /**
+   * SUP-2: mora y recuperación de los escenarios EXTREMOS (el base son
+   * `pct_mora`/`pct_recuperacion`). `null` = sin editar → se conserva el delta en
+   * puntos de SUP-1 sobre el preset del escenario.
+   */
+  pct_mora_pesimista: string | null;
+  pct_recuperacion_pesimista: string | null;
+  pct_mora_optimista: string | null;
+  pct_recuperacion_optimista: string | null;
 };
 
 export type Parametros = {

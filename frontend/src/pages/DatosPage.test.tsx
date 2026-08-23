@@ -92,6 +92,14 @@ const VIGENTE: Parametros = {
   // SUP-1: sin segundo tramo de crecimiento (comportamiento histórico)
   crec_pct_mensual_2: null,
   crec_mes_corte: null,
+  // SUP-2: variables editables (defaults = el comportamiento de siempre)
+  meses_rezago_recuperacion: 1,
+  pct_prefondeo_iva: "1",
+  pct_aval_recaudo: "0",
+  pct_mora_pesimista: null,
+  pct_recuperacion_pesimista: null,
+  pct_mora_optimista: null,
+  pct_recuperacion_optimista: null,
 };
 
 const MODELO = {

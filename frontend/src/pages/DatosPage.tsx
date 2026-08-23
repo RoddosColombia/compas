@@ -140,6 +140,13 @@ const BLOQUES: BloqueDef[] = [
         contrato: "De lo que cayó en mora, cuánto se recupera después.",
       },
       {
+        key: "meses_rezago_recuperacion",
+        label: "La recuperación llega después de",
+        unidad: "meses",
+        contrato:
+          "La mora es diferimiento, no pérdida: el dinero vuelve, pero más tarde. Con 1 mes, lo que cae en mora este mes se recupera el siguiente. Con 0 se recupera el mismo mes (más optimista y menos realista).",
+      },
+      {
         key: "pct_default",
         label: "Incumplimiento (cartera perdida)",
         unidad: "pct",
@@ -150,6 +157,20 @@ const BLOQUES: BloqueDef[] = [
         label: "Provisión de cartera (contable, no afecta la caja)",
         unidad: "pct",
         contrato: "Reserva contable informativa. NO entra al flujo de caja.",
+      },
+      {
+        key: "pct_aval_recaudo",
+        label: "Fondo AVAL propio (autoseguro)",
+        unidad: "pct",
+        contrato:
+          "Reserva mensual para robo o siniestro, como % del recaudo de cuotas. A diferencia de la provisión, esta SÍ sale de la caja cada mes. En 0 % no existe.",
+      },
+      {
+        key: "pct_prefondeo_iva",
+        label: "Prefondeo del IVA",
+        unidad: "pct",
+        contrato:
+          "Qué parte del IVA por pagar se va reservando mes a mes dentro del período. Al 100 % el fondo llega completo a la fecha DIAN; con menos, el resto golpea la caja el mes del pago.",
       },
     ],
   },

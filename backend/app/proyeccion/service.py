@@ -164,14 +164,31 @@ def _armar_parametros(
     # en pesimista y en optimista" → DELTA EN PUNTOS sobre el preset base, aplicado a
     # los tres escenarios y acotado a [0, 1] (una mora del 98% no vuelve 101% al
     # pesimista). Escenario desconocido → los supuestos tal cual.
+    # SUP-2 (CEO 2026-08-22): si el CEO EDITÓ la mora/recuperación de un escenario
+    # extremo, ese valor MANDA — nada de porcentajes clavados en el código. Sin valor
+    # explícito se conserva el delta de SUP-1 (compatibilidad, tests de SUP-1 verdes).
+    editables = {
+        "pesimista": (params.pct_mora_pesimista, params.pct_recuperacion_pesimista),
+        "optimista": (params.pct_mora_optimista, params.pct_recuperacion_optimista),
+    }
     if escenario in PRESETS_ESCENARIO:
-        pct_mora = _con_delta(
-            PRESETS_ESCENARIO[escenario]["pct_mora"],
-            params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
+        mora_edit, recup_edit = editables.get(escenario, (None, None))
+        pct_mora = (
+            mora_edit
+            if mora_edit is not None
+            else _con_delta(
+                PRESETS_ESCENARIO[escenario]["pct_mora"],
+                params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
+            )
         )
-        pct_recuperacion = _con_delta(
-            PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
-            params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
+        pct_recuperacion = (
+            recup_edit
+            if recup_edit is not None
+            else _con_delta(
+                PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
+                params.pct_recuperacion
+                - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
+            )
         )
     pm = ParametrosMotor(
         mes_inicio=mes_inicio,
@@ -183,6 +200,9 @@ def _armar_parametros(
         # SUP-1: segundo tramo de crecimiento (None/None = comportamiento histórico)
         crec_pct_mensual_2=params.crec_pct_mensual_2,
         crec_mes_corte=params.crec_mes_corte,
+        # SUP-2: rezago de la recuperación de mora + fondo AVAL (ambos editables)
+        meses_rezago_recuperacion=params.meses_rezago_recuperacion,
+        pct_aval_recaudo=params.pct_aval_recaudo,
         adelanto_auteco=params.adelanto_auteco,
         plazo_auteco_dias=params.plazo_auteco_dias,
         base_auteco_dias=params.base_auteco_dias,
@@ -293,6 +313,7 @@ def _serializar(
                 "fondeo": money_str(f.fondeo),
                 "int_deuda": money_str(f.int_deuda),
                 "iva": money_str(f.iva),
+                "aval": money_str(f.aval),  # SUP-2: fondo AVAL propio
                 "egresos": money_str(f.egresos),
                 "flujo": money_str(f.flujo),
                 "caja": money_str(f.caja),
@@ -334,7 +355,9 @@ async def _compuerta_iva_activa() -> bool:
 
 
 async def _iva_plan(
-    mes_inicio: tuple[int, int], horizonte: int
+    mes_inicio: tuple[int, int],
+    horizonte: int,
+    pct_prefondeo: Decimal = Decimal("1"),
 ) -> tuple[dict[int, object], list]:
     """Puente C11↔C7: liquida las facturas cargadas y devuelve (egreso_por_mes, fondo).
     `egreso_por_mes` = IVA neto de cada período en el índice de su fecha DIAN real
@@ -366,6 +389,7 @@ async def _iva_plan(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte,
         periodicidad=periodicidad,
+        pct_prefondeo=pct_prefondeo,  # SUP-2: editable (1 = 100 %, como hasta hoy)
     )
     return egreso, fondo
 
@@ -433,7 +457,9 @@ async def _resultado_con(
             f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
         )
     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
-    iva_egreso, fondo = await _iva_plan(mes_inicio, horizonte)
+    iva_egreso, fondo = await _iva_plan(
+        mes_inicio, horizonte, params.pct_prefondeo_iva
+    )
     pm = _armar_parametros(
         params,
         modelos,
@@ -987,7 +1013,9 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
         return _sensibilidad_cache[clave]
 
     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
-    iva_egreso, _fondo = await _iva_plan(mes_inicio, SENSIBILIDAD_HORIZONTE)
+    iva_egreso, _fondo = await _iva_plan(
+        mes_inicio, SENSIBILIDAD_HORIZONTE, params.pct_prefondeo_iva
+    )
     pm = _armar_parametros(
         params,
         modelos,

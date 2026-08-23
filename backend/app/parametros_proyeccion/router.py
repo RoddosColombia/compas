@@ -83,6 +83,15 @@ class ParametrosCampos(BaseModel):
     # SUP-1: segundo tramo de crecimiento (van JUNTOS; None/None = sin tramo 2).
     crec_pct_mensual_2: str | None = None
     crec_mes_corte: int | None = Field(default=None, gt=0, le=180)
+    # SUP-2: mora/recuperación de los escenarios extremos + rezago + prefondeo + aval.
+    # Los cuatro primeros en None = se conserva el delta de SUP-1 (compatibilidad).
+    pct_mora_pesimista: str | None = None
+    pct_recuperacion_pesimista: str | None = None
+    pct_mora_optimista: str | None = None
+    pct_recuperacion_optimista: str | None = None
+    meses_rezago_recuperacion: int = Field(default=1, ge=0, le=12)
+    pct_prefondeo_iva: str = "1"
+    pct_aval_recaudo: str = "0"
 
 
 class ComponenteBody(BaseModel):
@@ -150,6 +159,31 @@ def parsear_campos(body: ParametrosCampos) -> dict:
         if unidades < 0:
             raise HTTPException(422, f"rampa_unidades: unidades negativas en {mes}")
     campos["rampa_unidades"] = dict(body.rampa_unidades)
+    # SUP-2: los porcentajes editables (escenarios extremos, prefondeo, aval). Los de
+    # escenario admiten None = "sin editar" (cae al delta de SUP-1); los otros dos
+    # siempre traen valor. El rango [0,1] lo valida el dominio (fail-closed).
+    for c in (
+        "pct_mora_pesimista",
+        "pct_recuperacion_pesimista",
+        "pct_mora_optimista",
+        "pct_recuperacion_optimista",
+        "pct_prefondeo_iva",
+        "pct_aval_recaudo",
+    ):
+        crudo = getattr(body, c)
+        if crudo is None:
+            campos[c] = None
+            continue
+        try:
+            v = Decimal(crudo)
+            if not v.is_finite():
+                raise InvalidOperation
+        except (InvalidOperation, ValueError):
+            raise HTTPException(422, f"{c} debe ser un decimal en string") from None
+        if not (Decimal("0") <= v <= Decimal("1")):
+            raise HTTPException(422, f"{c} debe ser una fracción entre 0 y 1")
+        campos[c] = v
+    campos["meses_rezago_recuperacion"] = body.meses_rezago_recuperacion
     # SUP-1: segundo tramo de crecimiento. Los dos campos van JUNTOS (422 fail-loud);
     # el Decimal se parsea aquí (regla 1: el monto/pct viaja como string).
     if (body.crec_pct_mensual_2 is None) != (body.crec_mes_corte is None):
@@ -202,6 +236,18 @@ def _serializar(p: ParametrosProyeccion) -> dict:
         str(p.crec_pct_mensual_2) if p.crec_pct_mensual_2 is not None else None
     )
     out["crec_mes_corte"] = p.crec_mes_corte
+    # SUP-2: porcentajes editables (None cuando el escenario no está editado)
+    for c in (
+        "pct_mora_pesimista",
+        "pct_recuperacion_pesimista",
+        "pct_mora_optimista",
+        "pct_recuperacion_optimista",
+    ):
+        v = getattr(p, c)
+        out[c] = str(v) if v is not None else None
+    out["meses_rezago_recuperacion"] = p.meses_rezago_recuperacion
+    out["pct_prefondeo_iva"] = str(p.pct_prefondeo_iva)
+    out["pct_aval_recaudo"] = str(p.pct_aval_recaudo)
     out["modificado_por"] = p.modificado_por
     return out
 
