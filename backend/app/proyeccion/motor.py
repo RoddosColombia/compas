@@ -317,12 +317,19 @@ def neto_por_mora(
     pct_recuperacion: Decimal,
     pct_default: Decimal,
     pct_provision: Decimal = Decimal("0"),
+    mora_a_recuperar: Decimal | None = None,
 ) -> AjusteMora:
     """Aplica mora/recuperación/default al bruto (réplica FC filas 17-20 del artefacto,
     MENOS la provisión, que sale del flujo por 'caja veraz'). Los porcentajes son el
-    valor del escenario por defecto; el motor los deja editar mes a mes."""
+    valor del escenario por defecto; el motor los deja editar mes a mes.
+
+    SUP-2 · `mora_a_recuperar`: la mora SOBRE LA QUE se calcula la recuperación. None
+    (default) = la mora del propio mes, la semántica del artefacto. Con un valor (la
+    mora de un mes anterior) la recuperación queda REZAGADA, como en el modelo v9.1
+    (`FC!E18 = −D17×E7`): la mora es diferimiento, y el dinero vuelve después."""
     mora = -bruto * pct_mora
-    recuperacion = -mora * pct_recuperacion  # recupera parte de la mora
+    base_recup = mora if mora_a_recuperar is None else mora_a_recuperar
+    recuperacion = -base_recup * pct_recuperacion  # recupera parte de la mora
     default = -bruto * pct_default
     provision = -bruto * pct_provision
     neto = bruto + mora + recuperacion + default
@@ -568,6 +575,12 @@ class ParametrosMotor:
     # Ver `colocacion_mensual`; ambos None = comportamiento histórico exacto.
     crec_pct_mensual_2: Decimal | None = None
     crec_mes_corte: int | None = None
+    # SUP-2 (CEO 2026-08-22): meses de REZAGO de la recuperación de mora. 0 = la
+    # semántica del artefacto (recupera en el mismo mes) → golden master intacto.
+    meses_rezago_recuperacion: int = 0
+    # SUP-2: fondo AVAL propio / autoseguro = % del recaudo de crédito que se reserva
+    # cada mes (v9.1 `PARAMETROS!C55` → `FC!33`). 0 = no existe (comportamiento de hoy).
+    pct_aval_recaudo: Decimal = Decimal("0")
     # Cartera previa (111 créditos preexistentes): serie semanal REAL del LoanTape.
     # semana global → recaudo / nº activos. Default None = sin cartera previa.
     recaudo_previo_por_semana: dict[int, Decimal] | None = None
@@ -609,6 +622,8 @@ class MesProyeccion:
     flujo: Decimal
     caja: Decimal
     estado: str  # 'ok' | 'critico' | 'negativo'
+    # SUP-2: reserva del fondo AVAL propio (≤ 0). 0.00 si el % está en 0 (default).
+    aval: Decimal = Decimal("0.00")
 
 
 @dataclass(frozen=True)
@@ -685,15 +700,27 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
 
     filas: list[MesProyeccion] = []
     caja = _cop(p.caja_inicial)
+    # SUP-2: historial de mora por mes para la recuperación REZAGADA (v9.1). Con
+    # rezago 0 no se usa (semántica del artefacto).
+    moras: list[Decimal] = []
     for m, (y, mo) in enumerate(meses_ym):
         bruto = recaudo[m] + iniciales[m]
+        rezago = p.meses_rezago_recuperacion
+        mora_a_recuperar: Decimal | None = None
+        if rezago > 0:
+            # la mora que toca recuperar este mes es la de `rezago` meses atrás; en
+            # los primeros meses no hay de dónde recuperar (no se inventa: 0).
+            i = m - rezago
+            mora_a_recuperar = moras[i] if i >= 0 else Decimal("0")
         ajuste = neto_por_mora(
             bruto,
             ov_mora.get(m, p.pct_mora),
             p.pct_recuperacion,
             ov_def.get(m, p.pct_default),
             p.pct_provision,
+            mora_a_recuperar,
         )
+        moras.append(ajuste.mora)
         gastos_fijos = _cop(-p.gastos_fijos)
         gps = _cop(-Decimal(cartera[m]) * p.gps_moto)
         costo_nueva = _cop(-Decimal(colocacion[m]) * p.costo_moto_nueva)
@@ -703,6 +730,9 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
             else Decimal("0.00")
         )
         iva = _cop(-iva_por_mes.get(m, Decimal("0")))
+        # SUP-2: fondo AVAL propio = % del RECAUDO DE CRÉDITO (v9.1 FC!33 usa la fila
+        # del recaudo de cuotas, no el ingreso bruto: la cuota inicial no se asegura).
+        aval = _cop(-recaudo[m] * p.pct_aval_recaudo)
         egresos = _cop(
             gastos_fijos
             + gps
@@ -712,6 +742,7 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
             + pago_inv[m]
             + fondeo[m]
             + iva
+            + aval
         )
         flujo = _cop(ajuste.neto + egresos)
         # primer mes: caja fija (= caja inicial); el flujo de ese mes no la mueve.
@@ -735,6 +766,7 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
                 fondeo=fondeo[m],
                 int_deuda=int_deuda,
                 iva=iva,
+                aval=aval,
                 egresos=egresos,
                 flujo=flujo,
                 caja=caja,
