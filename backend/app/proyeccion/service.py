@@ -124,6 +124,68 @@ def _con_delta(preset: Decimal, delta: Decimal) -> Decimal:
     return min(Decimal("1"), max(Decimal("0"), preset + delta))
 
 
+def _mora_del_escenario(
+    params: ParametrosProyeccion, escenario: str
+) -> tuple[Decimal, Decimal]:
+    """(pct_mora, pct_recuperacion) EFECTIVOS del escenario. Una sola fuente para el
+    motor y para lo que la pantalla muestra — si divergieran, el usuario vería unos
+    supuestos y la curva usaría otros.
+
+    SUP-2: si el CEO editó el escenario extremo, ese valor MANDA. Si no, se conserva
+    el delta en puntos de SUP-1 sobre el preset. Escenario desconocido → los supuestos
+    tal cual."""
+    if escenario not in PRESETS_ESCENARIO:
+        return params.pct_mora, params.pct_recuperacion
+    editables = {
+        "pesimista": (params.pct_mora_pesimista, params.pct_recuperacion_pesimista),
+        "optimista": (params.pct_mora_optimista, params.pct_recuperacion_optimista),
+    }
+    mora_edit, recup_edit = editables.get(escenario, (None, None))
+    mora = (
+        mora_edit
+        if mora_edit is not None
+        else _con_delta(
+            PRESETS_ESCENARIO[escenario]["pct_mora"],
+            params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
+        )
+    )
+    recup = (
+        recup_edit
+        if recup_edit is not None
+        else _con_delta(
+            PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
+            params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
+        )
+    )
+    return mora, recup
+
+
+def _supuestos_visibles(params: ParametrosProyeccion, escenario: str) -> dict:
+    """SUP-5 (CEO 2026-08-23): los drivers que EXPLICAN la curva en pantalla, para que
+    no haya que adivinar de dónde sale el resultado. Son los valores EFECTIVOS del
+    escenario que se está viendo (con SUP-2 cada escenario tiene su propia mora).
+    Porcentajes como string (regla 1)."""
+    mora, recup = _mora_del_escenario(params, escenario)
+    return {
+        "pct_mora": str(mora),
+        "pct_recuperacion": str(recup),
+        "pct_default": str(params.pct_default),
+        "pct_provision": str(params.pct_provision),
+        "meses_rezago_recuperacion": params.meses_rezago_recuperacion,
+        "pct_aval_recaudo": str(params.pct_aval_recaudo),
+        "pct_prefondeo_iva": str(params.pct_prefondeo_iva),
+        "motos_base": params.motos_base,
+        "crec_pct_mensual": str(params.crec_pct_mensual),
+        "crec_pct_mensual_2": (
+            str(params.crec_pct_mensual_2)
+            if params.crec_pct_mensual_2 is not None
+            else None
+        ),
+        "crec_mes_corte": params.crec_mes_corte,
+        "rampa_unidades": dict(params.rampa_unidades),
+    }
+
+
 def _guard_apache_por_mes(
     apache_por_mes: dict[int, int] | None, modelos: list[ModeloMoto]
 ) -> None:
@@ -162,39 +224,10 @@ def _armar_parametros(
     iva_egreso_por_mes: dict[int, object] | None = None,
     caja_inicial_override: object | None = None,
 ) -> ParametrosMotor:
-    pct_mora, pct_recuperacion = params.pct_mora, params.pct_recuperacion
-    # SUP-1 (CEO 2026-08-17) — los SUPUESTOS fijan el NIVEL, el escenario el DESVÍO.
-    # Antes el preset PISABA la mora/recuperación del CEO y "base" está en los presets,
-    # así que sus valores se descartaban SIEMPRE (bug: "la mora no impacta en ninguna
-    # vía"). Regla del CEO: "si subo la mora de 3 a 5, esos dos puntos se suman también
-    # en pesimista y en optimista" → DELTA EN PUNTOS sobre el preset base, aplicado a
-    # los tres escenarios y acotado a [0, 1] (una mora del 98% no vuelve 101% al
-    # pesimista). Escenario desconocido → los supuestos tal cual.
-    # SUP-2 (CEO 2026-08-22): si el CEO EDITÓ la mora/recuperación de un escenario
-    # extremo, ese valor MANDA — nada de porcentajes clavados en el código. Sin valor
-    # explícito se conserva el delta de SUP-1 (compatibilidad, tests de SUP-1 verdes).
-    editables = {
-        "pesimista": (params.pct_mora_pesimista, params.pct_recuperacion_pesimista),
-        "optimista": (params.pct_mora_optimista, params.pct_recuperacion_optimista),
-    }
-    if escenario in PRESETS_ESCENARIO:
-        mora_edit, recup_edit = editables.get(escenario, (None, None))
-        pct_mora = (
-            mora_edit
-            if mora_edit is not None
-            else _con_delta(
-                PRESETS_ESCENARIO[escenario]["pct_mora"],
-                params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
-            )
-        )
-        pct_recuperacion = (
-            recup_edit
-            if recup_edit is not None
-            else _con_delta(
-                PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
-                params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
-            )
-        )
+    # SUP-1/SUP-2/SUP-5: la resolución de la mora del escenario vive en
+    # `_mora_del_escenario` — UNA sola fuente para el motor y para los supuestos que
+    # la pantalla muestra (si divergieran, se verían unos y la curva usaría otros).
+    pct_mora, pct_recuperacion = _mora_del_escenario(params, escenario)
     pm = ParametrosMotor(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
@@ -263,11 +296,15 @@ def _serializar(
     rec: ResultadoReconciliado | None = None,
     *,
     meta: "AnclajeMeta | None" = None,
+    supuestos: dict | None = None,
 ) -> dict:
     meses_ym = [f.mes for f in r.meses]
     meta = meta or AnclajeMeta()
     return {
         "escenario": escenario,
+        # SUP-5 (CEO 2026-08-23): los drivers que EXPLICAN esta curva — los valores
+        # EFECTIVOS del escenario en pantalla, no los del set base.
+        "supuestos": supuestos or {},
         # P5 — origen de cada cifra (aditivo): marcas por mes, rubros sin concepto del
         # motor, y completitud del mes en curso (B13). Vacíos si no hay anclaje.
         "meses_anclados": dict(meta.meses_anclados),
@@ -319,6 +356,12 @@ def _serializar(
                 "int_deuda": money_str(f.int_deuda),
                 "iva": money_str(f.iva),
                 "aval": money_str(f.aval),  # SUP-2: fondo AVAL propio
+                # SUP-5: la explicación del ingreso (mora/recuperación/default), para
+                # que la pantalla muestre QUÉ compone el resultado. En un mes anclado
+                # a la ejecución real vienen en 0: su ingreso sale del libro.
+                "mora": money_str(f.mora),
+                "recuperacion": money_str(f.recuperacion),
+                "default": money_str(f.default),
                 "egresos": money_str(f.egresos),
                 "flujo": money_str(f.flujo),
                 "caja": money_str(f.caja),
@@ -619,7 +662,17 @@ async def _proyectar_con(
         horizonte_meses=horizonte_meses,
         caja_inicial_override=caja_inicial_override,
     )
-    return _serializar(r, escenario, caja_min, fondo, rec, meta=meta)
+    return _serializar(
+        r,
+        escenario,
+        caja_min,
+        fondo,
+        rec,
+        meta=meta,
+        # SUP-5: los drivers efectivos de ESTA curva, para que la pantalla explique
+        # el resultado en vez de pedirle al usuario que adivine.
+        supuestos=_supuestos_visibles(params, escenario),
+    )
 
 
 async def proyectar_vigente(
@@ -743,10 +796,18 @@ async def proyectar_impactos(
     )
     ajustado = aplicar_impactos(r, ajustes, caja_min)
     r_aj = _kpis_a_resultado(ajustado)
+    # SUP-5: los supuestos son los MISMOS para base y ajustada (un ajuste de D1 mueve
+    # el flujo, no los drivers). Van en ambas para que `base` siga siendo GET
+    # /proyeccion bit a bit — candado de test_impactos_endpoints.
+    supuestos = _supuestos_visibles(params, escenario)
     return {
         "escenario": escenario,
-        "base": _serializar(r, escenario, caja_min, fondo, meta=meta),
-        "ajustada": _serializar(r_aj, escenario, caja_min, fondo, meta=meta),
+        "base": _serializar(
+            r, escenario, caja_min, fondo, meta=meta, supuestos=supuestos
+        ),
+        "ajustada": _serializar(
+            r_aj, escenario, caja_min, fondo, meta=meta, supuestos=supuestos
+        ),
         "valles_base": [
             _serializar_valle(v) for v in detectar_valles(r.meses, caja_min)
         ],

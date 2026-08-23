@@ -624,6 +624,12 @@ class MesProyeccion:
     estado: str  # 'ok' | 'critico' | 'negativo'
     # SUP-2: reserva del fondo AVAL propio (≤ 0). 0.00 si el % está en 0 (default).
     aval: Decimal = Decimal("0.00")
+    # SUP-5: las tres variables de cartera POR SEPARADO, para que la pantalla pueda
+    # explicar el resultado (antes viajaban sumadas dentro de `neto`). Invariante:
+    # `neto == ingreso_bruto + mora + recuperacion + default`.
+    mora: Decimal = Decimal("0.00")  # ≤ 0 (resta)
+    recuperacion: Decimal = Decimal("0.00")  # ≥ 0 (vuelve)
+    default: Decimal = Decimal("0.00")  # ≤ 0 (no vuelve)
 
 
 @dataclass(frozen=True)
@@ -767,6 +773,10 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
                 int_deuda=int_deuda,
                 iva=iva,
                 aval=aval,
+                # SUP-5: la explicación del ingreso, no solo su total
+                mora=ajuste.mora,
+                recuperacion=ajuste.recuperacion,
+                default=ajuste.default,
                 egresos=egresos,
                 flujo=flujo,
                 caja=caja,

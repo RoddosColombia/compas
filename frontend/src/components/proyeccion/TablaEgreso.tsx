@@ -5,6 +5,11 @@
 // (candado en lib/egreso). Fila expandible por mes con el desglose completo, fila
 // de totales al pie, sin centavos (F1 §3), flujo negativo en `critico`. El lote
 // Auteco se marca real/proyectado según la ventana reconciliada (D2 §4).
+//
+// SUP-5 — la tabla también explica la CARTERA: motos colocadas y créditos activos
+// bajo el mes (sin columna nueva), y en la fila expandible el desglose que abre la
+// columna «Ajuste mora/default» en sus tres variables (mora, recuperación,
+// incumplimiento). Nada de esto es cálculo nuevo: el motor ya los entregaba.
 
 import { Fragment, type ReactNode, useState } from "react";
 
@@ -178,6 +183,15 @@ export function TablaEgreso({
                           </span>
                           {formatMesCorto(m.mes)}
                         </span>
+                        {/* SUP-5 — «cuántas motos vendidas mes a mes»: la variable
+                            física que mueve todo el mes, a la vista sin abrir el
+                            desglose y sin columna nueva (nada de scroll lateral). */}
+                        <span
+                          className="font-sans text-apoyo whitespace-nowrap text-ink-faint"
+                          title="Motos colocadas en el mes · créditos activos pagando al cierre del mes"
+                        >
+                          {m.motos} motos · {m.cartera} en cartera
+                        </span>
                         {hayCiclo && (
                           <MarcaOrigen marca={mesesAnclados[m.mes]} />
                         )}
@@ -285,7 +299,32 @@ function DesgloseMes({
   // los campos de egreso ya llegan negativos del motor: formatCOPEntero pinta el signo.
   const f = formatCOPEntero;
   return (
-    <div className="grid grid-cols-1 gap-x-8 gap-y-1 text-apoyo sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-x-8 gap-y-3 text-apoyo sm:grid-cols-2">
+      {/* SUP-5 — de dónde sale la columna «Ajuste mora/default»: las tres variables
+          de cartera que el motor ya calculaba y viajaban sumadas. Suman exactamente
+          el ajuste (mora + recuperación + default == neto − bruto). */}
+      <Grupo titulo="Cartera (dentro de Ingreso)">
+        <Linea etiqueta="Recaudo bruto esperado" valor={f(m.ingreso_bruto)} />
+        <Linea etiqueta="Mora · no llega en su mes" valor={f(m.mora)} />
+        <Linea
+          etiqueta="Recuperación · mora que sí vuelve"
+          valor={f(m.recuperacion)}
+        />
+        <Linea
+          etiqueta="Incumplimiento · pérdida definitiva"
+          valor={f(m.default)}
+        />
+        <Linea etiqueta="Ingreso neto a caja" valor={f(m.neto)} />
+      </Grupo>
+      <Grupo titulo="Colocación del mes">
+        <Linea etiqueta="Motos colocadas" valor={String(m.motos)} />
+        <Linea etiqueta="Créditos activos pagando" valor={String(m.cartera)} />
+        <Linea
+          etiqueta="Provisión de cartera (P&G, no caja)"
+          valor={f(m.provision)}
+        />
+        <Linea etiqueta="Fondo de aval reservado" valor={f(m.aval)} />
+      </Grupo>
       <Grupo titulo="Auteco (dentro de Costo)">
         <Linea
           etiqueta={`Lote · ${reconciliado ? "real" : "proyectado"}`}

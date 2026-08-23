@@ -16,6 +16,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { ComposicionCaja } from "@/components/charts/ComposicionCaja";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ComposicionResultado } from "@/components/proyeccion/ComposicionResultado";
 import { LeyendaOrigen } from "@/components/proyeccion/MarcaOrigen";
 import { MesEnCursoCallout } from "@/components/proyeccion/MesEnCursoCallout";
 import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
@@ -315,6 +316,11 @@ function ProyeccionContenido({
           mesesAnclados={data.meses_anclados}
         />
       </ChartCard>
+
+      {/* SUP-5 — qué variables componen esa curva: los supuestos efectivos del
+          escenario en pantalla y lo que producen en la ventana (motos, cartera,
+          mora, recuperación, default). El mes a mes vive en la tabla. */}
+      <ComposicionResultado supuestos={data.supuestos} meses={ventana} />
 
       {/* E1·P6 — el mes en curso: comparación + completitud (B13) + arrastre */}
       {data.mes_en_curso && (

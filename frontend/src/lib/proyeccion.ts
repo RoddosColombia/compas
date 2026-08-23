@@ -43,10 +43,38 @@ export interface MesProyeccion {
   fondeo: string;
   int_deuda: string;
   iva: string; // egreso de IVA neto en el mes DIAN (≤ 0); 0.00 fuera de ese mes
+  aval: string; // SUP-2: reserva del fondo AVAL propio / autoseguro (≤ 0)
+  /**
+   * SUP-5: la EXPLICACIÓN del ingreso, no solo su total.
+   * `neto = ingreso_bruto + mora + recuperacion + default`.
+   * En un mes anclado a la ejecución real vienen en 0: su ingreso sale del libro.
+   */
+  mora: string; // ≤ 0 (lo que no llega este mes)
+  recuperacion: string; // ≥ 0 (lo que vuelve de la mora de antes)
+  default: string; // ≤ 0 (lo que se pierde y no vuelve)
   egresos: string;
   flujo: string;
   caja: string;
   estado: EstadoMes;
+}
+
+/**
+ * SUP-5: los drivers que EXPLICAN la curva en pantalla — valores EFECTIVOS del
+ * escenario que se está viendo (cada escenario tiene su propia mora desde SUP-2).
+ */
+export interface SupuestosProyeccion {
+  pct_mora: string;
+  pct_recuperacion: string;
+  pct_default: string;
+  pct_provision: string;
+  meses_rezago_recuperacion: number;
+  pct_aval_recaudo: string;
+  pct_prefondeo_iva: string;
+  motos_base: number;
+  crec_pct_mensual: string;
+  crec_pct_mensual_2: string | null;
+  crec_mes_corte: number | null;
+  rampa_unidades: Record<string, number>;
 }
 
 // Fondo de provisión de IVA (P1.4): serie informativa mes a mes (NO es flujo del motor).
@@ -59,6 +87,8 @@ export interface FondoMes {
 
 export interface Proyeccion {
   escenario: string;
+  /** SUP-5: qué supone esta curva. Opcional: el preview no lo trae. */
+  supuestos?: SupuestosProyeccion;
   caja_minima: string; // el umbral (para la curva)
   fondo_provision: FondoMes[];
   piso_caja: string;

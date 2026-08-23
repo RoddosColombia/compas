@@ -184,5 +184,11 @@ def anclar(
             int_deuda=nueva.int_deuda,
             iva=nueva.iva,
             egresos=nueva.egresos,
+            # SUP-5: en un mes anclado el ingreso sale del LIBRO, así que la mora
+            # paramétrica NO ocurrió — se ponen en 0 en vez de dejar un número que
+            # pretendería explicar una cifra que no es suya (honestidad de pantalla).
+            mora=Decimal("0.00"),
+            recuperacion=Decimal("0.00"),
+            default=Decimal("0.00"),
         )
     return replace(ajustado, meses=filas)
