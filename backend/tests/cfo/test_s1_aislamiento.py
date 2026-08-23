@@ -1,6 +1,8 @@
-"""S1: cfo/calc, cfo/goldens, cfo/agente y cfo/router.py NO importan modelos de
-dominio ajenos ni tocan el driver de Mongo; la única subruta que persiste es
-cfo/datos/repositorios.py y solo cfo_*."""
+"""S1: cfo/calc, cfo/goldens, cfo/agente, cfo/router.py y cfo/telegram/ NO importan
+modelos de dominio ajenos ni tocan el driver de Mongo directamente (pymongo/motor
+crudos fuera de Beanie); las únicas subrutas que persisten son
+cfo/datos/repositorios.py (cfo_goldens) y cfo/telegram/repositorio.py
+(cfo_vinculos_telegram, cfo_hilos) — ambas solo colecciones cfo_*."""
 
 import pathlib
 import re
@@ -10,7 +12,19 @@ CFO = pathlib.Path(__file__).resolve().parents[2] / "app" / "cfo"
 # Subrutas/archivos que NO pueden tocar Mongo directamente ni importar modelos de
 # dominio ajenos. inc2 (FABS) añade agente/ (loop LLM<->tools) y router.py (endpoint):
 # ninguno de los dos persiste ni conoce dominio ajeno, solo leen vía cfo/datos.
-LOGICA = [CFO / "calc", CFO / "goldens", CFO / "agente", CFO / "router.py"]
+# inc3 Pieza B (FABS) añade telegram/ (canal Telegram): a diferencia de calc/goldens/
+# agente/router.py, telegram/repositorio.py SÍ persiste (cfo_vinculos_telegram,
+# cfo_hilos) — es su propia puerta de escritura S1, análoga a cfo/datos/
+# repositorios.py — pero solo vía beanie/pymongo (ODM: Document.insert/find_one/
+# save/delete + pymongo.IndexModel/DuplicateKeyError), nunca el driver async crudo
+# (motor/AsyncIOMotor) ni get_pymongo_collection, y nunca importa app.domain.*.
+LOGICA = [
+    CFO / "calc",
+    CFO / "goldens",
+    CFO / "agente",
+    CFO / "router.py",
+    CFO / "telegram",
+]
 PROHIBIDO_IMPORT = re.compile(
     r"from app\.domain\.(?!__init__)"
 )  # modelos de dominio ajenos
