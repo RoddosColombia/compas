@@ -80,6 +80,63 @@ async def test_vinculado_responde_y_guarda_hilo_crudo(monkeypatch):
     assert "$704.722.003" in tg.enviados[0][1]  # el usuario ve el valor
     # el hilo guarda el token, NUNCA el valor sustituido (invariante anti-alucinación)
     assert turnos_guardados["texto_crudo"] == "Tu caja es [[caja_hoy]]."
+    # refuerzo explícito (nit N-2 Kimi): lo guardado nunca es lo que el usuario vio
+    assert turnos_guardados["texto_crudo"] != tg.enviados[0][1]
+    assert "[[" in turnos_guardados["texto_crudo"]
+
+
+@pytest.mark.asyncio
+async def test_vinculado_nunca_guarda_el_texto_sustituido_ni_con_texto_crudo_falsy(
+    monkeypatch,
+):
+    """N-2 (nit Kimi, cierra el camino teórico de fuga): antes de este fix
+    `webhook.py` guardaba `resp.texto_crudo or resp.texto` — si `texto_crudo`
+    fuera algún día un string falsy (p. ej. ""), el `or` de Python habría caído
+    al texto YA SUSTITUIDO (con valores reales), violando el invariante de que
+    el hilo solo persiste `[[tokens]]`. Se fuerza aquí ese caso límite (falsy
+    pero no None) para probarlo: lo registrado debe ser EXACTAMENTE
+    `resp.texto_crudo` ("", en este test), nunca `resp.texto`."""
+
+    async def fake_resolver(tid):
+        return "u1"
+
+    monkeypatch.setattr("app.cfo.telegram.webhook.vinculos.resolver", fake_resolver)
+
+    async def fake_obtener_hilo(uid):
+        return None
+
+    monkeypatch.setattr(
+        "app.cfo.telegram.webhook.repositorio.obtener_hilo", fake_obtener_hilo
+    )
+    from app.cfo.agente.modelos import RespuestaCFO, UsoLLM
+
+    async def fake_consultar(pregunta, *, actor_id, cliente=None, historial=None):
+        return RespuestaCFO(
+            texto="Tu caja es $704.722.003.",
+            abstuvo=False,
+            texto_crudo="",  # falsy a propósito — NO None; ver docstring
+            uso=UsoLLM(modelo="m", tokens_in=1, tokens_out=1, iteraciones=1),
+        )
+
+    monkeypatch.setattr("app.cfo.telegram.webhook.servicio.consultar", fake_consultar)
+    turnos_guardados = {}
+
+    async def fake_registrar(user_id, pregunta, texto_crudo, update_id, envio):
+        turnos_guardados["texto_crudo"] = texto_crudo
+
+    monkeypatch.setattr(
+        "app.cfo.telegram.webhook.hilos.registrar_turno", fake_registrar
+    )
+    tg = ClienteTelegramFake()
+    update = {
+        "update_id": 9,
+        "message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "¿caja?"},
+    }
+    await webhook.procesar_update(update, cliente_telegram=tg)
+    assert "$704.722.003" in tg.enviados[0][1]  # el usuario sigue viendo el valor
+    # lo guardado es EXACTAMENTE texto_crudo ("") — nunca cae al texto sustituido
+    assert turnos_guardados["texto_crudo"] == ""
+    assert turnos_guardados["texto_crudo"] != tg.enviados[0][1]
 
 
 @pytest.mark.asyncio

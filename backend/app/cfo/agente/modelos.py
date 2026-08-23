@@ -30,7 +30,9 @@ class RespuestaCFO(BaseModel):
     texto: str
     abstuvo: bool
     motivo: str | None = None
-    texto_crudo: str | None = None  # texto del modelo ANTES de sustituir (para el hilo)
+    texto_crudo: str  # texto del modelo ANTES de sustituir (para el hilo); requerido:
+    # nunca hay un `RespuestaCFO` sin su versión cruda (cierra el camino teórico de
+    # fuga donde un fallback `texto_crudo or texto` colapsaría al valor sustituido).
     conceptos_usados: list[str] = Field(default_factory=list)
     cifras: list[CifraPublicada] = Field(default_factory=list)
     uso: UsoLLM

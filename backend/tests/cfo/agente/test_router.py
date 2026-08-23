@@ -30,6 +30,7 @@ PWD = "clave-larga-1234"
 RESPUESTA_FAKE = RespuestaCFO(
     texto="ok",
     abstuvo=False,
+    texto_crudo="ok",
     uso=UsoLLM(modelo="m", tokens_in=1, tokens_out=1, iteraciones=1),
 )
 

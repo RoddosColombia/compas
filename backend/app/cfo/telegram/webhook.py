@@ -89,7 +89,5 @@ async def procesar_update(
         historial=historial,
     )
     envio = _formatear(resp)
-    await hilos.registrar_turno(
-        user_id, texto, resp.texto_crudo or resp.texto, update_id, envio
-    )
+    await hilos.registrar_turno(user_id, texto, resp.texto_crudo, update_id, envio)
     await cliente_telegram.enviar(chat_id, envio)

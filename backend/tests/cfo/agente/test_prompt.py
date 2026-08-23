@@ -40,7 +40,12 @@ def test_correctivo_formateable_con_tokens():
 
 
 def test_prompt_advierte_no_espacios_en_el_token():
-    # Hueco residual de A3 (deferred): "[[ caja_hoy ]]" con espacios pasa los regex
-    # del verificador sin violar la regla anti-alucinacion, pero el token queda sin
-    # sustituir y se filtra crudo al usuario. Se cierra por instruccion al modelo.
+    # Historia: A3 dejaba un hueco (deferred) donde "[[ caja_hoy ]]" con espacios
+    # pasaba los regex del verificador sin violar la regla anti-alucinacion, pero
+    # el token quedaba sin sustituir y se filtraba crudo al usuario. Ese hueco ya
+    # esta CERRADO: RE_TOKEN (hardening FINAL-REVIEW, compartido entre verificador
+    # y sustitucion) tolera espacios internos y hoy SI sustituye el token espaciado
+    # (ver test_sustituir_token_con_espacios_se_resuelve en test_conceptos.py). Esta
+    # instruccion en el prompt es una segunda capa defensiva (pedirle al modelo que
+    # no agregue espacios), no la unica barrera contra el token espaciado.
     assert "espacio" in SYSTEM_PROMPT.lower()

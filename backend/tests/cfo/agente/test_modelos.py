@@ -17,6 +17,7 @@ def test_respuesta_cfo_valida():
     r = RespuestaCFO(
         texto="La caja hoy es $704.722.003.",
         abstuvo=False,
+        texto_crudo="La caja hoy es [[caja_hoy]].",
         conceptos_usados=["caja_hoy"],
         cifras=[CifraPublicada(valor="704722003", unidad="COP", evidencia=ev)],
         uso=_uso(),
@@ -27,4 +28,12 @@ def test_respuesta_cfo_valida():
 
 def test_respuesta_cfo_rechaza_campo_extra():
     with pytest.raises(ValidationError):
-        RespuestaCFO(texto="x", abstuvo=True, uso=_uso(), foo=1)
+        RespuestaCFO(texto="x", abstuvo=True, texto_crudo="x", uso=_uso(), foo=1)
+
+
+def test_respuesta_cfo_exige_texto_crudo():
+    # N-2 (nit Kimi): texto_crudo es REQUERIDO — sin default a None. Cierra el
+    # camino teórico de fuga donde un fallback `texto_crudo or texto` en un
+    # caller habría colapsado al texto YA SUSTITUIDO si texto_crudo faltara.
+    with pytest.raises(ValidationError):
+        RespuestaCFO(texto="x", abstuvo=True, uso=_uso())
