@@ -21,7 +21,12 @@ from decimal import Decimal
 
 import pytest
 from app.iva.liquidacion import LiquidacionPeriodo, plan_fondo_provision
-from app.proyeccion.motor import ModeloProyeccion, ParametrosMotor, neto_por_mora, proyectar
+from app.proyeccion.motor import (
+    ModeloProyeccion,
+    ParametrosMotor,
+    neto_por_mora,
+    proyectar,
+)
 from app.proyeccion.service import _armar_parametros
 from pydantic import ValidationError
 

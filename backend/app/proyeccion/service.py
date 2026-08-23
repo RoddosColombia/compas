@@ -23,7 +23,13 @@ from app.domain.parametros_proyeccion import (
 )
 from app.domain.transaccion import Transaccion
 from app.facturas import service as facturas_service
-from app.iva.liquidacion import liquidar, plan_fondo_provision, programar_egresos_iva
+from app.iva.liquidacion import (
+    FacturaIva,
+    liquidar,
+    plan_fondo_provision,
+    programar_egresos_iva,
+)
+from app.iva.proyectado import ModeloIva, facturas_iva_proyectadas
 from app.modelos_moto import service as modelos_service
 from app.obligaciones.reconciliacion import (
     FacturaReconciliar,
@@ -186,8 +192,7 @@ def _armar_parametros(
             if recup_edit is not None
             else _con_delta(
                 PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
-                params.pct_recuperacion
-                - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
+                params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
             )
         )
     pm = ParametrosMotor(
@@ -358,6 +363,7 @@ async def _iva_plan(
     mes_inicio: tuple[int, int],
     horizonte: int,
     pct_prefondeo: Decimal = Decimal("1"),
+    proyectadas: list[FacturaIva] | None = None,
 ) -> tuple[dict[int, object], list]:
     """Puente C11↔C7: liquida las facturas cargadas y devuelve (egreso_por_mes, fondo).
     `egreso_por_mes` = IVA neto de cada período en el índice de su fecha DIAN real
@@ -366,10 +372,15 @@ async def _iva_plan(
 
     CR-E2-COMPUERTA: con la compuerta APAGADA (default) devuelve ({}, []) aunque haya
     facturas cargadas, de modo que E2 capture facturas y liquide el IVA SIN mover la
-    proyección (D-12). `GET /proyeccion` queda idéntico bit a bit al estado previo."""
+    proyección (D-12). `GET /proyeccion` queda idéntico bit a bit al estado previo.
+
+    SUP-3: `proyectadas` son las `FacturaIva` sintéticas del IVA de las ventas FUTURAS
+    (`iva.proyectado`). Entran al MISMO liquidador junto a las reales — sin ellas la
+    proyección solo veía el IVA ya facturado y lo daba en cero hacia adelante."""
     if not await _compuerta_iva_activa():
         return {}, []
     facturas = await facturas_service.obtener_facturas_iva()
+    facturas = facturas + list(proyectadas or [])
     if not facturas:
         return {}, []
     periodicidad = await facturas_service.obtener_periodicidad()
@@ -392,6 +403,55 @@ async def _iva_plan(
         pct_prefondeo=pct_prefondeo,  # SUP-2: editable (1 = 100 %, como hasta hoy)
     )
     return egreso, fondo
+
+
+async def _iva_proyectado(
+    params: ParametrosProyeccion,
+    modelos: list[ModeloMoto],
+    mes_inicio: tuple[int, int],
+    horizonte: int,
+) -> list[FacturaIva]:
+    """SUP-3: el IVA de las ventas FUTURAS, derivado de la colocación proyectada y del
+    catálogo (precio de venta y costo Auteco, ambos con IVA), como en el modelo v9.1.
+
+    Precisión: los meses que YA tienen su realidad NO se proyectan — un mes CERRADO,
+    o uno con su `VENTAS-YYYY-MM` de IVA generado ya registrado. Su dato manda y nunca
+    se suman las dos cosas (mismo principio del mes en curso que fijó el CEO)."""
+    if not modelos:
+        return []
+    colocacion = colocacion_mensual(
+        params.motos_base,
+        params.crec_pct_mensual,
+        horizonte,
+        _rampa_a_lista(params.rampa_unidades, mes_inicio),
+        params.crec_pct_mensual_2,
+        params.crec_mes_corte,
+    )
+    meses_ym = _meses_del_horizonte(mes_inicio, horizonte)
+    # meses con realidad: cerrados + los que ya tienen su IVA generado registrado
+    reales: set[str] = set()
+    async for mc in MesControl.find(MesControl.estado == EstadoMes.CERRADO):
+        reales.add(str(mc.mes)[:7])
+    for f in await facturas_service.listar_facturas(activo=True):
+        if f.numero.startswith("VENTAS-"):
+            reales.add(f.numero.removeprefix("VENTAS-")[:7])
+    modelos_iva = [
+        ModeloIva(
+            nombre=m.nombre,
+            precio_venta_con_iva=m.precio_venta_con_iva,
+            costo_auteco_con_iva=m.costo_auteco,
+            mix=m.participacion_mix,
+        )
+        for m in modelos
+    ]
+    tarifa = await facturas_service.obtener_tarifa_iva()
+    return facturas_iva_proyectadas(
+        colocacion_por_mes=colocacion,
+        meses_ym=meses_ym,
+        modelos=modelos_iva,
+        tarifa=tarifa,
+        meses_con_dato_real=reales,
+    )
 
 
 async def _facturas_reconciliar() -> list[FacturaReconciliar]:
@@ -458,7 +518,11 @@ async def _resultado_con(
         )
     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
     iva_egreso, fondo = await _iva_plan(
-        mes_inicio, horizonte, params.pct_prefondeo_iva
+        mes_inicio,
+        horizonte,
+        params.pct_prefondeo_iva,
+        # SUP-3: el IVA de las ventas futuras entra a la liquidación
+        await _iva_proyectado(params, modelos, mes_inicio, horizonte),
     )
     pm = _armar_parametros(
         params,
@@ -1014,7 +1078,10 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
 
     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
     iva_egreso, _fondo = await _iva_plan(
-        mes_inicio, SENSIBILIDAD_HORIZONTE, params.pct_prefondeo_iva
+        mes_inicio,
+        SENSIBILIDAD_HORIZONTE,
+        params.pct_prefondeo_iva,
+        await _iva_proyectado(params, modelos, mes_inicio, SENSIBILIDAD_HORIZONTE),
     )
     pm = _armar_parametros(
         params,
