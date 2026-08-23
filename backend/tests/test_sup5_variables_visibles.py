@@ -216,3 +216,37 @@ def test_un_mes_anclado_no_muestra_mora_proyectada():
     assert fila.default == 0
     # y los meses NO anclados conservan su explicación
     assert aj.meses[3].mora < 0
+
+
+def test_un_mes_EN_EJECUCION_si_muestra_su_mora():
+    """El mes en curso ancla el GASTO (Regla A) pero su INGRESO sigue siendo del motor:
+    su mora sí explica la cifra y tiene que verse.
+
+    Defecto detectado con agosto-2026 en PROD (CEO 2026-08-23): la columna «Ajuste
+    mora/default» mostraba −13.017.583 (= neto − bruto, que el motor sí calculó) y el
+    desglose decía mora 0 / recuperación 0 / default 0. Dos cifras de la misma fila
+    contándose distinto: eso es exactamente lo que no puede pasar."""
+    from app.proyeccion.ejecucion.service import EN_EJECUCION, AnclaMes, anclar
+    from tests.test_e1_pipeline import _rubros
+
+    r = proyectar(_motor())
+    mes = r.meses[0].mes
+    ancla = AnclaMes(
+        estado=EN_EJECUCION,
+        ejecutado_por_rubro_id={},
+        definido_por_rubro_id={},
+        ingreso_real=None,  # el ingreso NO se ancla en un mes en ejecución
+    )
+    aj = anclar(
+        resultado=r,
+        caja_minima=Decimal("125000000"),
+        anclas={mes: ancla},
+        rubros=_rubros(),
+        neutros_ids=set(),
+    )
+    fila = aj.meses[0]
+    # la invariante de SUP-5 se sostiene: las tres explican el neto que se muestra
+    assert fila.neto == (
+        fila.ingreso_bruto + fila.mora + fila.recuperacion + fila.default
+    ).quantize(Decimal("0.01"))
+    assert fila.mora == r.meses[0].mora  # la del motor, intacta

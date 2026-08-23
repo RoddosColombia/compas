@@ -41,6 +41,7 @@ import {
   parseMonto,
 } from "@/lib/money";
 import {
+  type ArranqueCaja,
   ESCENARIO_LABEL,
   type Escenario,
   type Proyeccion,
@@ -50,6 +51,26 @@ import {
 const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
 // El juicio SIEMPRE mira al menos 60 m aunque la ventana sea corta (patrón F1).
 const HORIZONTE_JUICIO = 60;
+
+/**
+ * P2 del ciclo mensual — de dónde salió la plata con la que arranca la curva. El CEO
+ * tiene que poder ver si la proyección parte del efectivo REAL del último cierre o de
+ * un número configurado a mano (que era el caso: la semilla decía $704.722.003 mientras
+ * el cierre de julio dejó $665.715.578).
+ */
+function textoArranque(a: ArranqueCaja | null | undefined): string {
+  if (!a) return "";
+  const monto = formatCOPCompact(a.valor);
+  if (a.origen === "ciclo") {
+    const transito = !parseMonto(a.transito_heredado).isZero()
+      ? ` (incluye ${formatCOPCompact(a.transito_heredado)} en tránsito)`
+      : "";
+    return `Arranca con la caja real de ${formatMesCorto(a.mes ?? "")}: ${monto}${transito}, del cierre del mes anterior`;
+  }
+  if (a.origen === "override")
+    return `Arranca con una caja re-anclada: ${monto}`;
+  return `Arranca con la caja configurada en Supuestos: ${monto} — el mes no está abierto en el ciclo`;
+}
 
 /** V1.1 ítem 6 — distancia en meses del próximo compromiso, en lenguaje natural. */
 function distanciaTexto(meses: number): string {
@@ -286,7 +307,7 @@ function ProyeccionContenido({
               : "La caja se sostiene sobre el mínimo de caja en todo el horizonte"
         }
         subtitulo={`caja proyectada · escenario ${ESCENARIO_LABEL[escenario].toLowerCase()} · ${ventana.length} de ${data.meses.length} meses`}
-        pie={`Caja final a ${data.meses.length} meses: ${formatCOPCompact(data.caja_final)} (exacta en la tabla) · Fuente: motor de proyección`}
+        pie={`${textoArranque(data.arranque)} · Caja final a ${data.meses.length} meses: ${formatCOPCompact(data.caja_final)} (exacta en la tabla) · Fuente: motor de proyección`}
         protagonista
         acciones={
           perforada ? (

@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from app.cartera_previa import service as cartera_previa_service
 from app.cierre.service import _caja_libro, _rubro_ajuste
+from app.cierre.transito import transito_heredado
 from app.core.money import money_str
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.mes_control import EstadoMes, MesControl
@@ -173,6 +174,8 @@ def _supuestos_visibles(params: ParametrosProyeccion, escenario: str) -> dict:
         "pct_provision": str(params.pct_provision),
         "meses_rezago_recuperacion": params.meses_rezago_recuperacion,
         "pct_aval_recaudo": str(params.pct_aval_recaudo),
+        # SUP-6: SOBRE QUÉ se aplica la mora (la cuota inicial es de contado).
+        "mora_sobre_recaudo": params.mora_sobre_recaudo,
         "pct_prefondeo_iva": str(params.pct_prefondeo_iva),
         "motos_base": params.motos_base,
         "crec_pct_mensual": str(params.crec_pct_mensual),
@@ -241,6 +244,7 @@ def _armar_parametros(
         # SUP-2: rezago de la recuperación de mora + fondo AVAL (ambos editables)
         meses_rezago_recuperacion=params.meses_rezago_recuperacion,
         pct_aval_recaudo=params.pct_aval_recaudo,
+        mora_sobre_recaudo=params.mora_sobre_recaudo,
         adelanto_auteco=params.adelanto_auteco,
         plazo_auteco_dias=params.plazo_auteco_dias,
         base_auteco_dias=params.base_auteco_dias,
@@ -286,6 +290,8 @@ class AnclajeMeta:
     meses_anclados: dict[str, str] = field(default_factory=dict)
     sin_mapear: list[str] = field(default_factory=list)
     mes_en_curso: dict | None = None
+    # P2 del ciclo mensual — de dónde salió la plata con la que arranca la serie.
+    arranque: "Arranque | None" = None
 
 
 def _serializar(
@@ -305,6 +311,24 @@ def _serializar(
         # SUP-5 (CEO 2026-08-23): los drivers que EXPLICAN esta curva — los valores
         # EFECTIVOS del escenario en pantalla, no los del set base.
         "supuestos": supuestos or {},
+        # P2 del ciclo mensual — la plata con la que arranca la serie y DE DÓNDE salió.
+        # `origen`: 'ciclo' (efectivo real del cierre anterior) · 'semilla' (el
+        # parámetro
+        # `caja_inicial`, cuando el mes no está abierto en el ciclo) · 'override'
+        # (re-anclaje explícito, COCK-09).
+        "arranque": {
+            "valor": money_str(meta.arranque.valor),
+            "origen": meta.arranque.origen,
+            "mes": meta.arranque.mes,
+            "saldo_declarado": (
+                money_str(meta.arranque.saldo_declarado)
+                if meta.arranque.saldo_declarado is not None
+                else None
+            ),
+            "transito_heredado": money_str(meta.arranque.transito_heredado),
+        }
+        if meta.arranque is not None
+        else None,
         # P5 — origen de cada cifra (aditivo): marcas por mes, rubros sin concepto del
         # motor, y completitud del mes en curso (B13). Vacíos si no hay anclaje.
         "meses_anclados": dict(meta.meses_anclados),
@@ -525,6 +549,59 @@ async def _facturas_reconciliar() -> list[FacturaReconciliar]:
     return out
 
 
+@dataclass(frozen=True)
+class Arranque:
+    """P2 del ciclo mensual — de dónde sale la plata con la que arranca la proyección.
+
+    Paso 0 del contrato (`docs/COMPAS_Ciclo_Mensual.md`): el efectivo real con el que
+    cerró el mes anterior. Lo escribe el ciclo mensual: `saldo_inicial_caja` se DERIVA
+    del consolidado bancario del predecesor (M-1/F-14) y se puede corregir a mano con
+    motivo y evento de auditoría (`saldo_inicial.editado`, FIX-F) — COMPAS no hace
+    arqueos, la diferencia se teclea con rastro (decisión CEO 2026-08-23).
+
+    `origen`: 'ciclo' cuando el mes de inicio está abierto en el ciclo (el caso normal);
+    'semilla' cuando no lo está y toca usar el parámetro `caja_inicial` (primer mes de
+    la
+    historia, o un mes_inicio fuera del ciclo). Se publica para que la pantalla pueda
+    decir de dónde salió la cifra en vez de que el usuario adivine.
+    """
+
+    valor: Decimal
+    origen: str  # 'ciclo' | 'semilla'
+    mes: str | None  # 'YYYY-MM' del MesControl leído (None si semilla)
+    saldo_declarado: Decimal | None  # el saldo del ciclo, sin el tránsito
+    transito_heredado: Decimal  # CR-WAVA: cobrado que aún no está en el banco
+
+
+async def _arranque_de_caja(
+    params: ParametrosProyeccion, mes_inicio: tuple[int, int]
+) -> Arranque:
+    """Resuelve el Paso 0. La definición del valor es la MISMA que muestra la pantalla
+    del ciclo (`caja_inicial_total` = saldo declarado + tránsito heredado): si las dos
+    pantallas dieran números distintos para "la plata con la que arranco el mes", el
+    tejido estaría roto."""
+    y, m = mes_inicio
+    clave = f"{y:04d}-{m:02d}-01"
+    mc = await MesControl.find_one(MesControl.mes == clave)
+    if mc is None:
+        # Fail-soft honesto: no se inventa un arranque; se usa la semilla y se DECLARA.
+        return Arranque(
+            valor=params.caja_inicial,
+            origen="semilla",
+            mes=None,
+            saldo_declarado=None,
+            transito_heredado=Decimal("0.00"),
+        )
+    transito = await transito_heredado(clave)
+    return Arranque(
+        valor=mc.saldo_inicial_caja + transito,
+        origen="ciclo",
+        mes=clave[:7],
+        saldo_declarado=mc.saldo_inicial_caja,
+        transito_heredado=transito,
+    )
+
+
 async def _resultado_con(
     params: ParametrosProyeccion,
     modelos: list[ModeloMoto],
@@ -559,6 +636,30 @@ async def _resultado_con(
         raise ProyeccionError(
             f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
         )
+    # P2 · Paso 0 — el arranque sale del CICLO (efectivo real del cierre anterior), no
+    # del parámetro tecleado. `caja_inicial_override` explícito (COCK-09, rolling
+    # forecast) sigue mandando sobre todo. Con `anclas_override` (tests herméticos) no
+    # se
+    # toca Mongo: se queda en la semilla.
+    if caja_inicial_override is not None:
+        arranque = Arranque(
+            valor=Decimal(str(caja_inicial_override)),
+            origen="override",
+            mes=None,
+            saldo_declarado=None,
+            transito_heredado=Decimal("0.00"),
+        )
+    elif anclas_override is not None:
+        arranque = Arranque(
+            valor=params.caja_inicial,
+            origen="semilla",
+            mes=None,
+            saldo_declarado=None,
+            transito_heredado=Decimal("0.00"),
+        )
+    else:
+        arranque = await _arranque_de_caja(params, mes_inicio)
+
     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
     iva_egreso, fondo = await _iva_plan(
         mes_inicio,
@@ -576,7 +677,7 @@ async def _resultado_con(
         recaudo_previo,
         activos_previos,
         iva_egreso,
-        caja_inicial_override,
+        arranque.valor,
     )
     r = proyectar(pm)
 
@@ -638,7 +739,10 @@ async def _resultado_con(
         )
         r = _kpis_a_resultado(rec.ajustado)
     meta = AnclajeMeta(
-        meses_anclados=marcas, sin_mapear=sin_mapear, mes_en_curso=completitud
+        meses_anclados=marcas,
+        sin_mapear=sin_mapear,
+        mes_en_curso=completitud,
+        arranque=arranque,
     )
     return r, params.caja_minima, fondo, rec, meta
 

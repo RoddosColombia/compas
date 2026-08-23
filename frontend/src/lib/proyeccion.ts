@@ -77,6 +77,20 @@ export interface SupuestosProyeccion {
   rampa_unidades: Record<string, number>;
 }
 
+/**
+ * P2 del ciclo mensual — la plata con la que arranca la serie y DE DÓNDE salió.
+ * `origen`: 'ciclo' = el efectivo real del cierre del mes anterior (lo normal) ·
+ * 'semilla' = el parámetro `caja_inicial` porque el mes no está abierto en el ciclo ·
+ * 'override' = re-anclaje explícito (rolling forecast, COCK-09).
+ */
+export interface ArranqueCaja {
+  valor: string;
+  origen: "ciclo" | "semilla" | "override";
+  mes: string | null; // 'YYYY-MM' del mes leído del ciclo
+  saldo_declarado: string | null; // el saldo del ciclo, sin el tránsito
+  transito_heredado: string; // CR-WAVA: cobrado que aún no está en el banco
+}
+
 // Fondo de provisión de IVA (P1.4): serie informativa mes a mes (NO es flujo del motor).
 export interface FondoMes {
   mes: string; // 'YYYY-MM'
@@ -89,6 +103,8 @@ export interface Proyeccion {
   escenario: string;
   /** SUP-5: qué supone esta curva. Opcional: el preview no lo trae. */
   supuestos?: SupuestosProyeccion;
+  /** P2: con qué plata arranca la serie y de dónde salió. Opcional (aditivo). */
+  arranque?: ArranqueCaja | null;
   caja_minima: string; // el umbral (para la curva)
   fondo_provision: FondoMes[];
   piso_caja: string;

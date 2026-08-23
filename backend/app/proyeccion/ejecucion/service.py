@@ -126,6 +126,12 @@ def _fila_anclada(
         + fila.adelanto
         + fila.pago_inventario
         + fila.fondeo
+        # P1 del ciclo mensual (candado aritmético, 2026-08-23): el fondo de AVAL es
+        # un egreso que E1 NO ancla (sale del recaudo, no de un rubro del libro), así
+        # que se CONSERVA del motor, igual que Auteco. Faltaba: todo mes anclado
+        # perdía el aval de sus egresos en silencio — en PROD, agosto-2026 son
+        # 546.241,68 que desaparecían de la cuenta.
+        + fila.aval
     )
     flujo = _cop(neto + egresos)
     return replace(
@@ -175,6 +181,21 @@ def anclar(
     #    flujo/caja/estado). Así `neto + Σ egresos == flujo` al peso en la serie (B6).
     filas = list(ajustado.meses)
     for m, nueva in ancladas.items():
+        # SUP-5 · honestidad: la mora paramétrica solo se borra cuando el INGRESO dejó
+        # de ser del motor (mes cerrado: `ingreso_real` reemplaza el neto). En un mes EN
+        # EJECUCIÓN el ingreso sigue siendo paramétrico, así que su mora SÍ explica la
+        # cifra y debe verse — borrarla dejaba la columna «Ajuste mora/default» con un
+        # valor que ninguna fila del desglose sustentaba.
+        ingreso_es_del_libro = anclas[filas[m].mes].ingreso_real is not None
+        cartera = (
+            {
+                "mora": Decimal("0.00"),
+                "recuperacion": Decimal("0.00"),
+                "default": Decimal("0.00"),
+            }
+            if ingreso_es_del_libro
+            else {}
+        )
         filas[m] = replace(
             filas[m],
             neto=nueva.neto,
@@ -184,11 +205,6 @@ def anclar(
             int_deuda=nueva.int_deuda,
             iva=nueva.iva,
             egresos=nueva.egresos,
-            # SUP-5: en un mes anclado el ingreso sale del LIBRO, así que la mora
-            # paramétrica NO ocurrió — se ponen en 0 en vez de dejar un número que
-            # pretendería explicar una cifra que no es suya (honestidad de pantalla).
-            mora=Decimal("0.00"),
-            recuperacion=Decimal("0.00"),
-            default=Decimal("0.00"),
+            **cartera,
         )
     return replace(ajustado, meses=filas)

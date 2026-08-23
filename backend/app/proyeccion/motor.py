@@ -318,6 +318,7 @@ def neto_por_mora(
     pct_default: Decimal,
     pct_provision: Decimal = Decimal("0"),
     mora_a_recuperar: Decimal | None = None,
+    base_mora: Decimal | None = None,
 ) -> AjusteMora:
     """Aplica mora/recuperación/default al bruto (réplica FC filas 17-20 del artefacto,
     MENOS la provisión, que sale del flujo por 'caja veraz'). Los porcentajes son el
@@ -326,12 +327,19 @@ def neto_por_mora(
     SUP-2 · `mora_a_recuperar`: la mora SOBRE LA QUE se calcula la recuperación. None
     (default) = la mora del propio mes, la semántica del artefacto. Con un valor (la
     mora de un mes anterior) la recuperación queda REZAGADA, como en el modelo v9.1
-    (`FC!E18 = −D17×E7`): la mora es diferimiento, y el dinero vuelve después."""
-    mora = -bruto * pct_mora
+    (`FC!E18 = −D17×E7`): la mora es diferimiento, y el dinero vuelve después.
+
+    SUP-6 · `base_mora`: SOBRE QUÉ se aplican mora/default/provisión. None (default) =
+    el bruto, la semántica del artefacto. Con un valor (el recaudo de cuotas) la cuota
+    inicial queda fuera — se paga de contado, no puede caer en mora ni incumplirse
+    (decisión CEO 2026-08-23; v9.1 `FC!17 = −L13×L6` ya lo hacía así). El `neto`
+    SIEMPRE parte del bruto: la inicial entra completa a caja."""
+    base = bruto if base_mora is None else base_mora
+    mora = -base * pct_mora
     base_recup = mora if mora_a_recuperar is None else mora_a_recuperar
     recuperacion = -base_recup * pct_recuperacion  # recupera parte de la mora
-    default = -bruto * pct_default
-    provision = -bruto * pct_provision
+    default = -base * pct_default
+    provision = -base * pct_provision
     neto = bruto + mora + recuperacion + default
     return AjusteMora(
         mora=_cop(mora),
@@ -581,6 +589,11 @@ class ParametrosMotor:
     # SUP-2: fondo AVAL propio / autoseguro = % del recaudo de crédito que se reserva
     # cada mes (v9.1 `PARAMETROS!C55` → `FC!33`). 0 = no existe (comportamiento de hoy).
     pct_aval_recaudo: Decimal = Decimal("0")
+    # SUP-6 (CEO 2026-08-23): la mora/default/provisión caen SOLO sobre el recaudo de
+    # cuotas, no sobre la cuota inicial (que es de contado). False = la semántica del
+    # artefacto (base = bruto) → golden master intacto. El mismo criterio que ya usaba
+    # `pct_aval_recaudo`, que siempre midió sobre el recaudo.
+    mora_sobre_recaudo: bool = False
     # Cartera previa (111 créditos preexistentes): serie semanal REAL del LoanTape.
     # semana global → recaudo / nº activos. Default None = sin cartera previa.
     recaudo_previo_por_semana: dict[int, Decimal] | None = None
@@ -725,6 +738,8 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
             ov_def.get(m, p.pct_default),
             p.pct_provision,
             mora_a_recuperar,
+            # SUP-6: la cuota inicial es de contado → no entra a la base de la mora.
+            _cop(recaudo[m]) if p.mora_sobre_recaudo else None,
         )
         moras.append(ajuste.mora)
         gastos_fijos = _cop(-p.gastos_fijos)
