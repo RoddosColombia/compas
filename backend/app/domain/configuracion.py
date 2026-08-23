@@ -42,6 +42,10 @@ class ClaveConfig(StrEnum):
     # saldo_favor_previo del período de aplica_desde, REEMPLAZANDO el arrastre
     # derivado. Sin semilla: es un dato de la empresa, ausente → no aplica.
     SALDO_FAVOR_IVA_DECLARADO = "SALDO_FAVOR_IVA_DECLARADO"
+    # SUP-3: tarifa general de IVA ({"tarifa": "0.19"}) para derivar el IVA de las
+    # ventas PROYECTADAS. Ausente → 19 %. Editable por dato: si cambia la tarifa, no
+    # se toca código.
+    TARIFA_IVA = "TARIFA_IVA"
 
 
 # Tipo esperado por clave (M-03). "decimal" | "fecha" | "json".
@@ -54,6 +58,7 @@ _TIPO_POR_CLAVE: dict[ClaveConfig, str] = {
     ClaveConfig.NIT_AUTECO: "json",
     ClaveConfig.IVA_ALIMENTA_PROYECCION: "json",
     ClaveConfig.SALDO_FAVOR_IVA_DECLARADO: "json",
+    ClaveConfig.TARIFA_IVA: "json",
 }
 
 

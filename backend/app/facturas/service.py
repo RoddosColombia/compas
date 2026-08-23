@@ -348,6 +348,28 @@ async def obtener_saldo_favor_declarado() -> SaldoFavorDeclarado | None:
         return None  # valor ilegible = no aplica; jamás se adivina (regla 7)
 
 
+async def obtener_tarifa_iva() -> Decimal:
+    """SUP-3: tarifa general de IVA para derivar el IVA de las ventas PROYECTADAS.
+    Sale de la clave `TARIFA_IVA` si está configurada; si no, 19 % (tarifa general
+    colombiana, la del modelo v9.1). Editable por dato, no por código."""
+    cfg = (
+        await Configuracion.find(Configuracion.clave == ClaveConfig.TARIFA_IVA)
+        .sort(-Configuracion.vigente_desde)
+        .limit(1)
+        .to_list()
+    )
+    if cfg and cfg[0].valor_json:
+        v = cfg[0].valor_json.get("tarifa")
+        if v is not None:
+            try:
+                t = Decimal(str(v))
+                if Decimal("0") <= t <= Decimal("1"):
+                    return t
+            except Exception:
+                pass  # ilegible → la tarifa general (nunca se adivina otra)
+    return Decimal("0.19")
+
+
 async def obtener_calendario_dian() -> dict:
     """Última vigencia de `CALENDARIO_DIAN` ({"2026": {"ene_abr": "2026-05-13", ...}}).
     Ausente → {} (la UI omite la línea del próximo pago; NUNCA se inventa una fecha,
