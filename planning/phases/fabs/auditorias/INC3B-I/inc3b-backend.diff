@@ -1,0 +1,1758 @@
+diff --git a/backend/app/audit/events.py b/backend/app/audit/events.py
+index d43614d..a2801d3 100644
+--- a/backend/app/audit/events.py
++++ b/backend/app/audit/events.py
+@@ -139,6 +139,13 @@ class AuditEvento(StrEnum):
+     cfo_consulta = "cfo.consulta"
+     cfo_respuesta = "cfo.respuesta"
+ 
++    # ── CR-CFO-2 (2) — FABS inc3 Pieza B (canal Telegram, GO CEO 2026-08-17) ──
++    # Alta/baja del vínculo telegram_id↔user_id (allowlist, solo admin). El Q&A por
++    # Telegram REUSA cfo.consulta/cfo.respuesta con metadata.canal="telegram" — sin
++    # eventos nuevos para eso. Catálogo 64 -> 66.
++    cfo_vinculo_creado = "cfo.vinculo_creado"
++    cfo_vinculo_eliminado = "cfo.vinculo_eliminado"
++
+ 
+ # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
+ CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)
+diff --git a/backend/app/auth/permissions.py b/backend/app/auth/permissions.py
+index 92ef4a6..37b8195 100644
+--- a/backend/app/auth/permissions.py
++++ b/backend/app/auth/permissions.py
+@@ -51,6 +51,11 @@ PERMISSIONS: dict[str, frozenset[Role]] = {
+     "ciclo:confirmar_cierre": frozenset({Role.admin}),
+     "ciclo:reabrir": frozenset({Role.admin}),  # + step-up MFA (0b)
+     "ciclo:config": frozenset({Role.admin}),  # + step-up MFA (0b)
++    # ── CR-CFO-2 (FABS inc3 Pieza B, canal Telegram, GO CEO 2026-08-17): administrar
++    # la allowlist telegram_id<->user_id. SOLO admin. `require_role` queda reservado
++    # para /users (H-1, ver docstring de app/auth/deps.py) — administrar el canal es
++    # un endpoint de NEGOCIO, así que se gatea con require_permission, como el resto.
++    "cfo:telegram_administrar": frozenset({Role.admin}),
+ }
+ 
+ CAPABILITIES: frozenset[str] = frozenset(PERMISSIONS)
+diff --git a/backend/app/cfo/agente/modelos.py b/backend/app/cfo/agente/modelos.py
+index 428435d..3feee51 100644
+--- a/backend/app/cfo/agente/modelos.py
++++ b/backend/app/cfo/agente/modelos.py
+@@ -30,6 +30,7 @@ class RespuestaCFO(BaseModel):
+     texto: str
+     abstuvo: bool
+     motivo: str | None = None
++    texto_crudo: str | None = None  # texto del modelo ANTES de sustituir (para el hilo)
+     conceptos_usados: list[str] = Field(default_factory=list)
+     cifras: list[CifraPublicada] = Field(default_factory=list)
+     uso: UsoLLM
+diff --git a/backend/app/cfo/agente/servicio.py b/backend/app/cfo/agente/servicio.py
+index c10d6fd..5d63e92 100644
+--- a/backend/app/cfo/agente/servicio.py
++++ b/backend/app/cfo/agente/servicio.py
+@@ -86,6 +86,7 @@ def _abstencion(motivo: str, res: ResultadoLoop | None, actor_id: str) -> Respue
+         texto=_ABSTENCION,
+         abstuvo=True,
+         motivo=motivo,
++        texto_crudo=_ABSTENCION,
+         conceptos_usados=[],
+         cifras=[],
+         uso=uso,
+@@ -110,7 +111,11 @@ def _meta(r: RespuestaCFO) -> dict:
+ 
+ 
+ async def consultar(
+-    pregunta: str, *, actor_id: str, cliente: ClienteLLM | None = None
++    pregunta: str,
++    *,
++    actor_id: str,
++    cliente: ClienteLLM | None = None,
++    historial: list[dict] | None = None,
+ ) -> RespuestaCFO:
+     # cfo.consulta ANTES de todo (rastro de la pregunta aunque algo falle después)
+     await _audit_soft(
+@@ -128,7 +133,7 @@ async def consultar(
+         try:
+             res = await conversar(
+                 cliente,
+-                [{"role": "user", "content": pregunta}],
++                [*(historial or []), {"role": "user", "content": pregunta}],
+                 max_iter=config.cfo_max_iter(),
+             )
+         except Exception:  # noqa: BLE001 — fallo del LLM
+@@ -162,6 +167,7 @@ async def consultar(
+                 disponibles=disponibles,
+             )
+             mensajes = [
++                *(historial or []),
+                 {"role": "user", "content": pregunta},
+                 {"role": "assistant", "content": res.texto},
+                 {"role": "user", "content": correccion},
+@@ -192,12 +198,15 @@ async def consultar(
+ 
+         # Verificación ya pasó sobre el texto con TOKENS (arriba); el texto sustituido
+         # NUNCA se re-verifica (ver verificador.verificar). Sustituir es lo último
+-        # antes de publicar.
++        # antes de publicar. `texto_crudo` guarda el texto CON tokens (pre-sustitución)
++        # para que el hilo persista citas, nunca valores (inc3 Pieza B).
++        texto_crudo = texto_final
+         texto_final = sustituir_tokens(texto_final, res.resultados)
+         r = RespuestaCFO(
+             texto=texto_final,
+             abstuvo=False,
+             motivo=None,
++            texto_crudo=texto_crudo,
+             conceptos_usados=[x.concepto for x in res.resultados],
+             cifras=_cifras(res.resultados),
+             uso=UsoLLM(
+diff --git a/backend/app/cfo/config.py b/backend/app/cfo/config.py
+index c0dfaf4..da3fc75 100644
+--- a/backend/app/cfo/config.py
++++ b/backend/app/cfo/config.py
+@@ -31,3 +31,22 @@ def cfo_max_tokens() -> int:
+ 
+ def cfo_timeout_s() -> float:
+     return float(os.environ.get("CFO_TIMEOUT_S", "60"))
++
++
++def telegram_bot_token() -> str | None:
++    """Token del bot de Telegram (SOLO env var; nunca en repo). Vacío ⇒ None."""
++    v = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
++    return v or None
++
++
++def telegram_webhook_secret() -> str | None:
++    """Secreto para validar que el webhook entrante viene de Telegram
++    (header `X-Telegram-Bot-Api-Secret-Token`). Vacío ⇒ None."""
++    v = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
++    return v or None
++
++
++def cfo_hilo_ventana() -> int:
++    """Cuántos mensajes previos del hilo se anteponen como `historial` en cada
++    consulta nueva (ventana deslizante; default 8)."""
++    return int(os.environ.get("CFO_HILO_VENTANA", "8"))
+diff --git a/backend/app/cfo/telegram/__init__.py b/backend/app/cfo/telegram/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/cfo/telegram/cliente.py b/backend/app/cfo/telegram/cliente.py
+new file mode 100644
+index 0000000..8bdb956
+--- /dev/null
++++ b/backend/app/cfo/telegram/cliente.py
+@@ -0,0 +1,41 @@
++# backend/app/cfo/telegram/cliente.py
++"""FABS · cliente Telegram SALIENTE (sendMessage). httpx con import PEREZOSO; sin
++TELEGRAM_BOT_TOKEN ⇒ crear_cliente_telegram()=None. Los errores se loguean, no
++revientan el webhook (una respuesta que no sale no debe tumbar el 200 a Telegram)."""
++
++import logging
++from typing import Protocol
++
++from app.cfo import config
++
++logger = logging.getLogger(__name__)
++
++_API = "https://api.telegram.org/bot{token}/sendMessage"
++
++
++class ClienteTelegramProto(Protocol):
++    async def enviar(self, chat_id: int, texto: str) -> None: ...
++
++
++class ClienteTelegram:
++    def __init__(self, token: str, timeout_s: float = 10.0):
++        self._token = token
++        self._timeout = timeout_s
++
++    async def enviar(self, chat_id: int, texto: str) -> None:
++        try:
++            import httpx  # import perezoso
++
++            async with httpx.AsyncClient(timeout=self._timeout) as c:
++                r = await c.post(
++                    _API.format(token=self._token),
++                    json={"chat_id": chat_id, "text": texto},
++                )
++                r.raise_for_status()
++        except Exception:  # noqa: BLE001 — no reventar el webhook
++            logger.exception("fallo al enviar a Telegram chat=%s", chat_id)
++
++
++def crear_cliente_telegram() -> ClienteTelegramProto | None:
++    token = config.telegram_bot_token()
++    return ClienteTelegram(token) if token else None
+diff --git a/backend/app/cfo/telegram/hilos.py b/backend/app/cfo/telegram/hilos.py
+new file mode 100644
+index 0000000..409bf7a
+--- /dev/null
++++ b/backend/app/cfo/telegram/hilos.py
+@@ -0,0 +1,48 @@
++# backend/app/cfo/telegram/hilos.py
++"""FABS · lógica de hilos. El historial que se re-alimenta al modelo son los turnos
++CRUDOS (con [[tokens]]), NUNCA valores — así la garantía de Pieza A se mantiene entre
++turnos. Ventana acotada (costo); el hilo persiste (sin TTL naïve).
++
++Los turnos se guardan en pares [user, assistant] (uno por cada registrar_turno). La
++API de Anthropic exige que la lista de mensajes empiece en 'user' y alterne; una
++ventana desalineada con esos pares (p. ej. impar) puede cortar a la mitad y dejar un
++'assistant' al frente — historial_para_loop lo descarta para no violar ese contrato
++(CARRY de la revisión de Task 1 / B1)."""
++
++from app.cfo.telegram import repositorio
++from app.cfo.telegram.modelos import HiloCFO
++from app.core.time import now_utc
++
++_MAX_TURNOS = 40  # se persiste hasta esto; se re-alimenta solo la ventana
++
++
++def historial_para_loop(hilo: HiloCFO | None, ventana: int) -> list[dict]:
++    if hilo is None or not hilo.turnos:
++        return []
++    ult = hilo.turnos[-ventana:] if ventana > 0 else []
++    if ult and ult[0]["rol"] == "assistant":
++        ult = ult[1:]  # ventana desalineada: no empezar el mensaje en 'assistant'
++    return [{"role": t["rol"], "content": t["contenido"]} for t in ult]
++
++
++def es_reintento(hilo: HiloCFO | None, update_id: int) -> bool:
++    return hilo is not None and hilo.ultimo_update_id == update_id
++
++
++async def registrar_turno(
++    user_id: str, pregunta: str, texto_crudo: str, update_id: int, envio: str
++) -> None:
++    hilo = await repositorio.obtener_hilo(user_id)
++    turnos = (hilo.turnos if hilo else []) + [
++        {"rol": "user", "contenido": pregunta},
++        {"rol": "assistant", "contenido": texto_crudo},
++    ]
++    turnos = turnos[-_MAX_TURNOS:]
++    nuevo = HiloCFO(
++        user_id=user_id,
++        turnos=turnos,
++        ultimo_update_id=update_id,
++        ultimo_envio=envio,
++        actualizado_at=now_utc(),
++    )
++    await repositorio.guardar_hilo(nuevo)
+diff --git a/backend/app/cfo/telegram/modelos.py b/backend/app/cfo/telegram/modelos.py
+new file mode 100644
+index 0000000..81d571d
+--- /dev/null
++++ b/backend/app/cfo/telegram/modelos.py
+@@ -0,0 +1,45 @@
++# backend/app/cfo/telegram/modelos.py
++"""FABS · Documents del canal Telegram. Colecciones cfo_* (S1). Vínculo uno-a-uno
++(único en telegram_id y user_id, B-3). El hilo guarda el texto CRUDO del modelo
++(con [[tokens]], NUNCA valores) para preservar la garantía de Pieza A entre turnos."""
++
++from datetime import datetime
++
++from beanie import Document
++from pydantic import ConfigDict, Field
++from pymongo import IndexModel
++
++CFO_VINCULOS_COLLECTION = "cfo_vinculos_telegram"
++CFO_HILOS_COLLECTION = "cfo_hilos"
++
++
++class VinculoTelegram(Document):
++    model_config = ConfigDict(strict=True, extra="forbid")
++
++    telegram_id: int
++    user_id: str
++    creado_por: str
++    creado_at: datetime
++
++    class Settings:
++        name = CFO_VINCULOS_COLLECTION
++        indexes = [
++            IndexModel([("telegram_id", 1)], unique=True, name="telegram_id_unico"),
++            IndexModel([("user_id", 1)], unique=True, name="user_id_unico"),
++        ]
++
++
++class HiloCFO(Document):
++    model_config = ConfigDict(strict=True, extra="forbid")
++
++    user_id: str
++    turnos: list[dict] = Field(default_factory=list)
++    ultimo_update_id: int | None = None
++    ultimo_envio: str | None = None
++    actualizado_at: datetime
++
++    class Settings:
++        name = CFO_HILOS_COLLECTION
++        indexes = [
++            IndexModel([("user_id", 1)], unique=True, name="user_id_unico"),
++        ]
+diff --git a/backend/app/cfo/telegram/repositorio.py b/backend/app/cfo/telegram/repositorio.py
+new file mode 100644
+index 0000000..1e1596b
+--- /dev/null
++++ b/backend/app/cfo/telegram/repositorio.py
+@@ -0,0 +1,57 @@
++# backend/app/cfo/telegram/repositorio.py
++"""FABS · única puerta de escritura/lectura del canal Telegram. SOLO colecciones
++cfo_* (S1: ninguna otra subruta de cfo/telegram toca el driver de Mongo)."""
++
++from pymongo.errors import DuplicateKeyError
++
++from app.cfo.telegram.modelos import HiloCFO, VinculoTelegram
++
++
++class VinculoDuplicado(Exception):
++    """telegram_id o user_id ya vinculado (índice único uno-a-uno, B-3).
++
++    Traduce el DuplicateKeyError del driver a una excepción de DOMINIO en la
++    frontera del repositorio (S1: este módulo es el único que conoce pymongo).
++    Así el router (capa HTTP) puede atrapar SOLO esto — nunca `except
++    Exception` — y un fallo real ajeno (p. ej. de auditoría, posterior a un
++    insert que sí tuvo éxito) no se enmascara como un 409 falso."""
++
++
++async def crear_vinculo(v: VinculoTelegram) -> None:
++    try:
++        await v.insert()
++    except DuplicateKeyError as e:
++        raise VinculoDuplicado("telegram_id o user_id ya vinculado") from e
++
++
++async def eliminar_vinculo(telegram_id: int) -> bool:
++    v = await VinculoTelegram.find_one(VinculoTelegram.telegram_id == telegram_id)
++    if v is None:
++        return False
++    await v.delete()
++    return True
++
++
++async def resolver_usuario(telegram_id: int) -> str | None:
++    v = await VinculoTelegram.find_one(VinculoTelegram.telegram_id == telegram_id)
++    return v.user_id if v is not None else None
++
++
++async def listar_vinculos() -> list[VinculoTelegram]:
++    return await VinculoTelegram.find_all().to_list()
++
++
++async def obtener_hilo(user_id: str) -> HiloCFO | None:
++    return await HiloCFO.find_one(HiloCFO.user_id == user_id)
++
++
++async def guardar_hilo(h: HiloCFO) -> None:
++    existe = await HiloCFO.find_one(HiloCFO.user_id == h.user_id)
++    if existe is None:
++        await h.insert()
++    else:
++        existe.turnos = h.turnos
++        existe.ultimo_update_id = h.ultimo_update_id
++        existe.ultimo_envio = h.ultimo_envio
++        existe.actualizado_at = h.actualizado_at
++        await existe.save()
+diff --git a/backend/app/cfo/telegram/router.py b/backend/app/cfo/telegram/router.py
+new file mode 100644
+index 0000000..a9f1128
+--- /dev/null
++++ b/backend/app/cfo/telegram/router.py
+@@ -0,0 +1,96 @@
++# backend/app/cfo/telegram/router.py
++"""FABS · rutas del canal Telegram (inc3 Pieza B). Doble barrera: (1) solo se monta
++en main si CFO_ENABLED; (2) guard 404 defensivo en cada handler (cfo_enabled() relee
++el entorno en cada llamada, sin cache — igual que app/cfo/router.py). El webhook
++verifica el secret token de Telegram (X-Telegram-Bot-Api-Secret-Token).
++
++RBAC de /vinculos: `require_permission('cfo:telegram_administrar')` — capacidad
++restringida a Role.admin en app/auth/permissions.py — y NO `require_role(Role.admin)`.
++`require_role` está documentado en app/auth/deps.py como "SOLO para administración de
++identidad (/users); prohibido en negocio (H-1)"; administrar la allowlist del canal
++Telegram es un endpoint de NEGOCIO (no /users), así que usar require_role aquí
++violaría esa regla y la Regla 9 de CLAUDE.md (RBAC vía la matriz de permisos única).
++Money/cifras no viajan por aquí (los cuerpos son telegram_id/user_id, no dinero)."""
++
++import secrets
++
++from fastapi import APIRouter, Depends, Header, HTTPException, Request
++from pydantic import BaseModel, ConfigDict
++
++from app.auth.deps import require_permission
++from app.auth.models import User
++from app.cfo.config import cfo_enabled, telegram_webhook_secret
++from app.cfo.telegram import repositorio, vinculos, webhook
++from app.cfo.telegram.cliente import crear_cliente_telegram
++
++router = APIRouter(prefix="/api/v1/cfo/telegram", tags=["cfo-telegram"])
++
++
++class VinculoBody(BaseModel):
++    model_config = ConfigDict(strict=True, extra="forbid")
++
++    telegram_id: int
++    user_id: str
++
++
++@router.post("/webhook")
++async def telegram_webhook(
++    request: Request,
++    x_telegram_bot_api_secret_token: str | None = Header(default=None),
++):
++    if not cfo_enabled():  # guard defensivo (barrera 2)
++        raise HTTPException(404, "No encontrado.")
++    secret = telegram_webhook_secret()
++    # compare_digest: comparación en tiempo constante (evita side-channel de
++    # timing en un endpoint público)
++    if (
++        not secret
++        or not x_telegram_bot_api_secret_token
++        or not secrets.compare_digest(x_telegram_bot_api_secret_token, secret)
++    ):
++        raise HTTPException(403, "Prohibido.")
++    cli = crear_cliente_telegram()
++    if cli is None:
++        raise HTTPException(503, "Canal no configurado.")
++    update = await request.json()
++    await webhook.procesar_update(update, cliente_telegram=cli)
++    return {"ok": True}
++
++
++@router.post("/vinculos")
++async def crear(
++    body: VinculoBody,
++    admin: User = Depends(require_permission("cfo:telegram_administrar")),
++):
++    if not cfo_enabled():
++        raise HTTPException(404, "No encontrado.")
++    try:
++        await vinculos.vincular(body.telegram_id, body.user_id, admin_id=str(admin.id))
++    except repositorio.VinculoDuplicado as e:  # uno-a-uno (B-3); narrow catch
++        # a propósito: un fallo real (p. ej. de auditoría) debe propagar (500),
++        # nunca disfrazarse de 409 — ver Fix 1, auditoría Kimi de este gate.
++        raise HTTPException(409, "telegram_id o user_id ya vinculado.") from e
++    return {"ok": True}
++
++
++@router.get("/vinculos")
++async def listar(
++    admin: User = Depends(require_permission("cfo:telegram_administrar")),
++):
++    if not cfo_enabled():
++        raise HTTPException(404, "No encontrado.")
++    vs = await repositorio.listar_vinculos()
++    return [{"telegram_id": v.telegram_id, "user_id": v.user_id} for v in vs]
++
++
++@router.delete("/vinculos/{telegram_id}")
++async def borrar(
++    telegram_id: int,
++    admin: User = Depends(require_permission("cfo:telegram_administrar")),
++):
++    if not cfo_enabled():
++        raise HTTPException(404, "No encontrado.")
++    ok = await vinculos.desvincular(telegram_id, admin_id=str(admin.id))
++    if not ok:
++        raise HTTPException(404, "Vínculo no encontrado.")
++    return {"ok": True}
+diff --git a/backend/app/cfo/telegram/vinculos.py b/backend/app/cfo/telegram/vinculos.py
+new file mode 100644
+index 0000000..330009f
+--- /dev/null
++++ b/backend/app/cfo/telegram/vinculos.py
+@@ -0,0 +1,46 @@
++# backend/app/cfo/telegram/vinculos.py
++"""FABS · lógica de la allowlist (alta/baja/resolución) con auditoría CR-CFO-2.
++
++vincular/desvincular son operaciones de estado (admin), no lecturas: emit_audit
++NO se envuelve en fail-soft aquí — si la auditoría falla, el error propaga (a
++diferencia del Q&A, que sí es fail-soft, en el servicio)."""
++
++from app.audit.events import AuditEvento
++from app.audit.service import emit_audit
++from app.cfo.telegram import repositorio
++from app.cfo.telegram.modelos import VinculoTelegram
++from app.core.time import now_utc
++
++
++async def vincular(telegram_id: int, user_id: str, admin_id: str) -> None:
++    v = VinculoTelegram(
++        telegram_id=telegram_id,
++        user_id=user_id,
++        creado_por=admin_id,
++        creado_at=now_utc(),
++    )
++    await repositorio.crear_vinculo(v)  # VinculoDuplicado si ya existe (uno-a-uno)
++    await emit_audit(
++        AuditEvento.cfo_vinculo_creado,
++        entidad="cfo_vinculo_telegram",
++        entidad_id=str(telegram_id),
++        actor_id=admin_id,
++        metadata={"telegram_id": telegram_id, "user_id": user_id},
++    )
++
++
++async def desvincular(telegram_id: int, admin_id: str) -> bool:
++    ok = await repositorio.eliminar_vinculo(telegram_id)
++    if ok:
++        await emit_audit(
++            AuditEvento.cfo_vinculo_eliminado,
++            entidad="cfo_vinculo_telegram",
++            entidad_id=str(telegram_id),
++            actor_id=admin_id,
++            metadata={"telegram_id": telegram_id},
++        )
++    return ok
++
++
++async def resolver(telegram_id: int) -> str | None:
++    return await repositorio.resolver_usuario(telegram_id)
+diff --git a/backend/app/cfo/telegram/webhook.py b/backend/app/cfo/telegram/webhook.py
+new file mode 100644
+index 0000000..219f0f5
+--- /dev/null
++++ b/backend/app/cfo/telegram/webhook.py
+@@ -0,0 +1,95 @@
++# backend/app/cfo/telegram/webhook.py
++"""FABS · lógica del webhook (pura, testeable con fakes). Reactivo: responde a quien
++escribe. No-vinculado ⇒ rehúsa sin llamar al servicio. Dedup por update_id (reenvía la
++respuesta previa). El hilo guarda el texto CRUDO (tokens), lo que ve el usuario es el
++sustituido.
++
++Endpoint PÚBLICO (Telegram lo golpea sin que controlemos la forma del payload):
++`_extraer` parsea con `.get(...)` y devuelve None ante CUALQUIER forma inesperada
++(sin 'message', sin texto, sin 'update_id'/'from'/'chat') — `procesar_update` ignora
++esos updates en silencio. A propósito NO hay un try/except envolvente en el resto de
++la función: eso ocultaría bugs reales de este módulo y le quitaría a Telegram la señal
++de reintento (un webhook que revienta con 500 hace que Telegram reintente; uno que
++traga el error y devuelve 200 vacío, no). Lo que sí es seguro sin envoltura adicional:
++`servicio.consultar` nunca lanza (tiene su propio backstop) y `cliente_telegram.enviar`
++ya se traga sus propios errores de red."""
++
++import logging
++
++from app.cfo import config
++from app.cfo.agente import servicio
++from app.cfo.agente.cliente import crear_cliente as crear_cliente_llm
++from app.cfo.telegram import hilos, repositorio, vinculos
++from app.cfo.telegram.cliente import ClienteTelegramProto
++
++logger = logging.getLogger(__name__)
++
++
++def _formatear(resp) -> str:
++    if resp.abstuvo or not resp.cifras:
++        return resp.texto
++    lineas = "\n".join(
++        f"• {c.valor} {c.unidad} — {c.evidencia.fuente} ({c.evidencia.ref})"
++        for c in resp.cifras
++    )
++    return f"{resp.texto}\n\nCifras (con su fuente):\n{lineas}"
++
++
++def _extraer(update: dict) -> tuple[int, int, int, str] | None:
++    """(update_id, telegram_id, chat_id, texto) o None si el update no es un
++    mensaje de texto de un usuario, o le falta algún campo requerido. Nunca lanza:
++    cualquier forma inesperada del payload público se traduce en None."""
++    msg = update.get("message")
++    if not msg or not msg.get("text"):
++        return None
++    update_id = update.get("update_id")
++    telegram_id = (msg.get("from") or {}).get("id")
++    chat_id = (msg.get("chat") or {}).get("id")
++    if update_id is None or telegram_id is None or chat_id is None:
++        return None
++    return update_id, telegram_id, chat_id, msg["text"]
++
++
++async def procesar_update(
++    update: dict, *, cliente_telegram: ClienteTelegramProto, cliente_llm=None
++) -> None:
++    extraido = _extraer(update)
++    if extraido is None:
++        logger.debug("update de Telegram ignorado (no es mensaje de texto válido)")
++        return
++    update_id, telegram_id, chat_id, texto = extraido
++
++    user_id = await vinculos.resolver(telegram_id)
++    if user_id is None:
++        await cliente_telegram.enviar(
++            chat_id,
++            f"No estás autorizado para usar FABS. Tu ID de Telegram es "
++            f"{telegram_id} — pídele al administrador que te vincule.",
++        )
++        return
++
++    hilo = await repositorio.obtener_hilo(user_id)
++    # LIMITACIÓN ACEPTADA (piloto, flag off): la deduplicación por update_id es
++    # check-then-set (no hay claim atómico). Si Telegram RE-entrega el mismo update_id
++    # mientras la 1ª petición sigue en el LLM (LLM más lento que el timeout de entrega
++    # de Telegram), ambas pasan es_reintento==False → doble respuesta + doble costo LLM.
++    # NO afecta la garantía anti-alucinación. Endurecimiento futuro: reclamar el
++    # update_id de forma atómica (update condicional) ANTES de llamar al LLM.
++    if hilos.es_reintento(hilo, update_id):
++        # reintento de Telegram: reenvía la respuesta previa (B-1/B-2, no silencioso)
++        if hilo.ultimo_envio:
++            await cliente_telegram.enviar(chat_id, hilo.ultimo_envio)
++        return
++
++    historial = hilos.historial_para_loop(hilo, config.cfo_hilo_ventana())
++    resp = await servicio.consultar(
++        texto,
++        actor_id=user_id,
++        cliente=cliente_llm or crear_cliente_llm(),
++        historial=historial,
++    )
++    envio = _formatear(resp)
++    await hilos.registrar_turno(
++        user_id, texto, resp.texto_crudo or resp.texto, update_id, envio
++    )
++    await cliente_telegram.enviar(chat_id, envio)
+diff --git a/backend/app/domain/__init__.py b/backend/app/domain/__init__.py
+index 2e1e605..e13bfa2 100644
+--- a/backend/app/domain/__init__.py
++++ b/backend/app/domain/__init__.py
+@@ -8,6 +8,7 @@ el ODM general.
+ """
+ 
+ from app.cfo.goldens.modelo import CFOGolden
++from app.cfo.telegram.modelos import HiloCFO, VinculoTelegram
+ from app.domain.carga import CargaBancaria
+ from app.domain.cartera_previa import CarteraPreviaRecaudo
+ from app.domain.configuracion import Configuracion
+@@ -47,6 +48,8 @@ DOMAIN_DOCUMENTS: list[type] = [
+     FacturaObligacion,
+     MetaIngreso,
+     CFOGolden,
++    VinculoTelegram,
++    HiloCFO,
+ ]
+ 
+ __all__ = [
+@@ -70,5 +73,7 @@ __all__ = [
+     "FacturaObligacion",
+     "MetaIngreso",
+     "CFOGolden",
++    "VinculoTelegram",
++    "HiloCFO",
+     "DOMAIN_DOCUMENTS",
+ ]
+diff --git a/backend/app/main.py b/backend/app/main.py
+index 613e973..efc6c72 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -188,8 +188,10 @@ def create_app() -> FastAPI:
+ 
+     if cfo_enabled():
+         from app.cfo.router import router as cfo_router
++        from app.cfo.telegram.router import router as cfo_telegram_router
+ 
+         app.include_router(cfo_router)
++        app.include_router(cfo_telegram_router)
+ 
+     return app
+ 
+diff --git a/backend/tests/cfo/agente/test_servicio.py b/backend/tests/cfo/agente/test_servicio.py
+index cc4d8a3..0d727e3 100644
+--- a/backend/tests/cfo/agente/test_servicio.py
++++ b/backend/tests/cfo/agente/test_servicio.py
+@@ -148,3 +148,31 @@ async def test_error_interno_no_revienta_y_audita(monkeypatch, _audit):
+     r = await srv.consultar("¿caja?", actor_id="u1")  # NO debe levantar
+     assert r.abstuvo is True and r.motivo == "error"
+     assert [e[0] for e in _audit] == ["cfo.consulta", "cfo.respuesta"]
++
++
++@pytest.mark.asyncio
++async def test_consultar_usa_historial_y_expone_texto_crudo(monkeypatch, _audit):
++    async def fake_tool(nombre):
++        return _res()  # ResultadoCFO caja_hoy disponible
++
++    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [BloqueToolUse(id="t1", nombre="caja_disponible_hoy", input={})],
++            1,
++            1,
++        ),
++        RespuestaLLM("end_turn", [BloqueTexto(texto="Tu caja es [[caja_hoy]].")], 1, 1),
++    ]
++    fake = ClienteFake(guiones)
++    historial = [
++        {"role": "user", "content": "hola"},
++        {"role": "assistant", "content": "¿en qué te ayudo?"},
++    ]
++    r = await srv.consultar("¿caja?", actor_id="u1", cliente=fake, historial=historial)
++    # el historial se antepuso (el primer mensaje que vio el cliente lo incluye)
++    assert fake.llamadas[0]["messages"][0]["content"] == "hola"
++    # texto publicado = sustituido; texto_crudo = con token (para guardar en el hilo)
++    assert "[[caja_hoy]]" not in r.texto and "$704.722.003" in r.texto
++    assert r.texto_crudo == "Tu caja es [[caja_hoy]]."
+diff --git a/backend/tests/cfo/telegram/__init__.py b/backend/tests/cfo/telegram/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/tests/cfo/telegram/fakes.py b/backend/tests/cfo/telegram/fakes.py
+new file mode 100644
+index 0000000..cbf2b58
+--- /dev/null
++++ b/backend/tests/cfo/telegram/fakes.py
+@@ -0,0 +1,10 @@
++# backend/tests/cfo/telegram/fakes.py
++"""Cliente Telegram falso para tests (sin red)."""
++
++
++class ClienteTelegramFake:
++    def __init__(self):
++        self.enviados: list[tuple[int, str]] = []
++
++    async def enviar(self, chat_id: int, texto: str) -> None:
++        self.enviados.append((chat_id, texto))
+diff --git a/backend/tests/cfo/telegram/test_cliente.py b/backend/tests/cfo/telegram/test_cliente.py
+new file mode 100644
+index 0000000..8f8523a
+--- /dev/null
++++ b/backend/tests/cfo/telegram/test_cliente.py
+@@ -0,0 +1,64 @@
++# backend/tests/cfo/telegram/test_cliente.py
++import pytest
++from app.cfo.telegram import cliente as cli
++
++
++def test_crear_cliente_none_sin_token(monkeypatch):
++    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
++    assert cli.crear_cliente_telegram() is None
++
++
++def test_crear_cliente_instancia_con_token(monkeypatch):
++    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "botX")
++    assert isinstance(cli.crear_cliente_telegram(), cli.ClienteTelegram)
++
++
++@pytest.mark.asyncio
++async def test_enviar_postea_url_y_payload(monkeypatch):
++    llamada = {}
++
++    class _FakeResp:
++        def raise_for_status(self):
++            pass
++
++    class _FakeClient:
++        def __init__(self, *a, **k):
++            pass
++
++        async def __aenter__(self):
++            return self
++
++        async def __aexit__(self, *a):
++            return False
++
++        async def post(self, url, json=None):
++            llamada["url"] = url
++            llamada["json"] = json
++            return _FakeResp()
++
++    monkeypatch.setattr("httpx.AsyncClient", _FakeClient)
++    c = cli.ClienteTelegram("botX")
++    await c.enviar(123, "hola")
++    assert llamada["url"] == "https://api.telegram.org/botbotX/sendMessage"
++    assert llamada["json"] == {"chat_id": 123, "text": "hola"}
++
++
++@pytest.mark.asyncio
++async def test_enviar_traga_errores_no_revienta(monkeypatch):
++    class _FakeClient:
++        def __init__(self, *a, **k):
++            pass
++
++        async def __aenter__(self):
++            return self
++
++        async def __aexit__(self, *a):
++            return False
++
++        async def post(self, url, json=None):
++            raise RuntimeError("red caída")
++
++    monkeypatch.setattr("httpx.AsyncClient", _FakeClient)
++    c = cli.ClienteTelegram("botX")
++    # NO debe levantar — el fallo de red se traga y se loguea
++    await c.enviar(123, "hola")
+diff --git a/backend/tests/cfo/telegram/test_hilos.py b/backend/tests/cfo/telegram/test_hilos.py
+new file mode 100644
+index 0000000..35db1bc
+--- /dev/null
++++ b/backend/tests/cfo/telegram/test_hilos.py
+@@ -0,0 +1,156 @@
++# backend/tests/cfo/telegram/test_hilos.py
++"""FABS · lógica de hilos: ventana del historial (re-alimentado CRUDO al modelo),
++dedup por update_id y append/trim al persistir un turno."""
++
++from datetime import UTC, datetime
++
++import pytest
++from app.cfo.telegram import hilos
++from app.cfo.telegram.modelos import HiloCFO
++
++
++def _hilo(turnos, uid=None):
++    return HiloCFO(
++        user_id="u1",
++        turnos=turnos,
++        ultimo_update_id=uid,
++        ultimo_envio="prev",
++        actualizado_at=datetime.now(UTC),
++    )
++
++
++def test_historial_toma_ultimos_n():
++    turnos = [{"rol": "user", "contenido": f"q{i}"} for i in range(20)]
++    msgs = hilos.historial_para_loop(_hilo(turnos), ventana=4)
++    assert len(msgs) == 4
++    assert msgs[-1] == {"role": "user", "content": "q19"}
++    # 'rol' -> 'role', 'contenido' -> 'content'
++    assert set(msgs[0].keys()) == {"role", "content"}
++
++
++def test_historial_none_es_vacio():
++    assert hilos.historial_para_loop(None, ventana=8) == []
++
++
++def test_historial_ventana_cero_es_vacia():
++    """ventana=0 debe devolver [] explícitamente. Bug: `lista[-0:]` en Python es
++    `lista[0:]` (la lista COMPLETA, porque -0 == 0) — sin guarda, ventana=0
++    devolvía todo el hilo en vez de una ventana acotada (vacía)."""
++    turnos = [{"rol": "user", "contenido": f"q{i}"} for i in range(5)]
++    assert hilos.historial_para_loop(_hilo(turnos), ventana=0) == []
++
++
++def test_historial_ventana_negativa_es_vacia():
++    turnos = [{"rol": "user", "contenido": f"q{i}"} for i in range(5)]
++    assert hilos.historial_para_loop(_hilo(turnos), ventana=-1) == []
++
++
++def test_historial_ventana_desalineada_no_empieza_en_assistant():
++    """CARRY de la revisión B1 (Task 1): los turnos se guardan en pares
++    [user, assistant]. La API de Anthropic exige que la lista de mensajes
++    EMPIECE en 'user' y alterne — si la ventana corta a mitad de un par
++    (ventana impar / desalineada), el primer elemento del slice cae en
++    'assistant' y hay que descartarlo, en vez de mandarlo así al loop."""
++    turnos = []
++    for i in range(5):
++        turnos.append({"rol": "user", "contenido": f"u{i}"})
++        turnos.append({"rol": "assistant", "contenido": f"a{i}"})
++    # 10 turnos totales; ventana=3 -> slice crudo = [a3, u4, a4] (empieza en assistant)
++    msgs = hilos.historial_para_loop(_hilo(turnos), ventana=3)
++    assert msgs[0]["role"] == "user"
++    assert msgs == [
++        {"role": "user", "content": "u4"},
++        {"role": "assistant", "content": "a4"},
++    ]
++
++
++def test_historial_ventana_alineada_no_se_toca():
++    """Ventana PAR (alineada con los pares) no debe perder turnos: es el caso
++    normal (ventana par por defecto, CFO_HILO_VENTANA=8)."""
++    turnos = []
++    for i in range(5):
++        turnos.append({"rol": "user", "contenido": f"u{i}"})
++        turnos.append({"rol": "assistant", "contenido": f"a{i}"})
++    msgs = hilos.historial_para_loop(_hilo(turnos), ventana=4)
++    assert len(msgs) == 4
++    assert msgs[0] == {"role": "user", "content": "u3"}
++    assert msgs[-1] == {"role": "assistant", "content": "a4"}
++
++
++def test_es_reintento_por_update_id():
++    assert hilos.es_reintento(_hilo([], uid=42), 42) is True
++    assert hilos.es_reintento(_hilo([], uid=42), 43) is False
++    assert hilos.es_reintento(None, 42) is False
++
++
++@pytest.mark.asyncio
++async def test_registrar_turno_sin_hilo_previo(monkeypatch):
++    guardados = []
++
++    async def fake_obtener(user_id):
++        return None
++
++    async def fake_guardar(h):
++        guardados.append(h)
++
++    monkeypatch.setattr("app.cfo.telegram.hilos.repositorio.obtener_hilo", fake_obtener)
++    monkeypatch.setattr("app.cfo.telegram.hilos.repositorio.guardar_hilo", fake_guardar)
++
++    await hilos.registrar_turno(
++        user_id="u1",
++        pregunta="cuanto vendimos",
++        texto_crudo="vendimos [[V1]]",
++        update_id=7,
++        envio="vendimos $10.000.000",
++    )
++
++    assert len(guardados) == 1
++    h = guardados[0]
++    assert h.user_id == "u1"
++    assert h.turnos == [
++        {"rol": "user", "contenido": "cuanto vendimos"},
++        {"rol": "assistant", "contenido": "vendimos [[V1]]"},
++    ]
++    assert h.ultimo_update_id == 7
++    assert h.ultimo_envio == "vendimos $10.000.000"
++
++
++@pytest.mark.asyncio
++async def test_registrar_turno_recorta_al_maximo(monkeypatch):
++    # hilo previo ya en el tope (_MAX_TURNOS=40 -> 20 pares)
++    previos = []
++    for i in range(20):
++        previos.append({"rol": "user", "contenido": f"u{i}"})
++        previos.append({"rol": "assistant", "contenido": f"a{i}"})
++    hilo_previo = _hilo(list(previos), uid=98)
++
++    async def fake_obtener(user_id):
++        return hilo_previo
++
++    guardados = []
++
++    async def fake_guardar(h):
++        guardados.append(h)
++
++    monkeypatch.setattr("app.cfo.telegram.hilos.repositorio.obtener_hilo", fake_obtener)
++    monkeypatch.setattr("app.cfo.telegram.hilos.repositorio.guardar_hilo", fake_guardar)
++
++    await hilos.registrar_turno(
++        user_id="u1",
++        pregunta="nueva pregunta",
++        texto_crudo="nueva respuesta",
++        update_id=99,
++        envio="env99",
++    )
++
++    h = guardados[0]
++    assert len(h.turnos) == 40  # se mantiene en el tope, no crece sin límite
++    assert h.turnos[0] == {
++        "rol": "user",
++        "contenido": "u1",
++    }  # se botó el par mas viejo (u0,a0)
++    assert h.turnos[-2:] == [
++        {"rol": "user", "contenido": "nueva pregunta"},
++        {"rol": "assistant", "contenido": "nueva respuesta"},
++    ]
++    assert h.ultimo_update_id == 99
+diff --git a/backend/tests/cfo/telegram/test_repositorio.py b/backend/tests/cfo/telegram/test_repositorio.py
+new file mode 100644
+index 0000000..44f01f5
+--- /dev/null
++++ b/backend/tests/cfo/telegram/test_repositorio.py
+@@ -0,0 +1,106 @@
++# backend/tests/cfo/telegram/test_repositorio.py
++"""FABS · Documents cfo_vinculos_telegram + cfo_hilos — unicidad SOLO contra Mongo
++REAL (mongomock no la soporta; ver tests/test_domain_indexes.py, mismo patrón de
++fixture). Vínculo uno-a-uno (B-3): único en telegram_id Y en user_id."""
++
++import os
++
++import pytest
++from app.cfo.telegram import repositorio as repo
++from app.cfo.telegram.modelos import HiloCFO, VinculoTelegram
++from app.core.time import now_utc
++from app.domain import DOMAIN_DOCUMENTS
++from beanie import init_beanie
++from motor.motor_asyncio import AsyncIOMotorClient
++
++
++@pytest.fixture
++async def mongo_real():
++    uri = os.environ.get("COMPAS_TEST_MONGO_URI")
++    if not uri:
++        pytest.skip("COMPAS_TEST_MONGO_URI no configurado")
++    client = AsyncIOMotorClient(uri, tz_aware=True)
++    dbname = "compas_test_cfo_telegram"
++    await client.drop_database(dbname)
++    await init_beanie(database=client[dbname], document_models=DOMAIN_DOCUMENTS)
++    yield client
++    await client.drop_database(dbname)
++    client.close()
++
++
++@pytest.mark.requires_real_mongo
++@pytest.mark.asyncio
++async def test_vinculo_unico_y_resolver(mongo_real):
++    v = VinculoTelegram(
++        telegram_id=111, user_id="u1", creado_por="admin", creado_at=now_utc()
++    )
++    await repo.crear_vinculo(v)
++    assert await repo.resolver_usuario(111) == "u1"
++    assert await repo.resolver_usuario(999) is None
++    # unicidad (B-3), mitad telegram_id: mismo telegram_id, distinto user_id → choca
++    # por telegram_id_unico. crear_vinculo traduce el DuplicateKeyError del driver
++    # a la excepción de dominio VinculoDuplicado (Fix 1, auditoría Kimi de T6) —
++    # el router solo necesita atrapar ESTA, nunca el error crudo de pymongo.
++    with pytest.raises(repo.VinculoDuplicado):
++        await repo.crear_vinculo(
++            VinculoTelegram(
++                telegram_id=111, user_id="u2", creado_por="admin", creado_at=now_utc()
++            )
++        )
++    # unicidad (B-3), mitad user_id: mismo user_id="u1", distinto telegram_id → esta
++    # es la única prueba que aísla si user_id_unico se aplica de verdad (sin ella, si
++    # el índice se cayera en silencio, el bloque anterior seguiría en verde igual).
++    with pytest.raises(repo.VinculoDuplicado):
++        await repo.crear_vinculo(
++            VinculoTelegram(
++                telegram_id=222, user_id="u1", creado_por="admin", creado_at=now_utc()
++            )
++        )
++
++
++@pytest.mark.requires_real_mongo
++@pytest.mark.asyncio
++async def test_hilo_upsert(mongo_real):
++    h = HiloCFO(
++        user_id="u1",
++        turnos=[{"rol": "user", "contenido": "q"}],
++        ultimo_update_id=5,
++        ultimo_envio="r",
++        actualizado_at=now_utc(),
++    )
++    await repo.guardar_hilo(h)
++    got = await repo.obtener_hilo("u1")
++    assert got.ultimo_update_id == 5 and got.turnos[0]["contenido"] == "q"
++
++
++@pytest.mark.requires_real_mongo
++@pytest.mark.asyncio
++async def test_hilo_guardar_dos_veces_actualiza_no_duplica(mongo_real):
++    """Rama UPDATE de guardar_hilo: la 2a llamada con el mismo user_id sobre-escribe
++    el hilo existente (no revienta, no crea un segundo documento)."""
++    await repo.guardar_hilo(
++        HiloCFO(
++            user_id="u1",
++            turnos=[{"rol": "user", "contenido": "q1"}],
++            ultimo_update_id=5,
++            ultimo_envio="r1",
++            actualizado_at=now_utc(),
++        )
++    )
++    await repo.guardar_hilo(
++        HiloCFO(
++            user_id="u1",
++            turnos=[
++                {"rol": "user", "contenido": "q1"},
++                {"rol": "asst", "contenido": "r1"},
++            ],
++            ultimo_update_id=6,
++            ultimo_envio="r2",
++            actualizado_at=now_utc(),
++        )
++    )
++    got = await repo.obtener_hilo("u1")
++    assert got.ultimo_update_id == 6
++    assert got.ultimo_envio == "r2"
++    assert len(got.turnos) == 2
++    assert await HiloCFO.find(HiloCFO.user_id == "u1").count() == 1
+diff --git a/backend/tests/cfo/telegram/test_router.py b/backend/tests/cfo/telegram/test_router.py
+new file mode 100644
+index 0000000..086d0c0
+--- /dev/null
++++ b/backend/tests/cfo/telegram/test_router.py
+@@ -0,0 +1,234 @@
++# backend/tests/cfo/telegram/test_router.py
++"""T6 (inc3 Pieza B) · POST /api/v1/cfo/telegram/webhook (secret) + administración
++de vínculos /api/v1/cfo/telegram/vinculos (RBAC).
++
++Patrón de auth REUSADO de tests/cfo/agente/test_router.py: create_app() real +
++mongomock para auth/audit + login real para obtener el token — NO
++`dependency_overrides[require_permission(...)]` (`require_permission(cap)` fabrica
++un `dep` NUEVO en cada llamada, así que un override "por identidad" contra esa
++instancia nunca hace match con la que el router realmente resuelve en cada
++request; ver el docstring de ese archivo para el detalle).
++
++RBAC de /vinculos: el plan original de esta tarea sugería `require_role(Role.admin)`,
++pero eso viola una regla ya existente del repo — `app/auth/deps.py` documenta que
++`require_role` es "SOLO para administración de identidad (/users); prohibido en
++negocio (H-1)", y el ÚNICO uso real de `require_role(` en todo el backend (fuera de
++su propia definición) es un endpoint sintético de tests/test_rbac_endpoints.py: NINGÚN
++router de negocio lo usa, todos gatean con `require_permission(cap)` (así lo hace el
++propio app/cfo/router.py, hermano de este). Aquí se gatea con
++`require_permission('cfo:telegram_administrar')` — capacidad nueva restringida a
++Role.admin en app/auth/permissions.py — cumpliendo la Regla 9 de CLAUDE.md."""
++
++import httpx
++import pytest
++import pytest_asyncio
++from app.audit.service import configure_audit, reset_audit
++from app.auth import passwords, repository
++from app.auth.models import User
++from app.auth.roles import Role
++from app.cfo.telegram import repositorio
++from app.config import get_settings
++from app.main import create_app
++from mongomock_motor import AsyncMongoMockClient
++
++PWD = "clave-larga-1234"
++SECRET = "secreto-webhook-test"
++
++
++@pytest_asyncio.fixture
++async def api(monkeypatch):
++    """App con el router telegram MONTADO (CFO_ENABLED=true) + un usuario por rol."""
++    monkeypatch.setenv("APP_ENV", "development")
++    monkeypatch.setenv("JWT_SECRET", "x" * 40)
++    monkeypatch.setenv("COOKIE_SECURE", "False")
++    monkeypatch.setenv("CFO_ENABLED", "true")
++    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", SECRET)
++    monkeypatch.delenv("RUN_SCHEDULER", raising=False)
++    get_settings.cache_clear()
++
++    app = create_app()
++    c = AsyncMongoMockClient()
++    repository.configure_auth(c, "compas_test")
++    configure_audit(c, "compas_test")
++    for correo, rol in [
++        ("fin@roddos.com", Role.financiero),
++        ("admin@roddos.com", Role.admin),
++    ]:
++        await repository.create_user(
++            User(email=correo, password_hash=passwords.hash_password(PWD), rol=rol)
++        )
++    transport = httpx.ASGITransport(app=app)
++    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
++        yield ac
++    repository.reset_auth()
++    reset_audit()
++    get_settings.cache_clear()
++
++
++async def _token(ac, email) -> str:
++    r = await ac.post("/api/v1/auth/login", json={"email": email, "password": PWD})
++    assert r.status_code == 200
++    return r.json()["access_token"]
++
++
++async def test_webhook_secret_invalido_403(api):
++    r = await api.post(
++        "/api/v1/cfo/telegram/webhook",
++        json={"update_id": 1},
++        headers={"X-Telegram-Bot-Api-Secret-Token": "otro-secreto"},
++    )
++    assert r.status_code == 403
++
++
++async def test_webhook_sin_secret_403(api):
++    r = await api.post("/api/v1/cfo/telegram/webhook", json={"update_id": 1})
++    assert r.status_code == 403
++
++
++async def test_admin_crea_vinculo_ok(api, monkeypatch):
++    creados = []
++
++    async def fake_vincular(telegram_id, user_id, admin_id):
++        creados.append((telegram_id, user_id, admin_id))
++
++    monkeypatch.setattr("app.cfo.telegram.router.vinculos.vincular", fake_vincular)
++    tok = await _token(api, "admin@roddos.com")
++    h = {"Authorization": f"Bearer {tok}"}
++    r = await api.post(
++        "/api/v1/cfo/telegram/vinculos",
++        json={"telegram_id": 111, "user_id": "u1"},
++        headers=h,
++    )
++    assert r.status_code == 200
++    assert r.json() == {"ok": True}
++    assert creados[0][0] == 111
++    assert creados[0][1] == "u1"
++
++
++async def test_no_admin_403(api):
++    tok = await _token(api, "fin@roddos.com")
++    h = {"Authorization": f"Bearer {tok}"}
++    r = await api.post(
++        "/api/v1/cfo/telegram/vinculos",
++        json={"telegram_id": 111, "user_id": "u1"},
++        headers=h,
++    )
++    assert r.status_code == 403
++
++
++async def test_sin_token_401(api):
++    r = await api.post(
++        "/api/v1/cfo/telegram/vinculos", json={"telegram_id": 111, "user_id": "u1"}
++    )
++    assert r.status_code == 401
++
++
++def test_flag_off_rutas_ausentes(monkeypatch):
++    """Flag-off = COMPAS byte-idéntico: verificación ESTRUCTURAL — con CFO_ENABLED
++    ausente, create_app() no debe registrar NINGUNA ruta de cfo/telegram."""
++    monkeypatch.setenv("APP_ENV", "development")
++    monkeypatch.setenv("JWT_SECRET", "x" * 40)
++    monkeypatch.delenv("CFO_ENABLED", raising=False)
++    get_settings.cache_clear()
++
++    app = create_app()
++    rutas = {r.path for r in app.routes}
++    assert "/api/v1/cfo/telegram/webhook" not in rutas
++    assert "/api/v1/cfo/telegram/vinculos" not in rutas
++
++    get_settings.cache_clear()
++
++
++# ─────────────── FIX ROUND (auditoría Kimi, gate de código T6) ───────────────
++#
++# Fix 1 (Important): antes, el handler de POST /vinculos atrapaba `except
++# Exception` alrededor de `vinculos.vincular(...)`, así que un fallo REAL de
++# `emit_audit` (posterior a un `crear_vinculo` que sí insertó) se disfrazaba de
++# 409 "ya vinculado" -- un vínculo recién creado con su rastro de auditoría
++# perdido, reportado como si nunca se hubiera creado. El fix traduce el
++# DuplicateKeyError del driver a `repositorio.VinculoDuplicado` en la frontera
++# del repositorio (S1) y el router solo atrapa ESA excepción de dominio.
++
++
++async def test_admin_crea_vinculo_fallo_audit_no_enmascara_409(api, monkeypatch):
++    """RED antes del fix / GREEN después: crear_vinculo inserta bien (el vínculo
++    SÍ se crea) pero emit_audit revienta -- el router NO debe mentir con un 409
++    "ya vinculado". Debe propagar el fallo real, nunca esconderlo detrás de un
++    409 falso. Mismo patrón que B-5 en tests/test_rubros_endpoints.py: con
++    raise_app_exceptions=True (default de httpx.ASGITransport) el transport
++    re-lanza la excepción no manejada en vez de convertirla en una Response --
++    en producción, Starlette sí la convertiría en 500. Lo que fija este test es
++    que NO llega a ser un 409, no el código exacto que ve el cliente HTTP real."""
++
++    async def fake_crear_vinculo(v):
++        pass  # el insert en Mongo funcionó de verdad
++
++    async def fake_emit_que_falla(
++        evento, entidad, entidad_id=None, actor_id=None, metadata=None
++    ):
++        raise RuntimeError("audit no configurado")
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.vinculos.repositorio.crear_vinculo", fake_crear_vinculo
++    )
++    monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit_que_falla)
++    tok = await _token(api, "admin@roddos.com")
++    h = {"Authorization": f"Bearer {tok}"}
++    with pytest.raises(RuntimeError):
++        await api.post(
++            "/api/v1/cfo/telegram/vinculos",
++            json={"telegram_id": 555, "user_id": "u5"},
++            headers=h,
++        )
++
++
++async def test_admin_crea_vinculo_duplicado_409(api, monkeypatch):
++    """Fix 1: el ÚNICO caso que debe traducirse a 409 es el dominio real de
++    duplicado (repositorio.VinculoDuplicado) -- narrow catch en el router, ya
++    no `except Exception`."""
++
++    async def fake_vincular(telegram_id, user_id, admin_id):
++        raise repositorio.VinculoDuplicado("telegram_id o user_id ya vinculado")
++
++    monkeypatch.setattr("app.cfo.telegram.router.vinculos.vincular", fake_vincular)
++    tok = await _token(api, "admin@roddos.com")
++    h = {"Authorization": f"Bearer {tok}"}
++    r = await api.post(
++        "/api/v1/cfo/telegram/vinculos",
++        json={"telegram_id": 111, "user_id": "u1"},
++        headers=h,
++    )
++    assert r.status_code == 409
++
++
++async def test_webhook_secret_ok_sin_bot_token_503(api, monkeypatch):
++    """Fix 3 (Minor b): secret válido pero el canal de SALIDA no está
++    configurado (TELEGRAM_BOT_TOKEN ausente -> crear_cliente_telegram() = None)
++    -> falla cerrado con 503, nunca procesa el update a ciegas sin forma de
++    responderle a Telegram."""
++    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
++    r = await api.post(
++        "/api/v1/cfo/telegram/webhook",
++        json={"update_id": 1},
++        headers={"X-Telegram-Bot-Api-Secret-Token": SECRET},
++    )
++    assert r.status_code == 503
++
++
++async def test_admin_borra_vinculo_inexistente_404(api, monkeypatch):
++    """Fix 3 (Minor b): borrar un telegram_id sin vínculo (desvincular ->
++    False) -> 404, no un 200 silencioso."""
++
++    async def fake_desvincular(telegram_id, admin_id):
++        return False
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.router.vinculos.desvincular", fake_desvincular
++    )
++    tok = await _token(api, "admin@roddos.com")
++    h = {"Authorization": f"Bearer {tok}"}
++    r = await api.delete(
++        "/api/v1/cfo/telegram/vinculos/999",
++        headers=h,
++    )
++    assert r.status_code == 404
+diff --git a/backend/tests/cfo/telegram/test_vinculos.py b/backend/tests/cfo/telegram/test_vinculos.py
+new file mode 100644
+index 0000000..00e7d29
+--- /dev/null
++++ b/backend/tests/cfo/telegram/test_vinculos.py
+@@ -0,0 +1,168 @@
++# backend/tests/cfo/telegram/test_vinculos.py
++"""FABS · lógica de la allowlist Telegram: alta/baja (con auditoría CR-CFO-2) y
++resolución telegram_id -> user_id. `vincular`/`desvincular` son operaciones de
++estado (admin) — la auditoría NO es fail-soft: si emit_audit falla, propaga."""
++
++import pytest
++from app.cfo.telegram import vinculos
++
++
++@pytest.mark.asyncio
++async def test_vincular_audita(monkeypatch):
++    creados = []
++
++    async def fake_crear(v):
++        creados.append(v)
++
++    eventos = []
++
++    async def fake_emit(evento, entidad, entidad_id=None, actor_id=None, metadata=None):
++        eventos.append((str(evento), metadata))
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.vinculos.repositorio.crear_vinculo", fake_crear
++    )
++    monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit)
++    await vinculos.vincular(111, "u1", admin_id="admin")
++    assert creados[0].telegram_id == 111 and creados[0].user_id == "u1"
++    assert eventos[0][0] == "cfo.vinculo_creado"
++
++
++@pytest.mark.asyncio
++async def test_vincular_audita_con_metadata_y_actor(monkeypatch):
++    async def fake_crear(v):
++        pass
++
++    eventos = []
++
++    async def fake_emit(evento, entidad, entidad_id=None, actor_id=None, metadata=None):
++        eventos.append(
++            {
++                "evento": str(evento),
++                "entidad": entidad,
++                "entidad_id": entidad_id,
++                "actor_id": actor_id,
++                "metadata": metadata,
++            }
++        )
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.vinculos.repositorio.crear_vinculo", fake_crear
++    )
++    monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit)
++    await vinculos.vincular(222, "u2", admin_id="admin-1")
++    e = eventos[0]
++    # Convención state-op del repo (mismo patrón que entidad="user" en auth/service.py):
++    # entidad específica + entidad_id=str(id), NO entidad="cfo" genérica (esa es solo
++    # para el Q&A fail-soft en cfo/agente/servicio.py).
++    assert e["entidad"] == "cfo_vinculo_telegram"
++    assert e["entidad_id"] == str(222)
++    assert e["actor_id"] == "admin-1"
++    assert e["metadata"] == {"telegram_id": 222, "user_id": "u2"}
++
++
++@pytest.mark.asyncio
++async def test_vincular_propaga_si_ya_existe(monkeypatch):
++    """El vínculo es uno-a-uno (B-3): crear_vinculo levanta si telegram_id o
++    user_id ya están tomados. vincular() NO debe tragarse ese error (y, como no
++    llega a crearse, tampoco debe auditar)."""
++
++    async def fake_crear(v):
++        raise RuntimeError("duplicado")
++
++    eventos = []
++
++    async def fake_emit(evento, entidad, entidad_id=None, actor_id=None, metadata=None):
++        eventos.append(evento)
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.vinculos.repositorio.crear_vinculo", fake_crear
++    )
++    monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit)
++    with pytest.raises(RuntimeError):
++        await vinculos.vincular(333, "u3", admin_id="admin")
++    assert eventos == []
++
++
++@pytest.mark.asyncio
++async def test_vincular_propaga_si_audit_falla(monkeypatch):
++    """La auditoría de vincular NO es fail-soft: es una operación de estado admin,
++    no una lectura (a diferencia del Q&A, que envuelve emit_audit en fail-soft en
++    el servicio). Si emit_audit falla, vincular() NO debe tragarse el error."""
++
++    async def fake_crear(v):
++        pass
++
++    async def fake_emit_que_falla(
++        evento, entidad, entidad_id=None, actor_id=None, metadata=None
++    ):
++        raise RuntimeError("audit no configurado")
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.vinculos.repositorio.crear_vinculo", fake_crear
++    )
++    monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit_que_falla)
++
++    with pytest.raises(RuntimeError):
++        await vinculos.vincular(444, "u4", admin_id="admin")
++
++
++@pytest.mark.asyncio
++async def test_desvincular_elimina_y_audita(monkeypatch):
++    async def fake_eliminar(telegram_id):
++        assert telegram_id == 111
++        return True
++
++    eventos = []
++
++    async def fake_emit(evento, entidad, entidad_id=None, actor_id=None, metadata=None):
++        eventos.append((str(evento), metadata, actor_id, entidad, entidad_id))
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.vinculos.repositorio.eliminar_vinculo", fake_eliminar
++    )
++    monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit)
++
++    ok = await vinculos.desvincular(111, admin_id="admin")
++
++    assert ok is True
++    assert eventos[0][0] == "cfo.vinculo_eliminado"
++    assert eventos[0][1] == {"telegram_id": 111}
++    assert eventos[0][2] == "admin"
++    # Convención state-op (igual que vincular arriba): entidad específica + entidad_id.
++    assert eventos[0][3] == "cfo_vinculo_telegram"
++    assert eventos[0][4] == str(111)
++
++
++@pytest.mark.asyncio
++async def test_desvincular_sin_vinculo_no_audita(monkeypatch):
++    async def fake_eliminar(telegram_id):
++        return False
++
++    eventos = []
++
++    async def fake_emit(evento, entidad, entidad_id=None, actor_id=None, metadata=None):
++        eventos.append(evento)
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.vinculos.repositorio.eliminar_vinculo", fake_eliminar
++    )
++    monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit)
++
++    ok = await vinculos.desvincular(999, admin_id="admin")
++
++    assert ok is False
++    assert eventos == []  # nada que auditar: no había vínculo que eliminar
++
++
++@pytest.mark.asyncio
++async def test_resolver_delega_al_repositorio(monkeypatch):
++    async def fake_resolver(telegram_id):
++        return "u1" if telegram_id == 111 else None
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.vinculos.repositorio.resolver_usuario", fake_resolver
++    )
++
++    assert await vinculos.resolver(111) == "u1"
++    assert await vinculos.resolver(999) is None
+diff --git a/backend/tests/cfo/telegram/test_webhook.py b/backend/tests/cfo/telegram/test_webhook.py
+new file mode 100644
+index 0000000..2f19e81
+--- /dev/null
++++ b/backend/tests/cfo/telegram/test_webhook.py
+@@ -0,0 +1,166 @@
++# backend/tests/cfo/telegram/test_webhook.py
++"""T6 (inc3 Pieza B) · lógica pura del webhook (fakes, sin red/DB real).
++
++No-vinculado -> rehúsa sin llamar al servicio (nunca gasta un turno de LLM en
++alguien no autorizado) y le dice su telegram_id (para que se lo pase al admin).
++Vinculado -> el usuario VE el valor sustituido pero el hilo guarda el texto CRUDO
++(con [[tokens]]) — es la garantía anti-alucinación de Pieza A sobreviviendo entre
++turnos (inc3 Pieza B). Además: el webhook es un endpoint PÚBLICO -> updates con
++forma inesperada (sin 'message', sin texto, sin update_id/from/chat) se ignoran
++en silencio, nunca revientan (Telegram no debe ver un 500 por un update raro)."""
++
++import pytest
++from app.cfo.telegram import webhook
++from app.cfo.telegram.modelos import HiloCFO
++from app.core.time import now_utc
++from tests.cfo.telegram.fakes import ClienteTelegramFake
++
++
++@pytest.mark.asyncio
++async def test_no_vinculado_rehusa_sin_llamar_servicio(monkeypatch):
++    async def fake_resolver(tid):
++        return None
++
++    monkeypatch.setattr("app.cfo.telegram.webhook.vinculos.resolver", fake_resolver)
++    llamado = False
++
++    async def fake_consultar(*a, **k):
++        nonlocal llamado
++        llamado = True
++
++    monkeypatch.setattr("app.cfo.telegram.webhook.servicio.consultar", fake_consultar)
++    tg = ClienteTelegramFake()
++    update = {
++        "update_id": 1,
++        "message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "hola"},
++    }
++    await webhook.procesar_update(update, cliente_telegram=tg)
++    assert llamado is False
++    assert "111" in tg.enviados[0][1]  # le dice su telegram_id
++
++
++@pytest.mark.asyncio
++async def test_vinculado_responde_y_guarda_hilo_crudo(monkeypatch):
++    async def fake_resolver(tid):
++        return "u1"
++
++    monkeypatch.setattr("app.cfo.telegram.webhook.vinculos.resolver", fake_resolver)
++
++    async def fake_obtener_hilo(uid):
++        return None
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.webhook.repositorio.obtener_hilo", fake_obtener_hilo
++    )
++    from app.cfo.agente.modelos import RespuestaCFO, UsoLLM
++
++    async def fake_consultar(pregunta, *, actor_id, cliente=None, historial=None):
++        return RespuestaCFO(
++            texto="Tu caja es $704.722.003.",
++            abstuvo=False,
++            texto_crudo="Tu caja es [[caja_hoy]].",
++            uso=UsoLLM(modelo="m", tokens_in=1, tokens_out=1, iteraciones=1),
++        )
++
++    monkeypatch.setattr("app.cfo.telegram.webhook.servicio.consultar", fake_consultar)
++    turnos_guardados = {}
++
++    async def fake_registrar(user_id, pregunta, texto_crudo, update_id, envio):
++        turnos_guardados.update(texto_crudo=texto_crudo, envio=envio)
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.webhook.hilos.registrar_turno", fake_registrar
++    )
++    tg = ClienteTelegramFake()
++    update = {
++        "update_id": 7,
++        "message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "¿caja?"},
++    }
++    await webhook.procesar_update(update, cliente_telegram=tg)
++    assert "$704.722.003" in tg.enviados[0][1]  # el usuario ve el valor
++    # el hilo guarda el token, NUNCA el valor sustituido (invariante anti-alucinación)
++    assert turnos_guardados["texto_crudo"] == "Tu caja es [[caja_hoy]]."
++
++
++@pytest.mark.asyncio
++async def test_update_sin_mensaje_se_ignora():
++    # updates sin 'message' (edited_message, channel_post, etc.) no son preguntas
++    tg = ClienteTelegramFake()
++    await webhook.procesar_update({"update_id": 2}, cliente_telegram=tg)
++    assert tg.enviados == []
++
++
++@pytest.mark.asyncio
++async def test_update_sin_texto_se_ignora():
++    # mensaje sin 'text' (sticker, foto, voz...) — se ignora, no revienta
++    tg = ClienteTelegramFake()
++    update = {
++        "update_id": 3,
++        "message": {"from": {"id": 1}, "chat": {"id": 1}, "sticker": {}},
++    }
++    await webhook.procesar_update(update, cliente_telegram=tg)
++    assert tg.enviados == []
++
++
++@pytest.mark.asyncio
++async def test_update_con_forma_inesperada_no_revienta():
++    # 'message' con texto pero sin 'from'/'chat'/'update_id' -> nunca debe lanzar
++    tg = ClienteTelegramFake()
++    update = {"message": {"text": "hola"}}
++    await webhook.procesar_update(update, cliente_telegram=tg)
++    assert tg.enviados == []
++
++
++@pytest.mark.asyncio
++async def test_reintento_reenvia_ultimo_envio_sin_llamar_llm_ni_registrar(monkeypatch):
++    """DoD #4, fijado a nivel de procesar_update (no solo del booleano
++    es_reintento): un update_id que coincide con hilo.ultimo_update_id es un
++    reintento de Telegram (mismo mensaje reenviado por falta de ack a tiempo) ->
++    reenvía ultimo_envio SIN volver a llamar al LLM (servicio.consultar) ni
++    re-registrar el turno (hilos.registrar_turno) -- si cualquiera de los dos se
++    llamara, sería un bug real (gasto doble de LLM / historial duplicado), no
++    solo un detalle de implementación."""
++
++    async def fake_resolver(tid):
++        return "u1"
++
++    monkeypatch.setattr("app.cfo.telegram.webhook.vinculos.resolver", fake_resolver)
++
++    hilo = HiloCFO(
++        user_id="u1",
++        turnos=[
++            {"rol": "user", "contenido": "¿caja?"},
++            {"rol": "assistant", "contenido": "Tu caja es [[caja_hoy]]."},
++        ],
++        ultimo_update_id=7,
++        ultimo_envio="Tu caja es $704.722.003.",
++        actualizado_at=now_utc(),
++    )
++
++    async def fake_obtener_hilo(uid):
++        return hilo
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.webhook.repositorio.obtener_hilo", fake_obtener_hilo
++    )
++
++    async def fake_consultar(*a, **k):
++        raise AssertionError("un reintento NUNCA debe re-llamar al LLM")
++
++    monkeypatch.setattr("app.cfo.telegram.webhook.servicio.consultar", fake_consultar)
++
++    async def fake_registrar(*a, **k):
++        raise AssertionError("un reintento NUNCA debe re-registrar el turno")
++
++    monkeypatch.setattr(
++        "app.cfo.telegram.webhook.hilos.registrar_turno", fake_registrar
++    )
++
++    tg = ClienteTelegramFake()
++    update = {
++        "update_id": 7,  # == hilo.ultimo_update_id -> es_reintento
++        "message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "¿caja?"},
++    }
++    await webhook.procesar_update(update, cliente_telegram=tg)
++
++    assert tg.enviados == [(111, "Tu caja es $704.722.003.")]
+diff --git a/backend/tests/cfo/test_config.py b/backend/tests/cfo/test_config.py
+index b66d9bd..70a378b 100644
+--- a/backend/tests/cfo/test_config.py
++++ b/backend/tests/cfo/test_config.py
+@@ -34,3 +34,18 @@ def test_cfo_limites_default(monkeypatch):
+     assert cfo_config.cfo_max_iter() == 3
+     assert cfo_config.cfo_max_tokens() == 1024
+     assert cfo_config.cfo_timeout_s() == 60.0
++
++
++def test_telegram_config(monkeypatch):
++    from app.cfo import config as c
++
++    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
++    assert c.telegram_bot_token() is None
++    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "botX")
++    assert c.telegram_bot_token() == "botX"
++    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "sek")
++    assert c.telegram_webhook_secret() == "sek"
++    monkeypatch.delenv("CFO_HILO_VENTANA", raising=False)
++    assert c.cfo_hilo_ventana() == 8
++    monkeypatch.setenv("CFO_HILO_VENTANA", "4")
++    assert c.cfo_hilo_ventana() == 4
+diff --git a/backend/tests/cfo/test_s1_aislamiento.py b/backend/tests/cfo/test_s1_aislamiento.py
+index 5c2d93a..a81392c 100644
+--- a/backend/tests/cfo/test_s1_aislamiento.py
++++ b/backend/tests/cfo/test_s1_aislamiento.py
+@@ -1,6 +1,8 @@
+-"""S1: cfo/calc, cfo/goldens, cfo/agente y cfo/router.py NO importan modelos de
+-dominio ajenos ni tocan el driver de Mongo; la única subruta que persiste es
+-cfo/datos/repositorios.py y solo cfo_*."""
++"""S1: cfo/calc, cfo/goldens, cfo/agente, cfo/router.py y cfo/telegram/ NO importan
++modelos de dominio ajenos ni tocan el driver de Mongo directamente (pymongo/motor
++crudos fuera de Beanie); las únicas subrutas que persisten son
++cfo/datos/repositorios.py (cfo_goldens) y cfo/telegram/repositorio.py
++(cfo_vinculos_telegram, cfo_hilos) — ambas solo colecciones cfo_*."""
+ 
+ import pathlib
+ import re
+@@ -10,7 +12,19 @@ CFO = pathlib.Path(__file__).resolve().parents[2] / "app" / "cfo"
+ # Subrutas/archivos que NO pueden tocar Mongo directamente ni importar modelos de
+ # dominio ajenos. inc2 (FABS) añade agente/ (loop LLM<->tools) y router.py (endpoint):
+ # ninguno de los dos persiste ni conoce dominio ajeno, solo leen vía cfo/datos.
+-LOGICA = [CFO / "calc", CFO / "goldens", CFO / "agente", CFO / "router.py"]
++# inc3 Pieza B (FABS) añade telegram/ (canal Telegram): a diferencia de calc/goldens/
++# agente/router.py, telegram/repositorio.py SÍ persiste (cfo_vinculos_telegram,
++# cfo_hilos) — es su propia puerta de escritura S1, análoga a cfo/datos/
++# repositorios.py — pero solo vía beanie/pymongo (ODM: Document.insert/find_one/
++# save/delete + pymongo.IndexModel/DuplicateKeyError), nunca el driver async crudo
++# (motor/AsyncIOMotor) ni get_pymongo_collection, y nunca importa app.domain.*.
++LOGICA = [
++    CFO / "calc",
++    CFO / "goldens",
++    CFO / "agente",
++    CFO / "router.py",
++    CFO / "telegram",
++]
+ PROHIBIDO_IMPORT = re.compile(
+     r"from app\.domain\.(?!__init__)"
+ )  # modelos de dominio ajenos
+diff --git a/backend/tests/test_audit_events.py b/backend/tests/test_audit_events.py
+index c54e667..c7d766e 100644
+--- a/backend/tests/test_audit_events.py
++++ b/backend/tests/test_audit_events.py
+@@ -15,13 +15,16 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
+ from app.audit.events import CATALOGO_EVENTOS, AuditEvento
+ 
+ 
+-def test_catalogo_tiene_exactamente_64_eventos():
++def test_catalogo_tiene_exactamente_66_eventos():
+     # 59 + factura_obligacion.pagada (D2 §7, GO CEO 2026-08-04)
+     # + transaccion.dividida + transaccion.division_deshecha (PTS6-B, CR división de
+     #   clasificación, GO CEO 2026-08-10) = 62
+-    # + cfo.consulta + cfo.respuesta (CR-CFO-1, FABS incremento 2, GO CEO 2026-08-11).
+-    assert len(AuditEvento) == 64
+-    assert len(CATALOGO_EVENTOS) == 64
++    # + cfo.consulta + cfo.respuesta (CR-CFO-1, FABS incremento 2,
++    #   GO CEO 2026-08-11) = 64
++    # + cfo.vinculo_creado + cfo.vinculo_eliminado (CR-CFO-2, FABS inc3 Pieza B —
++    #   canal Telegram, GO CEO 2026-08-17) = 66.
++    assert len(AuditEvento) == 66
++    assert len(CATALOGO_EVENTOS) == 66
+     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
+     assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
+     assert AuditEvento.transaccion_dividida.value == "transaccion.dividida"
+@@ -31,6 +34,8 @@ def test_catalogo_tiene_exactamente_64_eventos():
+     )
+     assert "cfo.consulta" in CATALOGO_EVENTOS
+     assert "cfo.respuesta" in CATALOGO_EVENTOS
++    assert "cfo.vinculo_creado" in CATALOGO_EVENTOS
++    assert "cfo.vinculo_eliminado" in CATALOGO_EVENTOS
+ 
+ 
+ def test_extracto_cargado_es_el_evento_30_de_cr001():
+diff --git a/backend/tests/test_db.py b/backend/tests/test_db.py
+index 9454db4..011a6bd 100644
+--- a/backend/tests/test_db.py
++++ b/backend/tests/test_db.py
+@@ -24,8 +24,9 @@ async def test_init_beanie_registra_los_documents_de_dominio():
+     # + GastoRecurrente (plantilla de gastos fijos, 1d9f99c)
+     # + EscenarioImpacto (D1 §2, escenarios what-if auditados)
+     # + Obligacion/FacturaObligacion/MetaIngreso (D2 §2/§6)
+-    # + CFOGolden (Task 7, FABS inc1 — cimiento determinista).
+-    assert len(DOMAIN_DOCUMENTS) == 20
++    # + CFOGolden (Task 7, FABS inc1 — cimiento determinista)
++    # + VinculoTelegram/HiloCFO (Task 3, FABS inc3-B — canal Telegram, write gate S1).
++    assert len(DOMAIN_DOCUMENTS) == 22
+     assert Transaccion in mongo.DOCUMENT_MODELS
+     assert AuditLog not in mongo.DOCUMENT_MODELS
+     client = AsyncMongoMockClient()
+diff --git a/backend/tests/test_rbac_permissions.py b/backend/tests/test_rbac_permissions.py
+index 64f15ca..b3ef9e9 100644
+--- a/backend/tests/test_rbac_permissions.py
++++ b/backend/tests/test_rbac_permissions.py
+@@ -44,6 +44,9 @@ CANONICA: dict[str, set[Role]] = {
+     "ciclo:confirmar_cierre": {Role.admin},
+     "ciclo:reabrir": {Role.admin},  # + step-up MFA (Sprint 0b)
+     "ciclo:config": {Role.admin},  # + step-up MFA (Sprint 0b)
++    # CR-CFO-2 (FABS inc3 Pieza B, canal Telegram): administrar la allowlist
++    # telegram_id<->user_id (tras flag CFO_ENABLED). SOLO admin.
++    "cfo:telegram_administrar": {Role.admin},
+ }
+ 
+ 
