@@ -167,20 +167,25 @@ def plan_fondo_provision(
     mes_inicio: tuple[int, int],
     horizonte_meses: int,
     periodicidad: Periodicidad = Periodicidad.cuatrimestral,
+    pct_prefondeo: Decimal = Decimal("1"),
 ) -> list[FondoMes]:
     """Plan de reserva de tesorería para el pago del IVA (P1.4, decisión CEO
     2026-07-25): el `neto_a_pagar` de cada período se REPARTE en partes iguales entre
     los meses del propio período, de modo que al llegar la fecha DIAN el fondo ya tiene
     el monto completo y el pago lo vacía (sin golpe seco). Serie informativa alineada al
     horizonte; NO entra al flujo del motor (el egreso real ya cae en la fecha DIAN vía
-    `programar_egresos_iva`). Neto 0 (saldo a favor) no reserva."""
+    `programar_egresos_iva`). Neto 0 (saldo a favor) no reserva.
+
+    SUP-2 · `pct_prefondeo` (editable, default 1 = 100 % como hasta hoy): qué fracción
+    del pago se prefondea. El modelo v9.1 reserva 70 % (`IVA!C8`) y asume el golpe del
+    resto el mes del pago — con el % editable el CEO decide cuánta caja inmoviliza."""
     y0, m0 = mes_inicio
     aportes = [Decimal("0")] * horizonte_meses
     for c in liquidaciones:
         if c.neto_a_pagar <= 0:
             continue
         meses = _meses_del_periodo(c.anio, c.periodo, periodicidad)
-        cuota = c.neto_a_pagar / Decimal(len(meses))
+        cuota = c.neto_a_pagar * pct_prefondeo / Decimal(len(meses))
         for anio, mes in meses:
             idx = (anio - y0) * 12 + (mes - m0)
             if 0 <= idx < horizonte_meses:

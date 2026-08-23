@@ -103,6 +103,21 @@ class ParametrosProyeccion(Document):
     pct_recuperacion: Money
     pct_default: Money
     pct_provision: Money
+    # SUP-2 (CEO 2026-08-22): "TODOS los supuestos que pueden afectar la proyección
+    # tienen que ser modificables". Mora/recuperación de los escenarios EXTREMOS (el
+    # base son los dos campos de arriba): dejan de vivir en PRESETS_ESCENARIO. None =
+    # se conserva el delta en puntos de SUP-1 sobre el preset (compatibilidad).
+    pct_mora_pesimista: Money | None = None
+    pct_recuperacion_pesimista: Money | None = None
+    pct_mora_optimista: Money | None = None
+    pct_recuperacion_optimista: Money | None = None
+    # Meses de rezago de la recuperación de mora (v9.1 recupera la del mes anterior:
+    # la mora es diferimiento, no pérdida). 0 = la semántica del artefacto.
+    meses_rezago_recuperacion: int = Field(default=1, ge=0, le=12)
+    # Fracción del pago de IVA que se prefondea mes a mes (1 = 100 %, como hasta hoy).
+    pct_prefondeo_iva: Money = Decimal("1")
+    # Fondo AVAL propio / autoseguro: % del recaudo de crédito reservado cada mes.
+    pct_aval_recaudo: Money = Decimal("0")
     modificado_por: str | None = None
 
     class Settings:
@@ -121,6 +136,24 @@ class ParametrosProyeccion(Document):
             if unidades < 0:
                 raise ValueError(f"rampa_unidades: unidades negativas en {mes}")
         return v
+
+    @model_validator(mode="after")
+    def _pcts_editables_en_rango(self) -> "ParametrosProyeccion":
+        """SUP-2: una mora, recuperación, prefondeo o aval fuera de [0, 1] no tiene
+        sentido financiero — se rechaza al escribir (fail-closed), no se acota en
+        silencio."""
+        for campo in (
+            "pct_mora_pesimista",
+            "pct_recuperacion_pesimista",
+            "pct_mora_optimista",
+            "pct_recuperacion_optimista",
+            "pct_prefondeo_iva",
+            "pct_aval_recaudo",
+        ):
+            v = getattr(self, campo)
+            if v is not None and not (Decimal("0") <= v <= Decimal("1")):
+                raise ValueError(f"{campo} debe ser una fracción entre 0 y 1")
+        return self
 
     @model_validator(mode="after")
     def _tramo2_completo(self) -> "ParametrosProyeccion":
