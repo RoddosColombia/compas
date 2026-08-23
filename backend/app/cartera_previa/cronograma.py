@@ -17,10 +17,24 @@ que COMPAS ya sabe consumir.
      REMANENTE hacia la meta (criterio CEO: agosto vive con la meta de 70 y se cierra
      con lo realmente logrado).
 
-Criterios de dinero: las cuotas PAGADAS no se proyectan; las PARCIALES cuentan solo su
-saldo; lo VENCIDO sin pagar se reporta aparte (es mora real medida — no se proyecta ni
-se inventa cuándo entra). Regla 7: encabezados que no cuadran → error que LISTA
-esperado vs encontrado; una fila ilegible no frena el lote, se reporta.
+Criterios de dinero (P5 del ciclo mensual, CEO 2026-08-23):
+
+  · **El MES EN CURSO es un mes COMPLETO de proyección.** Sus cuotas se cuentan por el
+    monto pactado, estén pagadas, parciales o pendientes: la gráfica proyecta lo que el
+    mes debe recaudar, no lo que le falta por recaudar. (Antes se descartaban las
+    pagadas y agosto-2026 entraba con 2 semanas en vez de 4.)
+  · **Meses FUTUROS:** solo lo que aún puede llegar — una cuota ya prepagada no vuelve
+    a entrar; una parcial cuenta su saldo.
+  · **Meses ANTERIORES:** lo vencido sin pagar se reporta aparte (mora real medida; no
+    se proyecta ni se inventa cuándo entra).
+  · **Regla de NO-SOLAPE:** la serie es la cartera originada HASTA EL CIERRE DEL MES
+    ANTERIOR. Los créditos desembolsados dentro del mes en curso son parte del objetivo
+    del mes y los proyecta el motor con la cuota nueva — si entraran también por aquí,
+    el mes contaría dos veces las motos ya colocadas. Un crédito sin cuota 0 en el
+    export se asume preexistente (no se descarta plata sin razón explícita).
+
+Regla 7: encabezados que no cuadran → error que LISTA esperado vs encontrado; una fila
+ilegible no frena el lote, se reporta.
 """
 
 import unicodedata
@@ -131,9 +145,16 @@ def semana_global(f: date) -> int:
     return (f - ANCLA_SEMANA).days // 7 + 1
 
 
-def parsear_cronograma(contenido: bytes, hoy: date) -> ResumenCronograma:
-    """xlsx del cronograma → series agregadas. `hoy` marca el corte entre lo vencido
-    (mora medida) y lo futuro (lo que el motor debe esperar)."""
+def parsear_cronograma(
+    contenido: bytes, hoy: date, mes_en_curso: tuple[int, int] | None = None
+) -> ResumenCronograma:
+    """xlsx del cronograma → series agregadas.
+
+    `hoy` marca el corte entre lo vencido (mora medida) y lo que aún puede llegar.
+    `mes_en_curso` (P5) es el mes que la gráfica proyecta COMPLETO y el que define el
+    corte de no-solape; None = se deriva de `hoy`."""
+    mes_curso = mes_en_curso or (hoy.year, hoy.month)
+    clave_curso = f"{mes_curso[0]:04d}-{mes_curso[1]:02d}"
     wb = load_workbook(BytesIO(contenido), read_only=True, data_only=True)
     ws = wb.active
 
@@ -163,10 +184,15 @@ def parsear_cronograma(contenido: bytes, hoy: date) -> ResumenCronograma:
     colocaciones: dict[str, int] = {}
     creditos: set[str] = set()
     en_mora: set[str] = set()
+    origen_mes: dict[str, str] = {}  # crédito → 'YYYY-MM' de su desembolso (cuota 0)
+    cuotas: list[tuple[int, str, date, str, object, object]] = []
     vencido = Decimal("0")
     cuotas_futuras = 0
     errores: list[str] = []
 
+    # ── 1ª pasada: leer las filas y ubicar el DESEMBOLSO de cada crédito ──
+    # (el corte de no-solape necesita saber en qué mes se originó cada crédito, y la
+    #  cuota 0 puede venir en cualquier orden respecto de sus cuotas)
     for n, row in enumerate(
         ws.iter_rows(min_row=fila_encabezado + 1), fila_encabezado + 1
     ):
@@ -185,29 +211,53 @@ def parsear_cronograma(contenido: bytes, hoy: date) -> ResumenCronograma:
             creditos.add(credito)
             f = _fecha(celda("fecha"), n)
             estado = _norm(celda("estado"))
-            n_cuota = celda("cuota")
             # la cuota 0 es el DESEMBOLSO: marca el mes de colocación, no recaudo
-            if str(n_cuota).strip() in ("0", "0.0"):
+            if str(celda("cuota")).strip() in ("0", "0.0"):
                 clave_mes = f"{f.year:04d}-{f.month:02d}"
                 colocaciones[clave_mes] = colocaciones.get(clave_mes, 0) + 1
+                origen_mes[credito] = clave_mes
                 continue
-            if estado == "pagada":
+            cuotas.append((n, credito, f, estado, celda("saldo"), celda("monto")))
+        except FilaIlegible as e:
+            errores.append(str(e))
+
+    # ── 2ª pasada: armar la serie con los criterios del contrato ──
+    for n, credito, f, estado, saldo, monto in cuotas:
+        try:
+            # NO-SOLAPE: los créditos originados dentro del mes en curso (o después)
+            # son del objetivo del mes → los proyecta el motor, no esta serie. Un
+            # crédito sin cuota 0 en el export se asume preexistente.
+            if origen_mes.get(credito, "") >= clave_curso:
                 continue
-            # lo que FALTA de la cuota: el saldo manda (las parciales ya abonaron)
-            saldo = celda("saldo")
-            falta = (
-                _monto(saldo, n, "saldo")
-                if saldo not in (None, "")
-                else _monto(celda("monto"), n, "monto total")
-            )
-            if falta <= 0:
+            mes_cuota = f"{f.year:04d}-{f.month:02d}"
+            if mes_cuota < clave_curso:
+                # mes ya pasado: lo no cobrado es mora medida, se reporta aparte
+                falta = (
+                    _monto(saldo, n, "saldo")
+                    if saldo not in (None, "")
+                    else _monto(monto, n, "monto total")
+                )
+                if estado != "pagada" and falta > 0:
+                    vencido += falta
+                    en_mora.add(credito)
                 continue
-            if f < hoy:
-                vencido += falta
-                en_mora.add(credito)
+            if mes_cuota == clave_curso:
+                # EL MES EN CURSO ES UN MES COMPLETO: cuenta la cuota pactada, esté
+                # pagada, parcial o pendiente (proyecta lo que el mes debe recaudar).
+                valor = _monto(monto, n, "monto total")
+            else:
+                # mes futuro: solo lo que todavía puede llegar
+                if estado == "pagada":
+                    continue
+                valor = (
+                    _monto(saldo, n, "saldo")
+                    if saldo not in (None, "")
+                    else _monto(monto, n, "monto total")
+                )
+            if valor <= 0:
                 continue
             s = semana_global(f)
-            recaudo[s] = recaudo.get(s, Decimal("0")) + falta
+            recaudo[s] = recaudo.get(s, Decimal("0")) + valor
             activos.setdefault(s, set()).add(credito)
             cuotas_futuras += 1
         except FilaIlegible as e:
@@ -236,10 +286,17 @@ def parsear_cronograma(contenido: bytes, hoy: date) -> ResumenCronograma:
 def rampa_mes_en_curso(
     colocaciones_por_mes: dict[str, int], mes: tuple[int, int], meta: int
 ) -> dict[str, int]:
-    """El mes VIVO proyecta solo el REMANENTE hacia la meta (criterio CEO 2026-08-22).
+    """P4 (CEO 2026-08-23) — el mes en curso proyecta LA META, no el remanente.
 
-    Las motos ya colocadas recaudan por la serie con su cuota real; las que faltan las
-    proyecta el motor con la cuota nueva. Si ya se superó la meta, el remanente es 0 y
-    manda la realidad (nunca resta)."""
+        "El mes en curso son proyecciones basadas en los objetivos planteados... una
+        cosa es el que se lleva real parcial y otra cosa es el objetivo a llegar."
+
+    SUPERA el criterio de SUP-4 (remanente hacia la meta): lo ya colocado no es insumo
+    del motor, es lectura de desviación (el termómetro de P6). El motor proyecta el mes
+    completo con el objetivo, y la regla de no-solape saca de la serie los créditos
+    originados dentro del mes para que nada se cuente dos veces.
+
+    `colocaciones_por_mes` se conserva en la firma: es el dato que el termómetro compara
+    contra la meta ("llevamos 47 de 70")."""
     clave = f"{mes[0]:04d}-{mes[1]:02d}"
-    return {clave: max(0, meta - colocaciones_por_mes.get(clave, 0))}
+    return {clave: meta}

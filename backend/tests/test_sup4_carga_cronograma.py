@@ -140,17 +140,22 @@ def test_lo_vencido_sin_pagar_se_reporta_aparte_y_no_se_proyecta():
 
 def test_la_cuota_cero_es_la_colocacion_no_recaudo_futuro():
     """La cuota 0 es el desembolso/cuota inicial: marca el MES de colocación y no
-    entra a la serie de recaudo semanal."""
+    entra a la serie de recaudo semanal.
+
+    El desembolso va en JULIO a propósito: desde P5 del ciclo mensual un crédito
+    originado DENTRO del mes en curso queda fuera de la serie por la regla de no-solape
+    (lo proyecta el motor como parte del objetivo del mes). Ese caso lo cubre
+    `test_los_creditos_originados_EN_el_mes_en_curso_quedan_FUERA_de_la_serie`."""
     r = parsear_cronograma(
         _xlsx(
             [
-                _cuota(n=0, fecha="2026-08-05", monto=1460000, estado="pagada"),
+                _cuota(n=0, fecha="2026-07-05", monto=1460000, estado="pagada"),
                 _cuota(n=1, fecha="2026-09-02"),
             ]
         ),
         hoy=HOY,
     )
-    assert r.colocaciones_por_mes == {"2026-08": 1}
+    assert r.colocaciones_por_mes == {"2026-07": 1}
     assert sum(f["recaudo"] for f in r.serie) == Decimal("179900")
 
 
@@ -210,19 +215,30 @@ def test_un_cronograma_sin_filas_devuelve_series_vacias():
 # ── la rampa del mes en curso ──
 
 
-def test_la_rampa_del_mes_en_curso_es_el_remanente_hacia_la_meta():
-    """Criterio CEO: agosto EN CURSO con meta 70 y 35 colocadas ⇒ faltan 35."""
+def test_la_rampa_del_mes_en_curso_es_la_META():
+    """SUPERSEDIDO por P4 del ciclo mensual (CEO 2026-08-23): la rampa del mes en curso
+    es la META, no el remanente.
+
+    El criterio original de SUP-4 era el remanente (meta − colocadas = 35). El CEO lo
+    corrigió: "el mes en curso son proyecciones basadas en los objetivos planteados...
+    una cosa es el que se lleva real parcial y otra cosa es el objetivo a llegar". Lo ya
+    colocado no es insumo del motor: es el termómetro de desviación (P6). El
+    no-solape del parser evita el doble conteo."""
     from app.cartera_previa.cronograma import rampa_mes_en_curso
 
     assert rampa_mes_en_curso({"2026-08": 35}, mes=(2026, 8), meta=70) == {
-        "2026-08": 35
+        "2026-08": 70
     }
 
 
-def test_si_ya_se_supero_la_meta_no_se_proyecta_de_mas():
+def test_la_meta_manda_aunque_se_haya_superado():
+    """SUPERSEDIDO por P4: antes se acotaba a 0 para "no proyectar de más"; ahora la
+    gráfica muestra el objetivo y el exceso se lee en el termómetro."""
     from app.cartera_previa.cronograma import rampa_mes_en_curso
 
-    assert rampa_mes_en_curso({"2026-08": 80}, mes=(2026, 8), meta=70) == {"2026-08": 0}
+    assert rampa_mes_en_curso({"2026-08": 80}, mes=(2026, 8), meta=70) == {
+        "2026-08": 70
+    }
 
 
 def test_sin_colocaciones_reales_la_rampa_es_la_meta_completa():

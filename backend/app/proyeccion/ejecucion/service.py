@@ -86,23 +86,35 @@ def _conceptos_egreso(
 def _egresos_anclados_del_mes(
     ancla: AnclaMes, *, rubros: list[RubroInfo], neutros_ids: set[str]
 ) -> dict[str, Decimal]:
-    """Los 5 conceptos de egreso anclados del mes (magnitud POSITIVA), por estado."""
+    """Los 5 conceptos de egreso anclados del mes (magnitud POSITIVA), por estado.
+
+    P4 del ciclo mensual (CEO 2026-08-23) — **la Regla A / D-08 queda SOLO para meses
+    cerrados**. Un mes EN EJECUCIÓN muestra su PRESUPUESTO, igual que un mes futuro con
+    presupuesto: la gráfica del mes en curso es la proyección del objetivo, y lo
+    ejecutado se lee aparte como desviación (el termómetro de P6). Antes se mezclaba
+    (`ejecutado + max(0, definido − ejecutado)`), así que la misma fila tenía el gasto
+    medio real y el ingreso 100 % paramétrico — dos universos en una sola cuenta."""
     if ancla.estado == CERRADO:
         return _conceptos_egreso(
             ancla.ejecutado_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
         )
-    if ancla.estado == PRESUPUESTO:
-        return _conceptos_egreso(
-            ancla.definido_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
-        )
-    # EN_EJECUCION → Regla A (D-08) por concepto: ejec + max(0, definido − ejec).
-    ejec = _conceptos_egreso(
-        ancla.ejecutado_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
-    )
-    defi = _conceptos_egreso(
+    return _conceptos_egreso(
         ancla.definido_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
     )
-    return {c: ejec[c] + max(_CERO, defi[c] - ejec[c]) for c in _EGRESOS_ANCLADOS}
+
+
+def _es_anclable(ancla: AnclaMes) -> bool:
+    """Si este mes se ancla o se deja al motor paramétrico.
+
+    Un mes CERRADO se ancla siempre (su verdad es el libro). Un mes que se ancla al
+    PRESUPUESTO (en ejecución o futuro definido) necesita tener presupuesto: sin él,
+    anclar dejaría el gasto del mes en CERO, que es peor que la estimación del motor.
+    Fail-safe explícito, no silencioso."""
+    if ancla.estado == CERRADO:
+        return True
+    if ancla.estado not in _ANCLABLES:
+        return False
+    return bool(ancla.definido_por_rubro_id)
 
 
 def _fila_anclada(
@@ -166,8 +178,8 @@ def anclar(
     ancladas: dict[int, MesProyeccion] = {}
     deltas = [_CERO] * n
     for mes, ancla in anclas.items():
-        if mes not in idx or ancla.estado not in _ANCLABLES:
-            continue  # fuera del horizonte o estado no anclable → motor intacto
+        if mes not in idx or not _es_anclable(ancla):
+            continue  # fuera del horizonte, no anclable o sin presupuesto → motor
         m = idx[mes]
         egr = _egresos_anclados_del_mes(ancla, rubros=rubros, neutros_ids=neutros_ids)
         nueva = _fila_anclada(base[m], ancla, egr)
