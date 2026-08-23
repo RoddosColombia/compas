@@ -27,6 +27,11 @@ import { Cargando } from "@/components/ui/cargando";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { ApiError } from "@/lib/api";
 import {
+  type ResumenCarga,
+  cargarCronograma,
+  obtenerSerieCartera,
+} from "@/lib/carteraPrevia";
+import {
   type ModeloCrearInput,
   type ModeloEditarInput,
   type ModeloMoto,
@@ -594,6 +599,9 @@ function Editor({
             disabled={!puedeGestionar}
           />
 
+          {/* ⑩ SUP-4: carga semanal del cronograma */}
+          <CronogramaCard puedeGestionar={puedeGestionar} />
+
           {hayCambios && validacion.advertencias.length > 0 && (
             <AlertBanner variant="warn">
               <ul className="list-inside list-disc">
@@ -1136,6 +1144,117 @@ function _seedRampa(
   return Object.entries(rampa)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([mes, u]) => ({ mes, unidades: String(u) }));
+}
+
+// ⑩ SUP-4 (CEO 2026-08-22): la carga semanal. El CEO sube el cronograma (los lunes)
+// y COMPAS actualiza la cartera ya originada + la meta del mes en curso. No guarda
+// las ~9.900 cuotas: agrega ~80 semanas, que es lo que el motor necesita.
+function CronogramaCard({ puedeGestionar }: { puedeGestionar: boolean }) {
+  const qc = useQueryClient();
+  const [resumen, setResumen] = useState<ResumenCarga | null>(null);
+  const serie = useQuery({
+    queryKey: ["cartera-previa-serie"],
+    queryFn: obtenerSerieCartera,
+  });
+  const cargar = useMutation({
+    mutationFn: cargarCronograma,
+    onSuccess: (r) => {
+      setResumen(r);
+      qc.invalidateQueries({ queryKey: ["cartera-previa-serie"] });
+      qc.invalidateQueries({ queryKey: ["parametros"] });
+      qc.invalidateQueries({ queryKey: ["proyeccion"] });
+      qc.invalidateQueries({ queryKey: ["sensibilidad"] });
+    },
+  });
+
+  return (
+    <Card className="p-5">
+      <CardTitle>⑩ Cartera ya originada</CardTitle>
+      <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
+        Sube el cronograma de pagos (una vez por semana) y COMPAS actualiza lo
+        que falta por recaudar de los créditos vivos —cada uno con su cuota
+        real— y deja el mes en curso en lo que falta por colocar para la meta.
+      </p>
+
+      {serie.data && (
+        <p className="mt-3 font-sans text-cuerpo text-ink-soft">
+          Hoy el motor cuenta con{" "}
+          <span className="tabular font-semibold text-ink">
+            {formatCOP(serie.data.recaudo_total)}
+          </span>{" "}
+          por cobrar de lo ya originado, en {serie.data.semanas} semanas.
+        </p>
+      )}
+
+      {puedeGestionar && (
+        <label className="mt-4 flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-hairline bg-surface-muted/40 px-4 py-6 text-center transition-colors hover:border-cyan">
+          <span className="font-sans text-cuerpo font-medium text-ink">
+            {cargar.isPending
+              ? "Procesando el cronograma…"
+              : "Haz clic para elegir el cronograma"}
+          </span>
+          <span className="font-sans text-apoyo text-ink-faint">
+            el .xlsx de «Cronograma General»
+          </span>
+          <input
+            type="file"
+            accept=".xlsx"
+            className="hidden"
+            disabled={cargar.isPending}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) cargar.mutate(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      )}
+
+      {cargar.isError && (
+        <div className="mt-3">
+          <AlertBanner variant="danger">
+            {cargar.error instanceof ApiError
+              ? cargar.error.message
+              : "No se pudo cargar el cronograma."}
+          </AlertBanner>
+        </div>
+      )}
+
+      {resumen && (
+        <div className="mt-4 flex flex-col gap-1 font-sans text-cuerpo text-ink-soft">
+          <p>
+            <span className="font-semibold text-ink">{resumen.creditos}</span>{" "}
+            créditos vivos ·{" "}
+            <span className="tabular font-semibold text-ink">
+              {formatCOP(resumen.recaudo_futuro)}
+            </span>{" "}
+            por cobrar en {resumen.semanas} semanas.
+          </p>
+          <p>
+            Mora medida hoy:{" "}
+            <span className="tabular font-semibold text-atencion">
+              {formatCOP(resumen.vencido_sin_pagar)}
+            </span>{" "}
+            en {resumen.creditos_en_mora} créditos — es lo vencido sin pagar, no
+            se proyecta.
+          </p>
+          {Object.entries(resumen.rampa_mes_en_curso).map(([mes, faltan]) => (
+            <p key={mes}>
+              Mes en curso ({mes}): faltan{" "}
+              <span className="font-semibold text-ink">{faltan}</span> motos
+              para la meta; las ya colocadas recaudan con su cuota real.
+            </p>
+          ))}
+          {resumen.errores.length > 0 && (
+            <AlertBanner variant="warn">
+              {resumen.errores.length} fila(s) ilegibles se omitieron:{" "}
+              {resumen.errores[0]}
+            </AlertBanner>
+          )}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 // ⑨ SUP-1 (CEO 2026-08-17): un crecimiento mensual alto es razonable al arrancar y
