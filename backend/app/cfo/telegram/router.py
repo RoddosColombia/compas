@@ -58,7 +58,9 @@ async def crear(
         raise HTTPException(404, "No encontrado.")
     try:
         await vinculos.vincular(body.telegram_id, body.user_id, admin_id=str(admin.id))
-    except Exception as e:  # noqa: BLE001 — duplicado (uno-a-uno, B-3)
+    except repositorio.VinculoDuplicado as e:  # uno-a-uno (B-3); narrow catch
+        # a propósito: un fallo real (p. ej. de auditoría) debe propagar (500),
+        # nunca disfrazarse de 409 — ver Fix 1, auditoría Kimi de este gate.
         raise HTTPException(409, "telegram_id o user_id ya vinculado.") from e
     return {"ok": True}
 

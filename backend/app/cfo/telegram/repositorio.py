@@ -2,11 +2,26 @@
 """FABS · única puerta de escritura/lectura del canal Telegram. SOLO colecciones
 cfo_* (S1: ninguna otra subruta de cfo/telegram toca el driver de Mongo)."""
 
+from pymongo.errors import DuplicateKeyError
+
 from app.cfo.telegram.modelos import HiloCFO, VinculoTelegram
 
 
+class VinculoDuplicado(Exception):
+    """telegram_id o user_id ya vinculado (índice único uno-a-uno, B-3).
+
+    Traduce el DuplicateKeyError del driver a una excepción de DOMINIO en la
+    frontera del repositorio (S1: este módulo es el único que conoce pymongo).
+    Así el router (capa HTTP) puede atrapar SOLO esto — nunca `except
+    Exception` — y un fallo real ajeno (p. ej. de auditoría, posterior a un
+    insert que sí tuvo éxito) no se enmascara como un 409 falso."""
+
+
 async def crear_vinculo(v: VinculoTelegram) -> None:
-    await v.insert()  # lanza DuplicateKeyError si telegram_id o user_id ya existen
+    try:
+        await v.insert()
+    except DuplicateKeyError as e:
+        raise VinculoDuplicado("telegram_id o user_id ya vinculado") from e
 
 
 async def eliminar_vinculo(telegram_id: int) -> bool:

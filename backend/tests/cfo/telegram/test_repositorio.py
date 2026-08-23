@@ -12,7 +12,6 @@ from app.core.time import now_utc
 from app.domain import DOMAIN_DOCUMENTS
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import DuplicateKeyError
 
 
 @pytest.fixture
@@ -39,8 +38,10 @@ async def test_vinculo_unico_y_resolver(mongo_real):
     assert await repo.resolver_usuario(111) == "u1"
     assert await repo.resolver_usuario(999) is None
     # unicidad (B-3), mitad telegram_id: mismo telegram_id, distinto user_id → choca
-    # por telegram_id_unico.
-    with pytest.raises(DuplicateKeyError):
+    # por telegram_id_unico. crear_vinculo traduce el DuplicateKeyError del driver
+    # a la excepción de dominio VinculoDuplicado (Fix 1, auditoría Kimi de T6) —
+    # el router solo necesita atrapar ESTA, nunca el error crudo de pymongo.
+    with pytest.raises(repo.VinculoDuplicado):
         await repo.crear_vinculo(
             VinculoTelegram(
                 telegram_id=111, user_id="u2", creado_por="admin", creado_at=now_utc()
@@ -49,7 +50,7 @@ async def test_vinculo_unico_y_resolver(mongo_real):
     # unicidad (B-3), mitad user_id: mismo user_id="u1", distinto telegram_id → esta
     # es la única prueba que aísla si user_id_unico se aplica de verdad (sin ella, si
     # el índice se cayera en silencio, el bloque anterior seguiría en verde igual).
-    with pytest.raises(DuplicateKeyError):
+    with pytest.raises(repo.VinculoDuplicado):
         await repo.crear_vinculo(
             VinculoTelegram(
                 telegram_id=222, user_id="u1", creado_por="admin", creado_at=now_utc()

@@ -20,11 +20,13 @@ propio app/cfo/router.py, hermano de este). Aquí se gatea con
 Role.admin en app/auth/permissions.py — cumpliendo la Regla 9 de CLAUDE.md."""
 
 import httpx
+import pytest
 import pytest_asyncio
 from app.audit.service import configure_audit, reset_audit
 from app.auth import passwords, repository
 from app.auth.models import User
 from app.auth.roles import Role
+from app.cfo.telegram import repositorio
 from app.config import get_settings
 from app.main import create_app
 from mongomock_motor import AsyncMongoMockClient
@@ -135,3 +137,98 @@ def test_flag_off_rutas_ausentes(monkeypatch):
     assert "/api/v1/cfo/telegram/vinculos" not in rutas
 
     get_settings.cache_clear()
+
+
+# ─────────────── FIX ROUND (auditoría Kimi, gate de código T6) ───────────────
+#
+# Fix 1 (Important): antes, el handler de POST /vinculos atrapaba `except
+# Exception` alrededor de `vinculos.vincular(...)`, así que un fallo REAL de
+# `emit_audit` (posterior a un `crear_vinculo` que sí insertó) se disfrazaba de
+# 409 "ya vinculado" -- un vínculo recién creado con su rastro de auditoría
+# perdido, reportado como si nunca se hubiera creado. El fix traduce el
+# DuplicateKeyError del driver a `repositorio.VinculoDuplicado` en la frontera
+# del repositorio (S1) y el router solo atrapa ESA excepción de dominio.
+
+
+async def test_admin_crea_vinculo_fallo_audit_no_enmascara_409(api, monkeypatch):
+    """RED antes del fix / GREEN después: crear_vinculo inserta bien (el vínculo
+    SÍ se crea) pero emit_audit revienta -- el router NO debe mentir con un 409
+    "ya vinculado". Debe propagar el fallo real, nunca esconderlo detrás de un
+    409 falso. Mismo patrón que B-5 en tests/test_rubros_endpoints.py: con
+    raise_app_exceptions=True (default de httpx.ASGITransport) el transport
+    re-lanza la excepción no manejada en vez de convertirla en una Response --
+    en producción, Starlette sí la convertiría en 500. Lo que fija este test es
+    que NO llega a ser un 409, no el código exacto que ve el cliente HTTP real."""
+
+    async def fake_crear_vinculo(v):
+        pass  # el insert en Mongo funcionó de verdad
+
+    async def fake_emit_que_falla(
+        evento, entidad, entidad_id=None, actor_id=None, metadata=None
+    ):
+        raise RuntimeError("audit no configurado")
+
+    monkeypatch.setattr(
+        "app.cfo.telegram.vinculos.repositorio.crear_vinculo", fake_crear_vinculo
+    )
+    monkeypatch.setattr("app.cfo.telegram.vinculos.emit_audit", fake_emit_que_falla)
+    tok = await _token(api, "admin@roddos.com")
+    h = {"Authorization": f"Bearer {tok}"}
+    with pytest.raises(RuntimeError):
+        await api.post(
+            "/api/v1/cfo/telegram/vinculos",
+            json={"telegram_id": 555, "user_id": "u5"},
+            headers=h,
+        )
+
+
+async def test_admin_crea_vinculo_duplicado_409(api, monkeypatch):
+    """Fix 1: el ÚNICO caso que debe traducirse a 409 es el dominio real de
+    duplicado (repositorio.VinculoDuplicado) -- narrow catch en el router, ya
+    no `except Exception`."""
+
+    async def fake_vincular(telegram_id, user_id, admin_id):
+        raise repositorio.VinculoDuplicado("telegram_id o user_id ya vinculado")
+
+    monkeypatch.setattr("app.cfo.telegram.router.vinculos.vincular", fake_vincular)
+    tok = await _token(api, "admin@roddos.com")
+    h = {"Authorization": f"Bearer {tok}"}
+    r = await api.post(
+        "/api/v1/cfo/telegram/vinculos",
+        json={"telegram_id": 111, "user_id": "u1"},
+        headers=h,
+    )
+    assert r.status_code == 409
+
+
+async def test_webhook_secret_ok_sin_bot_token_503(api, monkeypatch):
+    """Fix 3 (Minor b): secret válido pero el canal de SALIDA no está
+    configurado (TELEGRAM_BOT_TOKEN ausente -> crear_cliente_telegram() = None)
+    -> falla cerrado con 503, nunca procesa el update a ciegas sin forma de
+    responderle a Telegram."""
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    r = await api.post(
+        "/api/v1/cfo/telegram/webhook",
+        json={"update_id": 1},
+        headers={"X-Telegram-Bot-Api-Secret-Token": SECRET},
+    )
+    assert r.status_code == 503
+
+
+async def test_admin_borra_vinculo_inexistente_404(api, monkeypatch):
+    """Fix 3 (Minor b): borrar un telegram_id sin vínculo (desvincular ->
+    False) -> 404, no un 200 silencioso."""
+
+    async def fake_desvincular(telegram_id, admin_id):
+        return False
+
+    monkeypatch.setattr(
+        "app.cfo.telegram.router.vinculos.desvincular", fake_desvincular
+    )
+    tok = await _token(api, "admin@roddos.com")
+    h = {"Authorization": f"Bearer {tok}"}
+    r = await api.delete(
+        "/api/v1/cfo/telegram/vinculos/999",
+        headers=h,
+    )
+    assert r.status_code == 404

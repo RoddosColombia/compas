@@ -19,7 +19,7 @@ async def vincular(telegram_id: int, user_id: str, admin_id: str) -> None:
         creado_por=admin_id,
         creado_at=now_utc(),
     )
-    await repositorio.crear_vinculo(v)  # DuplicateKeyError si ya existe (uno-a-uno)
+    await repositorio.crear_vinculo(v)  # VinculoDuplicado si ya existe (uno-a-uno)
     await emit_audit(
         AuditEvento.cfo_vinculo_creado,
         entidad="cfo_vinculo_telegram",

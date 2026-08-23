@@ -11,6 +11,8 @@ en silencio, nunca revientan (Telegram no debe ver un 500 por un update raro).""
 
 import pytest
 from app.cfo.telegram import webhook
+from app.cfo.telegram.modelos import HiloCFO
+from app.core.time import now_utc
 from tests.cfo.telegram.fakes import ClienteTelegramFake
 
 
@@ -107,3 +109,58 @@ async def test_update_con_forma_inesperada_no_revienta():
     update = {"message": {"text": "hola"}}
     await webhook.procesar_update(update, cliente_telegram=tg)
     assert tg.enviados == []
+
+
+@pytest.mark.asyncio
+async def test_reintento_reenvia_ultimo_envio_sin_llamar_llm_ni_registrar(monkeypatch):
+    """DoD #4, fijado a nivel de procesar_update (no solo del booleano
+    es_reintento): un update_id que coincide con hilo.ultimo_update_id es un
+    reintento de Telegram (mismo mensaje reenviado por falta de ack a tiempo) ->
+    reenvía ultimo_envio SIN volver a llamar al LLM (servicio.consultar) ni
+    re-registrar el turno (hilos.registrar_turno) -- si cualquiera de los dos se
+    llamara, sería un bug real (gasto doble de LLM / historial duplicado), no
+    solo un detalle de implementación."""
+
+    async def fake_resolver(tid):
+        return "u1"
+
+    monkeypatch.setattr("app.cfo.telegram.webhook.vinculos.resolver", fake_resolver)
+
+    hilo = HiloCFO(
+        user_id="u1",
+        turnos=[
+            {"rol": "user", "contenido": "¿caja?"},
+            {"rol": "assistant", "contenido": "Tu caja es [[caja_hoy]]."},
+        ],
+        ultimo_update_id=7,
+        ultimo_envio="Tu caja es $704.722.003.",
+        actualizado_at=now_utc(),
+    )
+
+    async def fake_obtener_hilo(uid):
+        return hilo
+
+    monkeypatch.setattr(
+        "app.cfo.telegram.webhook.repositorio.obtener_hilo", fake_obtener_hilo
+    )
+
+    async def fake_consultar(*a, **k):
+        raise AssertionError("un reintento NUNCA debe re-llamar al LLM")
+
+    monkeypatch.setattr("app.cfo.telegram.webhook.servicio.consultar", fake_consultar)
+
+    async def fake_registrar(*a, **k):
+        raise AssertionError("un reintento NUNCA debe re-registrar el turno")
+
+    monkeypatch.setattr(
+        "app.cfo.telegram.webhook.hilos.registrar_turno", fake_registrar
+    )
+
+    tg = ClienteTelegramFake()
+    update = {
+        "update_id": 7,  # == hilo.ultimo_update_id -> es_reintento
+        "message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "¿caja?"},
+    }
+    await webhook.procesar_update(update, cliente_telegram=tg)
+
+    assert tg.enviados == [(111, "Tu caja es $704.722.003.")]
