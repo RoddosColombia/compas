@@ -56,6 +56,7 @@ def reconciliar(
     caja_minima: Decimal,
     *,
     meses_anclados: frozenset[str] = frozenset(),
+    primer_mes_acumula: bool = False,
 ) -> ResultadoReconciliado:
     """`meses_anclados` (E1·P3): SOLO los meses CERRADOS quedan fuera de esta
     reconciliación — el pasado es del libro (sus facturas ya no están pendientes). En
@@ -87,7 +88,9 @@ def reconciliar(
     meses_pago = sorted(m for m in cap if m in idx and m not in meses_anclados)
     if not meses_pago:
         return ResultadoReconciliado(
-            ajustado=reacumular(resultado, [_CERO] * n, caja_minima),
+            ajustado=reacumular(
+                resultado, [_CERO] * n, caja_minima, primer_mes_acumula
+            ),
             ventana=None,
             interes_por_mes={},
             capital_por_mes={},
@@ -109,7 +112,7 @@ def reconciliar(
         # el pago real es egreso: resta capital + interés del flujo
         deltas[m] = _cop(deltas[m] - cap[mes] - interes[mes])
 
-    ajustado = reacumular(resultado, deltas, caja_minima)
+    ajustado = reacumular(resultado, deltas, caja_minima, primer_mes_acumula)
 
     # 3) coherencia concepto-a-concepto (§0 Sprint V1): `reacumular` ajustó flujo+caja
     # pero dejó `pago_inventario`/`fondeo` con el valor PARAMÉTRICO. Dentro de la

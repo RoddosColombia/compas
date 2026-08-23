@@ -594,6 +594,12 @@ class ParametrosMotor:
     # artefacto (base = bruto) → golden master intacto. El mismo criterio que ya usaba
     # `pct_aval_recaudo`, que siempre midió sobre el recaudo.
     mora_sobre_recaudo: bool = False
+    # P3 del ciclo mensual (CEO 2026-08-23): `caja_inicial` es el efectivo ANTERIOR al
+    # primer mes (el cierre del mes pasado), así que el flujo del primer mes SÍ la mueve
+    # — el candado `caja(mes) = caja(mes−1) + flujo(mes)` no admite excepciones. False =
+    # la semántica del artefacto, donde `caja_inicial` era "la plata que tengo hoy" a
+    # mitad del mes en curso → golden master intacto.
+    primer_mes_acumula_flujo: bool = False
     # Cartera previa (111 créditos preexistentes): serie semanal REAL del LoanTape.
     # semana global → recaudo / nº activos. Default None = sin cartera previa.
     recaudo_previo_por_semana: dict[int, Decimal] | None = None
@@ -766,8 +772,11 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
             + aval
         )
         flujo = _cop(ajuste.neto + egresos)
-        # primer mes: caja fija (= caja inicial); el flujo de ese mes no la mueve.
-        if m > 0:
+        # P3: con `primer_mes_acumula_flujo` la caja acumula desde el primer mes (el
+        # arranque es el efectivo ANTERIOR al horizonte). Sin el flag se conserva la
+        # convención del artefacto: primer mes fijo (= caja inicial), su flujo no la
+        # mueve — necesario para que el golden master siga siendo bit a bit.
+        if m > 0 or p.primer_mes_acumula_flujo:
             caja = _cop(caja + flujo)
         filas.append(
             MesProyeccion(

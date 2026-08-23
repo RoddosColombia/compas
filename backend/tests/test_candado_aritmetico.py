@@ -11,16 +11,17 @@ Contrato: `docs/COMPAS_Ciclo_Mensual.md` §«El candado aritmético».
 "La matemática de las cuentas en ningún mes puede fallar... es como un tejido bien
 confeccionado, no puede tener error" (CEO 2026-08-23).
 
-Este test se escribe ANTES de arreglar nada: es el que demuestra que las piezas P2–P5
+Este test se escribió ANTES de arreglar nada: es el que demuestra que las piezas P2–P5
 funcionan. Recorre TODOS los meses del horizonte (no una muestra), en los TRES
 escenarios, y por las TRES capas de la tubería (motor → E1 anclaje → D2
 reconciliación): una capa que re-acumula mal rompe el tejido igual que una fórmula mala.
 
-Estado esperado hoy: la fórmula ① FALLA en el primer mes por la convención heredada del
-artefacto (`motor.py`: "primer mes: caja fija (= caja inicial); el flujo de ese mes no
-la mueve"). El test lo declara con `xfail(strict=True)` para que quede REGISTRADO y para
-que avise cuando P3 lo arregle: si algún día pasa sin actualizar el test, falla y nos
-enteramos.
+Historia útil: al escribirse, la fórmula ① fallaba en el PRIMER mes por la convención
+heredada del artefacto (`motor.py`: "primer mes: caja fija (= caja inicial); el flujo de
+ese mes no la mueve") y quedó declarada como `xfail(strict=True)` — registrada, no
+escondida. **P3 la cerró**, así que hoy el candado corre sin excepciones. Y en su
+primera corrida cazó un defecto real: E1 recalculaba los egresos de un mes anclado sin
+el fondo de aval (546.241,68 desaparecidos en agosto-2026 de PROD).
 """
 
 from decimal import Decimal
@@ -96,6 +97,7 @@ def _motor(**over) -> ParametrosMotor:
         meses_rezago_recuperacion=1,
         pct_aval_recaudo=Decimal("0.01"),
         mora_sobre_recaudo=True,
+        primer_mes_acumula_flujo=True,  # P3: el candado ya no tiene excepciones
         overrides_mora=None,
         overrides_default=None,
         caja_inicial=Decimal("665715578"),  # el cierre REAL de julio
@@ -217,13 +219,10 @@ def test_el_flujo_cuadra_en_todos_los_meses():
     assert verificar_flujo(r) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="P3 pendiente: motor.py fija la caja del primer mes (convención del "
-    "artefacto) y su flujo no la mueve. El contrato del ciclo mensual lo elimina.",
-)
 def test_la_caja_acumula_su_flujo_en_todos_los_meses_incluido_el_primero():
-    """① — el candado que hoy NO pasa, y por eso agosto no cuadra en pantalla."""
+    """① SIN excepciones — el candado completo. Hasta P3 este test era un `xfail`
+    declarado: el motor fijaba la caja del primer mes (convención del artefacto) y por
+    eso agosto-2026 no cuadraba sumando en pantalla."""
     p = _motor()
     r = proyectar(p)
     assert verificar_caja(r, p.caja_inicial) == []
@@ -267,7 +266,7 @@ def test_las_formulas_cuadran_en_los_tres_escenarios(pct_mora, pct_recup, pct_de
         + verificar_ingreso(r)
         + verificar_egresos(r)
         + verificar_flujo(r)
-        + verificar_caja(r, p.caja_inicial)[1:]  # el primer mes es P3 (xfail arriba)
+        + verificar_caja(r, p.caja_inicial)
     )
     assert fallas == [], "\n".join(fallas[:5])
 
@@ -287,7 +286,7 @@ def test_las_formulas_cuadran_con_la_cartera_previa_y_el_iva():
         + verificar_ingreso(r)
         + verificar_egresos(r)
         + verificar_flujo(r)
-        + verificar_caja(r, p.caja_inicial)[1:]
+        + verificar_caja(r, p.caja_inicial)
     )
     assert fallas == [], "\n".join(fallas[:5])
     # y el IVA del mes DIAN sí golpeó la caja de ese mes
@@ -342,7 +341,7 @@ def test_el_candado_se_sostiene_despues_del_anclaje_E1():
         verificar_ingreso(envuelto)
         + verificar_egresos(envuelto)
         + verificar_flujo(envuelto)
-        + verificar_caja(envuelto, p.caja_inicial)[1:]  # primer mes = P3
+        + verificar_caja(envuelto, p.caja_inicial)
     )
     assert fallas == [], "\n".join(fallas[:5])
     assert CERRADO  # (import usado por el siguiente test de la suite)

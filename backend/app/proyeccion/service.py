@@ -245,6 +245,10 @@ def _armar_parametros(
         meses_rezago_recuperacion=params.meses_rezago_recuperacion,
         pct_aval_recaudo=params.pct_aval_recaudo,
         mora_sobre_recaudo=params.mora_sobre_recaudo,
+        # P3 del ciclo mensual: el arranque es el efectivo ANTERIOR al primer mes,
+        # asi que su flujo si mueve su caja. El motor conserva False como default
+        # (semantica del artefacto) para que el golden master siga bit a bit.
+        primer_mes_acumula_flujo=True,
         adelanto_auteco=params.adelanto_auteco,
         plazo_auteco_dias=params.plazo_auteco_dias,
         base_auteco_dias=params.base_auteco_dias,
@@ -697,6 +701,7 @@ async def _resultado_con(
             anclas=anclas,
             rubros=rubros_e1,
             neutros_ids=neutros_e1,
+            primer_mes_acumula=True,
         )
         r = _kpis_a_resultado(aj)
         # D2 solo excluye los meses CERRADOS (el pasado es del libro; su factura ya no
@@ -735,7 +740,11 @@ async def _resultado_con(
     rec: ResultadoReconciliado | None = None
     if facturas:
         rec = reconciliar(
-            r, facturas, params.caja_minima, meses_anclados=meses_anclados
+            r,
+            facturas,
+            params.caja_minima,
+            meses_anclados=meses_anclados,
+            primer_mes_acumula=True,
         )
         r = _kpis_a_resultado(rec.ajustado)
     meta = AnclajeMeta(
@@ -898,7 +907,7 @@ async def proyectar_impactos(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
     )
-    ajustado = aplicar_impactos(r, ajustes, caja_min)
+    ajustado = aplicar_impactos(r, ajustes, caja_min, primer_mes_acumula=True)
     r_aj = _kpis_a_resultado(ajustado)
     # SUP-5: los supuestos son los MISMOS para base y ajustada (un ajuste de D1 mueve
     # el flujo, no los drivers). Van en ambas para que `base` siga siendo GET
@@ -1273,6 +1282,7 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
                     anclas=anclas,
                     rubros=rubros_e1,
                     neutros_ids=neutros_e1,
+                    primer_mes_acumula=True,
                 )
             )
             meses_anclados = frozenset(
@@ -1280,7 +1290,11 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
             )
         if facturas:
             rec = reconciliar(
-                r, facturas, params.caja_minima, meses_anclados=meses_anclados
+                r,
+                facturas,
+                params.caja_minima,
+                meses_anclados=meses_anclados,
+                primer_mes_acumula=True,
             )
             r = _kpis_a_resultado(rec.ajustado)
         return r.piso_caja
@@ -1368,9 +1382,15 @@ async def comparar_vigente(
     else:
         mc_a, caja_a = ancla
         y, m = int(mc_a.mes[:4]), int(mc_a.mes[5:7])
+        # P3 del ciclo mensual: la caja del ancla es la del CIERRE de ese mes, o sea la
+        # que existe ANTES del siguiente. Asi que el forecast arranca en el mes
+        # SIGUIENTE: el tramo real termina en el ancla y el proyectado sigue desde ahi,
+        # sin repetir el punto ni contar dos veces el flujo del mes ancla (antes el
+        # primer mes tenia la caja fija y por eso el solape no se notaba).
+        y_sig, m_sig = (y + 1, 1) if m == 12 else (y, m + 1)
         forecast = await proyectar_vigente(
             escenario=escenario,
-            mes_inicio=(y, m),
+            mes_inicio=(y_sig, m_sig),
             horizonte_meses=horizonte_meses,
             caja_inicial_override=caja_a,
         )

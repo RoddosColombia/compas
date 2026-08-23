@@ -234,11 +234,15 @@ async def test_comparar_actuals_vs_forecast_rolling(api):
     # ancla = jun-2026, caja real = 10M + 5M = 15M
     assert data["ancla"]["mes"] == "2026-06"
     assert data["ancla"]["caja_real"] == "15000000.00"
-    # el tramo real incluye jun-2026
+    # el tramo real incluye jun-2026 y TERMINA ahí
     assert any(a["mes"] == "2026-06" for a in data["actuals"])
-    # el rolling forecast arranca en el mes ancla con la caja real (mes 0 = caja fija)
-    assert data["forecast"][0]["mes"] == "2026-06"
-    assert data["forecast"][0]["caja"] == "15000000.00"
+    assert data["actuals"][-1]["mes"] == "2026-06"
+    # P3 del ciclo mensual: la caja del ancla es la del CIERRE de junio, así que el
+    # rolling forecast arranca en JULIO — sin repetir el punto ni contar dos veces el
+    # flujo de junio. Antes empezaba en 2026-06 repitiendo el ancla, porque el primer
+    # mes tenía la caja fija; con el candado sin excepciones eso sería doble conteo.
+    assert data["forecast"][0]["mes"] == "2026-07"
+    assert Decimal(data["forecast"][0]["caja"]) != Decimal("15000000.00")
 
 
 @pytest.mark.asyncio

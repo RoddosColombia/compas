@@ -166,10 +166,15 @@ def anclar(
     anclas: dict[str, AnclaMes],
     rubros: list[RubroInfo],
     neutros_ids: set[str],
+    primer_mes_acumula: bool = False,
 ) -> ResultadoAjustado:
     """Ancla la serie del motor a la ejecución real (§1) y re-acumula la caja. `anclas`
     mapea 'YYYY-MM'→AnclaMes; los meses fuera del dict quedan intactos (motor). Con
-    `anclas` vacío devuelve la base bit a bit (== golden, B1)."""
+    `anclas` vacío devuelve la base bit a bit (== golden, B1).
+
+    `primer_mes_acumula` (P3) viaja hasta `reacumular`: sin él, anclar el mes en curso
+    cambiaría su flujo y dejaría su caja congelada — el descuadre que el CEO vio en
+    agosto-2026."""
     base = resultado.meses
     n = len(base)
     idx = {fila.mes: i for i, fila in enumerate(base)}
@@ -187,7 +192,7 @@ def anclar(
         deltas[m] = _cop(nueva.flujo - base[m].flujo)
 
     # 2) re-acumular caja/flujo/estado con la mecánica del motor (D2/D1 la comparten).
-    ajustado = reacumular(resultado, deltas, caja_minima)
+    ajustado = reacumular(resultado, deltas, caja_minima, primer_mes_acumula)
 
     # 3) reescribir los campos POR CONCEPTO de los meses anclados (reacumular solo tocó
     #    flujo/caja/estado). Así `neto + Σ egresos == flujo` al peso en la serie (B6).
