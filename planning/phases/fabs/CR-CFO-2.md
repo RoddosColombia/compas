@@ -25,7 +25,10 @@ para el path de lectura fail-soft del Q&A (`app/cfo/agente/servicio.py`), que
 no es una operación de estado.
 
 Ambos se emiten desde el endpoint admin (`POST` / `DELETE /api/v1/cfo/telegram/vinculos`),
-protegido con `require_role(Role.admin)`. El vínculo es **uno-a-uno** (único en
+protegido con `require_permission("cfo:telegram_administrar")` (permiso admin-only en
+la matriz canónica de RBAC, `app/auth/permissions.py`) — NO `require_role`, que el repo
+reserva SOLO a administración de identidad (`/users`) y prohíbe en lógica de negocio
+(H-1, regla 9); mismo patrón que el hermano `cfo:consultar` del Q&A. El vínculo es **uno-a-uno** (único en
 `telegram_id` Y en `user_id` — decisión B-3 del spec): no existe un estado
 activo/inactivo que "reactivar", así que no hay evento espejo tipo
 `.editado {activo: false→true}` como en rubro/regla/obligación — vincular de
