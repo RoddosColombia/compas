@@ -112,6 +112,12 @@ def _rampa_a_lista(
     return out or None
 
 
+def _con_delta(preset: Decimal, delta: Decimal) -> Decimal:
+    """SUP-1: pct del escenario + delta de los supuestos, acotado a [0, 1] (un pct de
+    mora/recuperación fuera de rango no tiene sentido financiero)."""
+    return min(Decimal("1"), max(Decimal("0"), preset + delta))
+
+
 def _guard_apache_por_mes(
     apache_por_mes: dict[int, int] | None, modelos: list[ModeloMoto]
 ) -> None:
@@ -151,10 +157,22 @@ def _armar_parametros(
     caja_inicial_override: object | None = None,
 ) -> ParametrosMotor:
     pct_mora, pct_recuperacion = params.pct_mora, params.pct_recuperacion
-    # el escenario (preset) sobrescribe mora/recuperación; el resto queda de params.
+    # SUP-1 (CEO 2026-08-17) — los SUPUESTOS fijan el NIVEL, el escenario el DESVÍO.
+    # Antes el preset PISABA la mora/recuperación del CEO y "base" está en los presets,
+    # así que sus valores se descartaban SIEMPRE (bug: "la mora no impacta en ninguna
+    # vía"). Regla del CEO: "si subo la mora de 3 a 5, esos dos puntos se suman también
+    # en pesimista y en optimista" → DELTA EN PUNTOS sobre el preset base, aplicado a
+    # los tres escenarios y acotado a [0, 1] (una mora del 98% no vuelve 101% al
+    # pesimista). Escenario desconocido → los supuestos tal cual.
     if escenario in PRESETS_ESCENARIO:
-        pct_mora = PRESETS_ESCENARIO[escenario]["pct_mora"]
-        pct_recuperacion = PRESETS_ESCENARIO[escenario]["pct_recuperacion"]
+        pct_mora = _con_delta(
+            PRESETS_ESCENARIO[escenario]["pct_mora"],
+            params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
+        )
+        pct_recuperacion = _con_delta(
+            PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
+            params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
+        )
     pm = ParametrosMotor(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
@@ -162,6 +180,9 @@ def _armar_parametros(
         motos_base=params.motos_base,
         crec_pct_mensual=params.crec_pct_mensual,
         rampa=_rampa_a_lista(params.rampa_unidades, mes_inicio),
+        # SUP-1: segundo tramo de crecimiento (None/None = comportamiento histórico)
+        crec_pct_mensual_2=params.crec_pct_mensual_2,
+        crec_mes_corte=params.crec_mes_corte,
         adelanto_auteco=params.adelanto_auteco,
         plazo_auteco_dias=params.plazo_auteco_dias,
         base_auteco_dias=params.base_auteco_dias,

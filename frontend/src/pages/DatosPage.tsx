@@ -366,11 +366,23 @@ function Editor({
   const [rampa, setRampa] = useState<Record<string, number>>(
     () => vigente.rampa_unidades ?? {},
   );
+  // SUP-1: segundo tramo de crecimiento (opcional). Se maneja como bloque aparte —
+  // igual que componentes y rampa — porque AMBOS campos vacíos = "sin tramo 2"
+  // (null/null), algo que el mapa genérico de CAMPOS no sabe expresar.
+  const tramo2De = (p: Parametros) => ({
+    tasa:
+      p.crec_pct_mensual_2 !== null && p.crec_pct_mensual_2 !== undefined
+        ? fraccionAPct(p.crec_pct_mensual_2)
+        : "",
+    corte: p.crec_mes_corte ? String(p.crec_mes_corte) : "",
+  });
+  const [tramo2, setTramo2] = useState(() => tramo2De(vigente));
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-sincronizar SOLO cuando cambia la vigencia
   useEffect(() => {
     setBorr(humanoDe(vigente));
     setComps(compsDe(vigente));
     setRampa(vigente.rampa_unidades ?? {});
+    setTramo2(tramo2De(vigente));
   }, [vigente.id, vigente.modificado_por]);
 
   const modelos = useQuery({
@@ -380,8 +392,8 @@ function Editor({
 
   // ── validación en 3 niveles ──
   const validacion = useMemo(
-    () => validar(borr, comps, vigente, modelos.data ?? [], ref),
-    [borr, comps, vigente, modelos.data, ref],
+    () => validar(borr, comps, vigente, modelos.data ?? [], ref, tramo2),
+    [borr, comps, vigente, modelos.data, ref, tramo2],
   );
   const sinErrores = Object.keys(validacion.errores).length === 0;
 
@@ -389,11 +401,11 @@ function Editor({
   const canon = useMemo<CamposParametros | null>(() => {
     if (!sinErrores) return null;
     try {
-      return canonicalizar(borr, comps, rampa, ref);
+      return canonicalizar(borr, comps, rampa, ref, tramo2);
     } catch {
       return null;
     }
-  }, [borr, comps, rampa, ref, sinErrores]);
+  }, [borr, comps, rampa, ref, sinErrores, tramo2]);
 
   const canonVigente = useMemo(() => aCampos(vigente), [vigente]);
   const canonJson = canon ? JSON.stringify(canon) : null;
@@ -460,6 +472,7 @@ function Editor({
     setBorr(humanoDe(vigente));
     setComps(compsDe(vigente));
     setRampa(vigente.rampa_unidades ?? {});
+    setTramo2(tramo2De(vigente));
   };
 
   const set = (k: string, v: string) => setBorr((f) => ({ ...f, [k]: v }));
@@ -551,6 +564,15 @@ function Editor({
             disabled={!puedeGestionar}
           />
 
+          {/* ⑨ SUP-1: segundo tramo de crecimiento */}
+          <Tramo2Card
+            tramo2={tramo2}
+            setTramo2={setTramo2}
+            crecTramo1={borr.crec_pct_mensual ?? ""}
+            errores={validacion.errores}
+            disabled={!puedeGestionar}
+          />
+
           {hayCambios && validacion.advertencias.length > 0 && (
             <AlertBanner variant="warn">
               <ul className="list-inside list-disc">
@@ -619,11 +641,33 @@ function montoSeguro(humano: string): Decimal | null {
 
 // ── canónico / diff / validación ─────────────────────────────────────────────
 
+/** SUP-1: {tasa, corte} humanos → canónico. Ambos vacíos = sin tramo 2. */
+export interface Tramo2Borrador {
+  tasa: string;
+  corte: string;
+}
+
+export function tramo2ACanonico(t: Tramo2Borrador): {
+  crec_pct_mensual_2: string | null;
+  crec_mes_corte: number | null;
+} {
+  const tasa = t.tasa.trim();
+  const corte = t.corte.trim();
+  if (!tasa && !corte) {
+    return { crec_pct_mensual_2: null, crec_mes_corte: null };
+  }
+  return {
+    crec_pct_mensual_2: pctAFraccion(tasa),
+    crec_mes_corte: Number(corte),
+  };
+}
+
 function canonicalizar(
   borr: Record<string, string>,
   comps: ComponenteAlistamiento[],
   rampa: Record<string, number>,
   ref: string,
+  tramo2: Tramo2Borrador = { tasa: "", corte: "" },
 ): CamposParametros {
   const out: Record<string, string | number | unknown> = {};
   for (const c of CAMPOS) {
@@ -649,6 +693,7 @@ function canonicalizar(
   out.rampa_unidades = Object.fromEntries(
     Object.entries(rampa).sort(([a], [b]) => a.localeCompare(b)),
   );
+  Object.assign(out, tramo2ACanonico(tramo2)); // SUP-1
   return out as unknown as CamposParametros;
 }
 
@@ -679,6 +724,12 @@ function aCampos(p: Parametros): CamposParametros {
       a.localeCompare(b),
     ),
   );
+  // SUP-1: normalizar por Decimal para que "0.03" == "0.030" en el diff
+  out.crec_pct_mensual_2 =
+    p.crec_pct_mensual_2 !== null && p.crec_pct_mensual_2 !== undefined
+      ? new Decimal(p.crec_pct_mensual_2).toString()
+      : null;
+  out.crec_mes_corte = p.crec_mes_corte ?? null;
   return out as unknown as CamposParametros;
 }
 
@@ -697,6 +748,12 @@ function contarCambios(a: CamposParametros, b: CamposParametros): number {
   )
     n++;
   if (JSON.stringify(a.rampa_unidades) !== JSON.stringify(b.rampa_unidades))
+    n++;
+  // SUP-1: el tramo 2 cuenta como UN cambio (tasa + corte son una sola decisión)
+  if (
+    String(a.crec_pct_mensual_2) !== String(b.crec_pct_mensual_2) ||
+    String(a.crec_mes_corte) !== String(b.crec_mes_corte)
+  )
     n++;
   return n;
 }
@@ -744,7 +801,28 @@ function diffCampos(
       despues: resumenRampa(canon.rampa_unidades),
     });
   }
+  // SUP-1: el tramo 2 en el diff de guardado
+  if (
+    String(vigente.crec_pct_mensual_2 ?? null) !==
+      String(canon.crec_pct_mensual_2 ?? null) ||
+    String(vigente.crec_mes_corte ?? null) !==
+      String(canon.crec_mes_corte ?? null)
+  ) {
+    filas.push({
+      label: "Crecimiento · segundo tramo",
+      antes: resumenTramo2(vigente.crec_pct_mensual_2, vigente.crec_mes_corte),
+      despues: resumenTramo2(canon.crec_pct_mensual_2, canon.crec_mes_corte),
+    });
+  }
   return filas;
+}
+
+function resumenTramo2(
+  tasa: string | null | undefined,
+  corte: number | null | undefined,
+): string {
+  if (!tasa || !corte) return "un solo tramo";
+  return `${fraccionAPct(tasa)} % desde el mes ${corte + 1}`;
 }
 
 function resumenRampa(r: Record<string, number> | undefined): string {
@@ -800,10 +878,26 @@ function validar(
   vigente: Parametros,
   modelos: ModeloMoto[],
   ref: string,
+  tramo2: Tramo2Borrador = { tasa: "", corte: "" },
 ): Validacion {
   const errores: Record<string, string> = {};
   const advertencias: string[] = [];
   const notas: string[] = [];
+
+  // SUP-1: el segundo tramo va completo o vacío (nunca a medias, que proyectaría
+  // en silencio con un solo tramo).
+  const t2tasa = tramo2.tasa.trim();
+  const t2corte = tramo2.corte.trim();
+  if (t2tasa || t2corte) {
+    if (!t2tasa) errores.crec_pct_mensual_2 = "falta la tasa del tramo 2";
+    else if (!esPctValido(t2tasa))
+      errores.crec_pct_mensual_2 = "porcentaje inválido (usa 3 o 3,5)";
+    if (!t2corte) errores.crec_mes_corte = "falta el mes de corte";
+    else if (!/^\d+$/.test(t2corte) || Number(t2corte) < 1)
+      errores.crec_mes_corte = "mes de corte inválido (entero ≥ 1)";
+    else if (Number(t2corte) > 180)
+      errores.crec_mes_corte = "el corte no puede pasar de 180 meses";
+  }
 
   for (const c of CAMPOS) {
     const v = (borr[c.key] ?? "").trim();
@@ -1021,6 +1115,81 @@ function _seedRampa(
   return Object.entries(rampa)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([mes, u]) => ({ mes, unidades: String(u) }));
+}
+
+// ⑨ SUP-1 (CEO 2026-08-17): un crecimiento mensual alto es razonable al arrancar y
+// absurdo compuesto a 10 años. Aquí el CEO declara desde qué mes baja el ritmo.
+function Tramo2Card({
+  tramo2,
+  setTramo2,
+  crecTramo1,
+  errores,
+  disabled,
+}: {
+  tramo2: Tramo2Borrador;
+  setTramo2: (t: Tramo2Borrador) => void;
+  crecTramo1: string;
+  errores: Record<string, string>;
+  disabled: boolean;
+}) {
+  const activo = tramo2.tasa.trim() !== "" || tramo2.corte.trim() !== "";
+  const corte = Number(tramo2.corte.trim() || "0");
+  return (
+    <Card className="p-5">
+      <CardTitle>⑨ Crecimiento a largo plazo</CardTitle>
+      <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
+        Opcional: a partir de cierto mes la colocación crece a otro ritmo. Vacío
+        = un solo tramo (el {crecTramo1 || "—"} % de arriba para todo el
+        horizonte).
+      </p>
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1">
+          <span className="font-sans text-apoyo font-medium text-ink-soft">
+            Hasta el mes
+          </span>
+          <input
+            inputMode="numeric"
+            disabled={disabled}
+            aria-label="Mes de corte del segundo tramo"
+            className="rounded-md border border-hairline bg-surface px-2 py-1.5 font-sans text-cuerpo text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan disabled:opacity-60"
+            placeholder="18"
+            value={tramo2.corte}
+            onChange={(e) => setTramo2({ ...tramo2, corte: e.target.value })}
+          />
+          {errores.crec_mes_corte && (
+            <span className="font-sans text-apoyo text-critico">
+              {errores.crec_mes_corte}
+            </span>
+          )}
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-sans text-apoyo font-medium text-ink-soft">
+            Luego crece (%/mes)
+          </span>
+          <input
+            inputMode="decimal"
+            disabled={disabled}
+            aria-label="Ritmo mensual del segundo tramo"
+            className="rounded-md border border-hairline bg-surface px-2 py-1.5 font-sans text-cuerpo text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan disabled:opacity-60"
+            placeholder="3"
+            value={tramo2.tasa}
+            onChange={(e) => setTramo2({ ...tramo2, tasa: e.target.value })}
+          />
+          {errores.crec_pct_mensual_2 && (
+            <span className="font-sans text-apoyo text-critico">
+              {errores.crec_pct_mensual_2}
+            </span>
+          )}
+        </label>
+      </div>
+      {activo && !errores.crec_mes_corte && !errores.crec_pct_mensual_2 && (
+        <p className="mt-3 font-sans text-apoyo text-ink-faint">
+          Meses 1–{corte} al {crecTramo1 || "—"} % · desde el mes {corte + 1} al{" "}
+          {tramo2.tasa || "—"} % mensual.
+        </p>
+      )}
+    </Card>
+  );
 }
 
 function RampaCard({

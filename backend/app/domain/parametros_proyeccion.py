@@ -15,7 +15,13 @@ from datetime import datetime
 from decimal import Decimal
 
 from beanie import Document
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from pymongo import IndexModel
 
 from app.core.money import Money
@@ -68,6 +74,13 @@ class ParametrosProyeccion(Document):
     # {} → sin rampa (comportamiento de hoy). El servicio la mapea al `rampa` nativo del
     # motor (prefijo contiguo desde mes_inicio; el post-rampa reinicia en motos_base).
     rampa_unidades: dict[str, int] = Field(default_factory=dict)
+    # SUP-1 (CEO 2026-08-17): SEGUNDO TRAMO de crecimiento. Una tasa mensual alta es
+    # razonable al arrancar pero irreal a 10 años compuesta; el CEO fija desde qué mes
+    # el crecimiento baja. `crec_mes_corte = 18` → meses 1..18 con `crec_pct_mensual`,
+    # del 19 en adelante con `crec_pct_mensual_2`. Van JUNTOS (fail-closed) y ambos
+    # None = comportamiento histórico exacto.
+    crec_pct_mensual_2: Money | None = None
+    crec_mes_corte: int | None = Field(default=None, gt=0, le=180)
     # inventario Auteco
     adelanto_auteco: Money
     plazo_auteco_dias: int = Field(ge=0)
@@ -108,6 +121,19 @@ class ParametrosProyeccion(Document):
             if unidades < 0:
                 raise ValueError(f"rampa_unidades: unidades negativas en {mes}")
         return v
+
+    @model_validator(mode="after")
+    def _tramo2_completo(self) -> "ParametrosProyeccion":
+        """SUP-1: la tasa del segundo tramo y su mes de corte van JUNTOS — media
+        configuración proyectaría en silencio con el tramo 1 (fail-closed)."""
+        tiene_tasa = self.crec_pct_mensual_2 is not None
+        tiene_corte = self.crec_mes_corte is not None
+        if tiene_tasa != tiene_corte:
+            raise ValueError(
+                "segundo tramo de crecimiento incompleto: crec_pct_mensual_2 y "
+                "crec_mes_corte van juntos (o ninguno)"
+            )
+        return self
 
     @field_validator("vigente_desde")
     @classmethod
