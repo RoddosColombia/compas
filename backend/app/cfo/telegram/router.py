@@ -12,6 +12,8 @@ Telegram es un endpoint de NEGOCIO (no /users), así que usar require_role aquí
 violaría esa regla y la Regla 9 de CLAUDE.md (RBAC vía la matriz de permisos única).
 Money/cifras no viajan por aquí (los cuerpos son telegram_id/user_id, no dinero)."""
 
+import secrets
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
@@ -39,7 +41,13 @@ async def telegram_webhook(
     if not cfo_enabled():  # guard defensivo (barrera 2)
         raise HTTPException(404, "No encontrado.")
     secret = telegram_webhook_secret()
-    if not secret or x_telegram_bot_api_secret_token != secret:
+    # compare_digest: comparación en tiempo constante (evita side-channel de
+    # timing en un endpoint público)
+    if (
+        not secret
+        or not x_telegram_bot_api_secret_token
+        or not secrets.compare_digest(x_telegram_bot_api_secret_token, secret)
+    ):
         raise HTTPException(403, "Prohibido.")
     cli = crear_cliente_telegram()
     if cli is None:

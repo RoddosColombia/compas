@@ -69,6 +69,12 @@ async def procesar_update(
         return
 
     hilo = await repositorio.obtener_hilo(user_id)
+    # LIMITACIÓN ACEPTADA (piloto, flag off): la deduplicación por update_id es
+    # check-then-set (no hay claim atómico). Si Telegram RE-entrega el mismo update_id
+    # mientras la 1ª petición sigue en el LLM (LLM más lento que el timeout de entrega
+    # de Telegram), ambas pasan es_reintento==False → doble respuesta + doble costo LLM.
+    # NO afecta la garantía anti-alucinación. Endurecimiento futuro: reclamar el
+    # update_id de forma atómica (update condicional) ANTES de llamar al LLM.
     if hilos.es_reintento(hilo, update_id):
         # reintento de Telegram: reenvía la respuesta previa (B-1/B-2, no silencioso)
         if hilo.ultimo_envio:
