@@ -1,0 +1,1651 @@
+# EVIDENCIA — CICLO-MENSUAL RETRO-I
+
+## 1. Salidas de tests (corridas 2026-08-24 sobre main `d604556`)
+
+### Alcance del retro (golden + candado + SUP-2..6 + P2..P7)
+```
+118 passed, 937 warnings in 30.82s
+```
+Suites: test_golden_master, test_candado_aritmetico, test_p3_primer_mes_acumula,
+test_sup6_base_mora, test_sup2_variables_editables, test_sup3_iva_proyectado,
+test_sup4_carga_cronograma, test_sup5_variables_visibles, test_p2_arranque_heredado,
+test_p4_p5_mes_en_curso, test_p6_termometro, test_p7_promedio_gasto.
+
+### Suite completa backend (contra fastapi==0.141.1, la version pinneada)
+```
+1220 passed, 100 skipped (requires_real_mongo) — 0 failed
+```
+
+### Frontend
+```
+Test Files  49 passed (49) · Tests 293 passed (293) · npm run build OK · biome OK
+```
+
+## 2. Los dos defectos que el candado cazo (evidencia de que el gate automatico funciona)
+
+1. **El aval desaparecia al anclar un mes** (`ejecucion/service.py::_fila_anclada`
+   recalculaba `egresos` sin `fila.aval`): agosto-2026 en PROD perdia 546.241,68 en
+   silencio. Cazado por `verificar_egresos` del candado en su PRIMERA corrida.
+2. **La automatizacion de SUP-4 pisaba la meta del CEO** (rampa del mes en curso =
+   remanente, escrita en cada carga semanal): el CEO habia puesto 70 y la carga la bajo
+   a 35. Eliminada en P4: la carga ya NO escribe la meta.
+
+Y el lado FRONTEND de la costura del aval (tu item 0 de etapa75): `egreso.ts` no conocia
+`aval` — buckets sin reconciliar por exactamente el aval. Corregido en #102 con candado.
+
+## 3. PROD read-only (foto de HOY, post-deploy de #100 y #102)
+
+```
+mora_sobre_recaudo           True          (SUP-6 activo: mora solo sobre semanales)
+meses_rezago_recuperacion    1             (v9.1)
+pct_aval_recaudo             0.01
+pct_mora / recup / default   0.08 / 0.60 / 0.05   (editados por el CEO en Supuestos)
+rampa_unidades               {'2026-08': 60}     (dato del CEO; la carga ya no lo pisa)
+caja_inicial (semilla)       704.722.003   (ya NO es el arranque)
+arranque                     665.715.578.00 (origen: ciclo = cierre real de julio)
+
+agosto: motos=60 · inicial=109.230.000,00 · semanal=70.287.368,00
+        neto=170.380.010,16 · flujo=-70.532.363,52 · caja=595.183.214,48
+CANDADO: 665.715.578,00 + (-70.532.363,52) = 595.183.214,48 == caja  ✓ AL PESO
+```
+
+**Ops pendiente declarada:** `semanal=70.287.368` es la serie truncada pre-P5 (la carga
+del cronograma con las reglas nuevas espera al CEO). Dry-run read-only con la serie del
+mes completo y meta 60: neto agosto = **252.783.377,70**, flujo **+10.960.918,40**,
+caja **676.676.496,40** — el candado tambien cierra al peso.
+
+## 4. Estado de flags del motor (default = artefacto; producto = contrato)
+
+| Flag / parametro | Default motor (golden) | Valor de producto | Donde se fija |
+|---|---|---|---|
+| meses_rezago_recuperacion | 0 (mismo mes) | 1 | dominio (default) |
+| pct_aval_recaudo | 0 | 0.01 | dato del CEO |
+| mora_sobre_recaudo | False (base=bruto) | True | dominio (default True) |
+| primer_mes_acumula_flujo | False (caja fija) | True | servicio (siempre) |
+| crec_pct_mensual_2 / corte | None | 0.015 / 10 | dato del CEO |
+| iva_egreso_por_mes | None | liquidacion real+proyectada | servicio |
+| recaudo_previo_por_semana | None | serie del cronograma | servicio |
+
+`test_golden_master` (valida al peso contra `simular()` del artefacto, tolerancia
+0,042 COP) corre con TODOS los defaults ⇒ el artefacto se reproduce bit a bit.
+
+## 5. Diff completo del motor y sus capas (`0f391e8~1..main`, 1.571 lineas)
+
+Archivos: motor.py · impactos.py · ejecucion/service.py · obligaciones/reconciliacion.py
+· iva/proyectado.py · cartera_previa/cronograma.py · cartera_previa/router.py ·
+domain/parametros_proyeccion.py · proyeccion/service.py · frontend/src/lib/egreso.ts
+
+```diff
+diff --git a/backend/app/cartera_previa/cronograma.py b/backend/app/cartera_previa/cronograma.py
+new file mode 100644
+index 0000000..6a9b030
+--- /dev/null
++++ b/backend/app/cartera_previa/cronograma.py
+@@ -0,0 +1,302 @@
++# backend/app/cartera_previa/cronograma.py
++"""SUP-4 (CEO 2026-08-22) — el cronograma real de pagos, agregado para el motor.
++
++"Semanalmente, lunes podría ser, se carga el cronograma y el loantape para que
++actualice info" + "cargar tal cantidad de detalle volverá más pesada la app y no es
++necesario; necesito datos completos que tú puedes calcular".
++
++Así que este parser **no persiste las ~9.900 cuotas**: las agrega a dos cosas ligeras
++que COMPAS ya sabe consumir.
++
++  1. `serie` — recaudo pendiente y nº de créditos pagando POR SEMANA GLOBAL (el ancla
++     del motor: miércoles 2026-03-04 = semana 1). Es la cartera ya originada: cada
++     crédito con SU cuota real pactada, incluidos plazos que ni están en el catálogo
++     (P39S). Lo que el motor proyecta con las cuotas nuevas es solo lo FUTURO.
++  2. `colocaciones_por_mes` — la cuota 0 es el desembolso, así que marca el mes en que
++     se colocó cada moto. Con eso `rampa_mes_en_curso` deja el mes vivo en el
++     REMANENTE hacia la meta (criterio CEO: agosto vive con la meta de 70 y se cierra
++     con lo realmente logrado).
++
++Criterios de dinero (P5 del ciclo mensual, CEO 2026-08-23):
++
++  · **El MES EN CURSO es un mes COMPLETO de proyección.** Sus cuotas se cuentan por el
++    monto pactado, estén pagadas, parciales o pendientes: la gráfica proyecta lo que el
++    mes debe recaudar, no lo que le falta por recaudar. (Antes se descartaban las
++    pagadas y agosto-2026 entraba con 2 semanas en vez de 4.)
++  · **Meses FUTUROS:** solo lo que aún puede llegar — una cuota ya prepagada no vuelve
++    a entrar; una parcial cuenta su saldo.
++  · **Meses ANTERIORES:** lo vencido sin pagar se reporta aparte (mora real medida; no
++    se proyecta ni se inventa cuándo entra).
++  · **Regla de NO-SOLAPE:** la serie es la cartera originada HASTA EL CIERRE DEL MES
++    ANTERIOR. Los créditos desembolsados dentro del mes en curso son parte del objetivo
++    del mes y los proyecta el motor con la cuota nueva — si entraran también por aquí,
++    el mes contaría dos veces las motos ya colocadas. Un crédito sin cuota 0 en el
++    export se asume preexistente (no se descarta plata sin razón explícita).
++
++Regla 7: encabezados que no cuadran → error que LISTA esperado vs encontrado; una fila
++ilegible no frena el lote, se reporta.
++"""
++
++import unicodedata
++from dataclasses import dataclass, field
++from datetime import date
++from decimal import Decimal, InvalidOperation
++from io import BytesIO
++
++from openpyxl import load_workbook
++
++# Mismo ancla que `motor.ANCLA_SEMANA` (miércoles 2026-03-04 = semana 1). Se replica
++# aquí para que el parser sea PURO (sin importar el motor).
++ANCLA_SEMANA = date(2026, 3, 4)
++MAX_FILAS_BUSQUEDA_ENCABEZADO = 10
++
++# clave interna → alias aceptados (normalizados: minúsculas y sin tildes)
++COLUMNAS: dict[str, tuple[str, ...]] = {
++    # el PRIMER alias es la etiqueta legible que se muestra en el error (regla 7)
++    "credito": ("crédito", "credito", "loanbook_codigo", "codigo"),
++    "cuota": ("cuota #", "cuota", "n cuota", "numero cuota"),
++    "fecha": ("fecha programada", "fecha", "fecha_programada"),
++    "monto": ("monto total", "monto", "valor cuota"),
++    "estado": ("estado",),
++}
++OPCIONALES: dict[str, tuple[str, ...]] = {
++    "pagado": ("pagado",),
++    "saldo": ("saldo",),
++}
++
++
++class EncabezadosNoReconocidos(Exception):
++    """El archivo no trae las columnas del contrato (regla 7: fail-loud)."""
++
++
++class FilaIlegible(Exception):
++    """Una fila puntual no se pudo transformar sin interpretar."""
++
++
++@dataclass(frozen=True)
++class ResumenCronograma:
++    """Lo que el cronograma aporta, ya digerido."""
++
++    serie: list[dict]  # [{semana_global, recaudo, n_activos}] — para el motor
++    colocaciones_por_mes: dict[str, int]  # 'YYYY-MM' → motos colocadas (cuota 0)
++    creditos: int
++    cuotas_futuras: int
++    recaudo_futuro: Decimal
++    vencido_sin_pagar: Decimal  # mora real medida (NO se proyecta)
++    creditos_en_mora: int
++    errores: list[str] = field(default_factory=list)
++
++
++def _norm(v: object) -> str:
++    s = str(v or "").strip().lower()
++    s = unicodedata.normalize("NFKD", s)
++    return "".join(c for c in s if not unicodedata.combining(c))
++
++
++def _mapear(celdas: list[object]) -> dict[str, int] | None:
++    normalizadas = [_norm(c) for c in celdas]
++    mapa: dict[str, int] = {}
++    for clave, alias in {**COLUMNAS, **OPCIONALES}.items():
++        alias_norm = {_norm(a) for a in alias}
++        for i, h in enumerate(normalizadas):
++            if h and h in alias_norm:
++                mapa[clave] = i
++                break
++    return mapa if all(k in mapa for k in COLUMNAS) else None
++
++
++def _fecha(v: object, fila: int) -> date:
++    if isinstance(v, date):
++        return v
++    if hasattr(v, "date"):
++        return v.date()
++    s = str(v or "").strip()[:10]
++    for sep in ("-", "/"):
++        partes = s.split(sep)
++        if len(partes) == 3:
++            try:
++                a, b, c = (int(p) for p in partes)
++                return date(a, b, c) if len(partes[0]) == 4 else date(c, b, a)
++            except ValueError:
++                break
++    raise FilaIlegible(f"fila {fila}: fecha programada ilegible ('{s}')")
++
++
++def _monto(v: object, fila: int, campo: str) -> Decimal:
++    if v in (None, ""):
++        return Decimal("0")
++    if isinstance(v, Decimal):
++        return v
++    if isinstance(v, (int, float)):
++        return Decimal(str(v))
++    s = str(v).strip().replace("$", "").replace(" ", "")
++    try:
++        if "," in s and "." in s:  # es-CO: 1.452,94
++            s = s.replace(".", "").replace(",", ".")
++        elif "," in s:
++            s = s.replace(",", ".")
++        return Decimal(s)
++    except InvalidOperation:
++        raise FilaIlegible(f"fila {fila}: {campo} ilegible ('{v}')") from None
++
++
++def semana_global(f: date) -> int:
++    """Réplica de `motor.indice_semana`: floor((fecha − ancla)/7) + 1."""
++    return (f - ANCLA_SEMANA).days // 7 + 1
++
++
++def parsear_cronograma(
++    contenido: bytes, hoy: date, mes_en_curso: tuple[int, int] | None = None
++) -> ResumenCronograma:
++    """xlsx del cronograma → series agregadas.
++
++    `hoy` marca el corte entre lo vencido (mora medida) y lo que aún puede llegar.
++    `mes_en_curso` (P5) es el mes que la gráfica proyecta COMPLETO y el que define el
++    corte de no-solape; None = se deriva de `hoy`."""
++    mes_curso = mes_en_curso or (hoy.year, hoy.month)
++    clave_curso = f"{mes_curso[0]:04d}-{mes_curso[1]:02d}"
++    wb = load_workbook(BytesIO(contenido), read_only=True, data_only=True)
++    ws = wb.active
++
++    mapa: dict[str, int] | None = None
++    fila_encabezado = 0
++    mejores: list[str] = []
++    for i, row in enumerate(ws.iter_rows(max_row=MAX_FILAS_BUSQUEDA_ENCABEZADO), 1):
++        celdas = [c.value for c in row]
++        mapa = _mapear(celdas)
++        if mapa is not None:
++            fila_encabezado = i
++            break
++        con_texto = [str(c) for c in celdas if c not in (None, "")]
++        if len(con_texto) > len(mejores):
++            mejores = con_texto
++    if mapa is None:
++        esperadas = ", ".join(a[0] for a in COLUMNAS.values())
++        encontradas = ", ".join(mejores) or "(ninguna)"
++        raise EncabezadosNoReconocidos(
++            f"encabezados no reconocidos: se esperaba una fila con [{esperadas}]; "
++            f"lo más parecido fue [{encontradas}]. Verifica que sea el export del "
++            "'Cronograma General'."
++        )
++
++    recaudo: dict[int, Decimal] = {}
++    activos: dict[int, set] = {}
++    colocaciones: dict[str, int] = {}
++    creditos: set[str] = set()
++    en_mora: set[str] = set()
++    origen_mes: dict[str, str] = {}  # crédito → 'YYYY-MM' de su desembolso (cuota 0)
++    cuotas: list[tuple[int, str, date, str, object, object]] = []
++    vencido = Decimal("0")
++    cuotas_futuras = 0
++    errores: list[str] = []
++
++    # ── 1ª pasada: leer las filas y ubicar el DESEMBOLSO de cada crédito ──
++    # (el corte de no-solape necesita saber en qué mes se originó cada crédito, y la
++    #  cuota 0 puede venir en cualquier orden respecto de sus cuotas)
++    for n, row in enumerate(
++        ws.iter_rows(min_row=fila_encabezado + 1), fila_encabezado + 1
++    ):
++        celdas = [c.value for c in row]
++        if all(c in (None, "") for c in celdas):
++            continue
++
++        def celda(clave: str, _c: list[object] = celdas) -> object:
++            i = mapa.get(clave)
++            return _c[i] if i is not None and i < len(_c) else None
++
++        try:
++            credito = str(celda("credito") or "").strip()
++            if not credito:
++                continue
++            creditos.add(credito)
++            f = _fecha(celda("fecha"), n)
++            estado = _norm(celda("estado"))
++            # la cuota 0 es el DESEMBOLSO: marca el mes de colocación, no recaudo
++            if str(celda("cuota")).strip() in ("0", "0.0"):
++                clave_mes = f"{f.year:04d}-{f.month:02d}"
++                colocaciones[clave_mes] = colocaciones.get(clave_mes, 0) + 1
++                origen_mes[credito] = clave_mes
++                continue
++            cuotas.append((n, credito, f, estado, celda("saldo"), celda("monto")))
++        except FilaIlegible as e:
++            errores.append(str(e))
++
++    # ── 2ª pasada: armar la serie con los criterios del contrato ──
++    for n, credito, f, estado, saldo, monto in cuotas:
++        try:
++            # NO-SOLAPE: los créditos originados dentro del mes en curso (o después)
++            # son del objetivo del mes → los proyecta el motor, no esta serie. Un
++            # crédito sin cuota 0 en el export se asume preexistente.
++            if origen_mes.get(credito, "") >= clave_curso:
++                continue
++            mes_cuota = f"{f.year:04d}-{f.month:02d}"
++            if mes_cuota < clave_curso:
++                # mes ya pasado: lo no cobrado es mora medida, se reporta aparte
++                falta = (
++                    _monto(saldo, n, "saldo")
++                    if saldo not in (None, "")
++                    else _monto(monto, n, "monto total")
++                )
++                if estado != "pagada" and falta > 0:
++                    vencido += falta
++                    en_mora.add(credito)
++                continue
++            if mes_cuota == clave_curso:
++                # EL MES EN CURSO ES UN MES COMPLETO: cuenta la cuota pactada, esté
++                # pagada, parcial o pendiente (proyecta lo que el mes debe recaudar).
++                valor = _monto(monto, n, "monto total")
++            else:
++                # mes futuro: solo lo que todavía puede llegar
++                if estado == "pagada":
++                    continue
++                valor = (
++                    _monto(saldo, n, "saldo")
++                    if saldo not in (None, "")
++                    else _monto(monto, n, "monto total")
++                )
++            if valor <= 0:
++                continue
++            s = semana_global(f)
++            recaudo[s] = recaudo.get(s, Decimal("0")) + valor
++            activos.setdefault(s, set()).add(credito)
++            cuotas_futuras += 1
++        except FilaIlegible as e:
++            errores.append(str(e))
++
++    serie = [
++        {
++            "semana_global": s,
++            "recaudo": recaudo[s].quantize(Decimal("0.01")),
++            "n_activos": len(activos[s]),
++        }
++        for s in sorted(recaudo)
++    ]
++    return ResumenCronograma(
++        serie=serie,
++        colocaciones_por_mes=colocaciones,
++        creditos=len(creditos),
++        cuotas_futuras=cuotas_futuras,
++        recaudo_futuro=sum((f["recaudo"] for f in serie), Decimal("0")),
++        vencido_sin_pagar=vencido,
++        creditos_en_mora=len(en_mora),
++        errores=errores,
++    )
++
++
++def rampa_mes_en_curso(
++    colocaciones_por_mes: dict[str, int], mes: tuple[int, int], meta: int
++) -> dict[str, int]:
++    """P4 (CEO 2026-08-23) — el mes en curso proyecta LA META, no el remanente.
++
++        "El mes en curso son proyecciones basadas en los objetivos planteados... una
++        cosa es el que se lleva real parcial y otra cosa es el objetivo a llegar."
++
++    SUPERA el criterio de SUP-4 (remanente hacia la meta): lo ya colocado no es insumo
++    del motor, es lectura de desviación (el termómetro de P6). El motor proyecta el mes
++    completo con el objetivo, y la regla de no-solape saca de la serie los créditos
++    originados dentro del mes para que nada se cuente dos veces.
++
++    `colocaciones_por_mes` se conserva en la firma: es el dato que el termómetro compara
++    contra la meta ("llevamos 47 de 70")."""
++    clave = f"{mes[0]:04d}-{mes[1]:02d}"
++    return {clave: meta}
+diff --git a/backend/app/cartera_previa/router.py b/backend/app/cartera_previa/router.py
+new file mode 100644
+index 0000000..82cd4da
+--- /dev/null
++++ b/backend/app/cartera_previa/router.py
+@@ -0,0 +1,157 @@
++# backend/app/cartera_previa/router.py
++"""/api/v1/cartera-previa — la carga semanal del cronograma (SUP-4).
++
++El CEO sube el cronograma (los lunes) y COMPAS hace el resto: agrega la cartera ya
++originada a la serie semanal que consume el motor y la persiste. Sin tocar la base a
++mano y sin engordar la app (se guardan ~80 semanas, no ~9.900 cuotas).
++
++**P4 del ciclo mensual:** la carga NO escribe la META del mes en curso — eso es dato
++del CEO. Devuelve los insumos del termómetro (meta vigente vs. colocadas) para que la
++desviación se lea aparte, sin contaminar la proyección.
++
++RBAC `proyeccion:gestionar` (mueve la proyección) + `verify_origin`. Fail-closed: un
++archivo vacío o con encabezados desconocidos NO pisa la cartera real (422)."""
++
++import os
++from decimal import Decimal
++
++from fastapi import APIRouter, Depends, HTTPException, UploadFile
++
++from app.auth.deps import require_permission
++from app.auth.models import User
++from app.auth.router import verify_origin
++from app.cartera_previa import service
++from app.cartera_previa.cronograma import (
++    EncabezadosNoReconocidos,
++    parsear_cronograma,
++)
++from app.core.money import money_str
++from app.core.time import today_bogota
++from app.domain.cartera_previa import CarteraPreviaRecaudo, ColocacionMes
++from app.parametros_proyeccion import service as parametros_service
++from app.proyeccion.motor import colocacion_mensual
++
++router = APIRouter(prefix="/cartera-previa", tags=["cartera-previa"])
++
++MAX_BYTES = 20 * 1024 * 1024  # el cronograma completo pesa más que una factura
++
++
++@router.post("/cargar-cronograma")
++async def cargar_cronograma(
++    archivo: UploadFile,
++    user: User = Depends(require_permission("proyeccion:gestionar")),
++    _: None = Depends(verify_origin),
++):
++    """Cronograma real → serie semanal de la cartera ya originada + rampa del mes en
++    curso. Devuelve el resumen de lo que cambió (créditos, recaudo futuro, mora real
++    medida y colocaciones por mes)."""
++    nombre = archivo.filename or "cronograma.xlsx"
++    ext = os.path.splitext(nombre)[1].lower()
++    if ext != ".xlsx":
++        raise HTTPException(
++            422, f"extensión '{ext}' no soportada: el cronograma es un .xlsx"
++        )
++    contenido = await archivo.read(MAX_BYTES + 1)
++    if len(contenido) > MAX_BYTES:
++        raise HTTPException(422, "el archivo supera el límite de 20 MB")
++
++    try:
++        # P5: el mes en curso se proyecta COMPLETO y define el corte de no-solape (los
++        # créditos originados dentro de él son del objetivo del mes, no de la serie).
++        hoy_bog = today_bogota()
++        resumen = parsear_cronograma(
++            contenido, hoy=hoy_bog, mes_en_curso=(hoy_bog.year, hoy_bog.month)
++        )
++    except EncabezadosNoReconocidos as e:
++        raise HTTPException(422, str(e)) from e
++
++    # Fail-closed: una carga vacía dejaría la cartera real en cero. Es MUCHO más
++    # probable que sea el archivo equivocado que un negocio sin cuotas por cobrar.
++    if not resumen.serie:
++        raise HTTPException(
++            422,
++            "el cronograma quedó vacío (sin cuotas por cobrar hacia adelante): no se "
++            "pisa la cartera cargada. Verifica que sea el export correcto.",
++        )
++
++    # 1. la serie: foto NUEVA (las semanas que ya no existen se van con la vieja)
++    nuevas = {f["semana_global"] for f in resumen.serie}
++    for vieja in await CarteraPreviaRecaudo.find_all().to_list():
++        if vieja.semana_global not in nuevas:
++            await vieja.delete()
++    await service.cargar_serie(resumen.serie, user.id)
++
++    # 2. P6 — las colocaciones REALES por mes se persisten: son el insumo del
++    # TERMÓMETRO de desviación ("llevamos 35 de la meta de 60"). NO entran al motor: la
++    # curva proyecta la META. Foto nueva en cada carga.
++    for mes_col, unidades in resumen.colocaciones_por_mes.items():
++        existente = await ColocacionMes.find_one(ColocacionMes.mes == mes_col)
++        if existente is None:
++            await ColocacionMes(mes=mes_col, unidades=unidades).insert()
++        elif existente.unidades != unidades:
++            existente.unidades = unidades
++            await existente.save()
++
++    # 3. P4 del ciclo mensual (CEO 2026-08-23) — la carga semanal ya NO escribe la META
++    # del mes en curso.
++    #
++    # SUPERSEDE la automatización de SUP-4, que la dejaba en el REMANENTE hacia la meta
++    # (meta − colocadas) y con eso **pisaba el dato del CEO**: agosto-2026 estaba en 70
++    # por decisión suya y la carga lo bajó a 35. Es exactamente el error que no se puede
++    # repetir ("la formulación no puede pisar el motor ni el dato").
++    #
++    # La META es dato del CEO (la rampa de Supuestos); si no la fijó, manda lo que el
++    # motor proyecta con `motos_base` + crecimiento. Aquí solo se LEE, para devolverla
++    # junto a lo colocado y que la pantalla arme la desviación.
++    hoy = today_bogota()
++    mes_curso = f"{hoy.year:04d}-{hoy.month:02d}"
++    params = await parametros_service.obtener_vigente()
++    meta_del_mes = (
++        params.rampa_unidades.get(
++            mes_curso,
++            colocacion_mensual(
++                params.motos_base,
++                params.crec_pct_mensual,
++                1,
++                None,
++                params.crec_pct_mensual_2,
++                params.crec_mes_corte,
++            )[0],
++        )
++        if params is not None
++        else None
++    )
++
++    return {
++        "creditos": resumen.creditos,
++        "semanas": len(resumen.serie),
++        "cuotas_futuras": resumen.cuotas_futuras,
++        "recaudo_futuro": money_str(resumen.recaudo_futuro),
++        "vencido_sin_pagar": money_str(resumen.vencido_sin_pagar),
++        "creditos_en_mora": resumen.creditos_en_mora,
++        "colocaciones_por_mes": resumen.colocaciones_por_mes,
++        # P4 — insumos del TERMÓMETRO del mes en curso (Paso 2 del contrato): la meta
++        # vigente contra lo realmente colocado. La carga NO toca la meta.
++        "mes_en_curso": mes_curso,
++        "meta_del_mes": meta_del_mes,
++        "colocadas_del_mes": resumen.colocaciones_por_mes.get(mes_curso, 0),
++        "errores": resumen.errores,
++    }
++
++
++@router.get("/serie")
++async def serie(_: User = Depends(require_permission("dashboard:leer"))):
++    """La serie vigente (para ver qué tiene el motor hoy). Montos como string."""
++    recaudo, activos = await service.obtener_series()
++    return {
++        "semanas": len(recaudo),
++        "recaudo_total": money_str(sum(recaudo.values(), Decimal("0"))),
++        "detalle": [
++            {
++                "semana_global": s,
++                "recaudo": money_str(recaudo[s]),
++                "n_activos": activos.get(s, 0),
++            }
++            for s in sorted(recaudo)
++        ],
++    }
+diff --git a/backend/app/domain/parametros_proyeccion.py b/backend/app/domain/parametros_proyeccion.py
+index 2385f07..52825dc 100644
+--- a/backend/app/domain/parametros_proyeccion.py
++++ b/backend/app/domain/parametros_proyeccion.py
+@@ -103,6 +103,26 @@ class ParametrosProyeccion(Document):
+     pct_recuperacion: Money
+     pct_default: Money
+     pct_provision: Money
++    # SUP-2 (CEO 2026-08-22): "TODOS los supuestos que pueden afectar la proyección
++    # tienen que ser modificables". Mora/recuperación de los escenarios EXTREMOS (el
++    # base son los dos campos de arriba): dejan de vivir en PRESETS_ESCENARIO. None =
++    # se conserva el delta en puntos de SUP-1 sobre el preset (compatibilidad).
++    pct_mora_pesimista: Money | None = None
++    pct_recuperacion_pesimista: Money | None = None
++    pct_mora_optimista: Money | None = None
++    pct_recuperacion_optimista: Money | None = None
++    # Meses de rezago de la recuperación de mora (v9.1 recupera la del mes anterior:
++    # la mora es diferimiento, no pérdida). 0 = la semántica del artefacto.
++    meses_rezago_recuperacion: int = Field(default=1, ge=0, le=12)
++    # Fracción del pago de IVA que se prefondea mes a mes (1 = 100 %, como hasta hoy).
++    pct_prefondeo_iva: Money = Decimal("1")
++    # Fondo AVAL propio / autoseguro: % del recaudo de crédito reservado cada mes.
++    pct_aval_recaudo: Money = Decimal("0")
++    # SUP-6 (CEO 2026-08-23): la mora/default/provisión caen SOLO sobre el recaudo de
++    # cuotas semanales. La cuota inicial se paga de contado: no puede caer en mora ni
++    # incumplirse. True es el default de PRODUCTO (la regla del CEO); el motor conserva
++    # False como default para que el golden master siga siendo bit a bit.
++    mora_sobre_recaudo: bool = True
+     modificado_por: str | None = None
+ 
+     class Settings:
+@@ -122,6 +142,24 @@ class ParametrosProyeccion(Document):
+                 raise ValueError(f"rampa_unidades: unidades negativas en {mes}")
+         return v
+ 
++    @model_validator(mode="after")
++    def _pcts_editables_en_rango(self) -> "ParametrosProyeccion":
++        """SUP-2: una mora, recuperación, prefondeo o aval fuera de [0, 1] no tiene
++        sentido financiero — se rechaza al escribir (fail-closed), no se acota en
++        silencio."""
++        for campo in (
++            "pct_mora_pesimista",
++            "pct_recuperacion_pesimista",
++            "pct_mora_optimista",
++            "pct_recuperacion_optimista",
++            "pct_prefondeo_iva",
++            "pct_aval_recaudo",
++        ):
++            v = getattr(self, campo)
++            if v is not None and not (Decimal("0") <= v <= Decimal("1")):
++                raise ValueError(f"{campo} debe ser una fracción entre 0 y 1")
++        return self
++
+     @model_validator(mode="after")
+     def _tramo2_completo(self) -> "ParametrosProyeccion":
+         """SUP-1: la tasa del segundo tramo y su mes de corte van JUNTOS — media
+diff --git a/backend/app/iva/proyectado.py b/backend/app/iva/proyectado.py
+new file mode 100644
+index 0000000..4043295
+--- /dev/null
++++ b/backend/app/iva/proyectado.py
+@@ -0,0 +1,84 @@
++# backend/app/iva/proyectado.py
++"""SUP-3 (CEO 2026-08-22) — el IVA de las ventas FUTURAS entra a la proyección.
++
++COMPAS solo liquidaba el IVA de facturas REGISTRADAS: las ventas que el motor
++proyecta no generaban IVA, así que la compuerta IVA→caja no movía un peso y de
++sep–dic en adelante el IVA a pagar se veía en cero. El modelo v9.1 de Fabián sí lo
++deriva de las unidades colocadas (hoja `IVA`, filas 16-20):
++
++    ventas_con_IVA  = Σ (unidades_modelo × precio_venta_con_IVA)     (D16)
++    IVA generado    = ventas_con_IVA × tarifa/(1+tarifa)             (D17)
++    IVA descontable = compras_Auteco × tarifa/(1+tarifa)             (D19)
++    IVA neto        = generado − descontable                         (D20)
++
++**Cómo se integra sin tocar nada**: esta capa NO liquida. Convierte la colocación
++proyectada en `FacturaIva` sintéticas y se las entrega al liquidador EXISTENTE junto
++con las reales — el cuatrimestre, el calendario DIAN, el saldo a favor declarado, el
++arrastre y la compuerta siguen exactamente igual.
++
++**Candado de precisión** (el principio del CEO para el mes en curso): un mes que ya
++tiene dato real —cerrado, o con su IVA generado registrado— NO se proyecta. Su
++realidad manda y jamás se suman las dos cosas.
++
++⚠ El `costo_auteco` del catálogo viene CON IVA (prod: Raider 6.720.557 = 5.638.974 ×
++1,19), por eso el descontable se EXTRAE con tarifa/(1+tarifa) en vez de multiplicar
++por la tarifa: multiplicar cobraría el IVA dos veces.
++"""
++
++from dataclasses import dataclass
++from decimal import Decimal
++
++from app.iva.liquidacion import FacturaIva, iva_desde_total
++
++
++@dataclass(frozen=True)
++class ModeloIva:
++    """Lo que un modelo del catálogo aporta al IVA: cuánto factura al cliente y
++    cuánto cuesta comprarlo (ambos CON IVA), y su peso en la colocación."""
++
++    nombre: str
++    precio_venta_con_iva: Decimal
++    costo_auteco_con_iva: Decimal
++    mix: Decimal
++
++
++def facturas_iva_proyectadas(
++    colocacion_por_mes: list[int],
++    meses_ym: list[tuple[int, int]],
++    modelos: list[ModeloIva],
++    tarifa: Decimal,
++    meses_con_dato_real: frozenset[str] | set[str] | None = None,
++) -> list[FacturaIva]:
++    """Colocación proyectada → `FacturaIva` sintéticas (una venta y una compra por
++    mes) listas para el liquidador. Los meses con dato real se omiten enteros.
++
++    El reparto entre modelos es FRACCIONARIO (`total × mix`), como v9.1 en los meses
++    proyectados: en el futuro no hay unidades enteras que respetar, y el redondeo
++    entero introduciría un sesgo mes a mes."""
++    reales = meses_con_dato_real or frozenset()
++    fuera: list[FacturaIva] = []
++    for i, (anio, mes) in enumerate(meses_ym):
++        clave = f"{anio:04d}-{mes:02d}"
++        if clave in reales:
++            continue  # su realidad manda; no se proyecta encima
++        unidades = colocacion_por_mes[i] if i < len(colocacion_por_mes) else 0
++        if unidades <= 0:
++            continue
++        fecha = f"{clave}-01"
++        ventas_con_iva = sum(
++            (Decimal(unidades) * m.mix * m.precio_venta_con_iva for m in modelos),
++            Decimal("0"),
++        )
++        compras_con_iva = sum(
++            (Decimal(unidades) * m.mix * m.costo_auteco_con_iva for m in modelos),
++            Decimal("0"),
++        )
++        generado = iva_desde_total(ventas_con_iva, tarifa)
++        descontable = iva_desde_total(compras_con_iva, tarifa)
++        if generado > 0:
++            fuera.append(FacturaIva("venta", fecha, generado))
++        if descontable > 0:
++            # el IVA de las compras a Auteco SÍ es descontable (decisión CEO
++            # 2026-07-31, ya aplicada a las facturas reales)
++            fuera.append(FacturaIva("compra", fecha, descontable, True))
++    return fuera
+diff --git a/backend/app/obligaciones/reconciliacion.py b/backend/app/obligaciones/reconciliacion.py
+index 0bac75d..f153979 100644
+--- a/backend/app/obligaciones/reconciliacion.py
++++ b/backend/app/obligaciones/reconciliacion.py
+@@ -56,6 +56,7 @@ def reconciliar(
+     caja_minima: Decimal,
+     *,
+     meses_anclados: frozenset[str] = frozenset(),
++    primer_mes_acumula: bool = False,
+ ) -> ResultadoReconciliado:
+     """`meses_anclados` (E1·P3): SOLO los meses CERRADOS quedan fuera de esta
+     reconciliación — el pasado es del libro (sus facturas ya no están pendientes). En
+@@ -87,7 +88,9 @@ def reconciliar(
+     meses_pago = sorted(m for m in cap if m in idx and m not in meses_anclados)
+     if not meses_pago:
+         return ResultadoReconciliado(
+-            ajustado=reacumular(resultado, [_CERO] * n, caja_minima),
++            ajustado=reacumular(
++                resultado, [_CERO] * n, caja_minima, primer_mes_acumula
++            ),
+             ventana=None,
+             interes_por_mes={},
+             capital_por_mes={},
+@@ -109,7 +112,7 @@ def reconciliar(
+         # el pago real es egreso: resta capital + interés del flujo
+         deltas[m] = _cop(deltas[m] - cap[mes] - interes[mes])
+ 
+-    ajustado = reacumular(resultado, deltas, caja_minima)
++    ajustado = reacumular(resultado, deltas, caja_minima, primer_mes_acumula)
+ 
+     # 3) coherencia concepto-a-concepto (§0 Sprint V1): `reacumular` ajustó flujo+caja
+     # pero dejó `pago_inventario`/`fondeo` con el valor PARAMÉTRICO. Dentro de la
+diff --git a/backend/app/proyeccion/ejecucion/service.py b/backend/app/proyeccion/ejecucion/service.py
+index 9ac04f1..b6341dd 100644
+--- a/backend/app/proyeccion/ejecucion/service.py
++++ b/backend/app/proyeccion/ejecucion/service.py
+@@ -86,23 +86,35 @@ def _conceptos_egreso(
+ def _egresos_anclados_del_mes(
+     ancla: AnclaMes, *, rubros: list[RubroInfo], neutros_ids: set[str]
+ ) -> dict[str, Decimal]:
+-    """Los 5 conceptos de egreso anclados del mes (magnitud POSITIVA), por estado."""
++    """Los 5 conceptos de egreso anclados del mes (magnitud POSITIVA), por estado.
++
++    P4 del ciclo mensual (CEO 2026-08-23) — **la Regla A / D-08 queda SOLO para meses
++    cerrados**. Un mes EN EJECUCIÓN muestra su PRESUPUESTO, igual que un mes futuro con
++    presupuesto: la gráfica del mes en curso es la proyección del objetivo, y lo
++    ejecutado se lee aparte como desviación (el termómetro de P6). Antes se mezclaba
++    (`ejecutado + max(0, definido − ejecutado)`), así que la misma fila tenía el gasto
++    medio real y el ingreso 100 % paramétrico — dos universos en una sola cuenta."""
+     if ancla.estado == CERRADO:
+         return _conceptos_egreso(
+             ancla.ejecutado_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
+         )
+-    if ancla.estado == PRESUPUESTO:
+-        return _conceptos_egreso(
+-            ancla.definido_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
+-        )
+-    # EN_EJECUCION → Regla A (D-08) por concepto: ejec + max(0, definido − ejec).
+-    ejec = _conceptos_egreso(
+-        ancla.ejecutado_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
+-    )
+-    defi = _conceptos_egreso(
++    return _conceptos_egreso(
+         ancla.definido_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
+     )
+-    return {c: ejec[c] + max(_CERO, defi[c] - ejec[c]) for c in _EGRESOS_ANCLADOS}
++
++
++def _es_anclable(ancla: AnclaMes) -> bool:
++    """Si este mes se ancla o se deja al motor paramétrico.
++
++    Un mes CERRADO se ancla siempre (su verdad es el libro). Un mes que se ancla al
++    PRESUPUESTO (en ejecución o futuro definido) necesita tener presupuesto: sin él,
++    anclar dejaría el gasto del mes en CERO, que es peor que la estimación del motor.
++    Fail-safe explícito, no silencioso."""
++    if ancla.estado == CERRADO:
++        return True
++    if ancla.estado not in _ANCLABLES:
++        return False
++    return bool(ancla.definido_por_rubro_id)
+ 
+ 
+ def _fila_anclada(
+@@ -126,6 +138,12 @@ def _fila_anclada(
+         + fila.adelanto
+         + fila.pago_inventario
+         + fila.fondeo
++        # P1 del ciclo mensual (candado aritmético, 2026-08-23): el fondo de AVAL es
++        # un egreso que E1 NO ancla (sale del recaudo, no de un rubro del libro), así
++        # que se CONSERVA del motor, igual que Auteco. Faltaba: todo mes anclado
++        # perdía el aval de sus egresos en silencio — en PROD, agosto-2026 son
++        # 546.241,68 que desaparecían de la cuenta.
++        + fila.aval
+     )
+     flujo = _cop(neto + egresos)
+     return replace(
+@@ -148,10 +166,15 @@ def anclar(
+     anclas: dict[str, AnclaMes],
+     rubros: list[RubroInfo],
+     neutros_ids: set[str],
++    primer_mes_acumula: bool = False,
+ ) -> ResultadoAjustado:
+     """Ancla la serie del motor a la ejecución real (§1) y re-acumula la caja. `anclas`
+     mapea 'YYYY-MM'→AnclaMes; los meses fuera del dict quedan intactos (motor). Con
+-    `anclas` vacío devuelve la base bit a bit (== golden, B1)."""
++    `anclas` vacío devuelve la base bit a bit (== golden, B1).
++
++    `primer_mes_acumula` (P3) viaja hasta `reacumular`: sin él, anclar el mes en curso
++    cambiaría su flujo y dejaría su caja congelada — el descuadre que el CEO vio en
++    agosto-2026."""
+     base = resultado.meses
+     n = len(base)
+     idx = {fila.mes: i for i, fila in enumerate(base)}
+@@ -160,8 +183,8 @@ def anclar(
+     ancladas: dict[int, MesProyeccion] = {}
+     deltas = [_CERO] * n
+     for mes, ancla in anclas.items():
+-        if mes not in idx or ancla.estado not in _ANCLABLES:
+-            continue  # fuera del horizonte o estado no anclable → motor intacto
++        if mes not in idx or not _es_anclable(ancla):
++            continue  # fuera del horizonte, no anclable o sin presupuesto → motor
+         m = idx[mes]
+         egr = _egresos_anclados_del_mes(ancla, rubros=rubros, neutros_ids=neutros_ids)
+         nueva = _fila_anclada(base[m], ancla, egr)
+@@ -169,12 +192,27 @@ def anclar(
+         deltas[m] = _cop(nueva.flujo - base[m].flujo)
+ 
+     # 2) re-acumular caja/flujo/estado con la mecánica del motor (D2/D1 la comparten).
+-    ajustado = reacumular(resultado, deltas, caja_minima)
++    ajustado = reacumular(resultado, deltas, caja_minima, primer_mes_acumula)
+ 
+     # 3) reescribir los campos POR CONCEPTO de los meses anclados (reacumular solo tocó
+     #    flujo/caja/estado). Así `neto + Σ egresos == flujo` al peso en la serie (B6).
+     filas = list(ajustado.meses)
+     for m, nueva in ancladas.items():
++        # SUP-5 · honestidad: la mora paramétrica solo se borra cuando el INGRESO dejó
++        # de ser del motor (mes cerrado: `ingreso_real` reemplaza el neto). En un mes EN
++        # EJECUCIÓN el ingreso sigue siendo paramétrico, así que su mora SÍ explica la
++        # cifra y debe verse — borrarla dejaba la columna «Ajuste mora/default» con un
++        # valor que ninguna fila del desglose sustentaba.
++        ingreso_es_del_libro = anclas[filas[m].mes].ingreso_real is not None
++        cartera = (
++            {
++                "mora": Decimal("0.00"),
++                "recuperacion": Decimal("0.00"),
++                "default": Decimal("0.00"),
++            }
++            if ingreso_es_del_libro
++            else {}
++        )
+         filas[m] = replace(
+             filas[m],
+             neto=nueva.neto,
+@@ -184,5 +222,6 @@ def anclar(
+             int_deuda=nueva.int_deuda,
+             iva=nueva.iva,
+             egresos=nueva.egresos,
++            **cartera,
+         )
+     return replace(ajustado, meses=filas)
+diff --git a/backend/app/proyeccion/impactos.py b/backend/app/proyeccion/impactos.py
+index a004460..38483ec 100644
+--- a/backend/app/proyeccion/impactos.py
++++ b/backend/app/proyeccion/impactos.py
+@@ -3,14 +3,17 @@
+ Un `Ajuste` es un delta declarativo sobre la serie mensual que YA produjo el motor:
+ "+$3.000.000 en arriendos desde sep-2026", "ingreso -10% desde ene-2027". Se aplica
+ como post-proceso PURO (ni una línea del motor cambia) y la caja se re-acumula en
+-Decimal con la MISMA mecánica del motor (primer mes fijo = caja inicial;
+-caja[m] = caja[m-1] + flujo[m]).
++Decimal con la MISMA mecánica del motor: `caja[m] = caja[m-1] + flujo[m]`.
+ 
+ Límite honesto (spec §2): los ajustes son efectos DIRECTOS de caja. No pasan por
+ mora/recuperación ni recalculan cartera/GPS/inventario — eso sería tocar el motor. El
+ porcentaje de gasto se aplica sobre `gastos_fijos` del mes; el de ingreso, sobre el
+-`neto` (ingreso post-mora). Un ajuste que arranca en el primer mes del horizonte no
+-mueve la caja de ese mes (el motor fija el primer mes); los ajustes son a futuro.
++`neto` (ingreso post-mora).
++
++P3 del ciclo mensual: con `primer_mes_acumula=True` (lo que pasa el servicio) un ajuste
++en el PRIMER mes del horizonte también mueve su caja — el candado no admite excepciones.
++El default False conserva la convención del artefacto (primer mes fijo = caja inicial),
++que es la que certifica el golden master.
+ """
+ 
+ from __future__ import annotations
+@@ -74,9 +77,12 @@ def aplicar_impactos(
+     resultado: ResultadoProyeccion,
+     ajustes: list[Ajuste],
+     caja_minima: Decimal,
++    primer_mes_acumula: bool = False,
+ ) -> ResultadoAjustado:
+     """Aplica los ajustes sobre la serie del motor y re-acumula la caja. Con `ajustes`
+-    vacío devuelve la serie base bit a bit (regla de oro del sprint)."""
++    vacío devuelve la serie base bit a bit (regla de oro del sprint). P3:
++    `primer_mes_acumula` viaja a `reacumular` (un ajuste en el mes en curso también
++    mueve su caja)."""
+     base = resultado.meses
+     n = len(base)
+     meses_idx = {fila.mes: i for i, fila in enumerate(base)}
+@@ -91,25 +97,34 @@ def aplicar_impactos(
+         for m in range(i0, i1 + 1):
+             deltas[m] = _cop(deltas[m] + _delta_flujo(base[m], aj))
+ 
+-    return reacumular(resultado, deltas, caja_minima)
++    return reacumular(resultado, deltas, caja_minima, primer_mes_acumula)
+ 
+ 
+ def reacumular(
+     resultado: ResultadoProyeccion,
+     deltas: list[Decimal],
+     caja_minima: Decimal,
++    primer_mes_acumula: bool = False,
+ ) -> ResultadoAjustado:
+     """Aplica un delta de flujo por mes YA calculado y re-acumula la caja con la MISMA
+-    regla del motor (primer mes fijo; caja[m]=caja[m-1]+flujo[m]). Lo comparten la capa
+-    de impactos (deltas de ajustes) y la reconciliación de obligaciones (deltas de
+-    netear el paramétrico y sumar el calendario real). Deltas todos cero => base bit a
+-    bit."""
++    regla del motor (caja[m]=caja[m-1]+flujo[m]). Lo comparten la capa de impactos
++    (deltas de ajustes), la reconciliación de obligaciones (deltas de netear el
++    paramétrico y sumar el calendario real) y el anclaje E1. Deltas todos cero => base
++    bit a bit.
++
++    P3 del ciclo mensual: con `primer_mes_acumula` el delta del PRIMER mes también mueve
++    su caja. El efectivo de arranque se DERIVA de la propia serie base
++    (`caja[0] − flujo[0]`), exacto porque el motor la construyó con esa misma regla —
++    así no hay un segundo parámetro que pueda desincronizarse del motor. False conserva
++    la convención del artefacto (primer mes fijo), la que exige el golden master."""
+     base = resultado.meses
+     filas: list[MesProyeccion] = []
+-    caja_prev = _CERO
++    caja_prev = (
++        _cop(base[0].caja - base[0].flujo) if primer_mes_acumula and base else _CERO
++    )
+     for m, fila in enumerate(base):
+         flujo = _cop(fila.flujo + deltas[m])
+-        caja = fila.caja if m == 0 else _cop(caja_prev + flujo)
++        caja = _cop(caja_prev + flujo) if m > 0 or primer_mes_acumula else fila.caja
+         caja_prev = caja
+         filas.append(
+             replace(
+diff --git a/backend/app/proyeccion/motor.py b/backend/app/proyeccion/motor.py
+index a4ea9ff..a3676a2 100644
+--- a/backend/app/proyeccion/motor.py
++++ b/backend/app/proyeccion/motor.py
+@@ -317,14 +317,29 @@ def neto_por_mora(
+     pct_recuperacion: Decimal,
+     pct_default: Decimal,
+     pct_provision: Decimal = Decimal("0"),
++    mora_a_recuperar: Decimal | None = None,
++    base_mora: Decimal | None = None,
+ ) -> AjusteMora:
+     """Aplica mora/recuperación/default al bruto (réplica FC filas 17-20 del artefacto,
+     MENOS la provisión, que sale del flujo por 'caja veraz'). Los porcentajes son el
+-    valor del escenario por defecto; el motor los deja editar mes a mes."""
+-    mora = -bruto * pct_mora
+-    recuperacion = -mora * pct_recuperacion  # recupera parte de la mora
+-    default = -bruto * pct_default
+-    provision = -bruto * pct_provision
++    valor del escenario por defecto; el motor los deja editar mes a mes.
++
++    SUP-2 · `mora_a_recuperar`: la mora SOBRE LA QUE se calcula la recuperación. None
++    (default) = la mora del propio mes, la semántica del artefacto. Con un valor (la
++    mora de un mes anterior) la recuperación queda REZAGADA, como en el modelo v9.1
++    (`FC!E18 = −D17×E7`): la mora es diferimiento, y el dinero vuelve después.
++
++    SUP-6 · `base_mora`: SOBRE QUÉ se aplican mora/default/provisión. None (default) =
++    el bruto, la semántica del artefacto. Con un valor (el recaudo de cuotas) la cuota
++    inicial queda fuera — se paga de contado, no puede caer en mora ni incumplirse
++    (decisión CEO 2026-08-23; v9.1 `FC!17 = −L13×L6` ya lo hacía así). El `neto`
++    SIEMPRE parte del bruto: la inicial entra completa a caja."""
++    base = bruto if base_mora is None else base_mora
++    mora = -base * pct_mora
++    base_recup = mora if mora_a_recuperar is None else mora_a_recuperar
++    recuperacion = -base_recup * pct_recuperacion  # recupera parte de la mora
++    default = -base * pct_default
++    provision = -base * pct_provision
+     neto = bruto + mora + recuperacion + default
+     return AjusteMora(
+         mora=_cop(mora),
+@@ -568,6 +583,23 @@ class ParametrosMotor:
+     # Ver `colocacion_mensual`; ambos None = comportamiento histórico exacto.
+     crec_pct_mensual_2: Decimal | None = None
+     crec_mes_corte: int | None = None
++    # SUP-2 (CEO 2026-08-22): meses de REZAGO de la recuperación de mora. 0 = la
++    # semántica del artefacto (recupera en el mismo mes) → golden master intacto.
++    meses_rezago_recuperacion: int = 0
++    # SUP-2: fondo AVAL propio / autoseguro = % del recaudo de crédito que se reserva
++    # cada mes (v9.1 `PARAMETROS!C55` → `FC!33`). 0 = no existe (comportamiento de hoy).
++    pct_aval_recaudo: Decimal = Decimal("0")
++    # SUP-6 (CEO 2026-08-23): la mora/default/provisión caen SOLO sobre el recaudo de
++    # cuotas, no sobre la cuota inicial (que es de contado). False = la semántica del
++    # artefacto (base = bruto) → golden master intacto. El mismo criterio que ya usaba
++    # `pct_aval_recaudo`, que siempre midió sobre el recaudo.
++    mora_sobre_recaudo: bool = False
++    # P3 del ciclo mensual (CEO 2026-08-23): `caja_inicial` es el efectivo ANTERIOR al
++    # primer mes (el cierre del mes pasado), así que el flujo del primer mes SÍ la mueve
++    # — el candado `caja(mes) = caja(mes−1) + flujo(mes)` no admite excepciones. False =
++    # la semántica del artefacto, donde `caja_inicial` era "la plata que tengo hoy" a
++    # mitad del mes en curso → golden master intacto.
++    primer_mes_acumula_flujo: bool = False
+     # Cartera previa (111 créditos preexistentes): serie semanal REAL del LoanTape.
+     # semana global → recaudo / nº activos. Default None = sin cartera previa.
+     recaudo_previo_por_semana: dict[int, Decimal] | None = None
+@@ -609,6 +641,14 @@ class MesProyeccion:
+     flujo: Decimal
+     caja: Decimal
+     estado: str  # 'ok' | 'critico' | 'negativo'
++    # SUP-2: reserva del fondo AVAL propio (≤ 0). 0.00 si el % está en 0 (default).
++    aval: Decimal = Decimal("0.00")
++    # SUP-5: las tres variables de cartera POR SEPARADO, para que la pantalla pueda
++    # explicar el resultado (antes viajaban sumadas dentro de `neto`). Invariante:
++    # `neto == ingreso_bruto + mora + recuperacion + default`.
++    mora: Decimal = Decimal("0.00")  # ≤ 0 (resta)
++    recuperacion: Decimal = Decimal("0.00")  # ≥ 0 (vuelve)
++    default: Decimal = Decimal("0.00")  # ≤ 0 (no vuelve)
+ 
+ 
+ @dataclass(frozen=True)
+@@ -685,15 +725,29 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
+ 
+     filas: list[MesProyeccion] = []
+     caja = _cop(p.caja_inicial)
++    # SUP-2: historial de mora por mes para la recuperación REZAGADA (v9.1). Con
++    # rezago 0 no se usa (semántica del artefacto).
++    moras: list[Decimal] = []
+     for m, (y, mo) in enumerate(meses_ym):
+         bruto = recaudo[m] + iniciales[m]
++        rezago = p.meses_rezago_recuperacion
++        mora_a_recuperar: Decimal | None = None
++        if rezago > 0:
++            # la mora que toca recuperar este mes es la de `rezago` meses atrás; en
++            # los primeros meses no hay de dónde recuperar (no se inventa: 0).
++            i = m - rezago
++            mora_a_recuperar = moras[i] if i >= 0 else Decimal("0")
+         ajuste = neto_por_mora(
+             bruto,
+             ov_mora.get(m, p.pct_mora),
+             p.pct_recuperacion,
+             ov_def.get(m, p.pct_default),
+             p.pct_provision,
++            mora_a_recuperar,
++            # SUP-6: la cuota inicial es de contado → no entra a la base de la mora.
++            _cop(recaudo[m]) if p.mora_sobre_recaudo else None,
+         )
++        moras.append(ajuste.mora)
+         gastos_fijos = _cop(-p.gastos_fijos)
+         gps = _cop(-Decimal(cartera[m]) * p.gps_moto)
+         costo_nueva = _cop(-Decimal(colocacion[m]) * p.costo_moto_nueva)
+@@ -703,6 +757,9 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
+             else Decimal("0.00")
+         )
+         iva = _cop(-iva_por_mes.get(m, Decimal("0")))
++        # SUP-2: fondo AVAL propio = % del RECAUDO DE CRÉDITO (v9.1 FC!33 usa la fila
++        # del recaudo de cuotas, no el ingreso bruto: la cuota inicial no se asegura).
++        aval = _cop(-recaudo[m] * p.pct_aval_recaudo)
+         egresos = _cop(
+             gastos_fijos
+             + gps
+@@ -712,10 +769,14 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
+             + pago_inv[m]
+             + fondeo[m]
+             + iva
++            + aval
+         )
+         flujo = _cop(ajuste.neto + egresos)
+-        # primer mes: caja fija (= caja inicial); el flujo de ese mes no la mueve.
+-        if m > 0:
++        # P3: con `primer_mes_acumula_flujo` la caja acumula desde el primer mes (el
++        # arranque es el efectivo ANTERIOR al horizonte). Sin el flag se conserva la
++        # convención del artefacto: primer mes fijo (= caja inicial), su flujo no la
++        # mueve — necesario para que el golden master siga siendo bit a bit.
++        if m > 0 or p.primer_mes_acumula_flujo:
+             caja = _cop(caja + flujo)
+         filas.append(
+             MesProyeccion(
+@@ -735,6 +796,11 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
+                 fondeo=fondeo[m],
+                 int_deuda=int_deuda,
+                 iva=iva,
++                aval=aval,
++                # SUP-5: la explicación del ingreso, no solo su total
++                mora=ajuste.mora,
++                recuperacion=ajuste.recuperacion,
++                default=ajuste.default,
+                 egresos=egresos,
+                 flujo=flujo,
+                 caja=caja,
+diff --git a/backend/app/proyeccion/service.py b/backend/app/proyeccion/service.py
+index 05cf570..d4f880f 100644
+--- a/backend/app/proyeccion/service.py
++++ b/backend/app/proyeccion/service.py
+@@ -12,6 +12,7 @@ from decimal import Decimal
+ 
+ from app.cartera_previa import service as cartera_previa_service
+ from app.cierre.service import _caja_libro, _rubro_ajuste
++from app.cierre.transito import transito_heredado
+ from app.core.money import money_str
+ from app.domain.configuracion import ClaveConfig, Configuracion
+ from app.domain.mes_control import EstadoMes, MesControl
+@@ -23,7 +24,13 @@ from app.domain.parametros_proyeccion import (
+ )
+ from app.domain.transaccion import Transaccion
+ from app.facturas import service as facturas_service
+-from app.iva.liquidacion import liquidar, plan_fondo_provision, programar_egresos_iva
++from app.iva.liquidacion import (
++    FacturaIva,
++    liquidar,
++    plan_fondo_provision,
++    programar_egresos_iva,
++)
++from app.iva.proyectado import ModeloIva, facturas_iva_proyectadas
+ from app.modelos_moto import service as modelos_service
+ from app.obligaciones.reconciliacion import (
+     FacturaReconciliar,
+@@ -118,6 +125,70 @@ def _con_delta(preset: Decimal, delta: Decimal) -> Decimal:
+     return min(Decimal("1"), max(Decimal("0"), preset + delta))
+ 
+ 
++def _mora_del_escenario(
++    params: ParametrosProyeccion, escenario: str
++) -> tuple[Decimal, Decimal]:
++    """(pct_mora, pct_recuperacion) EFECTIVOS del escenario. Una sola fuente para el
++    motor y para lo que la pantalla muestra — si divergieran, el usuario vería unos
++    supuestos y la curva usaría otros.
++
++    SUP-2: si el CEO editó el escenario extremo, ese valor MANDA. Si no, se conserva
++    el delta en puntos de SUP-1 sobre el preset. Escenario desconocido → los supuestos
++    tal cual."""
++    if escenario not in PRESETS_ESCENARIO:
++        return params.pct_mora, params.pct_recuperacion
++    editables = {
++        "pesimista": (params.pct_mora_pesimista, params.pct_recuperacion_pesimista),
++        "optimista": (params.pct_mora_optimista, params.pct_recuperacion_optimista),
++    }
++    mora_edit, recup_edit = editables.get(escenario, (None, None))
++    mora = (
++        mora_edit
++        if mora_edit is not None
++        else _con_delta(
++            PRESETS_ESCENARIO[escenario]["pct_mora"],
++            params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
++        )
++    )
++    recup = (
++        recup_edit
++        if recup_edit is not None
++        else _con_delta(
++            PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
++            params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
++        )
++    )
++    return mora, recup
++
++
++def _supuestos_visibles(params: ParametrosProyeccion, escenario: str) -> dict:
++    """SUP-5 (CEO 2026-08-23): los drivers que EXPLICAN la curva en pantalla, para que
++    no haya que adivinar de dónde sale el resultado. Son los valores EFECTIVOS del
++    escenario que se está viendo (con SUP-2 cada escenario tiene su propia mora).
++    Porcentajes como string (regla 1)."""
++    mora, recup = _mora_del_escenario(params, escenario)
++    return {
++        "pct_mora": str(mora),
++        "pct_recuperacion": str(recup),
++        "pct_default": str(params.pct_default),
++        "pct_provision": str(params.pct_provision),
++        "meses_rezago_recuperacion": params.meses_rezago_recuperacion,
++        "pct_aval_recaudo": str(params.pct_aval_recaudo),
++        # SUP-6: SOBRE QUÉ se aplica la mora (la cuota inicial es de contado).
++        "mora_sobre_recaudo": params.mora_sobre_recaudo,
++        "pct_prefondeo_iva": str(params.pct_prefondeo_iva),
++        "motos_base": params.motos_base,
++        "crec_pct_mensual": str(params.crec_pct_mensual),
++        "crec_pct_mensual_2": (
++            str(params.crec_pct_mensual_2)
++            if params.crec_pct_mensual_2 is not None
++            else None
++        ),
++        "crec_mes_corte": params.crec_mes_corte,
++        "rampa_unidades": dict(params.rampa_unidades),
++    }
++
++
+ def _guard_apache_por_mes(
+     apache_por_mes: dict[int, int] | None, modelos: list[ModeloMoto]
+ ) -> None:
+@@ -156,23 +227,10 @@ def _armar_parametros(
+     iva_egreso_por_mes: dict[int, object] | None = None,
+     caja_inicial_override: object | None = None,
+ ) -> ParametrosMotor:
+-    pct_mora, pct_recuperacion = params.pct_mora, params.pct_recuperacion
+-    # SUP-1 (CEO 2026-08-17) — los SUPUESTOS fijan el NIVEL, el escenario el DESVÍO.
+-    # Antes el preset PISABA la mora/recuperación del CEO y "base" está en los presets,
+-    # así que sus valores se descartaban SIEMPRE (bug: "la mora no impacta en ninguna
+-    # vía"). Regla del CEO: "si subo la mora de 3 a 5, esos dos puntos se suman también
+-    # en pesimista y en optimista" → DELTA EN PUNTOS sobre el preset base, aplicado a
+-    # los tres escenarios y acotado a [0, 1] (una mora del 98% no vuelve 101% al
+-    # pesimista). Escenario desconocido → los supuestos tal cual.
+-    if escenario in PRESETS_ESCENARIO:
+-        pct_mora = _con_delta(
+-            PRESETS_ESCENARIO[escenario]["pct_mora"],
+-            params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
+-        )
+-        pct_recuperacion = _con_delta(
+-            PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
+-            params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
+-        )
++    # SUP-1/SUP-2/SUP-5: la resolución de la mora del escenario vive en
++    # `_mora_del_escenario` — UNA sola fuente para el motor y para los supuestos que
++    # la pantalla muestra (si divergieran, se verían unos y la curva usaría otros).
++    pct_mora, pct_recuperacion = _mora_del_escenario(params, escenario)
+     pm = ParametrosMotor(
+         mes_inicio=mes_inicio,
+         horizonte_meses=horizonte_meses,
+@@ -183,6 +241,14 @@ def _armar_parametros(
+         # SUP-1: segundo tramo de crecimiento (None/None = comportamiento histórico)
+         crec_pct_mensual_2=params.crec_pct_mensual_2,
+         crec_mes_corte=params.crec_mes_corte,
++        # SUP-2: rezago de la recuperación de mora + fondo AVAL (ambos editables)
++        meses_rezago_recuperacion=params.meses_rezago_recuperacion,
++        pct_aval_recaudo=params.pct_aval_recaudo,
++        mora_sobre_recaudo=params.mora_sobre_recaudo,
++        # P3 del ciclo mensual: el arranque es el efectivo ANTERIOR al primer mes,
++        # asi que su flujo si mueve su caja. El motor conserva False como default
++        # (semantica del artefacto) para que el golden master siga bit a bit.
++        primer_mes_acumula_flujo=True,
+         adelanto_auteco=params.adelanto_auteco,
+         plazo_auteco_dias=params.plazo_auteco_dias,
+         base_auteco_dias=params.base_auteco_dias,
+@@ -228,6 +294,8 @@ class AnclajeMeta:
+     meses_anclados: dict[str, str] = field(default_factory=dict)
+     sin_mapear: list[str] = field(default_factory=list)
+     mes_en_curso: dict | None = None
++    # P2 del ciclo mensual — de dónde salió la plata con la que arranca la serie.
++    arranque: "Arranque | None" = None
+ 
+ 
+ def _serializar(
+@@ -238,11 +306,33 @@ def _serializar(
+     rec: ResultadoReconciliado | None = None,
+     *,
+     meta: "AnclajeMeta | None" = None,
++    supuestos: dict | None = None,
+ ) -> dict:
+     meses_ym = [f.mes for f in r.meses]
+     meta = meta or AnclajeMeta()
+     return {
+         "escenario": escenario,
++        # SUP-5 (CEO 2026-08-23): los drivers que EXPLICAN esta curva — los valores
++        # EFECTIVOS del escenario en pantalla, no los del set base.
++        "supuestos": supuestos or {},
++        # P2 del ciclo mensual — la plata con la que arranca la serie y DE DÓNDE salió.
++        # `origen`: 'ciclo' (efectivo real del cierre anterior) · 'semilla' (el
++        # parámetro
++        # `caja_inicial`, cuando el mes no está abierto en el ciclo) · 'override'
++        # (re-anclaje explícito, COCK-09).
++        "arranque": {
++            "valor": money_str(meta.arranque.valor),
++            "origen": meta.arranque.origen,
++            "mes": meta.arranque.mes,
++            "saldo_declarado": (
++                money_str(meta.arranque.saldo_declarado)
++                if meta.arranque.saldo_declarado is not None
++                else None
++            ),
++            "transito_heredado": money_str(meta.arranque.transito_heredado),
++        }
++        if meta.arranque is not None
++        else None,
+         # P5 — origen de cada cifra (aditivo): marcas por mes, rubros sin concepto del
+         # motor, y completitud del mes en curso (B13). Vacíos si no hay anclaje.
+         "meses_anclados": dict(meta.meses_anclados),
+@@ -293,6 +383,13 @@ def _serializar(
+                 "fondeo": money_str(f.fondeo),
+                 "int_deuda": money_str(f.int_deuda),
+                 "iva": money_str(f.iva),
++                "aval": money_str(f.aval),  # SUP-2: fondo AVAL propio
++                # SUP-5: la explicación del ingreso (mora/recuperación/default), para
++                # que la pantalla muestre QUÉ compone el resultado. En un mes anclado
++                # a la ejecución real vienen en 0: su ingreso sale del libro.
++                "mora": money_str(f.mora),
++                "recuperacion": money_str(f.recuperacion),
++                "default": money_str(f.default),
+                 "egresos": money_str(f.egresos),
+                 "flujo": money_str(f.flujo),
+                 "caja": money_str(f.caja),
+@@ -334,7 +431,10 @@ async def _compuerta_iva_activa() -> bool:
+ 
+ 
+ async def _iva_plan(
+-    mes_inicio: tuple[int, int], horizonte: int
++    mes_inicio: tuple[int, int],
++    horizonte: int,
++    pct_prefondeo: Decimal = Decimal("1"),
++    proyectadas: list[FacturaIva] | None = None,
+ ) -> tuple[dict[int, object], list]:
+     """Puente C11↔C7: liquida las facturas cargadas y devuelve (egreso_por_mes, fondo).
+     `egreso_por_mes` = IVA neto de cada período en el índice de su fecha DIAN real
+@@ -343,10 +443,15 @@ async def _iva_plan(
+ 
+     CR-E2-COMPUERTA: con la compuerta APAGADA (default) devuelve ({}, []) aunque haya
+     facturas cargadas, de modo que E2 capture facturas y liquide el IVA SIN mover la
+-    proyección (D-12). `GET /proyeccion` queda idéntico bit a bit al estado previo."""
++    proyección (D-12). `GET /proyeccion` queda idéntico bit a bit al estado previo.
++
++    SUP-3: `proyectadas` son las `FacturaIva` sintéticas del IVA de las ventas FUTURAS
++    (`iva.proyectado`). Entran al MISMO liquidador junto a las reales — sin ellas la
++    proyección solo veía el IVA ya facturado y lo daba en cero hacia adelante."""
+     if not await _compuerta_iva_activa():
+         return {}, []
+     facturas = await facturas_service.obtener_facturas_iva()
++    facturas = facturas + list(proyectadas or [])
+     if not facturas:
+         return {}, []
+     periodicidad = await facturas_service.obtener_periodicidad()
+@@ -366,10 +471,60 @@ async def _iva_plan(
+         mes_inicio=mes_inicio,
+         horizonte_meses=horizonte,
+         periodicidad=periodicidad,
++        pct_prefondeo=pct_prefondeo,  # SUP-2: editable (1 = 100 %, como hasta hoy)
+     )
+     return egreso, fondo
+ 
+ 
++async def _iva_proyectado(
++    params: ParametrosProyeccion,
++    modelos: list[ModeloMoto],
++    mes_inicio: tuple[int, int],
++    horizonte: int,
++) -> list[FacturaIva]:
++    """SUP-3: el IVA de las ventas FUTURAS, derivado de la colocación proyectada y del
++    catálogo (precio de venta y costo Auteco, ambos con IVA), como en el modelo v9.1.
++
++    Precisión: los meses que YA tienen su realidad NO se proyectan — un mes CERRADO,
++    o uno con su `VENTAS-YYYY-MM` de IVA generado ya registrado. Su dato manda y nunca
++    se suman las dos cosas (mismo principio del mes en curso que fijó el CEO)."""
++    if not modelos:
++        return []
++    colocacion = colocacion_mensual(
++        params.motos_base,
++        params.crec_pct_mensual,
++        horizonte,
++        _rampa_a_lista(params.rampa_unidades, mes_inicio),
++        params.crec_pct_mensual_2,
++        params.crec_mes_corte,
++    )
++    meses_ym = _meses_del_horizonte(mes_inicio, horizonte)
++    # meses con realidad: cerrados + los que ya tienen su IVA generado registrado
++    reales: set[str] = set()
++    async for mc in MesControl.find(MesControl.estado == EstadoMes.CERRADO):
++        reales.add(str(mc.mes)[:7])
++    for f in await facturas_service.listar_facturas(activo=True):
++        if f.numero.startswith("VENTAS-"):
++            reales.add(f.numero.removeprefix("VENTAS-")[:7])
++    modelos_iva = [
++        ModeloIva(
++            nombre=m.nombre,
++            precio_venta_con_iva=m.precio_venta_con_iva,
++            costo_auteco_con_iva=m.costo_auteco,
++            mix=m.participacion_mix,
++        )
++        for m in modelos
++    ]
++    tarifa = await facturas_service.obtener_tarifa_iva()
++    return facturas_iva_proyectadas(
++        colocacion_por_mes=colocacion,
++        meses_ym=meses_ym,
++        modelos=modelos_iva,
++        tarifa=tarifa,
++        meses_con_dato_real=reales,
++    )
++
++
+ async def _facturas_reconciliar() -> list[FacturaReconciliar]:
+     """Facturas activas + los términos de su obligación (facturación activa) aplanados
+     para la reconciliación §4. Sin facturas → []. D2 §7: las pagadas por un TERCERO se
+@@ -398,6 +553,59 @@ async def _facturas_reconciliar() -> list[FacturaReconciliar]:
+     return out
+ 
+ 
++@dataclass(frozen=True)
++class Arranque:
++    """P2 del ciclo mensual — de dónde sale la plata con la que arranca la proyección.
++
++    Paso 0 del contrato (`docs/COMPAS_Ciclo_Mensual.md`): el efectivo real con el que
++    cerró el mes anterior. Lo escribe el ciclo mensual: `saldo_inicial_caja` se DERIVA
++    del consolidado bancario del predecesor (M-1/F-14) y se puede corregir a mano con
++    motivo y evento de auditoría (`saldo_inicial.editado`, FIX-F) — COMPAS no hace
++    arqueos, la diferencia se teclea con rastro (decisión CEO 2026-08-23).
++
++    `origen`: 'ciclo' cuando el mes de inicio está abierto en el ciclo (el caso normal);
++    'semilla' cuando no lo está y toca usar el parámetro `caja_inicial` (primer mes de
++    la
++    historia, o un mes_inicio fuera del ciclo). Se publica para que la pantalla pueda
++    decir de dónde salió la cifra en vez de que el usuario adivine.
++    """
++
++    valor: Decimal
++    origen: str  # 'ciclo' | 'semilla'
++    mes: str | None  # 'YYYY-MM' del MesControl leído (None si semilla)
++    saldo_declarado: Decimal | None  # el saldo del ciclo, sin el tránsito
++    transito_heredado: Decimal  # CR-WAVA: cobrado que aún no está en el banco
++
++
++async def _arranque_de_caja(
++    params: ParametrosProyeccion, mes_inicio: tuple[int, int]
++) -> Arranque:
++    """Resuelve el Paso 0. La definición del valor es la MISMA que muestra la pantalla
++    del ciclo (`caja_inicial_total` = saldo declarado + tránsito heredado): si las dos
++    pantallas dieran números distintos para "la plata con la que arranco el mes", el
++    tejido estaría roto."""
++    y, m = mes_inicio
++    clave = f"{y:04d}-{m:02d}-01"
++    mc = await MesControl.find_one(MesControl.mes == clave)
++    if mc is None:
++        # Fail-soft honesto: no se inventa un arranque; se usa la semilla y se DECLARA.
++        return Arranque(
++            valor=params.caja_inicial,
++            origen="semilla",
++            mes=None,
++            saldo_declarado=None,
++            transito_heredado=Decimal("0.00"),
++        )
++    transito = await transito_heredado(clave)
++    return Arranque(
++        valor=mc.saldo_inicial_caja + transito,
++        origen="ciclo",
++        mes=clave[:7],
++        saldo_declarado=mc.saldo_inicial_caja,
++        transito_heredado=transito,
++    )
++
++
+ async def _resultado_con(
+     params: ParametrosProyeccion,
+     modelos: list[ModeloMoto],
+@@ -432,8 +640,38 @@ async def _resultado_con(
+         raise ProyeccionError(
+             f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
+         )
++    # P2 · Paso 0 — el arranque sale del CICLO (efectivo real del cierre anterior), no
++    # del parámetro tecleado. `caja_inicial_override` explícito (COCK-09, rolling
++    # forecast) sigue mandando sobre todo. Con `anclas_override` (tests herméticos) no
++    # se
++    # toca Mongo: se queda en la semilla.
++    if caja_inicial_override is not None:
++        arranque = Arranque(
++            valor=Decimal(str(caja_inicial_override)),
++            origen="override",
++            mes=None,
++            saldo_declarado=None,
++            transito_heredado=Decimal("0.00"),
++        )
++    elif anclas_override is not None:
++        arranque = Arranque(
++            valor=params.caja_inicial,
++            origen="semilla",
++            mes=None,
++            saldo_declarado=None,
++            transito_heredado=Decimal("0.00"),
++        )
++    else:
++        arranque = await _arranque_de_caja(params, mes_inicio)
++
+     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
+-    iva_egreso, fondo = await _iva_plan(mes_inicio, horizonte)
++    iva_egreso, fondo = await _iva_plan(
++        mes_inicio,
++        horizonte,
++        params.pct_prefondeo_iva,
++        # SUP-3: el IVA de las ventas futuras entra a la liquidación
++        await _iva_proyectado(params, modelos, mes_inicio, horizonte),
++    )
+     pm = _armar_parametros(
+         params,
+         modelos,
+@@ -443,7 +681,7 @@ async def _resultado_con(
+         recaudo_previo,
+         activos_previos,
+         iva_egreso,
+-        caja_inicial_override,
++        arranque.valor,
+     )
+     r = proyectar(pm)
+ 
+@@ -463,6 +701,7 @@ async def _resultado_con(
+             anclas=anclas,
+             rubros=rubros_e1,
+             neutros_ids=neutros_e1,
++            primer_mes_acumula=True,
+         )
+         r = _kpis_a_resultado(aj)
+         # D2 solo excluye los meses CERRADOS (el pasado es del libro; su factura ya no
+@@ -501,11 +740,33 @@ async def _resultado_con(
+     rec: ResultadoReconciliado | None = None
+     if facturas:
+         rec = reconciliar(
+-            r, facturas, params.caja_minima, meses_anclados=meses_anclados
++            r,
++            facturas,
++            params.caja_minima,
++            meses_anclados=meses_anclados,
++            primer_mes_acumula=True,
+         )
+         r = _kpis_a_resultado(rec.ajustado)
++    # P6 — el TERMÓMETRO se cierra aquí: el loader trajo la realidad (ingreso real,
++    # ejecutado, colocaciones reales) y solo el servicio conoce la PROYECCIÓN del mes
++    # (la fila de la serie). Se juntan para que la pantalla compare meta vs. realidad
++    # sin recalcular nada — y sin que la realidad toque la curva (Paso 2 del contrato).
++    if completitud is not None:
++        fila = next((f for f in r.meses if f.mes == completitud["mes"]), None)
++        if fila is not None:
++            completitud = {
++                **completitud,
++                "colocaciones_meta": fila.motos,
++                "ingreso_proyectado": money_str(fila.neto),
++                "ingreso_proyectado_inicial": money_str(fila.cuotas_iniciales),
++                "ingreso_proyectado_semanal": money_str(fila.recaudo_credito),
++            }
++
+     meta = AnclajeMeta(
+-        meses_anclados=marcas, sin_mapear=sin_mapear, mes_en_curso=completitud
++        meses_anclados=marcas,
++        sin_mapear=sin_mapear,
++        mes_en_curso=completitud,
++        arranque=arranque,
+     )
+     return r, params.caja_minima, fondo, rec, meta
+ 
+@@ -529,7 +790,17 @@ async def _proyectar_con(
+         horizonte_meses=horizonte_meses,
+         caja_inicial_override=caja_inicial_override,
+     )
+-    return _serializar(r, escenario, caja_min, fondo, rec, meta=meta)
++    return _serializar(
++        r,
++        escenario,
++        caja_min,
++        fondo,
++        rec,
++        meta=meta,
++        # SUP-5: los drivers efectivos de ESTA curva, para que la pantalla explique
++        # el resultado en vez de pedirle al usuario que adivine.
++        supuestos=_supuestos_visibles(params, escenario),
++    )
+ 
+ 
+ async def proyectar_vigente(
+@@ -651,12 +922,20 @@ async def proyectar_impactos(
+         mes_inicio=mes_inicio,
+         horizonte_meses=horizonte_meses,
+     )
+-    ajustado = aplicar_impactos(r, ajustes, caja_min)
++    ajustado = aplicar_impactos(r, ajustes, caja_min, primer_mes_acumula=True)
+     r_aj = _kpis_a_resultado(ajustado)
++    # SUP-5: los supuestos son los MISMOS para base y ajustada (un ajuste de D1 mueve
++    # el flujo, no los drivers). Van en ambas para que `base` siga siendo GET
++    # /proyeccion bit a bit — candado de test_impactos_endpoints.
++    supuestos = _supuestos_visibles(params, escenario)
+     return {
+         "escenario": escenario,
+-        "base": _serializar(r, escenario, caja_min, fondo, meta=meta),
+-        "ajustada": _serializar(r_aj, escenario, caja_min, fondo, meta=meta),
++        "base": _serializar(
++            r, escenario, caja_min, fondo, meta=meta, supuestos=supuestos
++        ),
++        "ajustada": _serializar(
++            r_aj, escenario, caja_min, fondo, meta=meta, supuestos=supuestos
++        ),
+         "valles_base": [
+             _serializar_valle(v) for v in detectar_valles(r.meses, caja_min)
+         ],
+@@ -987,7 +1266,12 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
+         return _sensibilidad_cache[clave]
+ 
+     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
+-    iva_egreso, _fondo = await _iva_plan(mes_inicio, SENSIBILIDAD_HORIZONTE)
++    iva_egreso, _fondo = await _iva_plan(
++        mes_inicio,
++        SENSIBILIDAD_HORIZONTE,
++        params.pct_prefondeo_iva,
++        await _iva_proyectado(params, modelos, mes_inicio, SENSIBILIDAD_HORIZONTE),
++    )
+     pm = _armar_parametros(
+         params,
+         modelos,
+@@ -1013,6 +1297,7 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
+                     anclas=anclas,
+                     rubros=rubros_e1,
+                     neutros_ids=neutros_e1,
++                    primer_mes_acumula=True,
+                 )
+             )
+             meses_anclados = frozenset(
+@@ -1020,7 +1305,11 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
+             )
+         if facturas:
+             rec = reconciliar(
+-                r, facturas, params.caja_minima, meses_anclados=meses_anclados
++                r,
++                facturas,
++                params.caja_minima,
++                meses_anclados=meses_anclados,
++                primer_mes_acumula=True,
+             )
+             r = _kpis_a_resultado(rec.ajustado)
+         return r.piso_caja
+@@ -1108,9 +1397,15 @@ async def comparar_vigente(
+     else:
+         mc_a, caja_a = ancla
+         y, m = int(mc_a.mes[:4]), int(mc_a.mes[5:7])
++        # P3 del ciclo mensual: la caja del ancla es la del CIERRE de ese mes, o sea la
++        # que existe ANTES del siguiente. Asi que el forecast arranca en el mes
++        # SIGUIENTE: el tramo real termina en el ancla y el proyectado sigue desde ahi,
++        # sin repetir el punto ni contar dos veces el flujo del mes ancla (antes el
++        # primer mes tenia la caja fija y por eso el solape no se notaba).
++        y_sig, m_sig = (y + 1, 1) if m == 12 else (y, m + 1)
+         forecast = await proyectar_vigente(
+             escenario=escenario,
+-            mes_inicio=(y, m),
++            mes_inicio=(y_sig, m_sig),
+             horizonte_meses=horizonte_meses,
+             caja_inicial_override=caja_a,
+         )
+diff --git a/frontend/src/lib/egreso.ts b/frontend/src/lib/egreso.ts
+index f595c7b..de4978b 100644
+--- a/frontend/src/lib/egreso.ts
++++ b/frontend/src/lib/egreso.ts
+@@ -8,9 +8,15 @@
+ //   Ingreso = neto
+ //   Costo   = pago_inventario + fondeo + costo_nueva + adelanto   (el fondeo
+ //             Auteco es costo de inventario, no gasto financiero)
+-//   Gasto   = gastos_fijos + gps + int_deuda + iva
++//   Gasto   = gastos_fijos + gps + int_deuda + iva + aval
+ // Los egresos llegan NEGATIVOS del motor; costo y gasto se exponen como magnitud
+ // POSITIVA (lo que sale). Invariante: ingreso − (costo + gasto) == flujo.
++//
++// `aval` (ítem 0 Kimi etapa75): el fondo de AVAL nació en el motor DESPUÉS del mapeo
++// aprobado (SUP-2, 2026-08-22) y esta capa nunca lo aprendió — los buckets omitían
++// ese egreso y dejaban de reconciliar con el flujo por exactamente el aval (en PROD,
++// agosto-2026: $546.241,68 invisibles). Va en GASTO como reserva operativa que sale
++// de caja: no re-litiga el mapeo, lo completa para un campo que no existía.
+ 
+ import Decimal from "decimal.js-light";
+ 
+@@ -38,6 +44,7 @@ export function bucketsMes(m: MesProyeccion): BucketsMes {
+     .plus(m.gps)
+     .plus(m.int_deuda)
+     .plus(m.iva)
++    .plus(m.aval)
+     .negated();
+   return { ingreso, costo, gasto, flujo: parseMonto(m.flujo) };
+ }
+
+```
