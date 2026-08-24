@@ -318,6 +318,7 @@ def neto_por_mora(
     pct_default: Decimal,
     pct_provision: Decimal = Decimal("0"),
     mora_a_recuperar: Decimal | None = None,
+    base_mora: Decimal | None = None,
 ) -> AjusteMora:
     """Aplica mora/recuperación/default al bruto (réplica FC filas 17-20 del artefacto,
     MENOS la provisión, que sale del flujo por 'caja veraz'). Los porcentajes son el
@@ -326,12 +327,19 @@ def neto_por_mora(
     SUP-2 · `mora_a_recuperar`: la mora SOBRE LA QUE se calcula la recuperación. None
     (default) = la mora del propio mes, la semántica del artefacto. Con un valor (la
     mora de un mes anterior) la recuperación queda REZAGADA, como en el modelo v9.1
-    (`FC!E18 = −D17×E7`): la mora es diferimiento, y el dinero vuelve después."""
-    mora = -bruto * pct_mora
+    (`FC!E18 = −D17×E7`): la mora es diferimiento, y el dinero vuelve después.
+
+    SUP-6 · `base_mora`: SOBRE QUÉ se aplican mora/default/provisión. None (default) =
+    el bruto, la semántica del artefacto. Con un valor (el recaudo de cuotas) la cuota
+    inicial queda fuera — se paga de contado, no puede caer en mora ni incumplirse
+    (decisión CEO 2026-08-23; v9.1 `FC!17 = −L13×L6` ya lo hacía así). El `neto`
+    SIEMPRE parte del bruto: la inicial entra completa a caja."""
+    base = bruto if base_mora is None else base_mora
+    mora = -base * pct_mora
     base_recup = mora if mora_a_recuperar is None else mora_a_recuperar
     recuperacion = -base_recup * pct_recuperacion  # recupera parte de la mora
-    default = -bruto * pct_default
-    provision = -bruto * pct_provision
+    default = -base * pct_default
+    provision = -base * pct_provision
     neto = bruto + mora + recuperacion + default
     return AjusteMora(
         mora=_cop(mora),
@@ -581,6 +589,17 @@ class ParametrosMotor:
     # SUP-2: fondo AVAL propio / autoseguro = % del recaudo de crédito que se reserva
     # cada mes (v9.1 `PARAMETROS!C55` → `FC!33`). 0 = no existe (comportamiento de hoy).
     pct_aval_recaudo: Decimal = Decimal("0")
+    # SUP-6 (CEO 2026-08-23): la mora/default/provisión caen SOLO sobre el recaudo de
+    # cuotas, no sobre la cuota inicial (que es de contado). False = la semántica del
+    # artefacto (base = bruto) → golden master intacto. El mismo criterio que ya usaba
+    # `pct_aval_recaudo`, que siempre midió sobre el recaudo.
+    mora_sobre_recaudo: bool = False
+    # P3 del ciclo mensual (CEO 2026-08-23): `caja_inicial` es el efectivo ANTERIOR al
+    # primer mes (el cierre del mes pasado), así que el flujo del primer mes SÍ la mueve
+    # — el candado `caja(mes) = caja(mes−1) + flujo(mes)` no admite excepciones. False =
+    # la semántica del artefacto, donde `caja_inicial` era "la plata que tengo hoy" a
+    # mitad del mes en curso → golden master intacto.
+    primer_mes_acumula_flujo: bool = False
     # Cartera previa (111 créditos preexistentes): serie semanal REAL del LoanTape.
     # semana global → recaudo / nº activos. Default None = sin cartera previa.
     recaudo_previo_por_semana: dict[int, Decimal] | None = None
@@ -624,6 +643,12 @@ class MesProyeccion:
     estado: str  # 'ok' | 'critico' | 'negativo'
     # SUP-2: reserva del fondo AVAL propio (≤ 0). 0.00 si el % está en 0 (default).
     aval: Decimal = Decimal("0.00")
+    # SUP-5: las tres variables de cartera POR SEPARADO, para que la pantalla pueda
+    # explicar el resultado (antes viajaban sumadas dentro de `neto`). Invariante:
+    # `neto == ingreso_bruto + mora + recuperacion + default`.
+    mora: Decimal = Decimal("0.00")  # ≤ 0 (resta)
+    recuperacion: Decimal = Decimal("0.00")  # ≥ 0 (vuelve)
+    default: Decimal = Decimal("0.00")  # ≤ 0 (no vuelve)
 
 
 @dataclass(frozen=True)
@@ -719,6 +744,8 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
             ov_def.get(m, p.pct_default),
             p.pct_provision,
             mora_a_recuperar,
+            # SUP-6: la cuota inicial es de contado → no entra a la base de la mora.
+            _cop(recaudo[m]) if p.mora_sobre_recaudo else None,
         )
         moras.append(ajuste.mora)
         gastos_fijos = _cop(-p.gastos_fijos)
@@ -745,8 +772,11 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
             + aval
         )
         flujo = _cop(ajuste.neto + egresos)
-        # primer mes: caja fija (= caja inicial); el flujo de ese mes no la mueve.
-        if m > 0:
+        # P3: con `primer_mes_acumula_flujo` la caja acumula desde el primer mes (el
+        # arranque es el efectivo ANTERIOR al horizonte). Sin el flag se conserva la
+        # convención del artefacto: primer mes fijo (= caja inicial), su flujo no la
+        # mueve — necesario para que el golden master siga siendo bit a bit.
+        if m > 0 or p.primer_mes_acumula_flujo:
             caja = _cop(caja + flujo)
         filas.append(
             MesProyeccion(
@@ -767,6 +797,10 @@ def proyectar(p: ParametrosMotor) -> ResultadoProyeccion:
                 int_deuda=int_deuda,
                 iva=iva,
                 aval=aval,
+                # SUP-5: la explicación del ingreso, no solo su total
+                mora=ajuste.mora,
+                recuperacion=ajuste.recuperacion,
+                default=ajuste.default,
                 egresos=egresos,
                 flujo=flujo,
                 caja=caja,

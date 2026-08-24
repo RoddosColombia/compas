@@ -30,6 +30,7 @@ from app.cfo.telegram import repositorio
 from app.config import get_settings
 from app.main import create_app
 from mongomock_motor import AsyncMongoMockClient
+from tests.conftest import rutas_registradas
 
 PWD = "clave-larga-1234"
 SECRET = "secreto-webhook-test"
@@ -132,7 +133,7 @@ def test_flag_off_rutas_ausentes(monkeypatch):
     get_settings.cache_clear()
 
     app = create_app()
-    rutas = {r.path for r in app.routes}
+    rutas = rutas_registradas(app)
     assert "/api/v1/cfo/telegram/webhook" not in rutas
     assert "/api/v1/cfo/telegram/vinculos" not in rutas
 

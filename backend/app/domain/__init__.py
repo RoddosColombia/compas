@@ -10,7 +10,7 @@ el ODM general.
 from app.cfo.goldens.modelo import CFOGolden
 from app.cfo.telegram.modelos import HiloCFO, VinculoTelegram
 from app.domain.carga import CargaBancaria
-from app.domain.cartera_previa import CarteraPreviaRecaudo
+from app.domain.cartera_previa import CarteraPreviaRecaudo, ColocacionMes
 from app.domain.configuracion import Configuracion
 from app.domain.escenario_impacto import EscenarioImpacto
 from app.domain.factura import Factura
@@ -40,6 +40,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     ModeloMoto,
     ParametrosProyeccion,
     CarteraPreviaRecaudo,
+    ColocacionMes,
     Factura,
     LoanTapeCredito,
     GastoRecurrente,
@@ -65,6 +66,7 @@ __all__ = [
     "ModeloMoto",
     "ParametrosProyeccion",
     "CarteraPreviaRecaudo",
+    "ColocacionMes",
     "Factura",
     "LoanTapeCredito",
     "GastoRecurrente",

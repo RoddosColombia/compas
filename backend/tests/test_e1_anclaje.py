@@ -205,7 +205,15 @@ def test_b2_cerrado_ejecutado_real_y_reacumula():
 
 
 # ─────────────────────────────── B3 ───────────────────────────────
-def test_b3_regla_a_incluye_ejecutado_mayor_que_definido():
+def test_b3_el_mes_en_ejecucion_usa_el_PRESUPUESTO():
+    """SUPERSEDE la Regla A / D-08 para el mes en curso (P4 del ciclo mensual, CEO
+    2026-08-23).
+
+    La Regla A calculaba `ejecutado + max(0, definido − ejecutado)` por concepto, así
+    que un sobregiro pisaba el presupuesto. El contrato del ciclo mensual la deja SOLO
+    para meses cerrados: el mes en curso muestra su presupuesto (es la proyección del
+    objetivo) y lo ejecutado se lee aparte, en el termómetro de desviación. Antes la
+    misma fila mezclaba gasto medio-real con ingreso 100 % paramétrico."""
     res = _serie_coherente(
         Decimal("1000000.00"),
         [
@@ -219,8 +227,8 @@ def test_b3_regla_a_incluye_ejecutado_mayor_que_definido():
             ),
         ],
     )
-    # en ejecución: gastos_fijos ejec 300.000 > definido 200.000 → vale el ejecutado;
-    # gps ejec 10.000 < definido 40.000 → vale el definido. Regla A por concepto.
+    # en ejecución: manda el PRESUPUESTO, esté el ejecutado por encima (2010: 300.000
+    # gastados contra 200.000 presupuestados) o por debajo (1030: 10.000 de 40.000).
     ancla = AnclaMes(
         estado=EN_EJECUCION,
         ejecutado_por_rubro_id={"2010": Decimal("300000"), "1030": Decimal("10000")},
@@ -235,8 +243,8 @@ def test_b3_regla_a_incluye_ejecutado_mayor_que_definido():
         neutros_ids=set(),
     )
     ago = out.meses[0]
-    assert ago.gastos_fijos == Decimal("-300000.00")  # max(ejec, definido) = ejec
-    assert ago.gps == Decimal("-40000.00")  # max(ejec, definido) = definido
+    assert ago.gastos_fijos == Decimal("-200000.00")  # el presupuesto, no el sobregiro
+    assert ago.gps == Decimal("-40000.00")  # el presupuesto
     assert ago.neto == Decimal("500000.00")  # sin anclar (motor)
     assert _invariante_ok(out)
 

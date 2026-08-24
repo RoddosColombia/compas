@@ -149,3 +149,23 @@ export interface Sensibilidad {
 export async function obtenerSensibilidad(): Promise<Sensibilidad> {
   return apiJson("/proyeccion/sensibilidad");
 }
+
+/**
+ * P7 del ciclo mensual — supuestos SUGERIDOS por el gasto real de los meses cerrados.
+ * Promedio de los 3 más recientes; SUGIERE, no reemplaza: el CEO decide si lo adopta.
+ * `null` = no hay ni un mes cerrado (no se inventa un promedio).
+ */
+export interface SugerenciaSupuesto {
+  valor: string;
+  meses: string[]; // los meses promediados ('YYYY-MM')
+  n: number; // cuántos meses entraron (puede ser < 3)
+  detalle: { mes: string; valor: string }[];
+}
+
+export interface Sugerencias {
+  gastos_fijos: SugerenciaSupuesto | null;
+}
+
+export async function obtenerSugerencias(): Promise<Sugerencias> {
+  return apiJson("/parametros-proyeccion/sugerencias");
+}

@@ -28,6 +28,10 @@ function mes(over: Partial<MesProyeccion>): MesProyeccion {
     fondeo: "0.00",
     int_deuda: "-300000.00",
     iva: "0.00",
+    aval: "0.00",
+    mora: "0.00",
+    recuperacion: "0.00",
+    default: "0.00",
     egresos: "-132300000.00",
     flujo: "-98300000.00",
     caja: "40000000.00",
@@ -202,5 +206,63 @@ describe("TablaEgreso — V1 §3", () => {
       />,
     );
     expect(screen.queryByText(/sin clasificar/i)).not.toBeInTheDocument();
+  });
+
+  // ── SUP-5 — la tabla explica la CARTERA (sin columna nueva) ──
+
+  it("muestra las motos colocadas y los créditos activos bajo el mes", () => {
+    renderTabla();
+    // "cuántas motos vendidas mes a mes" a la vista, sin abrir el desglose
+    expect(screen.getAllByText("50 motos · 120 en cartera")).toHaveLength(2);
+  });
+
+  it("el desglose abre «Ajuste mora/default» en sus tres variables y cuadran", () => {
+    // el caso real de agosto: ajuste = −9.080.208 = mora + recuperación + default
+    const conMora = mes({
+      mes: "2026-08",
+      cuotas_iniciales: "145640000.00",
+      recaudo_credito: "43531000.00",
+      ingreso_bruto: "189171000.00",
+      neto: "180090792.00",
+      mora: "-13000000.00",
+      recuperacion: "6000000.00",
+      default: "-2080208.00",
+    });
+    render(
+      <TablaEgreso
+        filas={[conMora]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    expect(screen.queryByText(/Mora · no llega en su mes/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /ago-26/ }));
+    expect(screen.getByText(/Mora · no llega en su mes/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Recuperación · mora que sí vuelve/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Incumplimiento · pérdida definitiva/),
+    ).toBeInTheDocument();
+    for (const v of ["-$ 13.000.000", "$ 6.000.000", "-$ 2.080.208"]) {
+      expect(
+        screen.getAllByText((t) => t.replace(/\s/g, " ") === v).length,
+      ).toBeGreaterThan(0);
+    }
+    // −13.000.000 + 6.000.000 − 2.080.208 = −9.080.208 == el ajuste de la columna
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "-$ 9.080.208")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("el desglose marca la provisión como P&G, no caja", () => {
+    renderTabla();
+    fireEvent.click(screen.getByRole("button", { name: /oct-26/ }));
+    expect(
+      screen.getByText(/Provisión de cartera \(P&G, no caja\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Fondo de aval reservado/)).toBeInTheDocument();
   });
 });

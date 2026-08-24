@@ -118,6 +118,11 @@ class ParametrosProyeccion(Document):
     pct_prefondeo_iva: Money = Decimal("1")
     # Fondo AVAL propio / autoseguro: % del recaudo de crédito reservado cada mes.
     pct_aval_recaudo: Money = Decimal("0")
+    # SUP-6 (CEO 2026-08-23): la mora/default/provisión caen SOLO sobre el recaudo de
+    # cuotas semanales. La cuota inicial se paga de contado: no puede caer en mora ni
+    # incumplirse. True es el default de PRODUCTO (la regla del CEO); el motor conserva
+    # False como default para que el golden master siga siendo bit a bit.
+    mora_sobre_recaudo: bool = True
     modificado_por: str | None = None
 
     class Settings:

@@ -19,6 +19,7 @@ reinventar agregaciones.
 from __future__ import annotations
 
 import logging
+from calendar import monthrange
 from decimal import Decimal
 
 from beanie import PydanticObjectId
@@ -26,12 +27,13 @@ from beanie.operators import In
 
 from app.control.service import _egresos_por_rubro
 from app.core.money import money_str
+from app.domain.cartera_previa import ColocacionMes
 from app.domain.mes_control import EstadoMes, MesControl
 from app.domain.presupuesto import PresupuestoLinea
 from app.domain.rubro import RUBROS_SISTEMA_CLASIFICABLES, Rubro
 from app.domain.rubros_neutros import _ids_rubros_neutros
 from app.domain.transaccion import Transaccion
-from app.metas_ingreso.service import ingreso_real
+from app.metas_ingreso.service import ingreso_real, ingreso_real_por_concepto
 from app.proyeccion.ejecucion.lectura import RubroInfo
 from app.proyeccion.ejecucion.service import (
     CERRADO,
@@ -43,7 +45,11 @@ from app.proyeccion.motor import _meses_del_horizonte
 
 _CERO = Decimal("0")
 _log = logging.getLogger(__name__)
-_FORMULA_MES_EN_CURSO = "ejecutado + max(0, definido - ejecutado) por concepto"
+# P4 del ciclo mensual (CEO 2026-08-23): el mes en curso muestra su PRESUPUESTO. La
+# Regla A / D-08 ("ejecutado + max(0, definido − ejecutado)") quedó solo para meses
+# CERRADOS: mezclarla con un ingreso 100 % paramétrico ponía dos universos en la misma
+# fila. Lo ejecutado se lee aparte, en el termómetro (P6).
+_FORMULA_MES_EN_CURSO = "el presupuesto aprobado del mes"
 
 
 async def _rubros_info() -> list[RubroInfo]:
@@ -188,11 +194,29 @@ async def cargar_completitud_mes_en_curso(
     definido = await _definido_por_rubro(mc.id)
     ejecutado = sum(egresos.values(), _CERO)
     proyectado = sum(definido.values(), _CERO)
+    # P6 — insumos del TERMÓMETRO: la realidad del mes, al lado de la proyección.
+    # `ingreso_real` usa el MISMO criterio que E1 aplica a los meses cerrados (Σ INGRESO
+    # excluyendo rubros neutros), así que el termómetro y el cierre nunca discrepan; y
+    # viene discriminado inicial/semanal para leer DÓNDE está la desviación.
+    ing_real = await ingreso_real(mc.mes[:7])
+    ing_conceptos = await ingreso_real_por_concepto(mc.mes[:7])
+    _, dias_del_mes = monthrange(int(mc.mes[:4]), int(mc.mes[5:7]))
+    colocadas = await ColocacionMes.find_one(ColocacionMes.mes == mc.mes[:7])
     return {
         "mes": mc.mes[:7],
         "cargado_hasta": cargado_hasta,
         "dia": int(cargado_hasta[8:10]) if cargado_hasta else None,
+        "dias_del_mes": dias_del_mes,
         "formula": _FORMULA_MES_EN_CURSO,
         "ejecutado": money_str(ejecutado),
         "proyectado": money_str(proyectado),
+        "ingreso_real": money_str(ing_real) if ing_real is not None else None,
+        "ingreso_real_inicial": (
+            money_str(ing_conceptos["inicial"]) if ing_conceptos else None
+        ),
+        "ingreso_real_semanal": (
+            money_str(ing_conceptos["semanal"]) if ing_conceptos else None
+        ),
+        # None (no 0) cuando no hay dato: "sin cargar" y "cero motos" son distintos.
+        "colocaciones_reales": colocadas.unidades if colocadas is not None else None,
     }

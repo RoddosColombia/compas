@@ -3,14 +3,17 @@
 Un `Ajuste` es un delta declarativo sobre la serie mensual que YA produjo el motor:
 "+$3.000.000 en arriendos desde sep-2026", "ingreso -10% desde ene-2027". Se aplica
 como post-proceso PURO (ni una línea del motor cambia) y la caja se re-acumula en
-Decimal con la MISMA mecánica del motor (primer mes fijo = caja inicial;
-caja[m] = caja[m-1] + flujo[m]).
+Decimal con la MISMA mecánica del motor: `caja[m] = caja[m-1] + flujo[m]`.
 
 Límite honesto (spec §2): los ajustes son efectos DIRECTOS de caja. No pasan por
 mora/recuperación ni recalculan cartera/GPS/inventario — eso sería tocar el motor. El
 porcentaje de gasto se aplica sobre `gastos_fijos` del mes; el de ingreso, sobre el
-`neto` (ingreso post-mora). Un ajuste que arranca en el primer mes del horizonte no
-mueve la caja de ese mes (el motor fija el primer mes); los ajustes son a futuro.
+`neto` (ingreso post-mora).
+
+P3 del ciclo mensual: con `primer_mes_acumula=True` (lo que pasa el servicio) un ajuste
+en el PRIMER mes del horizonte también mueve su caja — el candado no admite excepciones.
+El default False conserva la convención del artefacto (primer mes fijo = caja inicial),
+que es la que certifica el golden master.
 """
 
 from __future__ import annotations
@@ -74,9 +77,12 @@ def aplicar_impactos(
     resultado: ResultadoProyeccion,
     ajustes: list[Ajuste],
     caja_minima: Decimal,
+    primer_mes_acumula: bool = False,
 ) -> ResultadoAjustado:
     """Aplica los ajustes sobre la serie del motor y re-acumula la caja. Con `ajustes`
-    vacío devuelve la serie base bit a bit (regla de oro del sprint)."""
+    vacío devuelve la serie base bit a bit (regla de oro del sprint). P3:
+    `primer_mes_acumula` viaja a `reacumular` (un ajuste en el mes en curso también
+    mueve su caja)."""
     base = resultado.meses
     n = len(base)
     meses_idx = {fila.mes: i for i, fila in enumerate(base)}
@@ -91,25 +97,34 @@ def aplicar_impactos(
         for m in range(i0, i1 + 1):
             deltas[m] = _cop(deltas[m] + _delta_flujo(base[m], aj))
 
-    return reacumular(resultado, deltas, caja_minima)
+    return reacumular(resultado, deltas, caja_minima, primer_mes_acumula)
 
 
 def reacumular(
     resultado: ResultadoProyeccion,
     deltas: list[Decimal],
     caja_minima: Decimal,
+    primer_mes_acumula: bool = False,
 ) -> ResultadoAjustado:
     """Aplica un delta de flujo por mes YA calculado y re-acumula la caja con la MISMA
-    regla del motor (primer mes fijo; caja[m]=caja[m-1]+flujo[m]). Lo comparten la capa
-    de impactos (deltas de ajustes) y la reconciliación de obligaciones (deltas de
-    netear el paramétrico y sumar el calendario real). Deltas todos cero => base bit a
-    bit."""
+    regla del motor (caja[m]=caja[m-1]+flujo[m]). Lo comparten la capa de impactos
+    (deltas de ajustes), la reconciliación de obligaciones (deltas de netear el
+    paramétrico y sumar el calendario real) y el anclaje E1. Deltas todos cero => base
+    bit a bit.
+
+    P3 del ciclo mensual: con `primer_mes_acumula` el delta del PRIMER mes también mueve
+    su caja. El efectivo de arranque se DERIVA de la propia serie base
+    (`caja[0] − flujo[0]`), exacto porque el motor la construyó con esa misma regla —
+    así no hay un segundo parámetro que pueda desincronizarse del motor. False conserva
+    la convención del artefacto (primer mes fijo), la que exige el golden master."""
     base = resultado.meses
     filas: list[MesProyeccion] = []
-    caja_prev = _CERO
+    caja_prev = (
+        _cop(base[0].caja - base[0].flujo) if primer_mes_acumula and base else _CERO
+    )
     for m, fila in enumerate(base):
         flujo = _cop(fila.flujo + deltas[m])
-        caja = fila.caja if m == 0 else _cop(caja_prev + flujo)
+        caja = _cop(caja_prev + flujo) if m > 0 or primer_mes_acumula else fila.caja
         caja_prev = caja
         filas.append(
             replace(

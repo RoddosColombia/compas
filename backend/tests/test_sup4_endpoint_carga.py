@@ -145,7 +145,9 @@ async def test_carga_feliz_persiste_la_serie_y_devuelve_el_resumen(api):
         h,
         _xlsx(
             [
-                _cuota(credito="LB-1", n=0, fecha="2026-08-05", estado="pagada"),
+                # desembolso en JULIO: desde P5 (no-solape) un crédito originado dentro
+                # del mes en curso sale de la serie — lo proyecta el motor.
+                _cuota(credito="LB-1", n=0, fecha="2026-07-05", estado="pagada"),
                 _cuota(credito="LB-1", n=1, fecha="2026-09-02"),
                 _cuota(credito="LB-2", n=1, fecha="2026-09-02", monto=210000),
             ]
@@ -156,7 +158,7 @@ async def test_carga_feliz_persiste_la_serie_y_devuelve_el_resumen(api):
     assert d["creditos"] == 2
     assert d["semanas"] == 1
     assert d["recaudo_futuro"] == "389900.00"
-    assert d["colocaciones_por_mes"] == {"2026-08": 1}
+    assert d["colocaciones_por_mes"] == {"2026-07": 1}
     # y quedó persistida para el motor
     filas = await CarteraPreviaRecaudo.find_all().to_list()
     assert len(filas) == 1
@@ -211,8 +213,12 @@ async def test_rbac_solo_proyeccion_gestionar(api):
 
 @pytest.mark.asyncio
 async def test_actualiza_la_rampa_del_mes_en_curso(api):
-    """Con parámetros cargados (meta 70) y 35 colocadas en el mes en curso, la rampa
-    de ese mes queda en 35 = el remanente. Es el criterio del CEO, automático."""
+    """P4 (CEO 2026-08-23) — **la carga semanal NO toca la meta del mes.**
+
+    SUPERSEDE la automatización de SUP-4, que dejaba la rampa del mes en curso en el
+    remanente (meta − colocadas) y con eso PISABA el dato del CEO: agosto-2026 estaba en
+    70 por decisión suya y la carga lo bajó a 35. La meta es dato del CEO; la carga solo
+    devuelve los insumos del termómetro (meta vigente vs. colocadas)."""
     h = await _token(api)
     assert (
         await api.put("/api/v1/parametros-proyeccion", json=await _params(), headers=h)
@@ -220,16 +226,32 @@ async def test_actualiza_la_rampa_del_mes_en_curso(api):
 
     hoy = date.today()
     mes = f"{hoy.year:04d}-{hoy.month:02d}"
+    # el CEO fijó la meta del mes en 70 (a mano, en Supuestos)
+    p0 = await ParametrosProyeccion.find_one(
+        ParametrosProyeccion.vigente_desde == "2026-08-01"
+    )
+    assert p0 is not None
+    p0.rampa_unidades = {**p0.rampa_unidades, mes: 70}
+    await p0.save()
+
     filas = [
         _cuota(credito=f"LB-{i}", n=0, fecha=f"{mes}-05", estado="pagada")
         for i in range(35)
     ]
-    filas.append(_cuota(credito="LB-0", n=1, fecha="2027-01-06"))
+    # un crédito PREEXISTENTE (originado antes del mes en curso) para que la serie no
+    # quede vacía: los 35 del mes en curso salen por el no-solape de P5.
+    filas.append(_cuota(credito="LB-VIEJO", n=0, fecha="2026-06-03", estado="pagada"))
+    filas.append(_cuota(credito="LB-VIEJO", n=1, fecha="2027-01-06"))
     r = await _cargar(api, h, _xlsx(filas))
     assert r.status_code == 200, r.text
-    assert r.json()["rampa_mes_en_curso"] == {mes: 35}
+    d = r.json()
+    # los insumos del termómetro: la meta del CEO, intacta, y lo colocado
+    assert d["meta_del_mes"] == 70
+    assert d["colocadas_del_mes"] == 35
+    assert d["mes_en_curso"] == mes
 
+    # y la META del CEO NO se tocó
     p = await ParametrosProyeccion.find_one(
         ParametrosProyeccion.vigente_desde == "2026-08-01"
     )
-    assert p.rampa_unidades[mes] == 35
+    assert p.rampa_unidades[mes] == 70

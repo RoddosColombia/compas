@@ -128,8 +128,26 @@ export function ComposicionCaja({
     }
   }
 
-  // posición del rótulo de una anotación sin salirse del lienzo
-  const clampX = (i: number) => Math.min(Math.max(cx(i), ML + 32), W - MR - 32);
+  // ── Ubicación de los RÓTULOS de las anotaciones (SUP-6, CEO 2026-08-23: "hay texto
+  // sobreponiéndose en la gráfica, no lo elimines, corrígelo para que se pueda ubicar
+  // donde haya espacio y sirva para que la gráfica nos diga más").
+  //
+  // El bug: el rótulo se CENTRABA en una x acotada a ML+32, así que su mitad izquierda
+  // (~110 px) se metía en la banda de las etiquetas del eje y se leían encimadas. Ahora
+  // el rótulo, en vez de centrarse a la fuerza, CAMBIA DE ANCLA y crece hacia el lado
+  // donde hay espacio: pegado al borde izquierdo del área de trazado si nació a la
+  // izquierda, al derecho si nació a la derecha, centrado si cabe centrado.
+  const ubicar = (
+    i: number,
+    semiAncho: number,
+  ): { x: number; anchor: "start" | "middle" | "end" } => {
+    const xc = cx(i);
+    if (xc - semiAncho < ML) return { x: ML + 4, anchor: "start" };
+    if (xc + semiAncho > W - MR) return { x: W - MR - 4, anchor: "end" };
+    return { x: xc, anchor: "middle" };
+  };
+  // Y dentro del panel de caja (un rótulo nunca se sale por arriba ni por abajo).
+  const ubicarY = (y: number) => Math.min(Math.max(y, cajaY0 + 10), cajaY1 - 4);
 
   return (
     <div className="flex h-full flex-col">
@@ -167,15 +185,23 @@ export function ComposicionCaja({
               strokeWidth={1}
               strokeDasharray="3 3"
             />
-            <text
-              x={clampX(anota.autecoIdx)}
-              y={barsY0 + 10}
-              textAnchor="middle"
-              fontSize={11}
-              className="fill-ink-soft font-sans"
-            >
-              Compromiso Auteco {formatCOPCompact(P[anota.autecoIdx].auteco)}
-            </text>
+            {(() => {
+              const u = ubicar(anota.autecoIdx, 118);
+              return (
+                <text
+                  x={u.x}
+                  y={barsY0 + 10}
+                  textAnchor={u.anchor}
+                  fontSize={11}
+                  paintOrder="stroke"
+                  strokeWidth={3.5}
+                  className="fill-ink-soft stroke-surface font-sans"
+                >
+                  Compromiso Auteco {P[anota.autecoIdx].etiqueta} ·{" "}
+                  {formatCOPCompact(P[anota.autecoIdx].auteco)}
+                </text>
+              );
+            })()}
           </g>
         )}
 
@@ -324,15 +350,23 @@ export function ComposicionCaja({
             r={4}
             className="fill-cyan"
           />
-          <text
-            x={clampX(anota.minIdx)}
-            y={yCaja(cajas[anota.minIdx]) - 10}
-            textAnchor="middle"
-            fontSize={11}
-            className="fill-ink font-sans font-semibold"
-          >
-            menor caja {formatCOPCompact(P[anota.minIdx].caja)}
-          </text>
+          {(() => {
+            const u = ubicar(anota.minIdx, 92);
+            return (
+              <text
+                x={u.x}
+                y={ubicarY(yCaja(cajas[anota.minIdx]) - 10)}
+                textAnchor={u.anchor}
+                fontSize={11}
+                paintOrder="stroke"
+                strokeWidth={3.5}
+                className="fill-ink stroke-surface font-sans font-semibold"
+              >
+                menor caja {P[anota.minIdx].etiqueta} ·{" "}
+                {formatCOPCompact(P[anota.minIdx].caja)}
+              </text>
+            );
+          })()}
         </g>
 
         {/* anotación: perforación del umbral (A4) — solo si ocurre */}
@@ -345,15 +379,22 @@ export function ComposicionCaja({
               className="fill-surface stroke-critico"
               strokeWidth={2}
             />
-            <text
-              x={clampX(anota.perforaIdx)}
-              y={yCaja(cajas[anota.perforaIdx]) + 18}
-              textAnchor="middle"
-              fontSize={11}
-              className="fill-critico font-sans"
-            >
-              baja del mínimo de caja
-            </text>
+            {(() => {
+              const u = ubicar(anota.perforaIdx, 108);
+              return (
+                <text
+                  x={u.x}
+                  y={ubicarY(yCaja(cajas[anota.perforaIdx]) + 18)}
+                  textAnchor={u.anchor}
+                  fontSize={11}
+                  paintOrder="stroke"
+                  strokeWidth={3.5}
+                  className="fill-critico stroke-surface font-sans"
+                >
+                  baja del mínimo de caja en {P[anota.perforaIdx].etiqueta}
+                </text>
+              );
+            })()}
           </g>
         )}
 

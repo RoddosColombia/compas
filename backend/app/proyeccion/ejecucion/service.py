@@ -86,23 +86,35 @@ def _conceptos_egreso(
 def _egresos_anclados_del_mes(
     ancla: AnclaMes, *, rubros: list[RubroInfo], neutros_ids: set[str]
 ) -> dict[str, Decimal]:
-    """Los 5 conceptos de egreso anclados del mes (magnitud POSITIVA), por estado."""
+    """Los 5 conceptos de egreso anclados del mes (magnitud POSITIVA), por estado.
+
+    P4 del ciclo mensual (CEO 2026-08-23) — **la Regla A / D-08 queda SOLO para meses
+    cerrados**. Un mes EN EJECUCIÓN muestra su PRESUPUESTO, igual que un mes futuro con
+    presupuesto: la gráfica del mes en curso es la proyección del objetivo, y lo
+    ejecutado se lee aparte como desviación (el termómetro de P6). Antes se mezclaba
+    (`ejecutado + max(0, definido − ejecutado)`), así que la misma fila tenía el gasto
+    medio real y el ingreso 100 % paramétrico — dos universos en una sola cuenta."""
     if ancla.estado == CERRADO:
         return _conceptos_egreso(
             ancla.ejecutado_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
         )
-    if ancla.estado == PRESUPUESTO:
-        return _conceptos_egreso(
-            ancla.definido_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
-        )
-    # EN_EJECUCION → Regla A (D-08) por concepto: ejec + max(0, definido − ejec).
-    ejec = _conceptos_egreso(
-        ancla.ejecutado_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
-    )
-    defi = _conceptos_egreso(
+    return _conceptos_egreso(
         ancla.definido_por_rubro_id, rubros=rubros, neutros_ids=neutros_ids
     )
-    return {c: ejec[c] + max(_CERO, defi[c] - ejec[c]) for c in _EGRESOS_ANCLADOS}
+
+
+def _es_anclable(ancla: AnclaMes) -> bool:
+    """Si este mes se ancla o se deja al motor paramétrico.
+
+    Un mes CERRADO se ancla siempre (su verdad es el libro). Un mes que se ancla al
+    PRESUPUESTO (en ejecución o futuro definido) necesita tener presupuesto: sin él,
+    anclar dejaría el gasto del mes en CERO, que es peor que la estimación del motor.
+    Fail-safe explícito, no silencioso."""
+    if ancla.estado == CERRADO:
+        return True
+    if ancla.estado not in _ANCLABLES:
+        return False
+    return bool(ancla.definido_por_rubro_id)
 
 
 def _fila_anclada(
@@ -126,6 +138,12 @@ def _fila_anclada(
         + fila.adelanto
         + fila.pago_inventario
         + fila.fondeo
+        # P1 del ciclo mensual (candado aritmético, 2026-08-23): el fondo de AVAL es
+        # un egreso que E1 NO ancla (sale del recaudo, no de un rubro del libro), así
+        # que se CONSERVA del motor, igual que Auteco. Faltaba: todo mes anclado
+        # perdía el aval de sus egresos en silencio — en PROD, agosto-2026 son
+        # 546.241,68 que desaparecían de la cuenta.
+        + fila.aval
     )
     flujo = _cop(neto + egresos)
     return replace(
@@ -148,10 +166,15 @@ def anclar(
     anclas: dict[str, AnclaMes],
     rubros: list[RubroInfo],
     neutros_ids: set[str],
+    primer_mes_acumula: bool = False,
 ) -> ResultadoAjustado:
     """Ancla la serie del motor a la ejecución real (§1) y re-acumula la caja. `anclas`
     mapea 'YYYY-MM'→AnclaMes; los meses fuera del dict quedan intactos (motor). Con
-    `anclas` vacío devuelve la base bit a bit (== golden, B1)."""
+    `anclas` vacío devuelve la base bit a bit (== golden, B1).
+
+    `primer_mes_acumula` (P3) viaja hasta `reacumular`: sin él, anclar el mes en curso
+    cambiaría su flujo y dejaría su caja congelada — el descuadre que el CEO vio en
+    agosto-2026."""
     base = resultado.meses
     n = len(base)
     idx = {fila.mes: i for i, fila in enumerate(base)}
@@ -160,8 +183,8 @@ def anclar(
     ancladas: dict[int, MesProyeccion] = {}
     deltas = [_CERO] * n
     for mes, ancla in anclas.items():
-        if mes not in idx or ancla.estado not in _ANCLABLES:
-            continue  # fuera del horizonte o estado no anclable → motor intacto
+        if mes not in idx or not _es_anclable(ancla):
+            continue  # fuera del horizonte, no anclable o sin presupuesto → motor
         m = idx[mes]
         egr = _egresos_anclados_del_mes(ancla, rubros=rubros, neutros_ids=neutros_ids)
         nueva = _fila_anclada(base[m], ancla, egr)
@@ -169,12 +192,27 @@ def anclar(
         deltas[m] = _cop(nueva.flujo - base[m].flujo)
 
     # 2) re-acumular caja/flujo/estado con la mecánica del motor (D2/D1 la comparten).
-    ajustado = reacumular(resultado, deltas, caja_minima)
+    ajustado = reacumular(resultado, deltas, caja_minima, primer_mes_acumula)
 
     # 3) reescribir los campos POR CONCEPTO de los meses anclados (reacumular solo tocó
     #    flujo/caja/estado). Así `neto + Σ egresos == flujo` al peso en la serie (B6).
     filas = list(ajustado.meses)
     for m, nueva in ancladas.items():
+        # SUP-5 · honestidad: la mora paramétrica solo se borra cuando el INGRESO dejó
+        # de ser del motor (mes cerrado: `ingreso_real` reemplaza el neto). En un mes EN
+        # EJECUCIÓN el ingreso sigue siendo paramétrico, así que su mora SÍ explica la
+        # cifra y debe verse — borrarla dejaba la columna «Ajuste mora/default» con un
+        # valor que ninguna fila del desglose sustentaba.
+        ingreso_es_del_libro = anclas[filas[m].mes].ingreso_real is not None
+        cartera = (
+            {
+                "mora": Decimal("0.00"),
+                "recuperacion": Decimal("0.00"),
+                "default": Decimal("0.00"),
+            }
+            if ingreso_es_del_libro
+            else {}
+        )
         filas[m] = replace(
             filas[m],
             neto=nueva.neto,
@@ -184,5 +222,6 @@ def anclar(
             int_deuda=nueva.int_deuda,
             iva=nueva.iva,
             egresos=nueva.egresos,
+            **cartera,
         )
     return replace(ajustado, meses=filas)

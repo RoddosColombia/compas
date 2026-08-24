@@ -16,14 +16,33 @@ export type MarcaOrigen =
   | "en_ejecucion"
   | "presupuesto";
 
-// B13 — completitud del mes en ejecución + comparación (P6-b).
+/**
+ * El mes en curso: completitud (B13) + el TERMÓMETRO de desviación (P6 del ciclo
+ * mensual). La curva muestra el OBJETIVO; esto muestra la realidad AL LADO, para
+ * responder otra pregunta: ¿qué tan buenos son nuestros objetivos?
+ *
+ * Lo real es "a la fecha" (día `dia` de `dias_del_mes`) y lo proyectado es del MES
+ * completo: la pantalla tiene que decirlo o una desviación a mitad de mes engaña.
+ * Los campos del termómetro son opcionales (aditivos): `null` = sin dato cargado, que
+ * NO es lo mismo que cero.
+ */
 export interface MesEnCurso {
   mes: string; // 'YYYY-MM'
   cargado_hasta: string | null; // 'YYYY-MM-DD' | null si aún sin tx
   dia: number | null;
-  formula: string; // fórmula técnica del backend (Regla A)
+  dias_del_mes?: number;
+  formula: string; // cómo se armó el mes (P4: el presupuesto aprobado)
   ejecutado: string; // Σ egresos reales del mes a la fecha (COP)
   proyectado: string; // Σ presupuesto definido del mes (COP)
+  // P6 — las otras dos lecturas del termómetro
+  ingreso_real?: string | null;
+  ingreso_real_inicial?: string | null;
+  ingreso_real_semanal?: string | null;
+  ingreso_proyectado?: string | null;
+  ingreso_proyectado_inicial?: string | null;
+  ingreso_proyectado_semanal?: string | null;
+  colocaciones_meta?: number | null;
+  colocaciones_reales?: number | null;
 }
 
 export interface MesProyeccion {
@@ -43,10 +62,52 @@ export interface MesProyeccion {
   fondeo: string;
   int_deuda: string;
   iva: string; // egreso de IVA neto en el mes DIAN (≤ 0); 0.00 fuera de ese mes
+  aval: string; // SUP-2: reserva del fondo AVAL propio / autoseguro (≤ 0)
+  /**
+   * SUP-5: la EXPLICACIÓN del ingreso, no solo su total.
+   * `neto = ingreso_bruto + mora + recuperacion + default`.
+   * En un mes anclado a la ejecución real vienen en 0: su ingreso sale del libro.
+   */
+  mora: string; // ≤ 0 (lo que no llega este mes)
+  recuperacion: string; // ≥ 0 (lo que vuelve de la mora de antes)
+  default: string; // ≤ 0 (lo que se pierde y no vuelve)
   egresos: string;
   flujo: string;
   caja: string;
   estado: EstadoMes;
+}
+
+/**
+ * SUP-5: los drivers que EXPLICAN la curva en pantalla — valores EFECTIVOS del
+ * escenario que se está viendo (cada escenario tiene su propia mora desde SUP-2).
+ */
+export interface SupuestosProyeccion {
+  pct_mora: string;
+  pct_recuperacion: string;
+  pct_default: string;
+  pct_provision: string;
+  meses_rezago_recuperacion: number;
+  pct_aval_recaudo: string;
+  pct_prefondeo_iva: string;
+  motos_base: number;
+  crec_pct_mensual: string;
+  crec_pct_mensual_2: string | null;
+  crec_mes_corte: number | null;
+  rampa_unidades: Record<string, number>;
+}
+
+/**
+ * P2 del ciclo mensual — la plata con la que arranca la serie y DE DÓNDE salió.
+ * `origen`: 'ciclo' = el efectivo real del cierre del mes anterior (lo normal) ·
+ * 'semilla' = el parámetro `caja_inicial` porque el mes no está abierto en el ciclo ·
+ * 'override' = re-anclaje explícito (rolling forecast, COCK-09).
+ */
+export interface ArranqueCaja {
+  valor: string;
+  origen: "ciclo" | "semilla" | "override";
+  mes: string | null; // 'YYYY-MM' del mes leído del ciclo
+  saldo_declarado: string | null; // el saldo del ciclo, sin el tránsito
+  transito_heredado: string; // CR-WAVA: cobrado que aún no está en el banco
 }
 
 // Fondo de provisión de IVA (P1.4): serie informativa mes a mes (NO es flujo del motor).
@@ -59,6 +120,10 @@ export interface FondoMes {
 
 export interface Proyeccion {
   escenario: string;
+  /** SUP-5: qué supone esta curva. Opcional: el preview no lo trae. */
+  supuestos?: SupuestosProyeccion;
+  /** P2: con qué plata arranca la serie y de dónde salió. Opcional (aditivo). */
+  arranque?: ArranqueCaja | null;
   caja_minima: string; // el umbral (para la curva)
   fondo_provision: FondoMes[];
   piso_caja: string;

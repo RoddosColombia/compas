@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from app.cartera_previa import service as cartera_previa_service
 from app.cierre.service import _caja_libro, _rubro_ajuste
+from app.cierre.transito import transito_heredado
 from app.core.money import money_str
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.mes_control import EstadoMes, MesControl
@@ -124,6 +125,70 @@ def _con_delta(preset: Decimal, delta: Decimal) -> Decimal:
     return min(Decimal("1"), max(Decimal("0"), preset + delta))
 
 
+def _mora_del_escenario(
+    params: ParametrosProyeccion, escenario: str
+) -> tuple[Decimal, Decimal]:
+    """(pct_mora, pct_recuperacion) EFECTIVOS del escenario. Una sola fuente para el
+    motor y para lo que la pantalla muestra — si divergieran, el usuario vería unos
+    supuestos y la curva usaría otros.
+
+    SUP-2: si el CEO editó el escenario extremo, ese valor MANDA. Si no, se conserva
+    el delta en puntos de SUP-1 sobre el preset. Escenario desconocido → los supuestos
+    tal cual."""
+    if escenario not in PRESETS_ESCENARIO:
+        return params.pct_mora, params.pct_recuperacion
+    editables = {
+        "pesimista": (params.pct_mora_pesimista, params.pct_recuperacion_pesimista),
+        "optimista": (params.pct_mora_optimista, params.pct_recuperacion_optimista),
+    }
+    mora_edit, recup_edit = editables.get(escenario, (None, None))
+    mora = (
+        mora_edit
+        if mora_edit is not None
+        else _con_delta(
+            PRESETS_ESCENARIO[escenario]["pct_mora"],
+            params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
+        )
+    )
+    recup = (
+        recup_edit
+        if recup_edit is not None
+        else _con_delta(
+            PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
+            params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
+        )
+    )
+    return mora, recup
+
+
+def _supuestos_visibles(params: ParametrosProyeccion, escenario: str) -> dict:
+    """SUP-5 (CEO 2026-08-23): los drivers que EXPLICAN la curva en pantalla, para que
+    no haya que adivinar de dónde sale el resultado. Son los valores EFECTIVOS del
+    escenario que se está viendo (con SUP-2 cada escenario tiene su propia mora).
+    Porcentajes como string (regla 1)."""
+    mora, recup = _mora_del_escenario(params, escenario)
+    return {
+        "pct_mora": str(mora),
+        "pct_recuperacion": str(recup),
+        "pct_default": str(params.pct_default),
+        "pct_provision": str(params.pct_provision),
+        "meses_rezago_recuperacion": params.meses_rezago_recuperacion,
+        "pct_aval_recaudo": str(params.pct_aval_recaudo),
+        # SUP-6: SOBRE QUÉ se aplica la mora (la cuota inicial es de contado).
+        "mora_sobre_recaudo": params.mora_sobre_recaudo,
+        "pct_prefondeo_iva": str(params.pct_prefondeo_iva),
+        "motos_base": params.motos_base,
+        "crec_pct_mensual": str(params.crec_pct_mensual),
+        "crec_pct_mensual_2": (
+            str(params.crec_pct_mensual_2)
+            if params.crec_pct_mensual_2 is not None
+            else None
+        ),
+        "crec_mes_corte": params.crec_mes_corte,
+        "rampa_unidades": dict(params.rampa_unidades),
+    }
+
+
 def _guard_apache_por_mes(
     apache_por_mes: dict[int, int] | None, modelos: list[ModeloMoto]
 ) -> None:
@@ -162,39 +227,10 @@ def _armar_parametros(
     iva_egreso_por_mes: dict[int, object] | None = None,
     caja_inicial_override: object | None = None,
 ) -> ParametrosMotor:
-    pct_mora, pct_recuperacion = params.pct_mora, params.pct_recuperacion
-    # SUP-1 (CEO 2026-08-17) — los SUPUESTOS fijan el NIVEL, el escenario el DESVÍO.
-    # Antes el preset PISABA la mora/recuperación del CEO y "base" está en los presets,
-    # así que sus valores se descartaban SIEMPRE (bug: "la mora no impacta en ninguna
-    # vía"). Regla del CEO: "si subo la mora de 3 a 5, esos dos puntos se suman también
-    # en pesimista y en optimista" → DELTA EN PUNTOS sobre el preset base, aplicado a
-    # los tres escenarios y acotado a [0, 1] (una mora del 98% no vuelve 101% al
-    # pesimista). Escenario desconocido → los supuestos tal cual.
-    # SUP-2 (CEO 2026-08-22): si el CEO EDITÓ la mora/recuperación de un escenario
-    # extremo, ese valor MANDA — nada de porcentajes clavados en el código. Sin valor
-    # explícito se conserva el delta de SUP-1 (compatibilidad, tests de SUP-1 verdes).
-    editables = {
-        "pesimista": (params.pct_mora_pesimista, params.pct_recuperacion_pesimista),
-        "optimista": (params.pct_mora_optimista, params.pct_recuperacion_optimista),
-    }
-    if escenario in PRESETS_ESCENARIO:
-        mora_edit, recup_edit = editables.get(escenario, (None, None))
-        pct_mora = (
-            mora_edit
-            if mora_edit is not None
-            else _con_delta(
-                PRESETS_ESCENARIO[escenario]["pct_mora"],
-                params.pct_mora - PRESETS_ESCENARIO["base"]["pct_mora"],
-            )
-        )
-        pct_recuperacion = (
-            recup_edit
-            if recup_edit is not None
-            else _con_delta(
-                PRESETS_ESCENARIO[escenario]["pct_recuperacion"],
-                params.pct_recuperacion - PRESETS_ESCENARIO["base"]["pct_recuperacion"],
-            )
-        )
+    # SUP-1/SUP-2/SUP-5: la resolución de la mora del escenario vive en
+    # `_mora_del_escenario` — UNA sola fuente para el motor y para los supuestos que
+    # la pantalla muestra (si divergieran, se verían unos y la curva usaría otros).
+    pct_mora, pct_recuperacion = _mora_del_escenario(params, escenario)
     pm = ParametrosMotor(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
@@ -208,6 +244,11 @@ def _armar_parametros(
         # SUP-2: rezago de la recuperación de mora + fondo AVAL (ambos editables)
         meses_rezago_recuperacion=params.meses_rezago_recuperacion,
         pct_aval_recaudo=params.pct_aval_recaudo,
+        mora_sobre_recaudo=params.mora_sobre_recaudo,
+        # P3 del ciclo mensual: el arranque es el efectivo ANTERIOR al primer mes,
+        # asi que su flujo si mueve su caja. El motor conserva False como default
+        # (semantica del artefacto) para que el golden master siga bit a bit.
+        primer_mes_acumula_flujo=True,
         adelanto_auteco=params.adelanto_auteco,
         plazo_auteco_dias=params.plazo_auteco_dias,
         base_auteco_dias=params.base_auteco_dias,
@@ -253,6 +294,8 @@ class AnclajeMeta:
     meses_anclados: dict[str, str] = field(default_factory=dict)
     sin_mapear: list[str] = field(default_factory=list)
     mes_en_curso: dict | None = None
+    # P2 del ciclo mensual — de dónde salió la plata con la que arranca la serie.
+    arranque: "Arranque | None" = None
 
 
 def _serializar(
@@ -263,11 +306,33 @@ def _serializar(
     rec: ResultadoReconciliado | None = None,
     *,
     meta: "AnclajeMeta | None" = None,
+    supuestos: dict | None = None,
 ) -> dict:
     meses_ym = [f.mes for f in r.meses]
     meta = meta or AnclajeMeta()
     return {
         "escenario": escenario,
+        # SUP-5 (CEO 2026-08-23): los drivers que EXPLICAN esta curva — los valores
+        # EFECTIVOS del escenario en pantalla, no los del set base.
+        "supuestos": supuestos or {},
+        # P2 del ciclo mensual — la plata con la que arranca la serie y DE DÓNDE salió.
+        # `origen`: 'ciclo' (efectivo real del cierre anterior) · 'semilla' (el
+        # parámetro
+        # `caja_inicial`, cuando el mes no está abierto en el ciclo) · 'override'
+        # (re-anclaje explícito, COCK-09).
+        "arranque": {
+            "valor": money_str(meta.arranque.valor),
+            "origen": meta.arranque.origen,
+            "mes": meta.arranque.mes,
+            "saldo_declarado": (
+                money_str(meta.arranque.saldo_declarado)
+                if meta.arranque.saldo_declarado is not None
+                else None
+            ),
+            "transito_heredado": money_str(meta.arranque.transito_heredado),
+        }
+        if meta.arranque is not None
+        else None,
         # P5 — origen de cada cifra (aditivo): marcas por mes, rubros sin concepto del
         # motor, y completitud del mes en curso (B13). Vacíos si no hay anclaje.
         "meses_anclados": dict(meta.meses_anclados),
@@ -319,6 +384,12 @@ def _serializar(
                 "int_deuda": money_str(f.int_deuda),
                 "iva": money_str(f.iva),
                 "aval": money_str(f.aval),  # SUP-2: fondo AVAL propio
+                # SUP-5: la explicación del ingreso (mora/recuperación/default), para
+                # que la pantalla muestre QUÉ compone el resultado. En un mes anclado
+                # a la ejecución real vienen en 0: su ingreso sale del libro.
+                "mora": money_str(f.mora),
+                "recuperacion": money_str(f.recuperacion),
+                "default": money_str(f.default),
                 "egresos": money_str(f.egresos),
                 "flujo": money_str(f.flujo),
                 "caja": money_str(f.caja),
@@ -482,6 +553,59 @@ async def _facturas_reconciliar() -> list[FacturaReconciliar]:
     return out
 
 
+@dataclass(frozen=True)
+class Arranque:
+    """P2 del ciclo mensual — de dónde sale la plata con la que arranca la proyección.
+
+    Paso 0 del contrato (`docs/COMPAS_Ciclo_Mensual.md`): el efectivo real con el que
+    cerró el mes anterior. Lo escribe el ciclo mensual: `saldo_inicial_caja` se DERIVA
+    del consolidado bancario del predecesor (M-1/F-14) y se puede corregir a mano con
+    motivo y evento de auditoría (`saldo_inicial.editado`, FIX-F) — COMPAS no hace
+    arqueos, la diferencia se teclea con rastro (decisión CEO 2026-08-23).
+
+    `origen`: 'ciclo' cuando el mes de inicio está abierto en el ciclo (el caso normal);
+    'semilla' cuando no lo está y toca usar el parámetro `caja_inicial` (primer mes de
+    la
+    historia, o un mes_inicio fuera del ciclo). Se publica para que la pantalla pueda
+    decir de dónde salió la cifra en vez de que el usuario adivine.
+    """
+
+    valor: Decimal
+    origen: str  # 'ciclo' | 'semilla'
+    mes: str | None  # 'YYYY-MM' del MesControl leído (None si semilla)
+    saldo_declarado: Decimal | None  # el saldo del ciclo, sin el tránsito
+    transito_heredado: Decimal  # CR-WAVA: cobrado que aún no está en el banco
+
+
+async def _arranque_de_caja(
+    params: ParametrosProyeccion, mes_inicio: tuple[int, int]
+) -> Arranque:
+    """Resuelve el Paso 0. La definición del valor es la MISMA que muestra la pantalla
+    del ciclo (`caja_inicial_total` = saldo declarado + tránsito heredado): si las dos
+    pantallas dieran números distintos para "la plata con la que arranco el mes", el
+    tejido estaría roto."""
+    y, m = mes_inicio
+    clave = f"{y:04d}-{m:02d}-01"
+    mc = await MesControl.find_one(MesControl.mes == clave)
+    if mc is None:
+        # Fail-soft honesto: no se inventa un arranque; se usa la semilla y se DECLARA.
+        return Arranque(
+            valor=params.caja_inicial,
+            origen="semilla",
+            mes=None,
+            saldo_declarado=None,
+            transito_heredado=Decimal("0.00"),
+        )
+    transito = await transito_heredado(clave)
+    return Arranque(
+        valor=mc.saldo_inicial_caja + transito,
+        origen="ciclo",
+        mes=clave[:7],
+        saldo_declarado=mc.saldo_inicial_caja,
+        transito_heredado=transito,
+    )
+
+
 async def _resultado_con(
     params: ParametrosProyeccion,
     modelos: list[ModeloMoto],
@@ -516,6 +640,30 @@ async def _resultado_con(
         raise ProyeccionError(
             f"horizonte_meses debe estar en [1, {HORIZONTE_MAX}]", 422
         )
+    # P2 · Paso 0 — el arranque sale del CICLO (efectivo real del cierre anterior), no
+    # del parámetro tecleado. `caja_inicial_override` explícito (COCK-09, rolling
+    # forecast) sigue mandando sobre todo. Con `anclas_override` (tests herméticos) no
+    # se
+    # toca Mongo: se queda en la semilla.
+    if caja_inicial_override is not None:
+        arranque = Arranque(
+            valor=Decimal(str(caja_inicial_override)),
+            origen="override",
+            mes=None,
+            saldo_declarado=None,
+            transito_heredado=Decimal("0.00"),
+        )
+    elif anclas_override is not None:
+        arranque = Arranque(
+            valor=params.caja_inicial,
+            origen="semilla",
+            mes=None,
+            saldo_declarado=None,
+            transito_heredado=Decimal("0.00"),
+        )
+    else:
+        arranque = await _arranque_de_caja(params, mes_inicio)
+
     recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
     iva_egreso, fondo = await _iva_plan(
         mes_inicio,
@@ -533,7 +681,7 @@ async def _resultado_con(
         recaudo_previo,
         activos_previos,
         iva_egreso,
-        caja_inicial_override,
+        arranque.valor,
     )
     r = proyectar(pm)
 
@@ -553,6 +701,7 @@ async def _resultado_con(
             anclas=anclas,
             rubros=rubros_e1,
             neutros_ids=neutros_e1,
+            primer_mes_acumula=True,
         )
         r = _kpis_a_resultado(aj)
         # D2 solo excluye los meses CERRADOS (el pasado es del libro; su factura ya no
@@ -591,11 +740,33 @@ async def _resultado_con(
     rec: ResultadoReconciliado | None = None
     if facturas:
         rec = reconciliar(
-            r, facturas, params.caja_minima, meses_anclados=meses_anclados
+            r,
+            facturas,
+            params.caja_minima,
+            meses_anclados=meses_anclados,
+            primer_mes_acumula=True,
         )
         r = _kpis_a_resultado(rec.ajustado)
+    # P6 — el TERMÓMETRO se cierra aquí: el loader trajo la realidad (ingreso real,
+    # ejecutado, colocaciones reales) y solo el servicio conoce la PROYECCIÓN del mes
+    # (la fila de la serie). Se juntan para que la pantalla compare meta vs. realidad
+    # sin recalcular nada — y sin que la realidad toque la curva (Paso 2 del contrato).
+    if completitud is not None:
+        fila = next((f for f in r.meses if f.mes == completitud["mes"]), None)
+        if fila is not None:
+            completitud = {
+                **completitud,
+                "colocaciones_meta": fila.motos,
+                "ingreso_proyectado": money_str(fila.neto),
+                "ingreso_proyectado_inicial": money_str(fila.cuotas_iniciales),
+                "ingreso_proyectado_semanal": money_str(fila.recaudo_credito),
+            }
+
     meta = AnclajeMeta(
-        meses_anclados=marcas, sin_mapear=sin_mapear, mes_en_curso=completitud
+        meses_anclados=marcas,
+        sin_mapear=sin_mapear,
+        mes_en_curso=completitud,
+        arranque=arranque,
     )
     return r, params.caja_minima, fondo, rec, meta
 
@@ -619,7 +790,17 @@ async def _proyectar_con(
         horizonte_meses=horizonte_meses,
         caja_inicial_override=caja_inicial_override,
     )
-    return _serializar(r, escenario, caja_min, fondo, rec, meta=meta)
+    return _serializar(
+        r,
+        escenario,
+        caja_min,
+        fondo,
+        rec,
+        meta=meta,
+        # SUP-5: los drivers efectivos de ESTA curva, para que la pantalla explique
+        # el resultado en vez de pedirle al usuario que adivine.
+        supuestos=_supuestos_visibles(params, escenario),
+    )
 
 
 async def proyectar_vigente(
@@ -741,12 +922,20 @@ async def proyectar_impactos(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
     )
-    ajustado = aplicar_impactos(r, ajustes, caja_min)
+    ajustado = aplicar_impactos(r, ajustes, caja_min, primer_mes_acumula=True)
     r_aj = _kpis_a_resultado(ajustado)
+    # SUP-5: los supuestos son los MISMOS para base y ajustada (un ajuste de D1 mueve
+    # el flujo, no los drivers). Van en ambas para que `base` siga siendo GET
+    # /proyeccion bit a bit — candado de test_impactos_endpoints.
+    supuestos = _supuestos_visibles(params, escenario)
     return {
         "escenario": escenario,
-        "base": _serializar(r, escenario, caja_min, fondo, meta=meta),
-        "ajustada": _serializar(r_aj, escenario, caja_min, fondo, meta=meta),
+        "base": _serializar(
+            r, escenario, caja_min, fondo, meta=meta, supuestos=supuestos
+        ),
+        "ajustada": _serializar(
+            r_aj, escenario, caja_min, fondo, meta=meta, supuestos=supuestos
+        ),
         "valles_base": [
             _serializar_valle(v) for v in detectar_valles(r.meses, caja_min)
         ],
@@ -1108,6 +1297,7 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
                     anclas=anclas,
                     rubros=rubros_e1,
                     neutros_ids=neutros_e1,
+                    primer_mes_acumula=True,
                 )
             )
             meses_anclados = frozenset(
@@ -1115,7 +1305,11 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
             )
         if facturas:
             rec = reconciliar(
-                r, facturas, params.caja_minima, meses_anclados=meses_anclados
+                r,
+                facturas,
+                params.caja_minima,
+                meses_anclados=meses_anclados,
+                primer_mes_acumula=True,
             )
             r = _kpis_a_resultado(rec.ajustado)
         return r.piso_caja
@@ -1203,9 +1397,15 @@ async def comparar_vigente(
     else:
         mc_a, caja_a = ancla
         y, m = int(mc_a.mes[:4]), int(mc_a.mes[5:7])
+        # P3 del ciclo mensual: la caja del ancla es la del CIERRE de ese mes, o sea la
+        # que existe ANTES del siguiente. Asi que el forecast arranca en el mes
+        # SIGUIENTE: el tramo real termina en el ancla y el proyectado sigue desde ahi,
+        # sin repetir el punto ni contar dos veces el flujo del mes ancla (antes el
+        # primer mes tenia la caja fija y por eso el solape no se notaba).
+        y_sig, m_sig = (y + 1, 1) if m == 12 else (y, m + 1)
         forecast = await proyectar_vigente(
             escenario=escenario,
-            mes_inicio=(y, m),
+            mes_inicio=(y_sig, m_sig),
             horizonte_meses=horizonte_meses,
             caja_inicial_override=caja_a,
         )

@@ -115,3 +115,25 @@ def app(mock_mongo_client: AsyncMongoMockClient, monkeypatch: pytest.MonkeyPatch
     application = create_app()
     application.dependency_overrides[get_mongo_client] = lambda: mock_mongo_client
     return application
+
+
+def rutas_registradas(app) -> set[str]:
+    """Todas las rutas registradas en la app, recorriendo los routers incluidos.
+
+    Tolerante a la versión de FastAPI: hasta 0.135 `app.routes` traía objetos con
+    `.path`; desde 0.141 puede traer `_IncludedRouter` (un router incluido) que NO
+    expone `.path` sino sus propias `.routes`. Los tests estructurales de flag-off
+    (FABS) usaban `{r.path for r in app.routes}` y rompían en CI, que instala la
+    versión pinneada de `requirements.txt`.
+
+    Recorrer el árbol completo también hace la verificación MÁS fuerte: una ruta
+    escondida dentro de un router incluido tampoco se escapa."""
+    encontradas: set[str] = set()
+    pendientes = list(getattr(app, "routes", []) or [])
+    while pendientes:
+        r = pendientes.pop()
+        path = getattr(r, "path", None)
+        if isinstance(path, str):
+            encontradas.add(path)
+        pendientes.extend(getattr(r, "routes", []) or [])
+    return encontradas
