@@ -41,14 +41,16 @@ import {
   listarModelos,
   reactivarModelo,
 } from "@/lib/modelosMoto";
-import { formatCOP, formatFecha } from "@/lib/money";
+import { formatCOP, formatFecha, formatMesCorto } from "@/lib/money";
 import {
   type CamposParametros,
   type ComponenteAlistamiento,
   type Parametros,
+  type SugerenciaSupuesto,
   guardarParametros,
   obtenerParametros,
   obtenerSensibilidad,
+  obtenerSugerencias,
   previewProyeccion,
 } from "@/lib/parametros";
 import { obtenerProyeccion } from "@/lib/proyeccion";
@@ -462,6 +464,13 @@ function Editor({
       }),
     enabled: previewJson !== null && puedeGestionar,
   });
+  // P7 del ciclo mensual: el gasto real de los meses cerrados SUGIERE el supuesto. No
+  // lo reemplaza — el CEO decide si lo adopta con un clic.
+  const sugerencias = useQuery({
+    queryKey: ["parametros", "sugerencias"],
+    queryFn: obtenerSugerencias,
+    enabled: puedeGestionar,
+  });
   const proyVigente = useQuery({
     queryKey: ["proyeccion", "base", PREVIEW_HORIZONTE],
     queryFn: () =>
@@ -552,6 +561,14 @@ function Editor({
                   />
                 ))}
               </div>
+              {b.titulo.startsWith("④") && sugerencias.data?.gastos_fijos && (
+                <SugerenciaGasto
+                  sug={sugerencias.data.gastos_fijos}
+                  vigente={borr.gastos_fijos ?? ""}
+                  onUsar={(v) => set("gastos_fijos", v)}
+                  disabled={!puedeGestionar}
+                />
+              )}
               {b.titulo.startsWith("②") && borr.crec_pct_mensual && (
                 <p className="font-sans text-apoyo text-ink-faint">
                   {esPctValido(borr.crec_pct_mensual)
@@ -1049,6 +1066,67 @@ const SUFIJO: Record<Unidad, string> = {
   meses: "meses",
   mesCal: "",
 };
+
+/**
+ * P7 del ciclo mensual — la sugerencia del gasto, con su evidencia.
+ *
+ * "El gasto hacia adelante = informado por el promedio de gasto real de los meses
+ * cerrados" (contrato, Paso 4). Decisión del CEO: promedio de los 3 meses cerrados más
+ * recientes, y **SUGIERE** — el supuesto no se toca hasta que el CEO lo adopte.
+ *
+ * Honestidad: dice sobre cuántos meses se promedió y cuáles (con menos de 3 lo declara),
+ * y solo ofrece el botón cuando la cifra es DISTINTA de la vigente — un botón que no
+ * cambia nada es ruido.
+ */
+function SugerenciaGasto({
+  sug,
+  vigente,
+  onUsar,
+  disabled,
+}: {
+  sug: SugerenciaSupuesto;
+  vigente: string;
+  onUsar: (valor: string) => void;
+  disabled: boolean;
+}) {
+  const humano = montoAHumano(sug.valor);
+  const yaEsIgual = montoACanonico(vigente) === montoACanonico(humano);
+  const meses =
+    sug.n === 1
+      ? formatMesCorto(sug.meses[0])
+      : `${formatMesCorto(sug.meses[0])}–${formatMesCorto(sug.meses[sug.n - 1])}`;
+  return (
+    <div className="rounded-lg border border-hairline bg-surface-muted px-3 py-2">
+      <p className="font-sans text-apoyo text-ink-soft">
+        <span className="font-semibold text-ink">
+          Gasto fijo real: {formatCOP(sug.valor)}
+        </span>{" "}
+        — promedio de{" "}
+        {sug.n === 1 ? "el único mes cerrado" : `${sug.n} meses cerrados`} (
+        {meses}).{" "}
+        {yaEsIgual ? (
+          <span className="text-positivo">
+            El supuesto ya está en esa cifra.
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onUsar(humano)}
+            disabled={disabled}
+            className="font-semibold text-cyan hover:underline disabled:text-ink-faint disabled:no-underline"
+          >
+            Usar esta cifra
+          </button>
+        )}
+      </p>
+      <p className="mt-0.5 font-sans text-apoyo text-ink-faint">
+        {sug.detalle
+          .map((d) => `${formatMesCorto(d.mes)} ${formatCOP(d.valor)}`)
+          .join(" · ")}
+      </p>
+    </div>
+  );
+}
 
 function CampoSupuesto({
   def,

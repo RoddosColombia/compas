@@ -13,12 +13,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.auth.deps import require_permission
 from app.auth.models import User
 from app.auth.router import verify_origin
+from app.core.money import money_str
 from app.domain.parametros_proyeccion import (
     ComponenteAlistamiento,
     ParametrosProyeccion,
     costo_alistamiento_total,
 )
 from app.parametros_proyeccion import service
+from app.parametros_proyeccion.sugerencias import sugerencias
 
 router = APIRouter(prefix="/parametros-proyeccion", tags=["parametros-proyeccion"])
 
@@ -277,3 +279,31 @@ async def actualizar(
     except service.ParametrosError as e:
         raise HTTPException(e.status, e.detalle) from e
     return _serializar(p)
+
+
+@router.get("/sugerencias")
+async def obtener_sugerencias(
+    _u: User = Depends(require_permission("proyeccion:gestionar")),
+):
+    """P7 del ciclo mensual — supuestos SUGERIDOS por el gasto real de los meses
+    cerrados. Compute-only: no escribe nada, el CEO decide si los adopta.
+
+    RBAC: el permiso que EDITA los supuestos (es un insumo para editarlos, igual que el
+    preview de C3). Montos como string (regla 1)."""
+    s = await sugerencias()
+    g = s["gastos_fijos"]
+    return {
+        "gastos_fijos": (
+            None
+            if g is None
+            else {
+                "valor": money_str(g["valor"]),
+                "meses": g["meses"],
+                "n": g["n"],
+                "detalle": [
+                    {"mes": d["mes"], "valor": money_str(d["valor"])}
+                    for d in g["detalle"]
+                ],
+            }
+        )
+    }

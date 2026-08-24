@@ -36,7 +36,7 @@ Estado: ⬜ Pendiente · 🟡 En curso · ✅ Hecho · 🔒 Bloqueado
 | **P4** | **Mes en curso = objetivo** | El mes en ejecución deja de anclar gasto real (muestra el presupuesto) y la carga semanal **deja de escribir la meta** — es dato del CEO. | Paso 1 | ✅ **Hecho** |
 | **P5** | **Cronograma del mes completo** | La carga semanal conserva pagadas + parciales del mes en curso; corte de no-solape al cierre del mes anterior; cuota 0 nunca entra al recaudo. | Paso 1 | ✅ **Hecho** |
 | **P6** | **Termómetro de desviación** | Bloque propio: colocaciones / ingreso / gasto reales contra el objetivo del mes. No toca la curva. | Paso 2 | ✅ **Hecho** |
-| **P7** | **Promedio de gasto** | Promedio del gasto real de los **3 meses cerrados** más recientes; **SUGIERE** el supuesto hacia adelante y el CEO lo aprueba en Supuestos — nunca lo reemplaza en silencio (decisión CEO 2026-08-23). | Paso 4 | ⬜ Pendiente |
+| **P7** | **Promedio de gasto** | Promedio del gasto real de los **3 meses cerrados** más recientes; **SUGIERE** el supuesto hacia adelante y el CEO lo aprueba en Supuestos — nunca lo reemplaza en silencio (decisión CEO 2026-08-23). | Paso 4 | ✅ **Hecho** |
 
 Piezas ya cerradas que pertenecen a este tejido (venían de SUP-5, sin mergear):
 
@@ -59,7 +59,7 @@ Piezas ya cerradas que pertenecen a este tejido (venían de SUP-5, sin mergear):
 **Prerrequisitos / dependencias externas:**
 - **Cronograma de SISMO:** ✅ verificado 2026-08-23 — trae pagadas, parciales y pendientes con saldo y mora (9.879 cuotas, 196 créditos). No requiere cambios en SISMO.
 - **Cierre de agosto-2026:** P2 se prueba de verdad cuando exista un segundo cierre; hoy solo julio está cerrado (`saldo_inicial_caja` = 665.715.578).
-- **P7 ya definida (CEO 2026-08-23):** promedio de los **3 meses cerrados** más recientes; **sugiere**, el CEO aprueba. Queda como única pieza abierta.
+- **Las 8 piezas están cerradas.** Lo único pendiente de la fase es el **merge** (OK del CEO + gate-waiver) y una **ops**: volver a subir el cronograma desde la app DESPUÉS del merge, para que la serie de la cartera en PROD sea la del mes completo.
 - **Colocaciones reales:** hoy vienen de la cuota 0 del cronograma de SISMO (P6). Cuando exista el LoanTape en COMPAS será la fuente natural — mismo campo, otra fuente.
 
 ## 4. Registro de cambios (fechado, append-only)
@@ -86,6 +86,7 @@ Piezas ya cerradas que pertenecen a este tejido (venían de SUP-5, sin mergear):
 | 2026-08-23 | P4 | **Meta de agosto aplicada en PROD: 60** (decisión CEO), por el servicio auditado con backup previo. Estaba en 35, valor que había escrito la automatización de SUP-4. | `scratchpad/prod_meta_agosto.py` |
 | 2026-08-23 | P6 | **TERMÓMETRO DE DESVIACIÓN cerrado.** Tres lecturas al lado de la curva, sin tocarla: **colocaciones** (meta del mes vs. reales — nuevo `ColocacionMes`, que la carga semanal refresca desde la cuota 0 del cronograma), **ingreso** (real a la fecha vs. proyectado del mes, discriminado inicial/semanal) y **gasto** (ejecutado vs. presupuesto, que ya existía en B13). El ingreso real reusa `metas_ingreso.ingreso_real` — el MISMO criterio que E1 aplica a los meses cerrados —, así que el termómetro y el cierre no pueden discrepar. El payload declara `dia` y `dias_del_mes` para que un parcial no se lea como desviación, y un dato sin cargar viaja `None`, no 0. Candado: con o sin realidad cargada, `meses`/`piso_caja`/`arranque` son idénticos. 7 tests backend + 11 frontend. | `tests/test_p6_termometro.py` |
 | 2026-08-23 | P6 | **La fórmula que declara la pantalla se corrigió:** decía «ejecutado + max(0, definido − ejecutado) por concepto» (la Regla A) cuando P4 ya la había superado. Ahora dice «el presupuesto aprobado del mes» — si el texto queda viejo, la pantalla miente sobre cómo se armó la cifra. | `loader._FORMULA_MES_EN_CURSO` |
+| 2026-08-23 | P7 | **PROMEDIO DE GASTO cerrado — la fase queda completa.** `GET /parametros-proyeccion/sugerencias` (compute-only, RBAC = el permiso que edita los supuestos) devuelve el promedio de los **3 meses cerrados** más recientes con su detalle mes a mes. Dos decisiones que hacen la cifra comparable: se promedia el **concepto `gastos_fijos`** mapeado con el MISMO mapeo de E1 —no el gasto total del mes, que incluye Auteco/deudas/costo de producto y se proyecta por otras vías—, y se declara **sobre cuántos meses y cuáles** (con menos de 3 se promedia lo que hay; sin ninguno no hay sugerencia). En Supuestos aparece bajo el campo con un botón «Usar esta cifra»: **SUGIERE**, no reemplaza — con test de que el vigente no se toca. 10 tests backend + 5 frontend. | `tests/test_p7_promedio_gasto.py` |
 | 2026-08-23 | — | **Tests de decisiones superadas, actualizados con su rastro** (no se acomodaron al código: cambió la regla de producto por decisión del CEO): `test_b3_regla_a_incluye_ejecutado_mayor_que_definido` → `test_b3_el_mes_en_ejecucion_usa_el_PRESUPUESTO`; los dos de la rampa-remanente de SUP-4; y dos fixtures que originaban créditos dentro del mes en curso (ahora los saca el no-solape). | `test_e1_anclaje.py`, `test_sup4_*.py` |
 
 ## 5. Estado de datos / decisiones abiertas del CEO

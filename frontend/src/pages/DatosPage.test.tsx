@@ -129,6 +129,7 @@ const mocks = vi.hoisted(() => ({
   previewProyeccion: vi.fn(),
   obtenerSensibilidad: vi.fn(),
   obtenerProyeccion: vi.fn(),
+  obtenerSugerencias: vi.fn(),
   listarModelos: vi.fn(),
 }));
 
@@ -144,6 +145,7 @@ vi.mock("@/lib/parametros", async (importOriginal) => {
     guardarParametros: mocks.guardarParametros,
     previewProyeccion: mocks.previewProyeccion,
     obtenerSensibilidad: mocks.obtenerSensibilidad,
+    obtenerSugerencias: mocks.obtenerSugerencias,
   };
 });
 
@@ -173,6 +175,9 @@ beforeEach(() => {
   mocks.obtenerParametros.mockResolvedValue(VIGENTE);
   mocks.listarModelos.mockResolvedValue([MODELO]);
   mocks.obtenerProyeccion.mockResolvedValue(proy("77800000.00"));
+  // P7: por defecto SIN sugerencia (no hay meses cerrados) → la pantalla queda como
+  // antes. Los tests de P7 la inyectan.
+  mocks.obtenerSugerencias.mockResolvedValue({ gastos_fijos: null });
   mocks.previewProyeccion.mockResolvedValue(
     proy("41200000.00", {
       mes_mas_ajustado: "2027-07",
@@ -394,5 +399,73 @@ describe("Supuestos — tornado presente (§6.7)", () => {
     expect(
       await screen.findByText("¿Qué mueve mi mínimo de caja?"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Supuestos — la sugerencia del gasto (P7)", () => {
+  const SUG = {
+    gastos_fijos: {
+      valor: "372200776.84",
+      meses: ["2026-05", "2026-06", "2026-07"],
+      n: 3,
+      detalle: [
+        { mes: "2026-05", valor: "350000000.00" },
+        { mes: "2026-06", valor: "360000000.00" },
+        { mes: "2026-07", valor: "406602330.52" },
+      ],
+    },
+  };
+
+  it("muestra el gasto real promedio con sobre cuántos meses se calculó", async () => {
+    mocks.obtenerSugerencias.mockResolvedValue(SUG);
+    renderPage();
+    expect(
+      await screen.findByText(/gasto fijo real: \$\s?372\.200\.776,84/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/promedio de 3 meses cerrados \(may-26–jul-26\)/i),
+    ).toBeInTheDocument();
+  });
+
+  it("muestra el detalle mes a mes: de dónde sale la cifra", async () => {
+    mocks.obtenerSugerencias.mockResolvedValue(SUG);
+    renderPage();
+    const detalle = await screen.findByText(/may-26 .* jun-26 .* jul-26/);
+    expect(detalle).toBeInTheDocument();
+  });
+
+  it("SUGIERE: hay que darle 'Usar esta cifra' para que entre al borrador", async () => {
+    mocks.obtenerSugerencias.mockResolvedValue(SUG);
+    renderPage();
+    const boton = await screen.findByRole("button", {
+      name: /usar esta cifra/i,
+    });
+    // antes del clic el campo conserva el valor vigente
+    const campo = screen.getByLabelText(
+      /gastos fijos \/ mes/i,
+    ) as HTMLInputElement;
+    expect(campo.value).not.toContain("372.200.776");
+    fireEvent.click(boton);
+    expect(campo.value).toContain("372.200.776");
+  });
+
+  it("si el supuesto ya está en esa cifra, no ofrece el botón", async () => {
+    mocks.obtenerSugerencias.mockResolvedValue({
+      gastos_fijos: { ...SUG.gastos_fijos, valor: VIGENTE.gastos_fijos },
+    });
+    renderPage();
+    expect(
+      await screen.findByText(/el supuesto ya está en esa cifra/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /usar esta cifra/i }),
+    ).toBeNull();
+  });
+
+  it("sin meses cerrados no muestra nada (no inventa un promedio)", async () => {
+    mocks.obtenerSugerencias.mockResolvedValue({ gastos_fijos: null });
+    renderPage();
+    await screen.findByText(/gastos fijos \/ mes/i);
+    expect(screen.queryByText(/gasto fijo real/i)).toBeNull();
   });
 });
