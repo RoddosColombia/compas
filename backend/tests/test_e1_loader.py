@@ -252,9 +252,20 @@ async def test_completitud_mes_en_curso_toma_la_fecha_maxima(db):
         "mes": "2026-08",
         "cargado_hasta": "2026-08-06",
         "dia": 6,
-        "formula": "ejecutado + max(0, definido - ejecutado) por concepto",
-        "ejecutado": "30.00",  # P6-b: Σ egresos reales del mes a la fecha
-        "proyectado": "100.00",  # P6-b: Σ presupuesto definido del mes
+        # P6 del ciclo mensual: el payload dice el día Y los días del mes, para que un
+        # parcial no se lea como desviación.
+        "dias_del_mes": 31,
+        # P4 SUPERSEDE la Regla A / D-08 para el mes en curso: muestra su PRESUPUESTO.
+        "formula": "el presupuesto aprobado del mes",
+        "ejecutado": "30.00",  # Σ egresos reales del mes a la fecha
+        "proyectado": "100.00",  # Σ presupuesto definido del mes
+        # P6 — el termómetro: la realidad al lado del objetivo. Sin ingresos cargados,
+        # el criterio del cierre da 0; sin cronograma cargado, las colocaciones son
+        # None ("sin dato" no es "cero motos").
+        "ingreso_real": "0.00",
+        "ingreso_real_inicial": "0.00",
+        "ingreso_real_semanal": "0.00",
+        "colocaciones_reales": None,
     }
 
 

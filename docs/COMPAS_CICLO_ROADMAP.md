@@ -35,7 +35,7 @@ Estado: ⬜ Pendiente · 🟡 En curso · ✅ Hecho · 🔒 Bloqueado
 | **P3** | **El primer mes acumula su flujo** | Quita la excepción del artefacto (`motor.py`: *"primer mes: caja fija"*). La caja de arranque pasa a ser un valor ANTERIOR al primer mes. | Candado | ✅ **Hecho** |
 | **P4** | **Mes en curso = objetivo** | El mes en ejecución deja de anclar gasto real (muestra el presupuesto) y la carga semanal **deja de escribir la meta** — es dato del CEO. | Paso 1 | ✅ **Hecho** |
 | **P5** | **Cronograma del mes completo** | La carga semanal conserva pagadas + parciales del mes en curso; corte de no-solape al cierre del mes anterior; cuota 0 nunca entra al recaudo. | Paso 1 | ✅ **Hecho** |
-| **P6** | **Termómetro de desviación** | Bloque propio: colocaciones / ingreso / gasto reales contra el objetivo del mes. No toca la curva. | Paso 2 | ⬜ Pendiente |
+| **P6** | **Termómetro de desviación** | Bloque propio: colocaciones / ingreso / gasto reales contra el objetivo del mes. No toca la curva. | Paso 2 | ✅ **Hecho** |
 | **P7** | **Promedio de gasto** | Promedio del gasto real de los **3 meses cerrados** más recientes; **SUGIERE** el supuesto hacia adelante y el CEO lo aprueba en Supuestos — nunca lo reemplaza en silencio (decisión CEO 2026-08-23). | Paso 4 | ⬜ Pendiente |
 
 Piezas ya cerradas que pertenecen a este tejido (venían de SUP-5, sin mergear):
@@ -59,7 +59,8 @@ Piezas ya cerradas que pertenecen a este tejido (venían de SUP-5, sin mergear):
 **Prerrequisitos / dependencias externas:**
 - **Cronograma de SISMO:** ✅ verificado 2026-08-23 — trae pagadas, parciales y pendientes con saldo y mora (9.879 cuotas, 196 créditos). No requiere cambios en SISMO.
 - **Cierre de agosto-2026:** P2 se prueba de verdad cuando exista un segundo cierre; hoy solo julio está cerrado (`saldo_inicial_caja` = 665.715.578).
-- **Decisión del CEO para P7:** ventana del promedio (¿3 meses cerrados?) y si **reemplaza** el supuesto o solo lo **sugiere**.
+- **P7 ya definida (CEO 2026-08-23):** promedio de los **3 meses cerrados** más recientes; **sugiere**, el CEO aprueba. Queda como única pieza abierta.
+- **Colocaciones reales:** hoy vienen de la cuota 0 del cronograma de SISMO (P6). Cuando exista el LoanTape en COMPAS será la fuente natural — mismo campo, otra fuente.
 
 ## 4. Registro de cambios (fechado, append-only)
 
@@ -83,6 +84,8 @@ Piezas ya cerradas que pertenecen a este tejido (venían de SUP-5, sin mergear):
 | 2026-08-23 | P3 | **Efecto colateral corregido en COCK-09** (`/proyeccion/comparar`): el rolling forecast arrancaba EN el mes ancla repitiendo su caja real — con el primer mes fijo el solape no se notaba, con el candado sería doble conteo del flujo de ese mes. Ahora el tramo real termina en el ancla y el forecast arranca el mes SIGUIENTE. | `service.comparar_vigente` |
 | 2026-08-23 | P3 | **VERIFICADO en PROD (read-only): el tejido cierra en agosto-2026.** `inicial 109.230.000 + semanal 161.295.930 = bruto 270.525.930` · `+ ajuste −17.742.552,30 = neto 252.783.377,70` · `+ egresos −241.822.459,30 = flujo 10.960.918,40` · `arranque 665.715.578 + flujo = caja 676.676.496,40`. Las cuatro fórmulas, al peso, rehechas a mano. Backend **1203 passed / 0 failed / 0 xfail**. | simulación read-only |
 | 2026-08-23 | P4 | **Meta de agosto aplicada en PROD: 60** (decisión CEO), por el servicio auditado con backup previo. Estaba en 35, valor que había escrito la automatización de SUP-4. | `scratchpad/prod_meta_agosto.py` |
+| 2026-08-23 | P6 | **TERMÓMETRO DE DESVIACIÓN cerrado.** Tres lecturas al lado de la curva, sin tocarla: **colocaciones** (meta del mes vs. reales — nuevo `ColocacionMes`, que la carga semanal refresca desde la cuota 0 del cronograma), **ingreso** (real a la fecha vs. proyectado del mes, discriminado inicial/semanal) y **gasto** (ejecutado vs. presupuesto, que ya existía en B13). El ingreso real reusa `metas_ingreso.ingreso_real` — el MISMO criterio que E1 aplica a los meses cerrados —, así que el termómetro y el cierre no pueden discrepar. El payload declara `dia` y `dias_del_mes` para que un parcial no se lea como desviación, y un dato sin cargar viaja `None`, no 0. Candado: con o sin realidad cargada, `meses`/`piso_caja`/`arranque` son idénticos. 7 tests backend + 11 frontend. | `tests/test_p6_termometro.py` |
+| 2026-08-23 | P6 | **La fórmula que declara la pantalla se corrigió:** decía «ejecutado + max(0, definido − ejecutado) por concepto» (la Regla A) cuando P4 ya la había superado. Ahora dice «el presupuesto aprobado del mes» — si el texto queda viejo, la pantalla miente sobre cómo se armó la cifra. | `loader._FORMULA_MES_EN_CURSO` |
 | 2026-08-23 | — | **Tests de decisiones superadas, actualizados con su rastro** (no se acomodaron al código: cambió la regla de producto por decisión del CEO): `test_b3_regla_a_incluye_ejecutado_mayor_que_definido` → `test_b3_el_mes_en_ejecucion_usa_el_PRESUPUESTO`; los dos de la rampa-remanente de SUP-4; y dos fixtures que originaban créditos dentro del mes en curso (ahora los saca el no-solape). | `test_e1_anclaje.py`, `test_sup4_*.py` |
 
 ## 5. Estado de datos / decisiones abiertas del CEO

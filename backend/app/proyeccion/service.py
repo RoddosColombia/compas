@@ -747,6 +747,21 @@ async def _resultado_con(
             primer_mes_acumula=True,
         )
         r = _kpis_a_resultado(rec.ajustado)
+    # P6 — el TERMÓMETRO se cierra aquí: el loader trajo la realidad (ingreso real,
+    # ejecutado, colocaciones reales) y solo el servicio conoce la PROYECCIÓN del mes
+    # (la fila de la serie). Se juntan para que la pantalla compare meta vs. realidad
+    # sin recalcular nada — y sin que la realidad toque la curva (Paso 2 del contrato).
+    if completitud is not None:
+        fila = next((f for f in r.meses if f.mes == completitud["mes"]), None)
+        if fila is not None:
+            completitud = {
+                **completitud,
+                "colocaciones_meta": fila.motos,
+                "ingreso_proyectado": money_str(fila.neto),
+                "ingreso_proyectado_inicial": money_str(fila.cuotas_iniciales),
+                "ingreso_proyectado_semanal": money_str(fila.recaudo_credito),
+            }
+
     meta = AnclajeMeta(
         meses_anclados=marcas,
         sin_mapear=sin_mapear,

@@ -27,7 +27,7 @@ from app.cartera_previa.cronograma import (
 )
 from app.core.money import money_str
 from app.core.time import today_bogota
-from app.domain.cartera_previa import CarteraPreviaRecaudo
+from app.domain.cartera_previa import CarteraPreviaRecaudo, ColocacionMes
 from app.parametros_proyeccion import service as parametros_service
 from app.proyeccion.motor import colocacion_mensual
 
@@ -81,7 +81,18 @@ async def cargar_cronograma(
             await vieja.delete()
     await service.cargar_serie(resumen.serie, user.id)
 
-    # 2. P4 del ciclo mensual (CEO 2026-08-23) — la carga semanal ya NO escribe la meta
+    # 2. P6 — las colocaciones REALES por mes se persisten: son el insumo del
+    # TERMÓMETRO de desviación ("llevamos 35 de la meta de 60"). NO entran al motor: la
+    # curva proyecta la META. Foto nueva en cada carga.
+    for mes_col, unidades in resumen.colocaciones_por_mes.items():
+        existente = await ColocacionMes.find_one(ColocacionMes.mes == mes_col)
+        if existente is None:
+            await ColocacionMes(mes=mes_col, unidades=unidades).insert()
+        elif existente.unidades != unidades:
+            existente.unidades = unidades
+            await existente.save()
+
+    # 3. P4 del ciclo mensual (CEO 2026-08-23) — la carga semanal ya NO escribe la META
     # del mes en curso.
     #
     # SUPERSEDE la automatización de SUP-4, que la dejaba en el REMANENTE hacia la meta
@@ -89,9 +100,9 @@ async def cargar_cronograma(
     # por decisión suya y la carga lo bajó a 35. Es exactamente el error que no se puede
     # repetir ("la formulación no puede pisar el motor ni el dato").
     #
-    # La META del mes es dato del CEO (la rampa de Supuestos); si no la fijó, manda lo
-    # que el motor proyecta con `motos_base` + crecimiento. Lo COLOCADO no entra al
-    # motor: se devuelve para el termómetro de desviación (P6).
+    # La META es dato del CEO (la rampa de Supuestos); si no la fijó, manda lo que el
+    # motor proyecta con `motos_base` + crecimiento. Aquí solo se LEE, para devolverla
+    # junto a lo colocado y que la pantalla arme la desviación.
     hoy = today_bogota()
     mes_curso = f"{hoy.year:04d}-{hoy.month:02d}"
     params = await parametros_service.obtener_vigente()

@@ -16,14 +16,33 @@ export type MarcaOrigen =
   | "en_ejecucion"
   | "presupuesto";
 
-// B13 — completitud del mes en ejecución + comparación (P6-b).
+/**
+ * El mes en curso: completitud (B13) + el TERMÓMETRO de desviación (P6 del ciclo
+ * mensual). La curva muestra el OBJETIVO; esto muestra la realidad AL LADO, para
+ * responder otra pregunta: ¿qué tan buenos son nuestros objetivos?
+ *
+ * Lo real es "a la fecha" (día `dia` de `dias_del_mes`) y lo proyectado es del MES
+ * completo: la pantalla tiene que decirlo o una desviación a mitad de mes engaña.
+ * Los campos del termómetro son opcionales (aditivos): `null` = sin dato cargado, que
+ * NO es lo mismo que cero.
+ */
 export interface MesEnCurso {
   mes: string; // 'YYYY-MM'
   cargado_hasta: string | null; // 'YYYY-MM-DD' | null si aún sin tx
   dia: number | null;
-  formula: string; // fórmula técnica del backend (Regla A)
+  dias_del_mes?: number;
+  formula: string; // cómo se armó el mes (P4: el presupuesto aprobado)
   ejecutado: string; // Σ egresos reales del mes a la fecha (COP)
   proyectado: string; // Σ presupuesto definido del mes (COP)
+  // P6 — las otras dos lecturas del termómetro
+  ingreso_real?: string | null;
+  ingreso_real_inicial?: string | null;
+  ingreso_real_semanal?: string | null;
+  ingreso_proyectado?: string | null;
+  ingreso_proyectado_inicial?: string | null;
+  ingreso_proyectado_semanal?: string | null;
+  colocaciones_meta?: number | null;
+  colocaciones_reales?: number | null;
 }
 
 export interface MesProyeccion {

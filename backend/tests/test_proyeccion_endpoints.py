@@ -381,4 +381,7 @@ async def test_proyeccion_mes_en_curso_b13(api):
     assert mec["mes"] == "2026-08"
     assert mec["cargado_hasta"] == "2026-08-06"
     assert mec["dia"] == 6
-    assert mec["formula"] == "ejecutado + max(0, definido - ejecutado) por concepto"
+    # P4 SUPERSEDE la Regla A para el mes en curso: la pantalla declara que el mes
+    # se armó con el PRESUPUESTO (el ejecutado se lee en el termómetro, P6).
+    assert mec["formula"] == "el presupuesto aprobado del mes"
+    assert mec["dias_del_mes"] == 31
