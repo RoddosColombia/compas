@@ -29,8 +29,8 @@ from app.auth.roles import Role
 from app.cfo.telegram import repositorio
 from app.config import get_settings
 from app.main import create_app
-from tests.conftest import rutas_registradas
 from mongomock_motor import AsyncMongoMockClient
+from tests.conftest import rutas_registradas
 
 PWD = "clave-larga-1234"
 SECRET = "secreto-webhook-test"
