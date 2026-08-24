@@ -19,7 +19,7 @@ import type Decimal from "decimal.js-light";
 
 import { Card } from "@/components/ui/card";
 import { formatCOPCompact, parseMonto } from "@/lib/money";
-import type { MesEnCurso } from "@/lib/proyeccion";
+import type { ArranqueCaja, MesEnCurso } from "@/lib/proyeccion";
 
 const MESES_LARGO = [
   "enero",
@@ -39,6 +39,10 @@ const MESES_LARGO = [
 /** 'YYYY-MM' → 'agosto' (nombre largo para copy legible; el CEO lo lee). */
 function mesLargo(mes: string): string {
   return MESES_LARGO[Number(mes.split("-")[1]) - 1] ?? mes;
+}
+
+function capitalizar(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function Cifra({ k, valor }: { k: string; valor: string }) {
@@ -113,7 +117,18 @@ function Lectura({
   );
 }
 
-export function MesEnCursoCallout({ mesEnCurso }: { mesEnCurso: MesEnCurso }) {
+export function MesEnCursoCallout({
+  mesEnCurso,
+  arranque,
+  cajaCierre,
+}: {
+  mesEnCurso: MesEnCurso;
+  /** Ítem 4 Kimi e75 — con qué plata ARRANCA el mes (P2) y con cuál CERRARÍA si se
+   * cumple el objetivo (la caja de su fila). Opcionales: sin ellos la tarjeta queda
+   * como antes (aditivo). */
+  arranque?: ArranqueCaja | null;
+  cajaCierre?: string;
+}) {
   const mes = mesLargo(mesEnCurso.mes);
   const anio = mesEnCurso.mes.slice(0, 4);
   const resta = parseMonto(mesEnCurso.proyectado).minus(
@@ -154,6 +169,24 @@ export function MesEnCursoCallout({ mesEnCurso }: { mesEnCurso: MesEnCurso }) {
             />
             <Cifra k="Resta del presupuesto" valor={formatCOPCompact(resta)} />
           </div>
+          {/* Ítem 4 Kimi e75 — inicio y fin del mes, explícitos, para que la
+              columna «Caja al cerrar» no deje ninguna ambigüedad. */}
+          {arranque && cajaCierre && (
+            <p className="mt-3 font-sans text-cuerpo text-ink">
+              {capitalizar(mes)} <b>arranca</b> con{" "}
+              <span className="tabular font-semibold">
+                {formatCOPCompact(arranque.valor)}
+              </span>
+              {arranque.origen === "ciclo"
+                ? " (el efectivo real del cierre anterior)"
+                : " (la caja configurada en Supuestos)"}{" "}
+              y <b>cerraría</b> en{" "}
+              <span className="tabular font-semibold">
+                {formatCOPCompact(cajaCierre)}
+              </span>{" "}
+              si se cumple el objetivo.
+            </p>
+          )}
           <p className="mt-3 border-l-[3px] border-cyan pl-3 text-cuerpo text-ink-soft">
             La gráfica proyecta el <b>objetivo</b> de {mes}. Cuando lo cierres,
             su ejecución real lo reemplaza y arrastra el resto del año.

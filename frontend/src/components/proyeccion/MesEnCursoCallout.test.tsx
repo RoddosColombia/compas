@@ -147,3 +147,46 @@ describe("MesEnCursoCallout — el termómetro (P6)", () => {
     expect(screen.queryByText("Motos colocadas")).toBeNull();
   });
 });
+
+describe("MesEnCursoCallout — inicio y fin del mes (ítem 4 Kimi e75)", () => {
+  const ARRANQUE = {
+    valor: "665715578.00",
+    origen: "ciclo" as const,
+    mes: "2026-08",
+    saldo_declarado: "665715578.00",
+    transito_heredado: "0.00",
+  };
+
+  it("dice con qué arranca (y de dónde) y en qué cerraría el mes", () => {
+    render(
+      <MesEnCursoCallout
+        mesEnCurso={MEC}
+        arranque={ARRANQUE}
+        cajaCierre="676676496.40"
+      />,
+    );
+    expect(screen.getByText(/arranca/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/el efectivo real del cierre anterior/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/cerraría/i)).toBeInTheDocument();
+  });
+
+  it("si el arranque viene de Supuestos (semilla), lo dice — no lo disfraza", () => {
+    render(
+      <MesEnCursoCallout
+        mesEnCurso={MEC}
+        arranque={{ ...ARRANQUE, origen: "semilla" as const, mes: null }}
+        cajaCierre="676676496.40"
+      />,
+    );
+    expect(
+      screen.getByText(/la caja configurada en Supuestos/i),
+    ).toBeInTheDocument();
+  });
+
+  it("sin arranque la tarjeta queda como antes (aditivo)", () => {
+    render(<MesEnCursoCallout mesEnCurso={MEC} />);
+    expect(screen.queryByText(/cerraría/i)).toBeNull();
+  });
+});

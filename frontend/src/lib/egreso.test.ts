@@ -67,6 +67,23 @@ const RECONCILIADO = mes({
 });
 
 describe("egreso — candado 1: invariante ingreso − (costo + gasto) == flujo", () => {
+  it("ítem 0 Kimi e75: un mes con FONDO DE AVAL reconcilia al peso", () => {
+    // La costura que cazó Kimi (etapa73 §10 / etapa75 ítem 0): `aval` nació en el
+    // motor (SUP-2) y esta capa nunca lo aprendió — los buckets omitían ese egreso
+    // y dejaban de reconciliar con el flujo por exactamente el aval. En PROD,
+    // agosto-2026: $546.241,68 invisibles para la tabla y el gráfico.
+    const conAval = mes({
+      aval: "-546241.68",
+      egresos: "-132846241.68",
+      flujo: "-98846241.68", // 34M − 132,3M − 0,546M
+    });
+    const b = bucketsMes(conAval);
+    expect(b.ingreso.minus(b.costo.plus(b.gasto)).equals(b.flujo)).toBe(true);
+    // y el aval vive en GASTO (extensión del mapeo CEO 2026-07-27, que es anterior
+    // al campo): 125M + 4M + 0,3M + 0 + 0,546241.68
+    expect(b.gasto.toString()).toBe("129846241.68");
+  });
+
   it("mes normal: los tres buckets reconcilian con el flujo al peso", () => {
     const b = bucketsMes(NORMAL);
     expect(b.ingreso.minus(b.costo.plus(b.gasto)).toFixed(2)).toBe(

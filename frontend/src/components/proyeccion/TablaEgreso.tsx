@@ -22,7 +22,7 @@ import {
   nuevaDeMes,
   totales,
 } from "@/lib/egreso";
-import { formatCOPEntero, formatMesCorto } from "@/lib/money";
+import { formatCOPEntero, formatMesCorto, parseMonto } from "@/lib/money";
 import {
   ESTADO_LABEL,
   type EstadoMes,
@@ -151,7 +151,15 @@ export function TablaEgreso({
               <th className="px-4 py-2.5 text-right font-semibold">Costo</th>
               <th className="px-4 py-2.5 text-right font-semibold">Gasto</th>
               <th className="px-4 py-2.5 text-right font-semibold">Flujo</th>
-              <th className="px-4 py-2.5 text-right font-semibold">Caja</th>
+              {/* Ítem 4 Kimi e75: la convención de la columna, DECLARADA. Desde P3
+                  toda la serie acumula (caja = caja anterior + flujo), así que esta
+                  cifra es el saldo con el que el mes CIERRA — sin excepciones. */}
+              <th
+                className="px-4 py-2.5 text-right font-semibold"
+                title="El saldo al terminar el mes: caja del mes anterior + flujo de este mes. El saldo con que INICIA está en el desglose de cada mes."
+              >
+                Caja al cerrar
+              </th>
               <th className="px-4 py-2.5 font-semibold">Estado</th>
             </tr>
           </thead>
@@ -323,7 +331,6 @@ function DesgloseMes({
           etiqueta="Provisión de cartera (P&G, no caja)"
           valor={f(m.provision)}
         />
-        <Linea etiqueta="Fondo de aval reservado" valor={f(m.aval)} />
       </Grupo>
       <Grupo titulo="Auteco (dentro de Costo)">
         <Linea
@@ -340,6 +347,20 @@ function DesgloseMes({
         <Linea etiqueta="GPS cartera" valor={f(m.gps)} />
         <Linea etiqueta="Deudas y obligaciones" valor={f(m.int_deuda)} />
         <Linea etiqueta="IVA" valor={f(m.iva)} />
+        {/* ítem 0 Kimi e75: el aval ES parte del bucket Gasto — si no está aquí,
+            el detalle del grupo no suma la columna. */}
+        <Linea etiqueta="Fondo de aval reservado" valor={f(m.aval)} />
+      </Grupo>
+      {/* Ítem 4 Kimi e75 — la caja del mes, sin ambigüedad: con qué INICIA, qué
+          flujo imprime y con qué CIERRA. `inicia = cierra − flujo` es la misma
+          fórmula del candado leída al revés (aritmética de presentación, regla 1). */}
+      <Grupo titulo="Caja del mes">
+        <Linea
+          etiqueta="Inicia con"
+          valor={f(parseMonto(m.caja).minus(m.flujo))}
+        />
+        <Linea etiqueta="Flujo del mes" valor={f(m.flujo)} />
+        <Linea etiqueta="Cierra en" valor={f(m.caja)} />
       </Grupo>
     </div>
   );

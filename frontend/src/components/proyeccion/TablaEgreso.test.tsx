@@ -265,4 +265,53 @@ describe("TablaEgreso — V1 §3", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/Fondo de aval reservado/)).toBeInTheDocument();
   });
+
+  // ── ítems 0 y 4 de Kimi etapa75 ──
+
+  it("ítem 0: el aval entra al bucket Gasto y la fila reconcilia al peso", () => {
+    // la costura de etapa73 §10: el motor sumaba el aval al flujo pero esta capa lo
+    // omitía — Gasto quedaba corto por exactamente el aval y nada reconciliaba.
+    const conAval = mes({
+      mes: "2026-11",
+      aval: "-546241.68",
+      egresos: "-132846241.68",
+      flujo: "-98846241.68",
+    });
+    render(
+      <TablaEgreso
+        filas={[conAval]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    // Gasto = 125M + 4M + 0,3M + 0,546241.68 = 129.846.242 (sin centavos en tabla)
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 129.846.242")
+        .length,
+    ).toBeGreaterThan(0);
+    // y el aval aparece como línea del GRUPO Gasto en el desglose
+    fireEvent.click(screen.getByRole("button", { name: /nov-26/ }));
+    expect(screen.getByText(/Fondo de aval reservado/)).toBeInTheDocument();
+  });
+
+  it("ítem 4: la columna se llama «Caja al cerrar» — la convención, declarada", () => {
+    renderTabla();
+    expect(
+      screen.getByRole("columnheader", { name: "Caja al cerrar" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Caja" })).toBeNull();
+  });
+
+  it("ítem 4: el desglose dice con qué INICIA y con qué CIERRA el mes", () => {
+    renderTabla();
+    fireEvent.click(screen.getByRole("button", { name: /oct-26/ }));
+    expect(screen.getByText("Inicia con")).toBeInTheDocument();
+    expect(screen.getByText("Cierra en")).toBeInTheDocument();
+    // inicia = cierra − flujo = 40M − (−98,3M) = 138,3M (el candado leído al revés)
+    expect(
+      screen.getAllByText((t) => t.replace(/\s/g, " ") === "$ 138.300.000")
+        .length,
+    ).toBeGreaterThan(0);
+  });
 });
