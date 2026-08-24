@@ -23,6 +23,7 @@ from app.auth.roles import Role
 from app.cfo.agente.modelos import RespuestaCFO, UsoLLM
 from app.config import get_settings
 from app.main import create_app
+from tests.conftest import rutas_registradas
 from mongomock_motor import AsyncMongoMockClient
 
 PWD = "clave-larga-1234"
@@ -163,7 +164,7 @@ def test_flag_off_no_monta_router_en_app_routes(monkeypatch):
     get_settings.cache_clear()
 
     app = create_app()
-    rutas = {r.path for r in app.routes}
+    rutas = rutas_registradas(app)
     assert "/api/v1/cfo" not in rutas
 
     get_settings.cache_clear()
