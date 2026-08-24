@@ -345,7 +345,13 @@ function ProyeccionContenido({
 
       {/* E1·P6 — el mes en curso: comparación + completitud (B13) + arrastre */}
       {data.mes_en_curso && (
-        <MesEnCursoCallout mesEnCurso={data.mes_en_curso} />
+        <MesEnCursoCallout
+          mesEnCurso={data.mes_en_curso}
+          arranque={data.arranque}
+          cajaCierre={
+            data.meses.find((m) => m.mes === data.mes_en_curso?.mes)?.caja
+          }
+        />
       )}
 
       {/* Tabla V1 §3: tres totales por mes, fila expandible, fila de totales */}

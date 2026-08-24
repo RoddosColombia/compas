@@ -8,9 +8,15 @@
 //   Ingreso = neto
 //   Costo   = pago_inventario + fondeo + costo_nueva + adelanto   (el fondeo
 //             Auteco es costo de inventario, no gasto financiero)
-//   Gasto   = gastos_fijos + gps + int_deuda + iva
+//   Gasto   = gastos_fijos + gps + int_deuda + iva + aval
 // Los egresos llegan NEGATIVOS del motor; costo y gasto se exponen como magnitud
 // POSITIVA (lo que sale). Invariante: ingreso − (costo + gasto) == flujo.
+//
+// `aval` (ítem 0 Kimi etapa75): el fondo de AVAL nació en el motor DESPUÉS del mapeo
+// aprobado (SUP-2, 2026-08-22) y esta capa nunca lo aprendió — los buckets omitían
+// ese egreso y dejaban de reconciliar con el flujo por exactamente el aval (en PROD,
+// agosto-2026: $546.241,68 invisibles). Va en GASTO como reserva operativa que sale
+// de caja: no re-litiga el mapeo, lo completa para un campo que no existía.
 
 import Decimal from "decimal.js-light";
 
@@ -38,6 +44,7 @@ export function bucketsMes(m: MesProyeccion): BucketsMes {
     .plus(m.gps)
     .plus(m.int_deuda)
     .plus(m.iva)
+    .plus(m.aval)
     .negated();
   return { ingreso, costo, gasto, flujo: parseMonto(m.flujo) };
 }
