@@ -16,9 +16,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "paths": { "@/*": ["./src/*"] },
-    // "node" explicito: `src/lib/barridos.test.ts` usa node:fs/node:path. Hasta
-    // vitest 3, `vitest/globals` arrastraba @types/node de forma transitiva;
-    // vitest 4 ya no, y con `types` fijado TS solo carga los que se listan.
     "types": ["vitest/globals", "@testing-library/jest-dom", "node"]
   },
   "include": ["src"]
