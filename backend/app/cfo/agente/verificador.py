@@ -60,6 +60,12 @@ _RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
 # en la respuesta es una cifra auto-computada por el modelo, prohibida por regla
 # #1 (ver su uso en `extraer_cifras`, FIX 1 FINAL-REVIEW inc2).
 _RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
+# Unidades: entero seguido de 'moto(s)'/'motocicleta(s)'/'unidad(es)'. Cierra el
+# hueco del entero pequeño para conteos de motos (inc4 tarea 3): "12 motos" tiene
+# menos de 5 dígitos y sin separador, así que `_es_monto` lo dejaba pasar como
+# inocuo (nº de cuenta/día). El modelo debe citar `[[unidades_extra]]`, nunca
+# escribir el conteo — mismo contrato que COP/meses/%.
+_RE_UNIDADES = re.compile(r"\d+\s*(?:motos?|motocicletas?|unidades?)\b", re.IGNORECASE)
 # Cita de concepto: [[caja_hoy]] / [[runway]] / [[iva_cuatrimestre]]. El modelo cita,
 # no escribe números (inc3 Pieza A). RE_TOKEN vive en conceptos.py (import directo,
 # NUNCA redefinir aquí): debe ser BYTE-IDÉNTICA a la que usa sustituir_tokens, o un
@@ -144,6 +150,12 @@ def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
         # extrapola ratios).
         val = _a_decimal_meses(m.group(0).rstrip("% ").strip()) or Decimal(0)
         cifras.append((val, "pct", m.group(0)))
+        tramos.append((m.start(), m.end()))
+    for m in _RE_UNIDADES.finditer(texto):
+        # Conteo de motos/unidades: el valor no importa (el contrato exige token,
+        # no comparación de valor — igual que 'pct'), pero marcamos el tramo para
+        # que el entero no se re-cuente como monto COP pelado en el barrido de abajo.
+        cifras.append((Decimal(0), "unidades", m.group(0)))
         tramos.append((m.start(), m.end()))
     for m in _RE_NUM.finditer(texto):
         if any(s < m.end() and m.start() < e for s, e in tramos):

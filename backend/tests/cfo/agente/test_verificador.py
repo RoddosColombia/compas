@@ -217,3 +217,30 @@ def test_extrae_montos_y_meses_ignora_anios_y_fechas():
     assert (Decimal("4.2"), "meses") in cifras
     # 2026 (año), 10 (día), C2 (etiqueta) NO son cifras monetarias/unitarias
     assert all(not (v == Decimal("2026")) for v, _, _ in extraer_cifras(texto))
+
+
+# --- Unidades crudas (inc4 Task 3): "12 motos" cierra el hueco del entero pequeño ---
+# Antes de este contrato, un conteo de motos ("12 motos") no se detectaba: 12 tiene
+# menos de 5 dígitos y no lleva separador, así que `_es_monto` lo dejaba pasar como
+# inocuo (nº de cuenta/día). El modelo debe citar `[[unidades_extra]]`, nunca escribir
+# el conteo — igual que ya no puede escribir COP/meses/% crudos.
+
+
+def _disp(concepto, unidad="unidades", valor=12):
+    return ResultadoCFO(
+        concepto=concepto,
+        valor=Decimal(valor),
+        unidad=unidad,
+        disponible=True,
+        evidencia=Evidencia(fuente="x", fecha_corte=None, ref="r"),
+    )
+
+
+def test_rechaza_unidades_crudas():
+    v = verificar("Vende 12 motos más.", [_disp("unidades_extra")])
+    assert v.ok is False and any("12 motos" in c for c in v.cifras_sin_evidencia)
+
+
+def test_acepta_token_de_unidades():
+    v = verificar("Vende [[unidades_extra]] más.", [_disp("unidades_extra")])
+    assert v.ok is True
