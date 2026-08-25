@@ -15,6 +15,21 @@ def _r(concepto, valor, unidad, fecha):
     )
 
 
+def _r2(concepto, valor, unidad, ref=""):
+    # variante de _r para unidades/quiebre: sin fecha_corte, con ref libre.
+    # nombre distinto de _r a propósito — _r es posicional (concepto, valor,
+    # unidad, fecha) y lo usan los tests existentes arriba; reusar el nombre
+    # con otra firma los rompería en silencio (Python resuelve el global al
+    # llamar, no al definir, así que la última def gana para TODOS los tests).
+    return ResultadoCFO(
+        concepto=concepto,
+        valor=Decimal(str(valor)),
+        unidad=unidad,
+        disponible=True,
+        evidencia=Evidencia(fuente="x", fecha_corte=None, ref=ref),
+    )
+
+
 def test_citables():
     assert CONCEPTOS_CITABLES == frozenset({"caja_hoy", "runway", "iva_cuatrimestre"})
 
@@ -70,3 +85,18 @@ def test_sustituir_token_con_espacios_se_resuelve():
     out = sustituir_tokens("Caja: [[ caja_hoy ]].", [caja], hoy=date(2026, 8, 17))
     assert out == "Caja: $704.722.003 (al 2026-08-11)."
     assert "[[" not in out
+
+
+def test_formatea_unidades_como_motos():
+    assert formatear(_r2("unidades_extra", 12, "unidades")) == "12 motos"
+
+
+def test_piso_con_contexto_de_quiebre():
+    # una cifra COP cuyo ref codifica el mes de quiebre
+    out = formatear(_r2("piso_con", 40000000, "COP", ref="quiebre:2026-11"))
+    assert "$40.000.000" in out and "cruzas el umbral en 2026-11" in out
+
+
+def test_piso_sin_quiebre():
+    out = formatear(_r2("piso_con", 40000000, "COP", ref="quiebre:nunca"))
+    assert "$40.000.000" in out and "no cruzas el umbral" in out

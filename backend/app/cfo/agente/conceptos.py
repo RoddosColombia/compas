@@ -36,11 +36,22 @@ def _meses_es(d: Decimal) -> str:
     return f"{d:.1f}".replace(".", ",") + " meses"
 
 
+def _unidades_es(d: Decimal) -> str:
+    return f"{int(d)} motos"
+
+
 def formatear(r: ResultadoCFO, hoy: date | None = None) -> str:
     """Valor concept-bound listo para prosa, con su contexto server-bound."""
     if r.concepto == "runway":
         return _meses_es(r.valor)
+    if r.unidad == "unidades":
+        return _unidades_es(r.valor)
     base = _money_es(r.valor)
+    ref = r.evidencia.ref or ""
+    if ref.startswith("quiebre:"):
+        mes = ref.split(":", 1)[1]
+        ctx = "no cruzas el umbral" if mes == "nunca" else f"cruzas el umbral en {mes}"
+        return f"{base} ({ctx})"
     fecha = r.evidencia.fecha_corte
     if r.concepto == "iva_cuatrimestre":
         if fecha:
