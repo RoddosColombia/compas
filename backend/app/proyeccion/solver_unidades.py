@@ -38,23 +38,34 @@ def resolver_unidades_para_umbral(
     colchon: Decimal = Decimal("0"),
     cap_unidades: int = 10_000,
 ) -> UnidadesResultado:
+    """Menor N entero en [0, cap_unidades] con piso(N) >= meta (caja_minima +
+    colchon). Precondición: `piso` es NO-DECRECIENTE en N (más unidades extra nunca
+    baja el piso) — la bisección asume esto, igual que `solvers._min_valor_que_cumple`
+    ("piso_fn CRECIENTE en v"). La búsqueda queda ACOTADA a [0, cap_unidades]:
+    `alcanzable=False` únicamente cuando ni siquiera `piso(cap_unidades)` alcanza la
+    meta, y nunca se devuelve un N por encima del tope (Fix round 1: la fase de
+    duplicado previa podía saltar por encima del cap sin haberlo probado, o saltarse
+    el chequeo del cap por completo si el primer candidato ya cumplía)."""
     meta = caja_minima + colchon
 
     def piso(n: int) -> Decimal:
         return _piso_con_ajustes(proyectar_fn(n), ajustes, caja_minima)
 
-    if piso(0) >= meta:
-        return UnidadesResultado(0, True, piso(0), meta)
-    # duplicar hasta pasar el tope o cumplir
-    lo, hi = 0, 1
-    while piso(hi) < meta:
-        lo, hi = hi, hi * 2
-        if hi > cap_unidades:
-            return UnidadesResultado(0, False, None, meta)
+    p0 = piso(0)
+    if p0 >= meta:
+        return UnidadesResultado(0, True, p0, meta)
+    # oráculo de alcanzabilidad: ni siquiera el tope llega a la meta => no hay
+    # solución dentro del rango permitido (evita una llamada redundante si el tope
+    # es 0, caso en que ya es exactamente el p0 de arriba)
+    p_hi = p0 if cap_unidades == 0 else piso(cap_unidades)
+    if p_hi < meta:
+        return UnidadesResultado(0, False, None, meta)
+    lo, hi = 0, cap_unidades
     while hi - lo > 1:
         mid = (lo + hi) // 2
-        if piso(mid) >= meta:
-            hi = mid
+        p_mid = piso(mid)
+        if p_mid >= meta:
+            hi, p_hi = mid, p_mid
         else:
             lo = mid
-    return UnidadesResultado(hi, True, piso(hi), meta)
+    return UnidadesResultado(hi, True, p_hi, meta)  # hi <= cap, garantizado alcanzable
