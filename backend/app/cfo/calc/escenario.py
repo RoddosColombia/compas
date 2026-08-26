@@ -16,6 +16,7 @@ from app.proyeccion.impactos import Ajuste
 from app.proyeccion.service import ProyeccionError
 
 _FUENTE = "proyeccion.service.proyectar_impactos"
+_FUENTE_ENTRADA = "escenario (entrada)"
 _UNIDAD = "COP"
 
 
@@ -70,6 +71,11 @@ async def impacto_escenario(
             )
         ]
 
+    # Ancla de reproducibilidad del horizonte de la PROYECCIÓN (arranca en el mes de
+    # HOY, igual que runway.py:19) — NO el mes_inicio del ajuste hipotético. piso_sin
+    # es la proyección BASE, calculada sin el ajuste: su ref no puede sugerir que
+    # depende del mes en que arranca el escenario.
+    ref_horizonte = f"{ahora.year:04d}-{ahora.month:02d}"
     quiebre = _mes_de_quiebre(data["ajustada"]["meses"])
     return [
         ResultadoCFO(
@@ -77,7 +83,7 @@ async def impacto_escenario(
             valor=Decimal(data["base"]["piso_caja"]),
             unidad=_UNIDAD,
             disponible=True,
-            evidencia=Evidencia(fuente=_FUENTE, fecha_corte=None, ref=mes_inicio),
+            evidencia=Evidencia(fuente=_FUENTE, fecha_corte=None, ref=ref_horizonte),
         ),
         ResultadoCFO(
             concepto="piso_con",
@@ -93,6 +99,11 @@ async def impacto_escenario(
             valor=monto,
             unidad=_UNIDAD,
             disponible=True,
-            evidencia=Evidencia(fuente=_FUENTE, fecha_corte=None, ref=mes_inicio),
+            # No es un valor que proyectar_impactos calculó: es el monto de entrada
+            # del caller, ecoado. La fuente debe decir eso, no atribuirlo al cálculo
+            # de proyección.
+            evidencia=Evidencia(
+                fuente=_FUENTE_ENTRADA, fecha_corte=None, ref=ref_horizonte
+            ),
         ),
     ]
