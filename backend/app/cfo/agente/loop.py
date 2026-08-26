@@ -54,13 +54,15 @@ async def conversar(
         )
         contenido_tool: list[dict] = []
         for u in usos:
-            r = await ejecutar_tool(u.nombre)
-            resultados.append(r)
+            rs = await ejecutar_tool(u.nombre, u.input)
+            resultados.extend(rs)
             contenido_tool.append(
                 {
                     "type": "tool_result",
                     "tool_use_id": u.id,
-                    "content": json.dumps(resultado_a_dict(r), ensure_ascii=False),
+                    "content": json.dumps(
+                        [resultado_a_dict(x) for x in rs], ensure_ascii=False
+                    ),
                 }
             )
         mensajes.append({"role": "user", "content": contenido_tool})

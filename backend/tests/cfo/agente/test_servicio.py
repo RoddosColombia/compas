@@ -39,8 +39,8 @@ async def test_sin_key_abstiene(monkeypatch, _audit):
 
 @pytest.mark.asyncio
 async def test_camino_feliz(monkeypatch, _audit):
-    async def fake_tool(nombre):
-        return _res()
+    async def fake_tool(nombre, entrada=None):
+        return [_res()]
 
     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
     # inc3 Pieza A: el modelo cita el TOKEN del concepto, nunca escribe la cifra cruda.
@@ -67,8 +67,8 @@ async def test_camino_feliz(monkeypatch, _audit):
 
 @pytest.mark.asyncio
 async def test_alucinacion_reintento_falla_abstiene(monkeypatch, _audit):
-    async def fake_tool(nombre):
-        return _res()
+    async def fake_tool(nombre, entrada=None):
+        return [_res()]
 
     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
     # 1ra conversación: tool + texto con cifra inventada. Reintento: sigue inventando.
@@ -90,8 +90,8 @@ async def test_alucinacion_reintento_falla_abstiene(monkeypatch, _audit):
 
 @pytest.mark.asyncio
 async def test_publica_con_tokens_sustituidos(monkeypatch, _audit):
-    async def fake_tool(nombre):
-        return _res()
+    async def fake_tool(nombre, entrada=None):
+        return [_res()]
 
     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
     guiones = [
@@ -115,8 +115,8 @@ async def test_publica_con_tokens_sustituidos(monkeypatch, _audit):
 async def test_reincidencia_en_cifra_cruda_abstiene_un_solo_reintento(
     monkeypatch, _audit
 ):
-    async def fake_tool(nombre):
-        return _res()
+    async def fake_tool(nombre, entrada=None):
+        return [_res()]
 
     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
     # 1ª: tool + cifra cruda (aunque numéricamente correcta); reintento: vuelve a
@@ -152,8 +152,8 @@ async def test_error_interno_no_revienta_y_audita(monkeypatch, _audit):
 
 @pytest.mark.asyncio
 async def test_consultar_usa_historial_y_expone_texto_crudo(monkeypatch, _audit):
-    async def fake_tool(nombre):
-        return _res()  # ResultadoCFO caja_hoy disponible
+    async def fake_tool(nombre, entrada=None):
+        return [_res()]  # ResultadoCFO caja_hoy disponible
 
     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
     guiones = [

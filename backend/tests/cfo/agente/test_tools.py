@@ -47,10 +47,28 @@ async def test_ejecutar_tool_despacha(monkeypatch):
 
     monkeypatch.setitem(tools.DISPATCH, "caja_disponible_hoy", fake)
     r = await tools.ejecutar_tool("caja_disponible_hoy")
-    assert r.valor == Decimal("123")
+    # inc4 T4: ejecutar_tool SIEMPRE devuelve lista; una calc de un solo concepto
+    # (como esta, de cero args) se normaliza a [r].
+    assert isinstance(r, list) and len(r) == 1
+    assert r[0].valor == Decimal("123")
 
 
 @pytest.mark.asyncio
 async def test_ejecutar_tool_desconocida_falla():
     with pytest.raises(KeyError):
+        await tools.ejecutar_tool("no_existe")
+
+
+@pytest.mark.asyncio
+async def test_ejecutar_tool_devuelve_lista(monkeypatch):
+    r = await tools.ejecutar_tool("caja_disponible_hoy")
+    assert isinstance(r, list) and all(isinstance(x, ResultadoCFO) for x in r)
+
+
+@pytest.mark.asyncio
+async def test_tool_desconocida_es_error():
+    # Exception amplia a propósito (brief T4): el contrato es "cualquier error",
+    # no un tipo específico — el dispatcher cerrado hoy usa KeyError, pero el
+    # test no debe acoplarse a ese detalle de implementación.
+    with pytest.raises(Exception):  # noqa: B017
         await tools.ejecutar_tool("no_existe")
