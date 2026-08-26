@@ -65,7 +65,9 @@ _RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
 # menos de 5 dígitos y sin separador, así que `_es_monto` lo dejaba pasar como
 # inocuo (nº de cuenta/día). El modelo debe citar `[[unidades_extra]]`, nunca
 # escribir el conteo — mismo contrato que COP/meses/%.
-_RE_UNIDADES = re.compile(r"\d+\s*(?:motos?|motocicletas?|unidades?)\b", re.IGNORECASE)
+_RE_UNIDADES = re.compile(
+    r"\d+\s*(?:motos?|motocicletas?|unidad(?:es)?)\b", re.IGNORECASE
+)
 # Cita de concepto: [[caja_hoy]] / [[runway]] / [[iva_cuatrimestre]]. El modelo cita,
 # no escribe números (inc3 Pieza A). RE_TOKEN vive en conceptos.py (import directo,
 # NUNCA redefinir aquí): debe ser BYTE-IDÉNTICA a la que usa sustituir_tokens, o un

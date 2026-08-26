@@ -244,3 +244,27 @@ def test_rechaza_unidades_crudas():
 def test_acepta_token_de_unidades():
     v = verificar("Vende [[unidades_extra]] más.", [_disp("unidades_extra")])
     assert v.ok is True
+
+
+# --- Fix round 1: singular "unidad" (bug del regex original, hallazgo de review) ---
+# `unidades?` compila a "unidade" + 's' opcional — NUNCA matchea el singular real
+# "unidad" (que no lleva la 'e' final). Bypass reproducido: "1 unidad" pasaba con
+# ok=True. Fix: `unidad(?:es)?`, el mismo patrón que ya usa `_RE_MESES`
+# (`mes(?:es)?`) para pluralizar sustantivos terminados en consonante.
+
+
+def test_rechaza_unidad_singular_cruda():
+    v = verificar("Vende 1 unidad más.", [_disp("unidades_extra")])
+    assert v.ok is False and any("1 unidad" in c for c in v.cifras_sin_evidencia)
+
+
+def test_rechaza_moto_singular_cruda():
+    # simetría con el plural "motos" (ya cubierto arriba): el singular "1 moto" ya
+    # funcionaba hoy (motos? sí cubre el singular), pero no tenía test dedicado.
+    v = verificar("Compra 1 moto más.", [_disp("unidades_extra")])
+    assert v.ok is False
+
+
+def test_rechaza_motocicleta_singular_cruda():
+    v = verificar("1 motocicleta.", [_disp("unidades_extra")])
+    assert v.ok is False
