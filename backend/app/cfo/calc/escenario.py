@@ -18,9 +18,12 @@ cálculo puro (aislamiento S1, ver `tests/cfo/test_s1_aislamiento.py`) — este 
 solo LLAMA esa fábrica, opaco.
 
 Ambas son compute-only (SIMULAR NUNCA ESCRIBE): no persisten nada, es lectura +
-cálculo puro. Sin config vigente → abstención (mismo patrón en las dos)."""
+cálculo puro. Sin config vigente → abstención (mismo patrón en las dos). Fix round 1
+(Task 6): el solver de unidades corre sobre el MISMO pipeline completo (paramétrico →
+E1 → D2) que `impacto_escenario`, así que los dos reconcilian en la misma base — por
+eso `resolver_unidades_para_umbral` y la fábrica que arma su `proyectar_fn` son
+ASYNC."""
 
-import inspect
 from decimal import Decimal
 
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
@@ -149,22 +152,16 @@ async def _proyectar_fn_para(
     horizonte: int,
 ):
     """Arma el `proyectar_fn(n)` que exige `resolver_unidades_para_umbral` (Task 1,
-    módulo `solver_unidades`): un callable SÍNCRONO que, dado N (unidades extra/mes),
-    devuelve el resultado de proyección CRUDO de calcular con `motos_base + N` — el
-    solver bisecta llamándolo directo, SIN `await` (no puede: es una función `def`
-    normal, ver su docstring).
+    módulo `solver_unidades`): un callable ASYNC que, dado N (unidades extra/mes),
+    devuelve el resultado de proyección CRUDO de calcular con `motos_base + N` sobre
+    el pipeline COMPLETO (paramétrico → E1 anclaje → D2 reconciliación — Fix round 1:
+    la misma base que usa `impacto_escenario`, para que los dos reconcilien).
 
     La fábrica real vive en `proyeccion.service.fabrica_proyectar_unidades` — no
     aquí: `cfo/calc` no puede importar tipos de dominio ajenos ni el módulo interno de
     cálculo puro directo (aislamiento S1, `tests/cfo/test_s1_aislamiento.py`). Esta
-    función solo la LLAMA, opaca a sus tipos (ver la docstring de la fábrica para la
-    fidelidad exacta: qué trae una sola vez, qué simplificación queda declarada para
-    esta tarea).
-
-    Es async (delega en una que sí lo es), pero lo que la fábrica DEVUELVE no lo es —
-    por eso `motos_para_evitar_umbral` la llama con un await condicional (ver su
-    comentario): el mismo call site sirve a esta versión real y al fake síncrono de
-    los tests."""
+    función solo la LLAMA, opaca a sus tipos (ver la docstring de la fábrica para el
+    detalle exacto del pipeline)."""
     return await proy_service.fabrica_proyectar_unidades(
         vig, escenario, mes_inicio, horizonte
     )
@@ -181,10 +178,11 @@ async def motos_para_evitar_umbral(
     proyectado no cruce el umbral, con el mismo escenario hipotético de
     `impacto_escenario` (`naturaleza`/`monto`/`mes_inicio`/`mes_fin`) ya aplicado
     encima? Envuelve `solver_unidades.resolver_unidades_para_umbral` (Task 1): bisecta
-    sobre N re-corriendo el cálculo completo de proyección con `motos_base + N`
-    (`_proyectar_fn_para`; el horizonte ancla en el mes de HOY, igual que
-    `impacto_escenario`) y, sobre CADA candidato, mide el piso con el mismo `Ajuste`
-    declarativo (D1) aplicado encima.
+    sobre N re-corriendo el pipeline COMPLETO de proyección (paramétrico → E1 → D2,
+    Fix round 1) con `motos_base + N` (`_proyectar_fn_para`; el horizonte ancla en el
+    mes de HOY, igual que `impacto_escenario`) y, sobre CADA candidato, mide el piso
+    con el mismo `Ajuste` declarativo (D1) aplicado encima — misma base que
+    `impacto_escenario`, así que `piso_con_unidades@n=0` y su `piso_con` reconcilian.
 
     Devuelve 2 conceptos:
     - `unidades_extra`: N (unidad "unidades"). `disponible=False` si el solver no
@@ -209,16 +207,14 @@ async def motos_para_evitar_umbral(
         mes_fin=mes_fin,
     )
     try:
-        fabrica = _proyectar_fn_para(
+        # Fix round 1: `_proyectar_fn_para` y `resolver_unidades_para_umbral` son
+        # ambas async ahora (el pipeline completo por candidato exige I/O) — se
+        # awaitean directo, sin el puente síncrono que hacía falta cuando el solver
+        # solo corría el cálculo paramétrico sin E1/D2.
+        proyectar_fn = await _proyectar_fn_para(
             vig, "base", (ahora.year, ahora.month), vig.horizonte_meses
         )
-        # `_proyectar_fn_para` delega en una fábrica async (trae de Mongo lo que NO
-        # depende de N), pero el solver la llama sin await — no puede, es `def`
-        # normal (ver su docstring). Este await condicional deja que el MISMO call
-        # site sirva a la real (coroutine) y al fake síncrono de los tests
-        # (`inspect.isawaitable`).
-        proyectar_fn = await fabrica if inspect.isawaitable(fabrica) else fabrica
-        resultado: UnidadesResultado = resolver_unidades_para_umbral(
+        resultado: UnidadesResultado = await resolver_unidades_para_umbral(
             proyectar_fn, [ajuste], caja_minima=vig.caja_minima
         )
     except ProyeccionError:

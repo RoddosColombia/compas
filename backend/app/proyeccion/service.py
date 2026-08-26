@@ -7,7 +7,7 @@ Carga los parámetros VIGENTES + el catálogo de modelos ACTIVOS, arma un
 estado: es una lectura pura sobre la configuración vigente."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
@@ -1346,52 +1346,56 @@ async def fabrica_proyectar_unidades(
     escenario: str,
     mes_inicio: tuple[int, int],
     horizonte_meses: int,
-) -> Callable[[int], ResultadoProyeccion]:
+) -> Callable[[int], Awaitable[ResultadoProyeccion]]:
     """inc4 Task 6 (`cfo.calc.escenario.motos_para_evitar_umbral`) — arma el
-    `proyectar_fn(n)` que exige `solver_unidades.resolver_unidades_para_umbral`: un
-    callable SÍNCRONO que, dado N (unidades extra/mes), devuelve el
-    `ResultadoProyeccion` crudo de proyectar con `motos_base + N` — el solver bisecta
-    llamándolo directo, sin `await` (no puede: es una función `def` normal).
+    `proyectar_fn(n)` que exige `solver_unidades.resolver_unidades_para_umbral`: dado
+    N (unidades extra/mes), devuelve el `ResultadoProyeccion` crudo de proyectar con
+    `motos_base + N`.
 
     `cfo/calc` no puede importar `app.domain.*` ni `proyeccion.motor` directo
     (aislamiento S1, `test_s1_aislamiento.py`: ningún archivo de `cfo/calc/` puede
     contener esos imports): por eso la fábrica vive AQUÍ y
     `escenario._proyectar_fn_para` solo la LLAMA, opaco, sin importar sus tipos.
 
-    Trae UNA sola vez lo que NO depende de N (modelos activos, el arranque real de
-    caja del ciclo — P2 del ciclo mensual — y la cartera previa — el fix que movió el
-    piso de $158M a $504M en el sprint de precisión de agosto —); el cierre que
-    devuelve solo repite la parte PURA (`_armar_parametros` + `proyectar`, sin I/O)
-    por cada candidato de la bisección.
+    Fix round 1 (revisión Opus del Task 6): `proyectar_fn` corre el MISMO pipeline
+    COMPLETO que `proyectar_impactos`/`impacto_escenario` — `_resultado_con` (motor →
+    E1 anclaje → D2 reconciliación), no solo el motor paramétrico. La versión anterior
+    se detenía en `proyectar(pm)` (motor-only): como la caja se acumula mes a mes
+    (`caja[m]=caja[m-1]+flujo[m]`), un delta de E1/D2 en los meses cercanos (la
+    reconciliación de Auteco puede ser 100M+) se arrastra hasta el piso — el
+    "cuántas motos" resultante podía SUBESTIMAR lo que realmente hace falta para
+    cruzar el umbral (falsa confianza sobre el número exacto que el producto existe
+    para proteger), y `impacto_escenario.piso_con` vs. este `piso_con_unidades@n=0`
+    quedaban en bases DISTINTAS. `_resultado_con` se llama SIN `anclas_override` (a
+    propósito: pasar ese override fuerza `arranque=semilla` y regresiona el arranque
+    real del ciclo — P2 — que sí debe cargarse aquí).
 
-    Simplificación DECLARADA para esa tarea (ver su task-6-report.md): a diferencia
-    de `_resultado_con`, NO aplica el anclaje E1 (ejecución real de meses cerrados/en
-    curso) ni la reconciliación D2 (netear facturas Auteco), y no alimenta el plan de
-    IVA (hoy en `None`: la compuerta IVA_ALIMENTA_PROYECCION está apagada — D-12/O-1 —
-    así que el pipeline completo tampoco lo usaría). Sin anclas/facturas activas el
-    número es el mismo; con ellas, el piso de los meses más cercanos puede diferir un
-    poco del que muestra /proyeccion. La fidelidad completa contra Mongo real queda
-    para el golden/regresión de esa Task 9."""
+    No se pasa `caja_inicial_override` ni `facturas_override` tampoco: exactamente
+    el mismo shape de llamada que usa `proyectar_impactos` para su `_resultado_con`
+    (`service.py` ~L918-924) — ambos caminos cargan la MISMA realidad de Mongo."""
     modelos = await modelos_service.listar_modelos(activo=True)
     if not modelos:
         raise ProyeccionError("no hay modelos de moto activos", 409)
-    arranque = await _arranque_de_caja(vig, mes_inicio)
-    recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
 
-    def proyectar_fn(n: int) -> ResultadoProyeccion:
+    async def proyectar_fn(n: int) -> ResultadoProyeccion:
         params_n = vig.model_copy(update={"motos_base": vig.motos_base + n})
-        pm = _armar_parametros(
+        # TODO fast-follow: cada candidato N (~14 por consulta, bisección) recarga
+        # modelos/anclas/facturas/cartera-previa desde cero vía `_resultado_con` —
+        # igual de costoso que 14 llamadas a `proyectar_impactos`. Aceptable para el
+        # piloto (no es una ruta de alto tráfico); si se vuelve cuello de botella,
+        # traer esos insumos UNA sola vez y repetir solo la parte pura por N, como
+        # hace `sensibilidad_vigente`/`piso_con_capas` con sus 14 variaciones — pero
+        # eso exige separar `_resultado_con` en fase async (una vez) + síncrona (por
+        # N), un cambio más grande que no vale la pena sin evidencia real de que el
+        # perf importa.
+        r, _caja_min, _fondo, _rec, _meta = await _resultado_con(
             params_n,
             modelos,
-            escenario,
-            mes_inicio,
-            horizonte_meses,
-            recaudo_previo,
-            activos_previos,
-            None,  # iva_egreso_por_mes: compuerta apagada hoy (D-12/O-1)
-            arranque.valor,
+            escenario=escenario,
+            mes_inicio=mes_inicio,
+            horizonte_meses=horizonte_meses,
         )
-        return proyectar(pm)
+        return r
 
     return proyectar_fn
 
