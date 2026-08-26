@@ -7,6 +7,7 @@ Carga los parámetros VIGENTES + el catálogo de modelos ACTIVOS, arma un
 estado: es una lectura pura sobre la configuración vigente."""
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
@@ -1338,6 +1339,61 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
     _sensibilidad_cache.clear()  # una sola vigencia viva: no acumular basura
     _sensibilidad_cache[clave] = out
     return out
+
+
+async def fabrica_proyectar_unidades(
+    vig: ParametrosProyeccion,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int,
+) -> Callable[[int], ResultadoProyeccion]:
+    """inc4 Task 6 (`cfo.calc.escenario.motos_para_evitar_umbral`) — arma el
+    `proyectar_fn(n)` que exige `solver_unidades.resolver_unidades_para_umbral`: un
+    callable SÍNCRONO que, dado N (unidades extra/mes), devuelve el
+    `ResultadoProyeccion` crudo de proyectar con `motos_base + N` — el solver bisecta
+    llamándolo directo, sin `await` (no puede: es una función `def` normal).
+
+    `cfo/calc` no puede importar `app.domain.*` ni `proyeccion.motor` directo
+    (aislamiento S1, `test_s1_aislamiento.py`: ningún archivo de `cfo/calc/` puede
+    contener esos imports): por eso la fábrica vive AQUÍ y
+    `escenario._proyectar_fn_para` solo la LLAMA, opaco, sin importar sus tipos.
+
+    Trae UNA sola vez lo que NO depende de N (modelos activos, el arranque real de
+    caja del ciclo — P2 del ciclo mensual — y la cartera previa — el fix que movió el
+    piso de $158M a $504M en el sprint de precisión de agosto —); el cierre que
+    devuelve solo repite la parte PURA (`_armar_parametros` + `proyectar`, sin I/O)
+    por cada candidato de la bisección.
+
+    Simplificación DECLARADA para esa tarea (ver su task-6-report.md): a diferencia
+    de `_resultado_con`, NO aplica el anclaje E1 (ejecución real de meses cerrados/en
+    curso) ni la reconciliación D2 (netear facturas Auteco), y no alimenta el plan de
+    IVA (hoy en `None`: la compuerta IVA_ALIMENTA_PROYECCION está apagada — D-12/O-1 —
+    así que el pipeline completo tampoco lo usaría). Sin anclas/facturas activas el
+    número es el mismo; con ellas, el piso de los meses más cercanos puede diferir un
+    poco del que muestra /proyeccion. La fidelidad completa contra Mongo real queda
+    para el golden/regresión de esa Task 9."""
+    modelos = await modelos_service.listar_modelos(activo=True)
+    if not modelos:
+        raise ProyeccionError("no hay modelos de moto activos", 409)
+    arranque = await _arranque_de_caja(vig, mes_inicio)
+    recaudo_previo, activos_previos = await cartera_previa_service.obtener_series()
+
+    def proyectar_fn(n: int) -> ResultadoProyeccion:
+        params_n = vig.model_copy(update={"motos_base": vig.motos_base + n})
+        pm = _armar_parametros(
+            params_n,
+            modelos,
+            escenario,
+            mes_inicio,
+            horizonte_meses,
+            recaudo_previo,
+            activos_previos,
+            None,  # iva_egreso_por_mes: compuerta apagada hoy (D-12/O-1)
+            arranque.valor,
+        )
+        return proyectar(pm)
+
+    return proyectar_fn
 
 
 ANCLA_MODOS = ("cerrado", "movimientos")
