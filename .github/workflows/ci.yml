@@ -135,6 +135,54 @@ jobs:
       # Bloqueante. Excepciones: pinear con --ignore-vuln <GHSA> aquí, revisado por PR (Kimi §4).
       - run: pip-audit --requirement backend/requirements.txt --strict
 
+  # ── CANDADO DEL MOTOR (Fundacional §5, F0-2) — paridad de 176 meses de proyectar() ──
+  # Corre SOLO el golden-master, con nombre propio, para exigirlo como required check.
+  # Ya corre dentro del job `backend`; aquí se aísla para que un fallo diga
+  # "rompiste la paridad del motor" y se pueda marcar required en branch protection.
+  golden-master:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: golden-master (paridad del motor, 176 meses)
+        run: pytest tests/test_golden_master.py -q
+
+  # ── GUARDIA DE PARIDAD (F0-2) — cambiar el motor o su golden exige gate explícito ──
+  # Anti-principio Fundacional §4: ningún cambio a la paridad sin gate. Si el PR toca
+  # backend/app/proyeccion/ o la golden, exige la etiqueta 'motor-parity-reviewed'.
+  motor-parity-guard:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: exigir etiqueta si el PR toca el motor o la golden
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          CHANGED="$(git diff --name-only "$BASE" "$HEAD")"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -Eq '^backend/app/proyeccion/|^backend/tests/golden/golden_simular\.json$'; then
+            if echo ",$LABELS," | grep -q ',motor-parity-reviewed,'; then
+              echo "OK: PR toca el motor/golden y trae la etiqueta motor-parity-reviewed."
+            else
+              echo "::error::Este PR toca backend/app/proyeccion/ o la golden. Revisa el diff de paridad y aplica la etiqueta 'motor-parity-reviewed' (gate del CEO). Anti-principio Fundacional §4."
+              exit 1
+            fi
+          else
+            echo "OK: el PR no toca el motor ni la golden."
+          fi
+
   # ── Escaneo de secretos (regla 12) ──
   gitleaks:
     runs-on: ubuntu-latest
