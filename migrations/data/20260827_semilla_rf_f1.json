@@ -1,0 +1,2003 @@
+{
+ "generado": "2026-08-27",
+ "total_movimientos": 1684,
+ "parametros": {
+  "min_evidencia": 3,
+  "min_pureza": "1",
+  "min_long_patron": 3,
+  "stopwords": 64
+ },
+ "n_cubiertas": 3,
+ "propuestas": [
+  {
+   "patron": "recibido",
+   "rubro_id": "6a665875dcb531f981a16847",
+   "rubro": "Aportes de capital",
+   "tipo_flujo": "ingreso",
+   "evidencia": 8,
+   "pureza": "1",
+   "prioridad": 149,
+   "ejemplos": [
+    "Recibido de Fabian enrique c",
+    "Recibido de Luis miguel bece"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "enrique",
+   "rubro_id": "6a665875dcb531f981a16847",
+   "rubro": "Aportes de capital",
+   "tipo_flujo": "ingreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 164,
+   "ejemplos": [
+    "Recibido de Fabian enrique c"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "fabian",
+   "rubro_id": "6a665875dcb531f981a16847",
+   "rubro": "Aportes de capital",
+   "tipo_flujo": "ingreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 165,
+   "ejemplos": [
+    "Recibido de Fabian enrique c"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "bece",
+   "rubro_id": "6a665875dcb531f981a16847",
+   "rubro": "Aportes de capital",
+   "tipo_flujo": "ingreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 201,
+   "ejemplos": [
+    "Recibido de Luis miguel bece"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "luis",
+   "rubro_id": "6a665875dcb531f981a16847",
+   "rubro": "Aportes de capital",
+   "tipo_flujo": "ingreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 214,
+   "ejemplos": [
+    "Recibido de Luis miguel bece"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "miguel",
+   "rubro_id": "6a665875dcb531f981a16847",
+   "rubro": "Aportes de capital",
+   "tipo_flujo": "ingreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 215,
+   "ejemplos": [
+    "Recibido de Luis miguel bece"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "arriendos",
+   "rubro_id": "6a5edaabde90904d0daaa3cd",
+   "rubro": "Arriendos",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 198,
+   "ejemplos": [
+    "Compra en Payu*regus colombia — Arriendos",
+    "Débito — Arriendos"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "bibiana",
+   "rubro_id": "6a6165933893bb86c32a2060",
+   "rubro": "Asuntos legales",
+   "tipo_flujo": "egreso",
+   "evidencia": 6,
+   "pureza": "1",
+   "prioridad": 155,
+   "ejemplos": [
+    "Pago Bibiana - asuntos legales",
+    "Envío a Grey bibiana cuervo del rio"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "asuntos",
+   "rubro_id": "6a6165933893bb86c32a2060",
+   "rubro": "Asuntos legales",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 160,
+   "ejemplos": [
+    "Pago Bibiana - asuntos legales",
+    "Envío a Grey Bibiana Cuervo Del Rio (Pago Bibiana - asuntos legales) — Asuntos legales"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "legales",
+   "rubro_id": "6a6165933893bb86c32a2060",
+   "rubro": "Asuntos legales",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 167,
+   "ejemplos": [
+    "Pago Bibiana - asuntos legales",
+    "Envío a Grey Bibiana Cuervo Del Rio (Pago Bibiana - asuntos legales) — Asuntos legales"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "sporty",
+   "rubro_id": "6a5edaadde90904d0daaa3db",
+   "rubro": "Beneficios Heads",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 224,
+   "ejemplos": [
+    "Compra en Sporty city sas7888"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "bonificaciones",
+   "rubro_id": "6a5edaadde90904d0daaa3da",
+   "rubro": "Bonificaciones",
+   "tipo_flujo": "egreso",
+   "evidencia": 12,
+   "pureza": "1",
+   "prioridad": 133,
+   "ejemplos": [
+    "Envío a Ivan Echeverri Gomez (Bonificación) — Bonificaciones",
+    "Envío a Iván Echeverri Gómez (bonificaciones) — Bonificaciones"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "bonificacion",
+   "rubro_id": "6a5edaadde90904d0daaa3da",
+   "rubro": "Bonificaciones",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 202,
+   "ejemplos": [
+    "Envío a Lizbeth rincon rojas (bonificacion lavadora)",
+    "Envío a Ivan Echeverri Gomez (Bonificación) — Bonificaciones"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "cafeteria",
+   "rubro_id": "6a5edaacde90904d0daaa3d2",
+   "rubro": "Cafetería",
+   "tipo_flujo": "egreso",
+   "evidencia": 15,
+   "pureza": "1",
+   "prioridad": 132,
+   "ejemplos": [
+    "Débito — Cafetería",
+    "Compra en Farmatodo chia — Cafetería"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "donuts",
+   "rubro_id": "6a5edaacde90904d0daaa3d2",
+   "rubro": "Cafetería",
+   "tipo_flujo": "egreso",
+   "evidencia": 7,
+   "pureza": "1",
+   "prioridad": 150,
+   "ejemplos": [
+    "Compra en Dunkin donuts",
+    "Compra en Of prpal dunkin donuts"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "dunkin",
+   "rubro_id": "6a5edaacde90904d0daaa3d2",
+   "rubro": "Cafetería",
+   "tipo_flujo": "egreso",
+   "evidencia": 7,
+   "pureza": "1",
+   "prioridad": 151,
+   "ejemplos": [
+    "Compra en Dunkin donuts",
+    "Compra en Of prpal dunkin donuts"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "verif",
+   "rubro_id": "6a5edaacde90904d0daaa3d2",
+   "rubro": "Cafetería",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 196,
+   "ejemplos": [
+    "Compra en Rappi* verif",
+    "Compra en Rappi* verif $1.07 usd — Cafetería"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "sapien",
+   "rubro_id": "6a5edaacde90904d0daaa3d2",
+   "rubro": "Cafetería",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 223,
+   "ejemplos": [
+    "Compra en Starbucks torre sapien"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "starbucks",
+   "rubro_id": "6a5edaacde90904d0daaa3d2",
+   "rubro": "Cafetería",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 225,
+   "ejemplos": [
+    "Compra en Starbucks torre sapien"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "torre",
+   "rubro_id": "6a5edaacde90904d0daaa3d2",
+   "rubro": "Cafetería",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 229,
+   "ejemplos": [
+    "Compra en Starbucks torre sapien"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "deudas",
+   "rubro_id": "6a5edaaede90904d0daaa3e2",
+   "rubro": "Deudas proveedores anteriores",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 163,
+   "ejemplos": [
+    "Débito (pago Colfenix) — Deudas proveedores anteriores",
+    "Envío a Liliana amado ovalle — Deudas proveedores anteriores"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "proveedores",
+   "rubro_id": "6a5edaaede90904d0daaa3e2",
+   "rubro": "Deudas proveedores anteriores",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 173,
+   "ejemplos": [
+    "Débito (pago Colfenix) — Deudas proveedores anteriores",
+    "Envío a Liliana amado ovalle — Deudas proveedores anteriores"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "amado",
+   "rubro_id": "6a5edaaede90904d0daaa3e2",
+   "rubro": "Deudas proveedores anteriores",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 178,
+   "ejemplos": [
+    "Envío a Liliana amado ovalle",
+    "Envío a Liliana amado ovalle — Deudas proveedores anteriores"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "csd",
+   "rubro_id": "6a5edaaede90904d0daaa3e2",
+   "rubro": "Deudas proveedores anteriores",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 182,
+   "ejemplos": [
+    "Envío a Sofia csd sas",
+    "Envío a Sofia csd sas — Deudas proveedores anteriores"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras",
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "liliana",
+   "rubro_id": "6a5edaaede90904d0daaa3e2",
+   "rubro": "Deudas proveedores anteriores",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 186,
+   "ejemplos": [
+    "Envío a Liliana amado ovalle",
+    "Envío a Liliana amado ovalle — Deudas proveedores anteriores"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "ovalle",
+   "rubro_id": "6a5edaaede90904d0daaa3e2",
+   "rubro": "Deudas proveedores anteriores",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 190,
+   "ejemplos": [
+    "Envío a Liliana amado ovalle",
+    "Envío a Liliana amado ovalle — Deudas proveedores anteriores"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "moreno",
+   "rubro_id": "6a5edaaede90904d0daaa3e2",
+   "rubro": "Deudas proveedores anteriores",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 216,
+   "ejemplos": [
+    "Envío a Luis miguel moreno gomez (Pago deuda Luis Moreno)",
+    "Envío a Luis Miguel Moreno Gómez (proveedor anterior) — Deudas proveedores anteriores"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "freelance",
+   "rubro_id": "6a6165903893bb86c32a205f",
+   "rubro": "Freelance",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 207,
+   "ejemplos": [
+    "Envío a cuenta bancaria - Henko Solution SAS (freelance RRHH)",
+    "Débito (Asesorías mecánicas) — Freelance"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "comision",
+   "rubro_id": "6a5edaaede90904d0daaa3e5",
+   "rubro": "Gastos bancarios",
+   "tipo_flujo": "egreso",
+   "evidencia": 75,
+   "pureza": "1",
+   "prioridad": 106,
+   "ejemplos": [
+    "Comisión envíos (total abril 2026)",
+    "Comisión envíos (total mayo 2026)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "bancarios",
+   "rubro_id": "6a5edaaede90904d0daaa3e5",
+   "rubro": "Gastos bancarios",
+   "tipo_flujo": "egreso",
+   "evidencia": 47,
+   "pureza": "1",
+   "prioridad": 111,
+   "ejemplos": [
+    "Comisión envío — Gastos bancarios"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "envios",
+   "rubro_id": "6a5edaaede90904d0daaa3e5",
+   "rubro": "Gastos bancarios",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 205,
+   "ejemplos": [
+    "Comisión envíos (total abril 2026)",
+    "Comisión envíos (total mayo 2026)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "notaria",
+   "rubro_id": "6a5edaaede90904d0daaa3e4",
+   "rubro": "Gastos notariales",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 189,
+   "ejemplos": [
+    "Compra en Notaria 5",
+    "Compra en Notaria 45"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "gmf",
+   "rubro_id": "6a5edaaede90904d0daaa3e7",
+   "rubro": "Impuestos",
+   "tipo_flujo": "egreso",
+   "evidencia": 382,
+   "pureza": "1",
+   "prioridad": 100,
+   "ejemplos": [
+    "GMF 4x1.000 (total marzo 2026)",
+    "GMF 4x1.000 (total abril 2026)"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "impuestos",
+   "rubro_id": "6a5edaaede90904d0daaa3e7",
+   "rubro": "Impuestos",
+   "tipo_flujo": "egreso",
+   "evidencia": 286,
+   "pureza": "1",
+   "prioridad": 101,
+   "ejemplos": [
+    "Envío a cuenta bancaria - Sara Morales (pago impuestos)",
+    "GMF (4x1.000) — Impuestos"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "impuesto",
+   "rubro_id": "6a5edaaede90904d0daaa3e7",
+   "rubro": "Impuestos",
+   "tipo_flujo": "egreso",
+   "evidencia": 79,
+   "pureza": "1",
+   "prioridad": 104,
+   "ejemplos": [
+    "Impuesto IVA (total abril 2026)",
+    "Impuesto IVA (total mayo 2026)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "iva",
+   "rubro_id": "6a5edaaede90904d0daaa3e7",
+   "rubro": "Impuestos",
+   "tipo_flujo": "egreso",
+   "evidencia": 76,
+   "pureza": "1",
+   "prioridad": 105,
+   "ejemplos": [
+    "Impuesto IVA (total abril 2026)",
+    "Impuesto IVA (total mayo 2026)"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "facebk",
+   "rubro_id": "6a5edaacde90904d0daaa3d5",
+   "rubro": "Marketing y publicidad",
+   "tipo_flujo": "egreso",
+   "evidencia": 7,
+   "pureza": "1",
+   "prioridad": 152,
+   "ejemplos": [
+    "Compra en Facebk *3u2v",
+    "Compra en Facebk *8seeth9q42"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "marketing",
+   "rubro_id": "6a5edaacde90904d0daaa3d5",
+   "rubro": "Marketing y publicidad",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 168,
+   "ejemplos": [
+    "Compra en Facebk *srqq — Marketing y publicidad",
+    "Compra en Facebk *yzh6yvdq42 — Marketing y publicidad"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "publicidad",
+   "rubro_id": "6a5edaacde90904d0daaa3d5",
+   "rubro": "Marketing y publicidad",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 174,
+   "ejemplos": [
+    "Compra en Facebk *srqq — Marketing y publicidad",
+    "Compra en Facebk *yzh6yvdq42 — Marketing y publicidad"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "barbara",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 28,
+   "pureza": "1",
+   "prioridad": 118,
+   "ejemplos": [
+    "Compra en Carulla santa barbara",
+    "Compra en Carulla santa barbara — Mercado y aseo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "carulla",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 28,
+   "pureza": "1",
+   "prioridad": 119,
+   "ejemplos": [
+    "Compra en Carulla santa barbara",
+    "Compra en Carulla santa barbara — Mercado y aseo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "tienda",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 9,
+   "pureza": "1",
+   "prioridad": 147,
+   "ejemplos": [
+    "Compra en Tienda d1 cc centro ch",
+    "Compra en Tienda d1 cajica badal"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "barbar",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 6,
+   "pureza": "1",
+   "prioridad": 154,
+   "ejemplos": [
+    "Compra en Tienda d1 santa barbar",
+    "Compra en Tienda d1 santa barbar — Mercado y aseo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "cajica",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 181,
+   "ejemplos": [
+    "Compra en Sto 688 cajica fontana",
+    "Compra en Tienda d1 cajica badal"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "bazar",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 200,
+   "ejemplos": [
+    "Compra en Jumbo chia bazar"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "fontana",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 206,
+   "ejemplos": [
+    "Compra en Sto 688 cajica fontana",
+    "Compra en Sto 688 cajica fontana — Mercado y aseo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "jumbo",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 211,
+   "ejemplos": [
+    "Compra en Jumbo chia bazar"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "sto",
+   "rubro_id": "6a5edaabde90904d0daaa3d1",
+   "rubro": "Mercado y aseo",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 226,
+   "ejemplos": [
+    "Compra en Sto 688 cajica fontana",
+    "Compra en Sto 688 cajica fontana — Mercado y aseo"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "otros",
+   "rubro_id": "6a5edaaede90904d0daaa3e3",
+   "rubro": "Otros gastos",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 217,
+   "ejemplos": [
+    "Envío a cuenta bancaria C Cont SAS (Honorarios contabilidad) — Otros gastos",
+    "Compra en Prosegur vigila y seguridad — Otros gastos"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "dollarcity",
+   "rubro_id": "6a5edaacde90904d0daaa3d4",
+   "rubro": "Papelería",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 183,
+   "ejemplos": [
+    "Compra en Dollarcity fontanar",
+    "Compra en Dollarcity santa barba"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "papelera",
+   "rubro_id": "6a5edaacde90904d0daaa3d4",
+   "rubro": "Papelería",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 191,
+   "ejemplos": [
+    "Compra en Comercial papelera sta",
+    "Compra en Comercial papelera mer"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "lib",
+   "rubro_id": "6a5edaacde90904d0daaa3d4",
+   "rubro": "Papelería",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 212,
+   "ejemplos": [
+    "Compra en Panamericana lib y pap",
+    "Compra en Panamericana lib y pap — Papelería"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "panamericana",
+   "rubro_id": "6a5edaacde90904d0daaa3d4",
+   "rubro": "Papelería",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 218,
+   "ejemplos": [
+    "Compra en Panamericana lib y pap",
+    "Compra en Panamericana lib y pap — Papelería"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "pap",
+   "rubro_id": "6a5edaacde90904d0daaa3d4",
+   "rubro": "Papelería",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 219,
+   "ejemplos": [
+    "Compra en Panamericana lib y pap",
+    "Compra en Panamericana lib y pap — Papelería"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "auteco",
+   "rubro_id": "6a5edaaade90904d0daaa3ca",
+   "rubro": "Producto",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 199,
+   "ejemplos": [
+    "Pago Auteco",
+    "Envío a cuenta bancaria Auteco Mobility SAS (Factura repuestos E650636709) — Producto"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "prestamo",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 28,
+   "pureza": "1",
+   "prioridad": 121,
+   "ejemplos": [
+    "Pago prestamo David Martinez",
+    "Pago prestamo Alexandra Suarez"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "prestamos",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 10,
+   "pureza": "1",
+   "prioridad": 139,
+   "ejemplos": [
+    "Débito (Pago deuda María Dolores Rueda) — Préstamos",
+    "Débito — Préstamos"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "david",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 162,
+   "ejemplos": [
+    "Pago prestamo David Martinez",
+    "Envío a David martinez aldea"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "martinez",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 169,
+   "ejemplos": [
+    "Pago prestamo David Martinez",
+    "Envío a David martinez aldea"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "maria",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 188,
+   "ejemplos": [
+    "Envío a cuenta bancaria - Ana Maria (Cierre prestamo Ana)",
+    "Débito (Pago deuda María Dolores Rueda) — Préstamos"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "aldea",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 197,
+   "ejemplos": [
+    "Envío a David martinez aldea",
+    "Envío a David martinez aldea (PAGO INTERESES SOCIOS)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "dolores",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 204,
+   "ejemplos": [
+    "Débito (Pago deuda María Dolores Rueda) — Préstamos",
+    "Débito (anticipo pago deuda María Dolores Rueda) — Préstamos"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "intereses",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 210,
+   "ejemplos": [
+    "Envío a cuenta bancaria - Luis Miguel (Pagos intereses prestamo Luis Miguel Becerra)",
+    "Envío a cuenta bancaria - Andres Javier (INTERESES SOCIOS)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "rueda",
+   "rubro_id": "6a5edaadde90904d0daaa3de",
+   "rubro": "Préstamos",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 222,
+   "ejemplos": [
+    "Débito (Pago deuda María Dolores Rueda) — Préstamos",
+    "Débito (anticipo pago deuda María Dolores Rueda) — Préstamos"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "tarjeta",
+   "rubro_id": "6a7003d312ba5ac9e981a9d5",
+   "rubro": "Reversas y devoluciones",
+   "tipo_flujo": "ingreso",
+   "evidencia": 23,
+   "pureza": "1",
+   "prioridad": 124,
+   "ejemplos": [
+    "Reversa compra con tarjeta",
+    "Reversa compra con tarjeta (reverso Compra en Github, inc. $3.274,77 del 27-jul)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "ajuste",
+   "rubro_id": "6a7003d312ba5ac9e981a9d5",
+   "rubro": "Reversas y devoluciones",
+   "tipo_flujo": "ingreso",
+   "evidencia": 11,
+   "pureza": "1",
+   "prioridad": 136,
+   "ejemplos": [
+    "Reembolso — Ajuste",
+    "Reversa compra con tarjeta — Ajuste"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "reverso",
+   "rubro_id": "6a7003d312ba5ac9e981a9d5",
+   "rubro": "Reversas y devoluciones",
+   "tipo_flujo": "ingreso",
+   "evidencia": 11,
+   "pureza": "1",
+   "prioridad": 137,
+   "ejemplos": [
+    "Reembolso (reverso GMF $13,10 de compra Github del 27-jul)",
+    "Devolución GMF (4x1.000) (reverso GMF $15.985,20 del 21-jul)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "jul",
+   "rubro_id": "6a7003d312ba5ac9e981a9d5",
+   "rubro": "Reversas y devoluciones",
+   "tipo_flujo": "ingreso",
+   "evidencia": 8,
+   "pureza": "1",
+   "prioridad": 148,
+   "ejemplos": [
+    "Reembolso (reverso GMF $13,10 de compra Github del 27-jul)",
+    "Devolución GMF (4x1.000) (reverso GMF $15.985,20 del 21-jul)"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "gmf",
+   "rubro_id": "6a7003d312ba5ac9e981a9d5",
+   "rubro": "Reversas y devoluciones",
+   "tipo_flujo": "ingreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 166,
+   "ejemplos": [
+    "Reembolso (reverso GMF $13,10 de compra Github del 27-jul)",
+    "Devolución GMF (4x1.000) (reverso GMF $15.985,20 del 21-jul)"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "soat",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 34,
+   "pureza": "1",
+   "prioridad": 114,
+   "ejemplos": [
+    "Pago SOAT",
+    "Envío a York Marvin Quintero Jaimes (Pago SOAT/matrículas)"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "matriculas",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 28,
+   "pureza": "1",
+   "prioridad": 120,
+   "ejemplos": [
+    "Envío a Transitemos sas (RECARGA TRANSITO TRASPASOS Y MATRICULAS MOSQUERA)",
+    "Envío a York Marvin Quintero Jaimes (Pago SOAT/matrículas)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "transitemos",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 22,
+   "pureza": "1",
+   "prioridad": 127,
+   "ejemplos": [
+    "Envío a Transitemos sas",
+    "Envío a Transitemos sas (RECARGA TRANSITO TRASPASOS Y MATRICULAS MOSQUERA)"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "jaimes",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 19,
+   "pureza": "1",
+   "prioridad": 128,
+   "ejemplos": [
+    "Envío a cuenta bancaria - York Marvin Quintero Jaimes",
+    "Envío a York Marvin Quintero Jaimes"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "marvin",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 19,
+   "pureza": "1",
+   "prioridad": 129,
+   "ejemplos": [
+    "Envío a cuenta bancaria - York Marvin Quintero Jaimes",
+    "Envío a York Marvin Quintero Jaimes"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "quintero",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 19,
+   "pureza": "1",
+   "prioridad": 130,
+   "ejemplos": [
+    "Envío a cuenta bancaria - York Marvin Quintero Jaimes",
+    "Envío a York Marvin Quintero Jaimes"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "york",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 19,
+   "pureza": "1",
+   "prioridad": 131,
+   "ejemplos": [
+    "Envío a cuenta bancaria - York Marvin Quintero Jaimes",
+    "Envío a York Marvin Quintero Jaimes"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "recarga",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 175,
+   "ejemplos": [
+    "Envío a Transitemos sas (RECARGA TRANSITO TRASPASOS Y MATRICULAS MOSQUERA)",
+    "Envío a Transitemos sas (Recarga tránsito, traspasos y matrículas) — SOAT/Matrículas"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "traspasos",
+   "rubro_id": "6a5edaabde90904d0daaa3cb",
+   "rubro": "SOAT/Matrículas",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 177,
+   "ejemplos": [
+    "Envío a Transitemos sas (RECARGA TRANSITO TRASPASOS Y MATRICULAS MOSQUERA)",
+    "Envío a Transitemos sas (Recarga tránsito, traspasos y matrículas) — SOAT/Matrículas"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "autoseguro",
+   "rubro_id": "6a5edaabde90904d0daaa3cc",
+   "rubro": "Seguros (Hunter)",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 180,
+   "ejemplos": [
+    "Envío a cuenta bancaria - Soluciones Tecnologicas Autoseguro SAS",
+    "Envío a cuenta bancaria - SOLUCIONES TECNOLOGICAS AUTOSEGURO S.A.S (PAGO INSTALACIONES Y REVISIONES GPS)"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "tecnologicas",
+   "rubro_id": "6a5edaabde90904d0daaa3cc",
+   "rubro": "Seguros (Hunter)",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 194,
+   "ejemplos": [
+    "Envío a cuenta bancaria - Soluciones Tecnologicas Autoseguro SAS",
+    "Envío a cuenta bancaria - SOLUCIONES TECNOLOGICAS AUTOSEGURO S.A.S (PAGO INSTALACIONES Y REVISIONES GPS)"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "publicos",
+   "rubro_id": "6a5edaabde90904d0daaa3d0",
+   "rubro": "Servicios públicos y telecom",
+   "tipo_flujo": "egreso",
+   "evidencia": 10,
+   "pureza": "1",
+   "prioridad": 140,
+   "ejemplos": [
+    "Débito (Pago servicios públicos y telecom) — Servicios públicos y telecom",
+    "Débito (servicio de luz oficina) — Servicios públicos y telecom"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "servicios",
+   "rubro_id": "6a5edaabde90904d0daaa3d0",
+   "rubro": "Servicios públicos y telecom",
+   "tipo_flujo": "egreso",
+   "evidencia": 10,
+   "pureza": "1",
+   "prioridad": 141,
+   "ejemplos": [
+    "Débito (Pago servicios públicos y telecom) — Servicios públicos y telecom",
+    "Débito (servicio de luz oficina) — Servicios públicos y telecom"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "telecom",
+   "rubro_id": "6a5edaabde90904d0daaa3d0",
+   "rubro": "Servicios públicos y telecom",
+   "tipo_flujo": "egreso",
+   "evidencia": 10,
+   "pureza": "1",
+   "prioridad": 142,
+   "ejemplos": [
+    "Débito (Pago servicios públicos y telecom) — Servicios públicos y telecom",
+    "Débito (servicio de luz oficina) — Servicios públicos y telecom"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "liz",
+   "rubro_id": "6a5edaacde90904d0daaa3d8",
+   "rubro": "Sueldos empleados",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 213,
+   "ejemplos": [
+    "Nómina Liz"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras",
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "anthropic",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 64,
+   "pureza": "1",
+   "prioridad": 107,
+   "ejemplos": [
+    "Compra en Anthropic claude team",
+    "Compra en Anthropic"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "software",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 41,
+   "pureza": "1",
+   "prioridad": 112,
+   "ejemplos": [
+    "Compra en Payu*soluciones alegra — Tecnología y software",
+    "Compra en Higgsfield inc. — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "tecnologia",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 41,
+   "pureza": "1",
+   "prioridad": 113,
+   "ejemplos": [
+    "Compra en Payu*soluciones alegra — Tecnología y software",
+    "Compra en Higgsfield inc. — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "inc",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 12,
+   "pureza": "1",
+   "prioridad": 134,
+   "ejemplos": [
+    "Compra en Vercel inc.",
+    "Compra en Github, inc."
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "render",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 12,
+   "pureza": "1",
+   "prioridad": 135,
+   "ejemplos": [
+    "Compra en Render.com"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "claude",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 9,
+   "pureza": "1",
+   "prioridad": 144,
+   "ejemplos": [
+    "Compra en Anthropic claude team",
+    "Compra en Anthropic* claude sub"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "moonshot",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 9,
+   "pureza": "1",
+   "prioridad": 146,
+   "ejemplos": [
+    "Compra en Moonshot ai",
+    "Compra en Moonshot ai — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "alegra",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 6,
+   "pureza": "1",
+   "prioridad": 153,
+   "ejemplos": [
+    "Compra en Payu*soluciones alegra",
+    "Compra en Payu*soluciones alegra — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "mongodbcloud",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 6,
+   "pureza": "1",
+   "prioridad": 157,
+   "ejemplos": [
+    "Compra en Mongodbcloud roddos",
+    "Compra en Mongodbcloud pm 0th..."
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "team",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 6,
+   "pureza": "1",
+   "prioridad": 158,
+   "ejemplos": [
+    "Compra en Anthropic claude team",
+    "Compra en Anthropic* claude team"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "vercel",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 6,
+   "pureza": "1",
+   "prioridad": 159,
+   "ejemplos": [
+    "Compra en Vercel inc.",
+    "Compra en Vercel inc. — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "mercately",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 171,
+   "ejemplos": [
+    "Compra en Mercately.com",
+    "Compra en Mercately.com — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "microsoft",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 172,
+   "ejemplos": [
+    "Compra en Microsoft#g153716677",
+    "Compra en Microsoft#g159863939"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "spotify",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 176,
+   "ejemplos": [
+    "Compra en Spotify",
+    "Compra en Spotify*dl"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "antares",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 179,
+   "ejemplos": [
+    "Compra en Redh antares"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "higgsfield",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 185,
+   "ejemplos": [
+    "Compra en Higgsfield inc.",
+    "Compra en Higgsfield inc. — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "roddos",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 193,
+   "ejemplos": [
+    "Compra en Mongodbcloud roddos"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "github",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 208,
+   "ejemplos": [
+    "Compra en Github, inc.",
+    "Compra en Github, inc. — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "google",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 209,
+   "ejemplos": [
+    "Compra en Google *workspace_rodd",
+    "Compra en Google *workspace_amsj"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "prime",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 221,
+   "ejemplos": [
+    "Compra en Amazon prime",
+    "Compra en Prime video dl"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "sub",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 227,
+   "ejemplos": [
+    "Compra en Anthropic* claude sub",
+    "Compra en Anthropic* claude sub — Tecnología y software"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "workspace",
+   "rubro_id": "6a5edaabde90904d0daaa3ce",
+   "rubro": "Tecnología y software",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 231,
+   "ejemplos": [
+    "Compra en Google *workspace_rodd",
+    "Compra en Google *workspace_amsj"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "uber",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 151,
+   "pureza": "1",
+   "prioridad": 102,
+   "ejemplos": [
+    "Compra en Uber rides",
+    "Compra en Payu*uber"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "rides",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 143,
+   "pureza": "1",
+   "prioridad": 103,
+   "ejemplos": [
+    "Compra en Uber rides",
+    "Compra en Uber rides*dl"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "parqueo",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 48,
+   "pureza": "1",
+   "prioridad": 108,
+   "ejemplos": [
+    "Débito (Pago permiso pico y placa) — Transporte/peajes/combustible/parqueo",
+    "Compra en Payu*uber — Transporte/peajes/combustible/parqueo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "peajes",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 48,
+   "pureza": "1",
+   "prioridad": 109,
+   "ejemplos": [
+    "Débito (Pago permiso pico y placa) — Transporte/peajes/combustible/parqueo",
+    "Compra en Payu*uber — Transporte/peajes/combustible/parqueo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "transporte",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 48,
+   "pureza": "1",
+   "prioridad": 110,
+   "ejemplos": [
+    "Débito (Pago permiso pico y placa) — Transporte/peajes/combustible/parqueo",
+    "Compra en Payu*uber — Transporte/peajes/combustible/parqueo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "peaje",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 33,
+   "pureza": "1",
+   "prioridad": 115,
+   "ejemplos": [
+    "Compra en Peaje andes",
+    "Compra en Peaje fusca"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "pico",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 29,
+   "pureza": "1",
+   "prioridad": 116,
+   "ejemplos": [
+    "Pago permiso pico y placa",
+    "Pico y placa"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "placa",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 29,
+   "pureza": "1",
+   "prioridad": 117,
+   "ejemplos": [
+    "Pago permiso pico y placa",
+    "Pico y placa"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "andes",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 27,
+   "pureza": "1",
+   "prioridad": 122,
+   "ejemplos": [
+    "Compra en Peaje andes",
+    "Compra en Peaje andes — Transporte/peajes/combustible/parqueo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "permiso",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 24,
+   "pureza": "1",
+   "prioridad": 123,
+   "ejemplos": [
+    "Pago permiso pico y placa",
+    "Débito (Pago permiso pico y placa)"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "posible nombre propio"
+   ]
+  },
+  {
+   "patron": "eds",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 10,
+   "pureza": "1",
+   "prioridad": 138,
+   "ejemplos": [
+    "Compra en Texaco eds las margar",
+    "Compra en Eds motomart fr"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "accenorte",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 9,
+   "pureza": "1",
+   "prioridad": 143,
+   "ejemplos": [
+    "Compra en Bold*accenorte sas"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "cabify",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 6,
+   "pureza": "1",
+   "prioridad": 156,
+   "ejemplos": [
+    "Compra en Mercado pago*cabify262",
+    "Compra en Mercadopago cabify*cab"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "cab",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 161,
+   "ejemplos": [
+    "Compra en Mercadopago cabify*cab"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "mercadopago",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 5,
+   "pureza": "1",
+   "prioridad": 170,
+   "ejemplos": [
+    "Compra en Mercadopago cabify*cab"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "fusca",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 184,
+   "ejemplos": [
+    "Compra en Peaje fusca"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "margar",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 187,
+   "ejemplos": [
+    "Compra en Texaco eds las margar"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "pws",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 192,
+   "ejemplos": [
+    "Compra en Pws*eds sta sofia",
+    "Compra en Pws*eds peaje — Transporte/peajes/combustible/parqueo"
+   ],
+   "colisiona": false,
+   "riesgos": [
+    "3 letras"
+   ]
+  },
+  {
+   "patron": "texaco",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 4,
+   "pureza": "1",
+   "prioridad": 195,
+   "ejemplos": [
+    "Compra en Texaco eds las margar"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "circule",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 203,
+   "ejemplos": [
+    "Compra en Union temporal circule — Transporte/peajes/combustible/parqueo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "parking",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 220,
+   "ejemplos": [
+    "Compra en City parking",
+    "Compra en Parking international"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "temporal",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 228,
+   "ejemplos": [
+    "Compra en Union temporal circule — Transporte/peajes/combustible/parqueo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  },
+  {
+   "patron": "union",
+   "rubro_id": "6a5edaacde90904d0daaa3d3",
+   "rubro": "Transporte/peajes/combustible/parqueo",
+   "tipo_flujo": "egreso",
+   "evidencia": 3,
+   "pureza": "1",
+   "prioridad": 230,
+   "ejemplos": [
+    "Compra en Union temporal circule — Transporte/peajes/combustible/parqueo"
+   ],
+   "colisiona": false,
+   "riesgos": []
+  }
+ ]
+}
