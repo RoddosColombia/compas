@@ -29,6 +29,191 @@ def _res():
     )
 
 
+# --- inc4 T9: escenario end-to-end (impacto_escenario + motos_para_evitar_umbral) ---
+# Resultados FIJOS de las dos tools de escenario, con la misma forma exacta que
+# produce `app.cfo.calc.escenario` (ver tests/cfo/calc/test_escenario.py): piso_con
+# lleva el mes de quiebre en `ref` ("quiebre:<mes>"), impacto_mensual/piso_con_unidades
+# no (ref=ancla de horizonte, fecha_corte=None) — así `conceptos.formatear` produce el
+# texto exacto que se afirma abajo, sin reinventar el formateo en el test.
+_PISO_SIN = ResultadoCFO(
+    concepto="piso_sin",
+    valor=Decimal("100000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.proyectar_impactos", fecha_corte=None, ref="2026-08"
+    ),
+)
+_PISO_CON = ResultadoCFO(
+    concepto="piso_con",
+    valor=Decimal("40000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.proyectar_impactos",
+        fecha_corte=None,
+        ref="quiebre:2026-11",
+    ),
+)
+_IMPACTO_MENSUAL = ResultadoCFO(
+    concepto="impacto_mensual",
+    valor=Decimal("20000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(fuente="escenario (entrada)", fecha_corte=None, ref="2026-08"),
+)
+_UNIDADES_EXTRA = ResultadoCFO(
+    concepto="unidades_extra",
+    valor=Decimal("12"),
+    unidad="unidades",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.solver_unidades.resolver_unidades_para_umbral",
+        fecha_corte=None,
+        ref="2026-08",
+    ),
+)
+_PISO_CON_UNIDADES = ResultadoCFO(
+    concepto="piso_con_unidades",
+    valor=Decimal("82000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.solver_unidades.resolver_unidades_para_umbral",
+        fecha_corte=None,
+        ref="2026-08",
+    ),
+)
+
+
+def _entrada_bodega() -> dict:
+    return {
+        "naturaleza": "gasto",
+        "monto": "20000000",
+        "mes_inicio": "2026-09",
+    }
+
+
+async def _fake_tool_escenario(nombre, entrada=None):
+    if nombre == "impacto_escenario":
+        return [_PISO_SIN, _PISO_CON, _IMPACTO_MENSUAL]
+    if nombre == "motos_para_evitar_umbral":
+        return [_UNIDADES_EXTRA, _PISO_CON_UNIDADES]
+    raise AssertionError(f"tool inesperada en el test: {nombre}")
+
+
+@pytest.mark.asyncio
+async def test_escenario_impacto_y_motos_publica_valores_sustituidos(
+    monkeypatch, _audit
+):
+    """E2E de la garantía anti-alucinación con las dos tools de escenario (inc4): el
+    modelo pide impacto_escenario Y motos_para_evitar_umbral EN EL MISMO turno (dos
+    BloqueToolUse), cita los 4 conceptos con su token, el verificador los deja pasar
+    (ningún crudo, todos los tokens respaldados) y el servicio sustituye — el texto
+    publicado trae los VALORES formateados, nunca `[[token]]` crudo."""
+    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", _fake_tool_escenario)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [
+                BloqueToolUse(
+                    id="t1", nombre="impacto_escenario", input=_entrada_bodega()
+                ),
+                BloqueToolUse(
+                    id="t2",
+                    nombre="motos_para_evitar_umbral",
+                    input=_entrada_bodega(),
+                ),
+            ],
+            10,
+            6,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [
+                BloqueTexto(
+                    texto=(
+                        "Si arriendas esa bodega, tu piso de caja queda en "
+                        "[[piso_con]], con un impacto mensual de "
+                        "[[impacto_mensual]]. Para no cruzar el umbral "
+                        "necesitas [[unidades_extra]] más al mes, lo que deja "
+                        "el piso en [[piso_con_unidades]]."
+                    )
+                )
+            ],
+            8,
+            20,
+        ),
+    ]
+    r = await srv.consultar(
+        "¿qué pasa si arriendo una bodega de $20M/mes desde septiembre?",
+        actor_id="u1",
+        cliente=ClienteFake(guiones),
+    )
+    assert r.abstuvo is False
+    assert "[[" not in r.texto  # ningún token crudo se filtró
+    assert "$40.000.000 (cruzas el umbral en 2026-11)" in r.texto
+    assert "$20.000.000" in r.texto
+    assert "12 motos" in r.texto
+    assert "$82.000.000" in r.texto
+    conceptos = {
+        "piso_sin",
+        "piso_con",
+        "impacto_mensual",
+        "unidades_extra",
+        "piso_con_unidades",
+    }
+    assert conceptos.issubset(set(r.conceptos_usados))
+
+
+@pytest.mark.asyncio
+async def test_escenario_conteo_crudo_de_motos_reintenta_y_abstiene(
+    monkeypatch, _audit
+):
+    """Contrato inc4 tarea 3 end-to-end: si el modelo escribe el conteo de motos
+    CRUDO ("12 motos") en vez de citar [[unidades_extra]], el verificador lo atrapa
+    (_RE_UNIDADES), dispara EL reintento correctivo (D-3: uno solo) y, si el modelo
+    reincide en escribir el número crudo, el servicio se abstiene — jamás publica ni
+    entra en un loop."""
+
+    async def fake_tool(nombre, entrada=None):
+        return [_UNIDADES_EXTRA]
+
+    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [
+                BloqueToolUse(
+                    id="t1",
+                    nombre="motos_para_evitar_umbral",
+                    input=_entrada_bodega(),
+                )
+            ],
+            5,
+            3,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Necesitas vender 12 motos más para evitarlo.")],
+            4,
+            8,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Perdón, serían 12 motos entonces.")],
+            4,
+            6,
+        ),
+    ]
+    fake = ClienteFake(guiones)
+    r = await srv.consultar(
+        "¿cuántas motos más para no cruzar el umbral?", actor_id="u1", cliente=fake
+    )
+    assert r.abstuvo is True and r.motivo == "verificacion"
+    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
+
+
 @pytest.mark.asyncio
 async def test_sin_key_abstiene(monkeypatch, _audit):
     monkeypatch.setattr(srv, "crear_cliente", lambda: None)
