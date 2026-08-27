@@ -50,6 +50,8 @@ export function ReporteCajaCard({ mes }: { mes: Mes }) {
       setMensaje(null);
       setConciliacion(r.conciliacion);
       qc.invalidateQueries({ queryKey: ["meses"] });
+      // Reportar un saldo re-ancla el disponible en vivo (CEO 2026-08-24).
+      qc.invalidateQueries({ queryKey: ["caja"] });
     },
     onError: (e: unknown) =>
       setMensaje(e instanceof Error ? e.message : "Error"),

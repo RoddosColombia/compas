@@ -52,6 +52,16 @@ async def caja_diaria(
     return await service.caja_diaria(desde=desde, hasta=hasta, caja_inicial=inicial)
 
 
+@diaria_router.get("/disponible")
+async def saldo_disponible(
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """Saldo disponible EN VIVO (CEO 2026-08-24): el número fijo que se actualiza al
+    cargar movimientos — saldo en banco por banco + tránsito Wava + frescura. Lectura
+    pura (no toca el motor). Reusa la conciliación del cierre (misma verdad)."""
+    return await service.saldo_disponible()
+
+
 def _mes_key(mes: str) -> str:
     if not _MES.match(mes):
         raise HTTPException(422, "mes debe ser 'YYYY-MM'")

@@ -34,6 +34,7 @@ from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
 from app.caja.diaria import serie_diaria
 from app.cierre.service import conciliacion
+from app.cierre.transito import transito_heredado
 from app.core.money import money_str
 from app.core.time import today_bogota
 from app.domain.bancos import Banco
@@ -278,4 +279,80 @@ async def reportar_saldos(
         ],
         # D4: la conciliación al instante, misma función que el GET (misma verdad).
         "conciliacion": await conciliacion(mes),
+    }
+
+
+async def saldo_disponible() -> dict:
+    """Saldo disponible EN VIVO (CEO 2026-08-24) — el número fijo que el CEO quiere ver
+    siempre, actualizado cada vez que se cargan movimientos.
+
+    Lectura pura (no toca el motor ni escribe estado). REUSA `conciliacion` del cierre:
+    el saldo del widget es EXACTAMENTE el `calculado` de la conciliación, para que nunca
+    existan dos "saldos" distintos en la app (un test lo blinda). Le agrega:
+      - el TOTAL = saldo en banco + tránsito Wava heredado (la misma definición que el
+        arranque del ciclo, `caja_inicial_total`, y que «Banco + Wava» del Excel);
+      - la FRESCURA por banco: fecha del último movimiento y días sin registrar, para
+        que el CEO sepa si el número está al día (atrasado ⇒ ámbar en la UI)."""
+    mc = await MesControl.find_one(MesControl.estado == EstadoMes.EN_EJECUCION)
+    if mc is None:
+        # Regla 7: sin mes operando no se inventa un saldo; se dice.
+        return {"disponible": False, "motivo": "sin_mes_en_ejecucion"}
+
+    conc = await conciliacion(mc.mes)
+    transito = await transito_heredado(mc.mes)
+
+    # Frescura: fecha del último movimiento POR BANCO (una sola pasada; MANUAL no es un
+    # banco reportable — se omite, igual que en la conciliación).
+    ultimo_por_banco: dict[str, str] = {}
+    async for t in Transaccion.find(Transaccion.mes_id == mc.id):
+        if t.banco is Banco.MANUAL:
+            continue
+        b = t.banco.value
+        if b not in ultimo_por_banco or t.fecha > ultimo_por_banco[b]:
+            ultimo_por_banco[b] = t.fecha
+
+    hoy = today_bogota()
+
+    def _dias(fecha: str | None) -> int | None:
+        if fecha is None:
+            return None
+        return (hoy - datetime.strptime(fecha, "%Y-%m-%d").date()).days
+
+    por_banco = []
+    for b in conc["por_banco"]:
+        fecha_ult = ultimo_por_banco.get(b["banco"])
+        por_banco.append(
+            {
+                "banco": b["banco"],
+                "saldo": b["calculado"],  # == la conciliación, sin divergencia
+                "reportado": b["reportado"],
+                "ultimo_movimiento": fecha_ult,
+                "dias_sin_registrar": _dias(fecha_ult),
+            }
+        )
+
+    # Frescura global: el movimiento más reciente de cualquier banco.
+    ultimo_global = max(ultimo_por_banco.values(), default=None)
+    dias = _dias(ultimo_global)
+    # Al día si el último movimiento es de hoy o ayer; atrasado si ya pasaron ≥2 días.
+    estado = (
+        "sin_movimientos" if dias is None else "al_dia" if dias <= 1 else "atrasado"
+    )
+
+    saldo_banco = Decimal(conc["consolidado_reportado"])
+    return {
+        "disponible": True,
+        "mes": mc.mes[:7],
+        "corte": hoy.isoformat(),
+        "saldo_en_banco": conc["consolidado_reportado"],
+        "transito_wava": money_str(transito),
+        "total": money_str(saldo_banco + transito),
+        "por_banco": por_banco,
+        # Regla 7: bancos con movimientos pero sin saldo reportado (no se calculan a 0).
+        "sin_dato": conc["sin_dato"],
+        "frescura": {
+            "ultimo_movimiento": ultimo_global,
+            "dias": dias,
+            "estado": estado,
+        },
     }
