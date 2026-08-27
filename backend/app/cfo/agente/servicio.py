@@ -68,11 +68,23 @@ async def _audit_soft(evento, metadata: dict, actor_id: str) -> None:
 
 
 def _cifras(resultados: list[ResultadoCFO]) -> list[CifraPublicada]:
-    return [
-        CifraPublicada(valor=str(r.valor), unidad=r.unidad, evidencia=r.evidencia)
-        for r in resultados
-        if r.disponible and r.valor is not None
-    ]
+    # Colapsa duplicados EXACTOS (mismo valor+unidad+evidencia): cuando el modelo
+    # llama una tool de escenario varias veces en el turno, res.resultados acumula
+    # el mismo ResultadoCFO repetido y la lista "Cifras (con su fuente)" salía
+    # duplicada. Se deduplica SOLO lo idéntico (primer visto gana, orden preservado);
+    # dos escenarios distintos dan valores/evidencia distintos y ambos sobreviven.
+    cifras: list[CifraPublicada] = []
+    vistos: set[tuple[str, str, str]] = set()
+    for r in resultados:
+        if not (r.disponible and r.valor is not None):
+            continue
+        c = CifraPublicada(valor=str(r.valor), unidad=r.unidad, evidencia=r.evidencia)
+        clave = (c.valor, c.unidad, c.evidencia.model_dump_json())
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        cifras.append(c)
+    return cifras
 
 
 def _abstencion(motivo: str, res: ResultadoLoop | None, actor_id: str) -> RespuestaCFO:

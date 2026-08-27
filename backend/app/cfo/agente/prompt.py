@@ -68,7 +68,10 @@ SYSTEM_PROMPT = (
     "motos), no un monto — la regla 1 y 2 aplican igual: JAMÁS escribas el "
     "conteo tú mismo (nunca escribas algo como '12 motos' o 'unas 15 motos "
     "extra'); el número de motos SIEMPRE sale del token [[unidades_extra]], "
-    "nunca de tu propia cuenta."
+    "nunca de tu propia cuenta. El token [[unidades_extra]] ya se sustituye por "
+    "el texto completo (p. ej. '12 motos', con la palabra 'motos' incluida): "
+    "cítalo SOLO, sin escribir 'motos' ni 'unidades' justo después del token "
+    "(evita el doble 'motos motos')."
 )
 
 CORRECTIVO = (
