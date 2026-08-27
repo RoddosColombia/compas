@@ -30,6 +30,7 @@ import ProyeccionPage from "@/pages/ProyeccionPage";
 import ReglasPage from "@/pages/ReglasPage";
 import ReportesPage from "@/pages/ReportesPage";
 import ScenariosPage from "@/pages/ScenariosPage";
+import SemillaReglasPage from "@/pages/SemillaReglasPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -219,6 +220,14 @@ export default function App() {
               element={
                 <Cockpit>
                   <ReglasPage />
+                </Cockpit>
+              }
+            />
+            <Route
+              path="/reglas/semilla"
+              element={
+                <Cockpit>
+                  <SemillaReglasPage />
                 </Cockpit>
               }
             />

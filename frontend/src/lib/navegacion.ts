@@ -23,6 +23,7 @@ import {
   LineChart,
   Receipt,
   Repeat,
+  Sprout,
   Tags,
   Target,
   Wallet,
@@ -155,6 +156,12 @@ export const NAVEGACION: GrupoNav[] = [
         cap: "dashboard:leer",
       },
       { label: "Reglas", path: "/reglas", icon: Filter, cap: "dashboard:leer" },
+      {
+        label: "Semilla de reglas",
+        path: "/reglas/semilla",
+        icon: Sprout,
+        cap: "reglas:gestionar",
+      },
     ],
   },
 ];

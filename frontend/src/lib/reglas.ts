@@ -85,3 +85,51 @@ export async function aplicarPendientes(): Promise<ResultadoAplicar> {
     method: "POST",
   });
 }
+
+// ── RF-F1: semilla (reglas aprendidas de la curaduría real) ──
+
+export interface SemillaPropuesta {
+  patron: string;
+  rubro_id: string;
+  rubro: string;
+  tipo_flujo: TipoFlujo;
+  evidencia: number;
+  pureza: string;
+  prioridad: number;
+  ejemplos: string[];
+  colisiona: boolean;
+}
+
+export interface SemillaReporte {
+  total_movimientos: number;
+  parametros: Record<string, unknown>;
+  propuestas: SemillaPropuesta[];
+}
+
+export interface ResultadoSembrar {
+  creadas: number;
+  ya_existian: number;
+  errores: number;
+  detalle_errores: { patron: string; detalle: string }[];
+}
+
+export async function obtenerSemilla(
+  minEvidencia = 3,
+  minPureza = "1",
+): Promise<SemillaReporte> {
+  const q = new URLSearchParams({
+    min_evidencia: String(minEvidencia),
+    min_pureza: minPureza,
+  });
+  return apiJson(`/reglas-clasificacion/semilla?${q}`);
+}
+
+export async function sembrarSemilla(
+  reglas: { patron: string; rubro_id: string; tipo_flujo: TipoFlujo }[],
+): Promise<ResultadoSembrar> {
+  return apiJson("/reglas-clasificacion/semilla/sembrar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reglas }),
+  });
+}
