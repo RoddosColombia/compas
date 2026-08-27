@@ -107,3 +107,38 @@ export function obtenerCajaDiaria(params: {
   });
   return apiJson(`/caja/diaria?${q.toString()}`);
 }
+
+// Saldo disponible EN VIVO (CEO 2026-08-24): el número fijo que se actualiza cada vez
+// que se cargan movimientos. Lectura pura; montos como string (regla 1). El backend
+// reusa la conciliación del cierre (misma verdad) y agrega la frescura.
+
+export interface SaldoBancoVivo {
+  banco: string;
+  saldo: string; // == calculado de la conciliación
+  reportado: string;
+  ultimo_movimiento: string | null; // 'YYYY-MM-DD'
+  dias_sin_registrar: number | null;
+}
+
+export interface Frescura {
+  ultimo_movimiento: string | null;
+  dias: number | null;
+  estado: "al_dia" | "atrasado" | "sin_movimientos";
+}
+
+export interface SaldoDisponible {
+  disponible: boolean;
+  motivo?: string; // 'sin_mes_en_ejecucion' cuando disponible=false
+  mes?: string;
+  corte?: string;
+  saldo_en_banco?: string;
+  transito_wava?: string;
+  total?: string;
+  por_banco?: SaldoBancoVivo[];
+  sin_dato?: string[];
+  frescura?: Frescura;
+}
+
+export function obtenerSaldoDisponible(): Promise<SaldoDisponible> {
+  return apiJson("/caja/disponible");
+}

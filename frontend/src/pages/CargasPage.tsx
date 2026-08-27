@@ -59,6 +59,10 @@ export default function CargasPage() {
         `Carga ${c.estado}: ${c.nuevas} nuevas, ${c.duplicadas} duplicadas, ${c.errores} errores.`,
       );
       qc.invalidateQueries({ queryKey: ["cargas"] });
+      // Cargar movimientos MUEVE el saldo disponible: refrescar la barra en vivo
+      // (CEO 2026-08-24) y la evolución de caja. Prefijo ["caja"] cubre
+      // ["caja","disponible"] y ["caja","diaria",...].
+      qc.invalidateQueries({ queryKey: ["caja"] });
     },
     onError: (e) =>
       setMensaje(e instanceof Error ? e.message : "Error en la carga"),
