@@ -49,3 +49,37 @@ def test_prompt_advierte_no_espacios_en_el_token():
     # instruccion en el prompt es una segunda capa defensiva (pedirle al modelo que
     # no agregue espacios), no la unica barrera contra el token espaciado.
     assert "espacio" in SYSTEM_PROMPT.lower()
+
+
+def test_prompt_menciona_las_tools_de_escenario():
+    # inc4: el modelo debe saber que impacto_escenario y motos_para_evitar_umbral
+    # existen y que responden preguntas "¿qué pasaría si...?" / "¿cuántas motos
+    # más...?" -- si el prompt no las nombra, el modelo nunca las invoca.
+    p = SYSTEM_PROMPT.lower()
+    assert "impacto_escenario" in p
+    assert "motos_para_evitar_umbral" in p
+
+
+def test_prompt_exige_citar_los_tokens_de_escenario():
+    # Cada tool de escenario devuelve VARIOS conceptos nombrados; el modelo debe
+    # citar cada uno con su propio token, nunca resumir el resultado con un
+    # numero propio.
+    p = SYSTEM_PROMPT
+    for token in (
+        "[[impacto_mensual]]",
+        "[[piso_sin]]",
+        "[[piso_con]]",
+        "[[unidades_extra]]",
+        "[[piso_con_unidades]]",
+    ):
+        assert token in p
+
+
+def test_prompt_prohibe_escribir_conteo_de_motos_crudo():
+    # Historia: "unidades_extra" son motos/mes -- un conteo entero pequenio
+    # ("12 motos") es tan prohibido como un monto o un mes; el prompt debe
+    # extender la regla #1 explicitamente a cantidades/conteos, no solo a
+    # montos y porcentajes, y nombrar el token que reemplaza el conteo.
+    p = SYSTEM_PROMPT.lower()
+    assert "cantidad" in p or "conteo" in p or "moto" in p
+    assert "[[unidades_extra]]" in SYSTEM_PROMPT
