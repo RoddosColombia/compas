@@ -135,6 +135,17 @@ def _tokens(descripcion: str, stopwords: frozenset[str], min_long: int) -> set[s
     }
 
 
+def tokens_de(
+    descripcion: str,
+    *,
+    stopwords: frozenset[str] = STOPWORDS_DEFAULT,
+    min_long: int = PATRON_MIN,
+) -> set[str]:
+    """Tokens candidatos de una descripción (público; la MISMA extracción que usa el
+    generador). Sirve para armar ejemplos/reportes que casen con los patrones."""
+    return _tokens(descripcion, stopwords, min_long)
+
+
 def generar_reglas_semilla(
     movimientos: list[MovimientoClasificado],
     *,
