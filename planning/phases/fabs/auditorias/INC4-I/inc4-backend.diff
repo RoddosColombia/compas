@@ -1,0 +1,2243 @@
+diff --git a/backend/app/cfo/agente/conceptos.py b/backend/app/cfo/agente/conceptos.py
+index b20a4a9..530b99e 100644
+--- a/backend/app/cfo/agente/conceptos.py
++++ b/backend/app/cfo/agente/conceptos.py
+@@ -36,11 +36,22 @@ def _meses_es(d: Decimal) -> str:
+     return f"{d:.1f}".replace(".", ",") + " meses"
+ 
+ 
++def _unidades_es(d: Decimal) -> str:
++    return f"{int(d)} motos"
++
++
+ def formatear(r: ResultadoCFO, hoy: date | None = None) -> str:
+     """Valor concept-bound listo para prosa, con su contexto server-bound."""
+     if r.concepto == "runway":
+         return _meses_es(r.valor)
++    if r.unidad == "unidades":
++        return _unidades_es(r.valor)
+     base = _money_es(r.valor)
++    ref = r.evidencia.ref or ""
++    if ref.startswith("quiebre:"):
++        mes = ref.split(":", 1)[1]
++        ctx = "no cruzas el umbral" if mes == "nunca" else f"cruzas el umbral en {mes}"
++        return f"{base} ({ctx})"
+     fecha = r.evidencia.fecha_corte
+     if r.concepto == "iva_cuatrimestre":
+         if fecha:
+diff --git a/backend/app/cfo/agente/loop.py b/backend/app/cfo/agente/loop.py
+index 2d338af..4f9373a 100644
+--- a/backend/app/cfo/agente/loop.py
++++ b/backend/app/cfo/agente/loop.py
+@@ -54,13 +54,15 @@ async def conversar(
+         )
+         contenido_tool: list[dict] = []
+         for u in usos:
+-            r = await ejecutar_tool(u.nombre)
+-            resultados.append(r)
++            rs = await ejecutar_tool(u.nombre, u.input)
++            resultados.extend(rs)
+             contenido_tool.append(
+                 {
+                     "type": "tool_result",
+                     "tool_use_id": u.id,
+-                    "content": json.dumps(resultado_a_dict(r), ensure_ascii=False),
++                    "content": json.dumps(
++                        [resultado_a_dict(x) for x in rs], ensure_ascii=False
++                    ),
+                 }
+             )
+         mensajes.append({"role": "user", "content": contenido_tool})
+diff --git a/backend/app/cfo/agente/prompt.py b/backend/app/cfo/agente/prompt.py
+index e387a70..99d4038 100644
+--- a/backend/app/cfo/agente/prompt.py
++++ b/backend/app/cfo/agente/prompt.py
+@@ -4,7 +4,19 @@ la regla #1: el modelo NUNCA escribe, calcula ni estima una cifra el mismo -- ci
+ cada concepto con su TOKEN [[concepto]] (sin espacios) y el sistema sustituye el
+ token por el valor real, con su fecha de corte, DESPUES de verificar la respuesta
+ (ver app.cfo.agente.verificador). Si un concepto no esta disponible este turno, el
+-modelo se abstiene honestamente en vez de citarlo."""
++modelo se abstiene honestamente en vez de citarlo.
++
++inc4 (tarea 8): agrega un bloque de escenarios SIN tocar la regla #1 ni la mecanica
++de citacion de arriba -- solo extiende su alcance. Las tools `impacto_escenario` y
++`motos_para_evitar_umbral` (`agente/tools.py`) devuelven VARIOS conceptos nombrados
++en una sola llamada (piso_sin/piso_con/impacto_mensual la primera;
++unidades_extra/piso_con_unidades la segunda), asi que el prompt debe dejar explicito
++que cada concepto se cita con SU PROPIO token -- nunca se resume el resultado en una
++frase con un numero propio. `unidades_extra` es un CONTEO de motos/mes, no un monto:
++la regla #1 ya cubre "cifras" en general, pero un entero pequenio como "12 motos" es
++el hueco que cerro `_RE_UNIDADES` en verificador.py (inc4 tarea 3) -- el prompt
++refuerza esa misma prohibicion del lado del modelo, antes de que la respuesta
++llegue al verificador."""
+ 
+ SYSTEM_PROMPT = (
+     "Eres FABS, el analista financiero de IA de RODDOS S.A.S. Complementas al CFO "
+@@ -38,7 +50,25 @@ SYSTEM_PROMPT = (
+     "Herramientas disponibles: caja disponible hoy ([[caja_hoy]]), runway/meses "
+     "de caja ([[runway]]), IVA del cuatrimestre ([[iva_cuatrimestre]]). Llámalas "
+     "y cita el token del concepto que devuelvan disponible; nunca escribas ni "
+-    "calcules el número tú mismo."
++    "calcules el número tú mismo.\n\n"
++    "ESCENARIOS HIPOTÉTICOS ('¿qué pasaría si...?'): usa impacto_escenario cuando "
++    "te pregunten por el efecto de un gasto o ingreso adicional hipotético desde "
++    "un mes (p. ej. '¿qué pasa si el arriendo sube $3M desde septiembre?'). "
++    "Devuelve TRES conceptos en la misma llamada: piso_sin (piso de caja base, "
++    "sin el ajuste), piso_con (piso de caja con el ajuste aplicado) e "
++    "impacto_mensual (el monto mensual del ajuste). Cita cada uno con SU PROPIO "
++    "token — [[piso_sin]], [[piso_con]], [[impacto_mensual]] — nunca resumas los "
++    "tres en una sola cifra propia ni digas 'la diferencia es de $X': esa resta "
++    "también es un cálculo tuyo, prohibido por la regla 1.\n"
++    "Usa motos_para_evitar_umbral cuando te pregunten '¿cuántas motos más "
++    "necesito vender para cubrir...?' sobre el MISMO escenario. Devuelve DOS "
++    "conceptos: unidades_extra (motos/mes adicionales) y piso_con_unidades (el "
++    "piso de caja resultante con esas unidades). Cítalos como [[unidades_extra]] "
++    "y [[piso_con_unidades]]. unidades_extra es una CANTIDAD (un conteo de "
++    "motos), no un monto — la regla 1 y 2 aplican igual: JAMÁS escribas el "
++    "conteo tú mismo (nunca escribas algo como '12 motos' o 'unas 15 motos "
++    "extra'); el número de motos SIEMPRE sale del token [[unidades_extra]], "
++    "nunca de tu propia cuenta."
+ )
+ 
+ CORRECTIVO = (
+diff --git a/backend/app/cfo/agente/tools.py b/backend/app/cfo/agente/tools.py
+index cd899b3..fb70ceb 100644
+--- a/backend/app/cfo/agente/tools.py
++++ b/backend/app/cfo/agente/tools.py
+@@ -1,21 +1,92 @@
+ # backend/app/cfo/agente/tools.py
+-"""FABS · tools de SOLO LECTURA que el modelo puede invocar. Cada tool envuelve un
+-concepto de `app.cfo.calc` y devuelve su ResultadoCFO completo (incl. disponible y
+-evidencia). El dispatcher es cerrado: una tool desconocida es error, nunca se inventa.
+-Serialización para el modelo (`resultado_a_dict`): sin `valor` ni `detalle` (inc3 Pieza
+-A) — el modelo cita conceptos con [[token]] y el servicio sustituye el valor
+-concept-bound tras verificar. El `ResultadoCFO` completo (con `valor`) sigue viajando
+-por el loop sin serializar."""
++"""FABS · tools de SOLO LECTURA que el modelo puede invocar. Cada tool envuelve uno o
++más conceptos de `app.cfo.calc` y devuelve su(s) ResultadoCFO completo(s) (incl.
++disponible y evidencia). El dispatcher es cerrado: una tool desconocida es error,
++nunca se inventa. Serialización para el modelo (`resultado_a_dict`): sin `valor` ni
++`detalle` (inc3 Pieza A) — el modelo cita conceptos con [[token]] y el servicio
++sustituye el valor concept-bound tras verificar. El `ResultadoCFO` completo (con
++`valor`) sigue viajando por el loop sin serializar.
+ 
++`ejecutar_tool` (inc4 T4) acepta una `entrada` opcional (parámetros de la tool, p. ej.
++el escenario de un impacto) y SIEMPRE devuelve `list[ResultadoCFO]`: las calcs de un
++solo concepto (las 3 de cero args de hoy) se normalizan a `[r]`; las calcs de varios
++conceptos (escenarios, inc4 más adelante) ya devuelven su propia lista y pasan
++intacta. Se decide por la firma de la calc registrada en DISPATCH: sin parámetros se
++llama sin `entrada` (las 3 tools actuales); con parámetros se le pasa `entrada`.
++
++Las dos tools de escenario (inc4 T7) — `impacto_escenario` y
++`motos_para_evitar_umbral` — comparten `input_schema` y el mismo envoltorio de
++parseo (`_kwargs_escenario`): `naturaleza` se valida contra {gasto,ingreso} ANTES de
++llamar la calc (`impactos._delta_flujo` trata cualquier valor ≠ 'gasto' como
++'ingreso' SIN avisar — dejar pasar un valor fuera del enum sería un escenario
++mal-signado sin error visible) y `monto` se parsea de string a Decimal (regla 1),
++rechazando no-string y no-finito (mismo patrón que
++`escenarios_impacto/router.py:_a_embebido`, que arma el mismo `Ajuste`). Sus
++envoltorios en DISPATCH toman UN `entrada: dict` posicional — para calzar con
++`calc(entrada or {})` arriba —, nunca `**kwargs`."""
++
++import inspect
+ from collections.abc import Awaitable, Callable
++from decimal import Decimal, InvalidOperation
+ 
+-from app.cfo.calc import caja, iva, runway
++from app.cfo.calc import caja, escenario, iva, runway
+ from app.cfo.calc.evidencia import ResultadoCFO
+ 
+-DISPATCH: dict[str, Callable[[], Awaitable[ResultadoCFO]]] = {
++CalcSinArgs = Callable[[], Awaitable[ResultadoCFO]]
++CalcConArgs = Callable[[dict], Awaitable[list[ResultadoCFO]]]
++
++_NATURALEZAS = {"gasto", "ingreso"}
++
++
++def _kwargs_escenario(entrada: dict) -> dict:
++    """Parsea/valida la `entrada` cruda del modelo (todo string, regla 1) a los
++    kwargs keyword-only de `escenario.impacto_escenario`/`motos_para_evitar_umbral`.
++
++    `naturaleza`: se exige ∈ {gasto,ingreso} ANTES de llegar a la calc — ver nota
++    del módulo (arriba) sobre `impactos._delta_flujo`.
++    `monto`: string→Decimal; rechaza no-string (regla 1: nunca aceptar un número
++    crudo del JSON) y no-finito (Infinity/NaN envenenarían la caja, P1-8)."""
++    naturaleza = entrada["naturaleza"]
++    if naturaleza not in _NATURALEZAS:
++        raise ValueError(
++            "naturaleza debe ser 'gasto' o 'ingreso' (cualquier otro valor lo "
++            f"trataría impactos._delta_flujo como 'ingreso' sin error); "
++            f"recibido: {naturaleza!r}"
++        )
++    monto_raw = entrada["monto"]
++    if not isinstance(monto_raw, str):
++        raise ValueError(
++            "monto debe ser string COP (regla 1: dinero nunca cruza como número "
++            f"crudo), recibido: {type(monto_raw).__name__}"
++        )
++    try:
++        monto = Decimal(monto_raw)
++        if not monto.is_finite():
++            raise InvalidOperation
++    except InvalidOperation as e:
++        raise ValueError(f"monto no es un decimal válido: {monto_raw!r}") from e
++    return {
++        "naturaleza": naturaleza,
++        "monto": monto,
++        "mes_inicio": entrada["mes_inicio"],
++        "mes_fin": entrada.get("mes_fin"),
++    }
++
++
++async def _impacto_escenario(entrada: dict) -> list[ResultadoCFO]:
++    return await escenario.impacto_escenario(**_kwargs_escenario(entrada))
++
++
++async def _motos_para_evitar_umbral(entrada: dict) -> list[ResultadoCFO]:
++    return await escenario.motos_para_evitar_umbral(**_kwargs_escenario(entrada))
++
++
++DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
+     "caja_disponible_hoy": caja.caja_hoy,
+     "runway_meses": runway.runway,
+     "iva_del_cuatrimestre": iva.iva_cuatrimestre,
++    "impacto_escenario": _impacto_escenario,
++    "motos_para_evitar_umbral": _motos_para_evitar_umbral,
+ }
+ 
+ TOOLS_SCHEMA: list[dict] = [
+@@ -56,11 +127,116 @@ TOOLS_SCHEMA: list[dict] = [
+             "additionalProperties": False,
+         },
+     },
++    {
++        "name": "impacto_escenario",
++        "description": (
++            "Compara la caja proyectada SIN vs. CON un gasto o ingreso hipotético "
++            "recurrente desde un mes (p. ej. '¿qué pasa si el arriendo sube $3M "
++            "desde septiembre?'). Devuelve piso_sin (piso de caja base), piso_con "
++            "(piso con el ajuste aplicado; su evidencia trae el mes de quiebre si "
++            "la caja llega a cruzar el umbral) e impacto_mensual (el monto mensual "
++            "del ajuste, ecoado). Usa esta tool para preguntas '¿qué pasaría si...?' "
++            "sobre un gasto/ingreso adicional. Es simulación de solo lectura: nunca "
++            "escribe nada."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "naturaleza": {
++                    "type": "string",
++                    "enum": ["gasto", "ingreso"],
++                    "description": (
++                        "Tipo del ajuste: 'gasto' (sube el gasto, la caja baja) o "
++                        "'ingreso' (sube el ingreso, la caja sube)."
++                    ),
++                },
++                "monto": {
++                    "type": "string",
++                    "description": (
++                        "Monto mensual del ajuste en COP, como string (p. ej. "
++                        "'20000000' para $20.000.000)."
++                    ),
++                },
++                "mes_inicio": {
++                    "type": "string",
++                    "description": (
++                        "Mes en que arranca el ajuste, formato 'YYYY-MM' "
++                        "(p. ej. '2026-09')."
++                    ),
++                },
++                "mes_fin": {
++                    "type": "string",
++                    "description": (
++                        "Mes en que termina el ajuste (inclusive), 'YYYY-MM'. Si "
++                        "se omite, el ajuste corre hasta el final del horizonte "
++                        "proyectado."
++                    ),
++                },
++            },
++            "required": ["naturaleza", "monto", "mes_inicio"],
++            "additionalProperties": False,
++        },
++    },
++    {
++        "name": "motos_para_evitar_umbral",
++        "description": (
++            "Con el MISMO escenario hipotético de impacto_escenario (gasto/ingreso "
++            "adicional desde un mes) ya aplicado encima, calcula cuántas motos "
++            "EXTRA por mes hacen falta vender desde hoy para que el piso de caja "
++            "proyectado NO cruce el umbral mínimo configurado. Devuelve "
++            "unidades_extra (motos/mes adicionales) y piso_con_unidades (el piso "
++            "de caja COP resultante con esas unidades). disponible=false si el "
++            "solver no encuentra solución dentro de su tope — nunca inventa un "
++            "número. Usa esta tool para preguntas '¿cuántas motos más necesito "
++            "vender para cubrir...?'."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "naturaleza": {
++                    "type": "string",
++                    "enum": ["gasto", "ingreso"],
++                    "description": (
++                        "Tipo del ajuste hipotético que hay que compensar con "
++                        "motos extra: 'gasto' o 'ingreso'."
++                    ),
++                },
++                "monto": {
++                    "type": "string",
++                    "description": (
++                        "Monto mensual del ajuste en COP, como string (p. ej. "
++                        "'20000000')."
++                    ),
++                },
++                "mes_inicio": {
++                    "type": "string",
++                    "description": "Mes en que arranca el ajuste, formato 'YYYY-MM'.",
++                },
++                "mes_fin": {
++                    "type": "string",
++                    "description": (
++                        "Mes en que termina el ajuste (inclusive), 'YYYY-MM'. Si "
++                        "se omite, corre hasta el final del horizonte."
++                    ),
++                },
++            },
++            "required": ["naturaleza", "monto", "mes_inicio"],
++            "additionalProperties": False,
++        },
++    },
+ ]
+ 
+ 
+-async def ejecutar_tool(nombre: str) -> ResultadoCFO:
+-    return await DISPATCH[nombre]()
++async def ejecutar_tool(nombre: str, entrada: dict | None = None) -> list[ResultadoCFO]:
++    # Dispatcher cerrado: `nombre` desconocido → KeyError, jamás se inventa una tool.
++    calc = DISPATCH[nombre]
++    if inspect.signature(calc).parameters:
++        resultado = await calc(entrada or {})
++    else:
++        resultado = await calc()
++    # Normaliza a lista: las calcs de un solo concepto (hoy: las 3 de cero args)
++    # devuelven UN ResultadoCFO; las de varios conceptos ya devuelven su lista.
++    return resultado if isinstance(resultado, list) else [resultado]
+ 
+ 
+ def resultado_a_dict(r: ResultadoCFO) -> dict:
+diff --git a/backend/app/cfo/agente/verificador.py b/backend/app/cfo/agente/verificador.py
+index 6c48b6f..df4bb98 100644
+--- a/backend/app/cfo/agente/verificador.py
++++ b/backend/app/cfo/agente/verificador.py
+@@ -60,6 +60,14 @@ _RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
+ # en la respuesta es una cifra auto-computada por el modelo, prohibida por regla
+ # #1 (ver su uso en `extraer_cifras`, FIX 1 FINAL-REVIEW inc2).
+ _RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
++# Unidades: entero seguido de 'moto(s)'/'motocicleta(s)'/'unidad(es)'. Cierra el
++# hueco del entero pequeño para conteos de motos (inc4 tarea 3): "12 motos" tiene
++# menos de 5 dígitos y sin separador, así que `_es_monto` lo dejaba pasar como
++# inocuo (nº de cuenta/día). El modelo debe citar `[[unidades_extra]]`, nunca
++# escribir el conteo — mismo contrato que COP/meses/%.
++_RE_UNIDADES = re.compile(
++    r"\d+\s*(?:motos?|motocicletas?|unidad(?:es)?)\b", re.IGNORECASE
++)
+ # Cita de concepto: [[caja_hoy]] / [[runway]] / [[iva_cuatrimestre]]. El modelo cita,
+ # no escribe números (inc3 Pieza A). RE_TOKEN vive en conceptos.py (import directo,
+ # NUNCA redefinir aquí): debe ser BYTE-IDÉNTICA a la que usa sustituir_tokens, o un
+@@ -145,6 +153,12 @@ def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
+         val = _a_decimal_meses(m.group(0).rstrip("% ").strip()) or Decimal(0)
+         cifras.append((val, "pct", m.group(0)))
+         tramos.append((m.start(), m.end()))
++    for m in _RE_UNIDADES.finditer(texto):
++        # Conteo de motos/unidades: el valor no importa (el contrato exige token,
++        # no comparación de valor — igual que 'pct'), pero marcamos el tramo para
++        # que el entero no se re-cuente como monto COP pelado en el barrido de abajo.
++        cifras.append((Decimal(0), "unidades", m.group(0)))
++        tramos.append((m.start(), m.end()))
+     for m in _RE_NUM.finditer(texto):
+         if any(s < m.end() and m.start() < e for s, e in tramos):
+             continue  # ya contado como meses o %
+diff --git a/backend/app/cfo/calc/escenario.py b/backend/app/cfo/calc/escenario.py
+new file mode 100644
+index 0000000..a197370
+--- /dev/null
++++ b/backend/app/cfo/calc/escenario.py
+@@ -0,0 +1,243 @@
++# backend/app/cfo/calc/escenario.py
++"""FABS · concepto 'escenario' (impacto hipotético de un gasto/ingreso recurrente en
++la caja + mes de quiebre + cuántas motos extra evitan cruzar el umbral).
++
++`impacto_escenario` envuelve proyeccion.service.proyectar_impactos: construye UN
++Ajuste declarativo (D1) con el monto hipotético desde `mes_inicio` (hasta `mes_fin` o
++el final del horizonte) y compara la proyección BASE vs. CON el ajuste sobre el
++horizonte vigente (arranca en el mes de HOY, como runway.py).
++
++`motos_para_evitar_umbral` (Task 6, inc4) responde "¿cuántas motos de más por mes
++hacen falta para que el piso no cruce el umbral, con ese mismo escenario encima?":
++envuelve `solver_unidades.resolver_unidades_para_umbral` (Task 1) — bisección ENTERA
++que RE-CORRE el cálculo completo de proyección por cada candidato N (las unidades
++fluyen por cartera/mora/GPS; no es un ajuste directo de caja como D1). El cierre que
++recorre esa proyección vive en `proyeccion.service.fabrica_proyectar_unidades`, NO
++aquí: `cfo/calc` no puede importar tipos de dominio ajenos ni el módulo interno de
++cálculo puro (aislamiento S1, ver `tests/cfo/test_s1_aislamiento.py`) — este módulo
++solo LLAMA esa fábrica, opaco.
++
++Ambas son compute-only (SIMULAR NUNCA ESCRIBE): no persisten nada, es lectura +
++cálculo puro. Sin config vigente → abstención (mismo patrón en las dos). Fix round 1
++(Task 6): el solver de unidades corre sobre el MISMO pipeline completo (paramétrico →
++E1 → D2) que `impacto_escenario`, así que los dos reconcilian en la misma base — por
++eso `resolver_unidades_para_umbral` y la fábrica que arma su `proyectar_fn` son
++ASYNC."""
++
++from decimal import Decimal
++
++from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
++from app.core.time import now_bogota
++from app.parametros_proyeccion import service as params_service
++from app.proyeccion import service as proy_service
++from app.proyeccion.impactos import Ajuste
++from app.proyeccion.service import ProyeccionError
++from app.proyeccion.solver_unidades import (
++    UnidadesResultado,
++    resolver_unidades_para_umbral,
++)
++
++_FUENTE = "proyeccion.service.proyectar_impactos"
++_FUENTE_ENTRADA = "escenario (entrada)"
++_FUENTE_SOLVER = "proyeccion.solver_unidades.resolver_unidades_para_umbral"
++_UNIDAD = "COP"
++_UNIDAD_MOTOS = "unidades"
++
++
++def _mes_de_quiebre(meses: list[dict]) -> str:
++    """Primer mes de la serie ajustada cuyo estado no es 'ok' (crítico o negativo).
++    Sin ninguno, el escenario nunca rompe el piso dentro del horizonte."""
++    return next((m["mes"] for m in meses if m["estado"] != "ok"), "nunca")
++
++
++async def impacto_escenario(
++    *,
++    naturaleza: str,
++    monto: Decimal,
++    mes_inicio: str,
++    mes_fin: str | None = None,
++) -> list[ResultadoCFO]:
++    """Compara el piso de caja proyectado BASE vs. CON un ajuste hipotético
++    (`naturaleza` ∈ {gasto,ingreso}, `monto` COP recurrente desde `mes_inicio` hasta
++    `mes_fin` o el final del horizonte). Devuelve 3 conceptos:
++    - `piso_sin`: piso de caja de la proyección BASE (sin el ajuste).
++    - `piso_con`: piso de caja CON el ajuste aplicado; su evidencia trae el mes de
++      quiebre (`quiebre:<YYYY-MM>` o `quiebre:nunca`).
++    - `impacto_mensual`: el monto mensual del ajuste hipotético.
++
++    Sin config de proyección vigente (`ProyeccionError`) → un único
++    `ResultadoCFO(disponible=False)` con `ref='sin-config'` (abstención, patrón de
++    runway.py)."""
++    ahora = now_bogota()
++    ajuste = Ajuste(
++        nombre="Escenario FABS",
++        naturaleza=naturaleza,
++        modo="absoluto",
++        valor=monto,
++        mes_inicio=mes_inicio,
++        mes_fin=mes_fin,
++    )
++    try:
++        data = await proy_service.proyectar_impactos(
++            ajustes=[ajuste],
++            escenario="base",
++            mes_inicio=(ahora.year, ahora.month),
++            horizonte_meses=None,
++        )
++    except ProyeccionError:
++        return [
++            ResultadoCFO(
++                concepto="escenario",
++                valor=None,
++                unidad=_UNIDAD,
++                disponible=False,
++                evidencia=Evidencia(fuente=_FUENTE, fecha_corte=None, ref="sin-config"),
++            )
++        ]
++
++    # Ancla de reproducibilidad del horizonte de la PROYECCIÓN (arranca en el mes de
++    # HOY, igual que runway.py:19) — NO el mes_inicio del ajuste hipotético. piso_sin
++    # es la proyección BASE, calculada sin el ajuste: su ref no puede sugerir que
++    # depende del mes en que arranca el escenario.
++    ref_horizonte = f"{ahora.year:04d}-{ahora.month:02d}"
++    quiebre = _mes_de_quiebre(data["ajustada"]["meses"])
++    return [
++        ResultadoCFO(
++            concepto="piso_sin",
++            valor=Decimal(data["base"]["piso_caja"]),
++            unidad=_UNIDAD,
++            disponible=True,
++            evidencia=Evidencia(fuente=_FUENTE, fecha_corte=None, ref=ref_horizonte),
++        ),
++        ResultadoCFO(
++            concepto="piso_con",
++            valor=Decimal(data["ajustada"]["piso_caja"]),
++            unidad=_UNIDAD,
++            disponible=True,
++            evidencia=Evidencia(
++                fuente=_FUENTE, fecha_corte=None, ref=f"quiebre:{quiebre}"
++            ),
++        ),
++        ResultadoCFO(
++            concepto="impacto_mensual",
++            valor=monto,
++            unidad=_UNIDAD,
++            disponible=True,
++            # No es un valor que proyectar_impactos calculó: es el monto de entrada
++            # del caller, ecoado. La fuente debe decir eso, no atribuirlo al cálculo
++            # de proyección.
++            evidencia=Evidencia(
++                fuente=_FUENTE_ENTRADA, fecha_corte=None, ref=ref_horizonte
++            ),
++        ),
++    ]
++
++
++def _abstencion(*, ref: str) -> ResultadoCFO:
++    """Único concepto `unidades_extra` no disponible — abstención honesta: sin config,
++    sin modelos activos, o el solver no encontró solución dentro del tope."""
++    return ResultadoCFO(
++        concepto="unidades_extra",
++        valor=None,
++        unidad=_UNIDAD_MOTOS,
++        disponible=False,
++        evidencia=Evidencia(fuente=_FUENTE_SOLVER, fecha_corte=None, ref=ref),
++    )
++
++
++async def _proyectar_fn_para(
++    vig,
++    escenario: str,
++    mes_inicio: tuple[int, int],
++    horizonte: int,
++):
++    """Arma el `proyectar_fn(n)` que exige `resolver_unidades_para_umbral` (Task 1,
++    módulo `solver_unidades`): un callable ASYNC que, dado N (unidades extra/mes),
++    devuelve el resultado de proyección CRUDO de calcular con `motos_base + N` sobre
++    el pipeline COMPLETO (paramétrico → E1 anclaje → D2 reconciliación — Fix round 1:
++    la misma base que usa `impacto_escenario`, para que los dos reconcilien).
++
++    La fábrica real vive en `proyeccion.service.fabrica_proyectar_unidades` — no
++    aquí: `cfo/calc` no puede importar tipos de dominio ajenos ni el módulo interno de
++    cálculo puro directo (aislamiento S1, `tests/cfo/test_s1_aislamiento.py`). Esta
++    función solo la LLAMA, opaca a sus tipos (ver la docstring de la fábrica para el
++    detalle exacto del pipeline)."""
++    return await proy_service.fabrica_proyectar_unidades(
++        vig, escenario, mes_inicio, horizonte
++    )
++
++
++async def motos_para_evitar_umbral(
++    *,
++    naturaleza: str,
++    monto: Decimal,
++    mes_inicio: str,
++    mes_fin: str | None = None,
++) -> list[ResultadoCFO]:
++    """¿Cuántas motos EXTRA por mes (desde HOY) hacen falta para que el piso de caja
++    proyectado no cruce el umbral, con el mismo escenario hipotético de
++    `impacto_escenario` (`naturaleza`/`monto`/`mes_inicio`/`mes_fin`) ya aplicado
++    encima? Envuelve `solver_unidades.resolver_unidades_para_umbral` (Task 1): bisecta
++    sobre N re-corriendo el pipeline COMPLETO de proyección (paramétrico → E1 → D2,
++    Fix round 1) con `motos_base + N` (`_proyectar_fn_para`; el horizonte ancla en el
++    mes de HOY, igual que `impacto_escenario`) y, sobre CADA candidato, mide el piso
++    con el mismo `Ajuste` declarativo (D1) aplicado encima — misma base que
++    `impacto_escenario`, así que `piso_con_unidades@n=0` y su `piso_con` reconcilian.
++
++    Devuelve 2 conceptos:
++    - `unidades_extra`: N (unidad "unidades"). `disponible=False` si el solver no
++      encuentra solución dentro de su tope (abstención honesta — nunca se inventa un
++      número).
++    - `piso_con_unidades`: el piso de caja (COP) que resulta con esas N unidades.
++
++    Sin config de proyección vigente, o sin modelos activos (`ProyeccionError` de
++    `_proyectar_fn_para`) → un único `ResultadoCFO(disponible=False)` con
++    `ref='sin-config'` (mismo patrón de abstención que `impacto_escenario`)."""
++    ahora = now_bogota()
++    ref_horizonte = f"{ahora.year:04d}-{ahora.month:02d}"
++    vig = await params_service.obtener_vigente()
++    if vig is None:
++        return [_abstencion(ref="sin-config")]
++    ajuste = Ajuste(
++        nombre="Escenario FABS",
++        naturaleza=naturaleza,
++        modo="absoluto",
++        valor=monto,
++        mes_inicio=mes_inicio,
++        mes_fin=mes_fin,
++    )
++    try:
++        # Fix round 1: `_proyectar_fn_para` y `resolver_unidades_para_umbral` son
++        # ambas async ahora (el pipeline completo por candidato exige I/O) — se
++        # awaitean directo, sin el puente síncrono que hacía falta cuando el solver
++        # solo corría el cálculo paramétrico sin E1/D2.
++        proyectar_fn = await _proyectar_fn_para(
++            vig, "base", (ahora.year, ahora.month), vig.horizonte_meses
++        )
++        resultado: UnidadesResultado = await resolver_unidades_para_umbral(
++            proyectar_fn, [ajuste], caja_minima=vig.caja_minima
++        )
++    except ProyeccionError:
++        return [_abstencion(ref="sin-config")]
++    if not resultado.alcanzable:
++        return [_abstencion(ref=f"no-alcanzable:{ref_horizonte}")]
++    return [
++        ResultadoCFO(
++            concepto="unidades_extra",
++            valor=Decimal(resultado.unidades_extra),
++            unidad=_UNIDAD_MOTOS,
++            disponible=True,
++            evidencia=Evidencia(
++                fuente=_FUENTE_SOLVER, fecha_corte=None, ref=ref_horizonte
++            ),
++        ),
++        ResultadoCFO(
++            concepto="piso_con_unidades",
++            valor=resultado.piso_resultante,
++            unidad=_UNIDAD,
++            disponible=True,
++            evidencia=Evidencia(
++                fuente=_FUENTE_SOLVER, fecha_corte=None, ref=ref_horizonte
++            ),
++        ),
++    ]
+diff --git a/backend/app/proyeccion/service.py b/backend/app/proyeccion/service.py
+index d4f880f..6392d7b 100644
+--- a/backend/app/proyeccion/service.py
++++ b/backend/app/proyeccion/service.py
+@@ -7,6 +7,7 @@ Carga los parámetros VIGENTES + el catálogo de modelos ACTIVOS, arma un
+ estado: es una lectura pura sobre la configuración vigente."""
+ 
+ import logging
++from collections.abc import Awaitable, Callable
+ from dataclasses import dataclass, field, replace
+ from decimal import Decimal
+ 
+@@ -1340,6 +1341,65 @@ async def sensibilidad_vigente(*, escenario: str, mes_inicio: tuple[int, int]) -
+     return out
+ 
+ 
++async def fabrica_proyectar_unidades(
++    vig: ParametrosProyeccion,
++    escenario: str,
++    mes_inicio: tuple[int, int],
++    horizonte_meses: int,
++) -> Callable[[int], Awaitable[ResultadoProyeccion]]:
++    """inc4 Task 6 (`cfo.calc.escenario.motos_para_evitar_umbral`) — arma el
++    `proyectar_fn(n)` que exige `solver_unidades.resolver_unidades_para_umbral`: dado
++    N (unidades extra/mes), devuelve el `ResultadoProyeccion` crudo de proyectar con
++    `motos_base + N`.
++
++    `cfo/calc` no puede importar `app.domain.*` ni `proyeccion.motor` directo
++    (aislamiento S1, `test_s1_aislamiento.py`: ningún archivo de `cfo/calc/` puede
++    contener esos imports): por eso la fábrica vive AQUÍ y
++    `escenario._proyectar_fn_para` solo la LLAMA, opaco, sin importar sus tipos.
++
++    Fix round 1 (revisión Opus del Task 6): `proyectar_fn` corre el MISMO pipeline
++    COMPLETO que `proyectar_impactos`/`impacto_escenario` — `_resultado_con` (motor →
++    E1 anclaje → D2 reconciliación), no solo el motor paramétrico. La versión anterior
++    se detenía en `proyectar(pm)` (motor-only): como la caja se acumula mes a mes
++    (`caja[m]=caja[m-1]+flujo[m]`), un delta de E1/D2 en los meses cercanos (la
++    reconciliación de Auteco puede ser 100M+) se arrastra hasta el piso — el
++    "cuántas motos" resultante podía SUBESTIMAR lo que realmente hace falta para
++    cruzar el umbral (falsa confianza sobre el número exacto que el producto existe
++    para proteger), y `impacto_escenario.piso_con` vs. este `piso_con_unidades@n=0`
++    quedaban en bases DISTINTAS. `_resultado_con` se llama SIN `anclas_override` (a
++    propósito: pasar ese override fuerza `arranque=semilla` y regresiona el arranque
++    real del ciclo — P2 — que sí debe cargarse aquí).
++
++    No se pasa `caja_inicial_override` ni `facturas_override` tampoco: exactamente
++    el mismo shape de llamada que usa `proyectar_impactos` para su `_resultado_con`
++    (`service.py` ~L918-924) — ambos caminos cargan la MISMA realidad de Mongo."""
++    modelos = await modelos_service.listar_modelos(activo=True)
++    if not modelos:
++        raise ProyeccionError("no hay modelos de moto activos", 409)
++
++    async def proyectar_fn(n: int) -> ResultadoProyeccion:
++        params_n = vig.model_copy(update={"motos_base": vig.motos_base + n})
++        # TODO fast-follow: cada candidato N (~14 por consulta, bisección) recarga
++        # modelos/anclas/facturas/cartera-previa desde cero vía `_resultado_con` —
++        # igual de costoso que 14 llamadas a `proyectar_impactos`. Aceptable para el
++        # piloto (no es una ruta de alto tráfico); si se vuelve cuello de botella,
++        # traer esos insumos UNA sola vez y repetir solo la parte pura por N, como
++        # hace `sensibilidad_vigente`/`piso_con_capas` con sus 14 variaciones — pero
++        # eso exige separar `_resultado_con` en fase async (una vez) + síncrona (por
++        # N), un cambio más grande que no vale la pena sin evidencia real de que el
++        # perf importa.
++        r, _caja_min, _fondo, _rec, _meta = await _resultado_con(
++            params_n,
++            modelos,
++            escenario=escenario,
++            mes_inicio=mes_inicio,
++            horizonte_meses=horizonte_meses,
++        )
++        return r
++
++    return proyectar_fn
++
++
+ ANCLA_MODOS = ("cerrado", "movimientos")
+ 
+ 
+diff --git a/backend/app/proyeccion/solver_unidades.py b/backend/app/proyeccion/solver_unidades.py
+new file mode 100644
+index 0000000..5537600
+--- /dev/null
++++ b/backend/app/proyeccion/solver_unidades.py
+@@ -0,0 +1,91 @@
++# backend/app/proyeccion/solver_unidades.py
++"""Solver de UNIDADES (inc4 FABS): ¿cuántas motos de más por mes para que el piso de
++caja no baje del umbral, dado un escenario de ajustes? A diferencia de los solvers de
++`solvers.py` (que bisectan un Ajuste sobre un ResultadoProyeccion FIJO), aquí cada
++candidato N RE-CORRE la proyección completa (las unidades fluyen por cartera/mora/GPS),
++vía la `proyectar_fn` ASYNC que inyecta el llamador. Motor intocable; bisección ENTERA.
++
++Fix round 1 (revisión Opus del Task 6 de inc4): `proyectar_fn` corre el PIPELINE
++COMPLETO (motor → E1 anclaje → D2 reconciliación, vía `service._resultado_con`), el
++mismo que usa `impacto_escenario`/`proyectar_impactos` — no solo el motor paramétrico.
++Eso exige I/O (Mongo) por candidato, así que `proyectar_fn` y por lo tanto este
++resolver son ASYNC (antes era síncrono; el motor-only no necesitaba I/O)."""
++
++from __future__ import annotations
++
++from collections.abc import Awaitable, Callable, Sequence
++from dataclasses import dataclass
++from decimal import Decimal
++
++from app.proyeccion.impactos import Ajuste, aplicar_impactos
++from app.proyeccion.motor import ResultadoProyeccion
++
++
++@dataclass(frozen=True)
++class UnidadesResultado:
++    unidades_extra: int
++    alcanzable: bool
++    piso_resultante: Decimal | None
++    meta: Decimal
++
++
++def _piso_con_ajustes(
++    r: ResultadoProyeccion, ajustes: Sequence[Ajuste], caja_minima: Decimal
++) -> Decimal:
++    # aislado en su propia función para poder fakearlo en los tests del solver.
++    # primer_mes_acumula=True: la MISMA convención que usa el resto del servicio (P3
++    # del ciclo mensual — service._resultado_con/proyectar_impactos SIEMPRE lo pasan
++    # así). Sin esto, un ajuste que arranca en el PRIMER mes del horizonte (el caso
++    # más común aquí: motos_para_evitar_umbral ancla el horizonte al mes de HOY) no
++    # movería la caja de ese mes en este solver pero SÍ la movería en
++    # impacto_escenario — los dos números dejarían de reconciliar (Fix round 1).
++    return aplicar_impactos(
++        r, list(ajustes), caja_minima, primer_mes_acumula=True
++    ).kpis.piso_caja
++
++
++async def resolver_unidades_para_umbral(
++    proyectar_fn: Callable[[int], Awaitable[ResultadoProyeccion]],
++    ajustes: Sequence[Ajuste],
++    caja_minima: Decimal,
++    *,
++    colchon: Decimal = Decimal("0"),
++    cap_unidades: int = 10_000,
++) -> UnidadesResultado:
++    """Menor N entero en [0, cap_unidades] con piso(N) >= meta (caja_minima +
++    colchon). Precondición: `piso` es NO-DECRECIENTE en N (más unidades extra nunca
++    baja el piso) — la bisección asume esto, igual que `solvers._min_valor_que_cumple`
++    ("piso_fn CRECIENTE en v"). La búsqueda queda ACOTADA a [0, cap_unidades]:
++    `alcanzable=False` únicamente cuando ni siquiera `piso(cap_unidades)` alcanza la
++    meta, y nunca se devuelve un N por encima del tope (Fix round 1: la fase de
++    duplicado previa podía saltar por encima del cap sin haberlo probado, o saltarse
++    el chequeo del cap por completo si el primer candidato ya cumplía).
++
++    `proyectar_fn` es ASYNC (corre el pipeline completo — I/O de Mongo por candidato,
++    Fix round 1) y este resolver la `await`ea directo: el LLAMADOR (`cfo.calc.
++    escenario.motos_para_evitar_umbral`) es quien debe `await resolver_unidades_para_
++    umbral(...)`. La bisección en sí (el algoritmo, los invariantes de arriba) es
++    IDÉNTICA a la versión síncrona anterior — solo se le agregó `async`/`await`."""
++    meta = caja_minima + colchon
++
++    async def piso(n: int) -> Decimal:
++        return _piso_con_ajustes(await proyectar_fn(n), ajustes, caja_minima)
++
++    p0 = await piso(0)
++    if p0 >= meta:
++        return UnidadesResultado(0, True, p0, meta)
++    # oráculo de alcanzabilidad: ni siquiera el tope llega a la meta => no hay
++    # solución dentro del rango permitido (evita una llamada redundante si el tope
++    # es 0, caso en que ya es exactamente el p0 de arriba)
++    p_hi = p0 if cap_unidades == 0 else await piso(cap_unidades)
++    if p_hi < meta:
++        return UnidadesResultado(0, False, None, meta)
++    lo, hi = 0, cap_unidades
++    while hi - lo > 1:
++        mid = (lo + hi) // 2
++        p_mid = await piso(mid)
++        if p_mid >= meta:
++            hi, p_hi = mid, p_mid
++        else:
++            lo = mid
++    return UnidadesResultado(hi, True, p_hi, meta)  # hi <= cap, garantizado alcanzable
+diff --git a/backend/tests/cfo/agente/test_conceptos.py b/backend/tests/cfo/agente/test_conceptos.py
+index 5b4b3f9..a3a9a21 100644
+--- a/backend/tests/cfo/agente/test_conceptos.py
++++ b/backend/tests/cfo/agente/test_conceptos.py
+@@ -15,6 +15,21 @@ def _r(concepto, valor, unidad, fecha):
+     )
+ 
+ 
++def _r2(concepto, valor, unidad, ref=""):
++    # variante de _r para unidades/quiebre: sin fecha_corte, con ref libre.
++    # nombre distinto de _r a propósito — _r es posicional (concepto, valor,
++    # unidad, fecha) y lo usan los tests existentes arriba; reusar el nombre
++    # con otra firma los rompería en silencio (Python resuelve el global al
++    # llamar, no al definir, así que la última def gana para TODOS los tests).
++    return ResultadoCFO(
++        concepto=concepto,
++        valor=Decimal(str(valor)),
++        unidad=unidad,
++        disponible=True,
++        evidencia=Evidencia(fuente="x", fecha_corte=None, ref=ref),
++    )
++
++
+ def test_citables():
+     assert CONCEPTOS_CITABLES == frozenset({"caja_hoy", "runway", "iva_cuatrimestre"})
+ 
+@@ -70,3 +85,18 @@ def test_sustituir_token_con_espacios_se_resuelve():
+     out = sustituir_tokens("Caja: [[ caja_hoy ]].", [caja], hoy=date(2026, 8, 17))
+     assert out == "Caja: $704.722.003 (al 2026-08-11)."
+     assert "[[" not in out
++
++
++def test_formatea_unidades_como_motos():
++    assert formatear(_r2("unidades_extra", 12, "unidades")) == "12 motos"
++
++
++def test_piso_con_contexto_de_quiebre():
++    # una cifra COP cuyo ref codifica el mes de quiebre
++    out = formatear(_r2("piso_con", 40000000, "COP", ref="quiebre:2026-11"))
++    assert "$40.000.000" in out and "cruzas el umbral en 2026-11" in out
++
++
++def test_piso_sin_quiebre():
++    out = formatear(_r2("piso_con", 40000000, "COP", ref="quiebre:nunca"))
++    assert "$40.000.000" in out and "no cruzas el umbral" in out
+diff --git a/backend/tests/cfo/agente/test_loop.py b/backend/tests/cfo/agente/test_loop.py
+index 58576ac..3ce281b 100644
+--- a/backend/tests/cfo/agente/test_loop.py
++++ b/backend/tests/cfo/agente/test_loop.py
+@@ -1,4 +1,5 @@
+ # backend/tests/cfo/agente/test_loop.py
++import json
+ from decimal import Decimal
+ 
+ import pytest
+@@ -18,10 +19,20 @@ def _res():
+     )
+ 
+ 
++def _res_named(concepto: str, valor: Decimal) -> ResultadoCFO:
++    return ResultadoCFO(
++        concepto=concepto,
++        valor=valor,
++        unidad="COP",
++        disponible=True,
++        evidencia=Evidencia(fuente="f", fecha_corte="2026-08-11", ref="2026-08"),
++    )
++
++
+ @pytest.mark.asyncio
+ async def test_conversar_tool_luego_texto(monkeypatch):
+-    async def fake_tool(nombre):
+-        return _res()
++    async def fake_tool(nombre, entrada=None):
++        return [_res()]
+ 
+     monkeypatch.setattr(loop_mod, "ejecutar_tool", fake_tool)
+     guiones = [
+@@ -43,8 +54,8 @@ async def test_conversar_tool_luego_texto(monkeypatch):
+ 
+ @pytest.mark.asyncio
+ async def test_conversar_agota_iteraciones(monkeypatch):
+-    async def fake_tool(nombre):
+-        return _res()
++    async def fake_tool(nombre, entrada=None):
++        return [_res()]
+ 
+     monkeypatch.setattr(loop_mod, "ejecutar_tool", fake_tool)
+     # siempre pide tool → nunca da texto
+@@ -62,3 +73,58 @@ async def test_conversar_agota_iteraciones(monkeypatch):
+     )
+     assert r.texto is None
+     assert r.iteraciones == 3
++
++
++@pytest.mark.asyncio
++async def test_conversar_pasa_input_y_extiende_multiples_resultados(monkeypatch):
++    # inc4 T4: una sola tool puede devolver VARIOS ResultadoCFO nombrados (p. ej. un
++    # escenario que produce piso_con + piso_sin). El loop debe (a) reenviar u.input
++    # como `entrada`, (b) extender TODOS a res.resultados (no solo el primero), y
++    # (c) realimentar al modelo un ARRAY json de resultado_a_dict, uno por concepto.
++    llamadas: list[tuple[str, dict | None]] = []
++
++    async def fake_tool(nombre, entrada=None):
++        llamadas.append((nombre, entrada))
++        return [
++            _res_named("piso_con", Decimal("100")),
++            _res_named("piso_sin", Decimal("200")),
++        ]
++
++    monkeypatch.setattr(loop_mod, "ejecutar_tool", fake_tool)
++    entrada_escenario = {
++        "naturaleza": "gasto",
++        "monto": "20000000",
++        "mes_inicio": "2026-09",
++    }
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [
++                BloqueToolUse(
++                    id="t1", nombre="impacto_escenario", input=entrada_escenario
++                )
++            ],
++            5,
++            3,
++        ),
++        RespuestaLLM("end_turn", [BloqueTexto(texto="Listo.")], 4, 8),
++    ]
++    cliente = ClienteFake(guiones)
++    r = await loop_mod.conversar(
++        cliente, [{"role": "user", "content": "¿bodega?"}], max_iter=3
++    )
++
++    # (a) el loop pasó u.input tal cual como `entrada`
++    assert llamadas == [("impacto_escenario", entrada_escenario)]
++    # (b) resultados.extend: AMBOS conceptos quedan citables, no solo uno
++    assert [x.concepto for x in r.resultados] == ["piso_con", "piso_sin"]
++
++    # (c) el tool_result realimentado es un array JSON de resultado_a_dict (uno por
++    # ResultadoCFO), sin `valor` ni `detalle` (el modelo nunca ve la cifra cruda)
++    mensaje_tool = cliente.llamadas[1]["messages"][-1]
++    bloque = mensaje_tool["content"][0]
++    assert bloque["type"] == "tool_result" and bloque["tool_use_id"] == "t1"
++    payload = json.loads(bloque["content"])
++    assert isinstance(payload, list)
++    assert [d["concepto"] for d in payload] == ["piso_con", "piso_sin"]
++    assert all("valor" not in d and "detalle" not in d for d in payload)
+diff --git a/backend/tests/cfo/agente/test_prompt.py b/backend/tests/cfo/agente/test_prompt.py
+index 55657e9..e788011 100644
+--- a/backend/tests/cfo/agente/test_prompt.py
++++ b/backend/tests/cfo/agente/test_prompt.py
+@@ -49,3 +49,37 @@ def test_prompt_advierte_no_espacios_en_el_token():
+     # instruccion en el prompt es una segunda capa defensiva (pedirle al modelo que
+     # no agregue espacios), no la unica barrera contra el token espaciado.
+     assert "espacio" in SYSTEM_PROMPT.lower()
++
++
++def test_prompt_menciona_las_tools_de_escenario():
++    # inc4: el modelo debe saber que impacto_escenario y motos_para_evitar_umbral
++    # existen y que responden preguntas "¿qué pasaría si...?" / "¿cuántas motos
++    # más...?" -- si el prompt no las nombra, el modelo nunca las invoca.
++    p = SYSTEM_PROMPT.lower()
++    assert "impacto_escenario" in p
++    assert "motos_para_evitar_umbral" in p
++
++
++def test_prompt_exige_citar_los_tokens_de_escenario():
++    # Cada tool de escenario devuelve VARIOS conceptos nombrados; el modelo debe
++    # citar cada uno con su propio token, nunca resumir el resultado con un
++    # numero propio.
++    p = SYSTEM_PROMPT
++    for token in (
++        "[[impacto_mensual]]",
++        "[[piso_sin]]",
++        "[[piso_con]]",
++        "[[unidades_extra]]",
++        "[[piso_con_unidades]]",
++    ):
++        assert token in p
++
++
++def test_prompt_prohibe_escribir_conteo_de_motos_crudo():
++    # Historia: "unidades_extra" son motos/mes -- un conteo entero pequenio
++    # ("12 motos") es tan prohibido como un monto o un mes; el prompt debe
++    # extender la regla #1 explicitamente a cantidades/conteos, no solo a
++    # montos y porcentajes, y nombrar el token que reemplaza el conteo.
++    p = SYSTEM_PROMPT.lower()
++    assert "cantidad" in p or "conteo" in p or "moto" in p
++    assert "[[unidades_extra]]" in SYSTEM_PROMPT
+diff --git a/backend/tests/cfo/agente/test_servicio.py b/backend/tests/cfo/agente/test_servicio.py
+index 0d727e3..a905b25 100644
+--- a/backend/tests/cfo/agente/test_servicio.py
++++ b/backend/tests/cfo/agente/test_servicio.py
+@@ -29,6 +29,191 @@ def _res():
+     )
+ 
+ 
++# --- inc4 T9: escenario end-to-end (impacto_escenario + motos_para_evitar_umbral) ---
++# Resultados FIJOS de las dos tools de escenario, con la misma forma exacta que
++# produce `app.cfo.calc.escenario` (ver tests/cfo/calc/test_escenario.py): piso_con
++# lleva el mes de quiebre en `ref` ("quiebre:<mes>"), impacto_mensual/piso_con_unidades
++# no (ref=ancla de horizonte, fecha_corte=None) — así `conceptos.formatear` produce el
++# texto exacto que se afirma abajo, sin reinventar el formateo en el test.
++_PISO_SIN = ResultadoCFO(
++    concepto="piso_sin",
++    valor=Decimal("100000000"),
++    unidad="COP",
++    disponible=True,
++    evidencia=Evidencia(
++        fuente="proyeccion.service.proyectar_impactos", fecha_corte=None, ref="2026-08"
++    ),
++)
++_PISO_CON = ResultadoCFO(
++    concepto="piso_con",
++    valor=Decimal("40000000"),
++    unidad="COP",
++    disponible=True,
++    evidencia=Evidencia(
++        fuente="proyeccion.service.proyectar_impactos",
++        fecha_corte=None,
++        ref="quiebre:2026-11",
++    ),
++)
++_IMPACTO_MENSUAL = ResultadoCFO(
++    concepto="impacto_mensual",
++    valor=Decimal("20000000"),
++    unidad="COP",
++    disponible=True,
++    evidencia=Evidencia(fuente="escenario (entrada)", fecha_corte=None, ref="2026-08"),
++)
++_UNIDADES_EXTRA = ResultadoCFO(
++    concepto="unidades_extra",
++    valor=Decimal("12"),
++    unidad="unidades",
++    disponible=True,
++    evidencia=Evidencia(
++        fuente="proyeccion.solver_unidades.resolver_unidades_para_umbral",
++        fecha_corte=None,
++        ref="2026-08",
++    ),
++)
++_PISO_CON_UNIDADES = ResultadoCFO(
++    concepto="piso_con_unidades",
++    valor=Decimal("82000000"),
++    unidad="COP",
++    disponible=True,
++    evidencia=Evidencia(
++        fuente="proyeccion.solver_unidades.resolver_unidades_para_umbral",
++        fecha_corte=None,
++        ref="2026-08",
++    ),
++)
++
++
++def _entrada_bodega() -> dict:
++    return {
++        "naturaleza": "gasto",
++        "monto": "20000000",
++        "mes_inicio": "2026-09",
++    }
++
++
++async def _fake_tool_escenario(nombre, entrada=None):
++    if nombre == "impacto_escenario":
++        return [_PISO_SIN, _PISO_CON, _IMPACTO_MENSUAL]
++    if nombre == "motos_para_evitar_umbral":
++        return [_UNIDADES_EXTRA, _PISO_CON_UNIDADES]
++    raise AssertionError(f"tool inesperada en el test: {nombre}")
++
++
++@pytest.mark.asyncio
++async def test_escenario_impacto_y_motos_publica_valores_sustituidos(
++    monkeypatch, _audit
++):
++    """E2E de la garantía anti-alucinación con las dos tools de escenario (inc4): el
++    modelo pide impacto_escenario Y motos_para_evitar_umbral EN EL MISMO turno (dos
++    BloqueToolUse), cita los 4 conceptos con su token, el verificador los deja pasar
++    (ningún crudo, todos los tokens respaldados) y el servicio sustituye — el texto
++    publicado trae los VALORES formateados, nunca `[[token]]` crudo."""
++    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", _fake_tool_escenario)
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [
++                BloqueToolUse(
++                    id="t1", nombre="impacto_escenario", input=_entrada_bodega()
++                ),
++                BloqueToolUse(
++                    id="t2",
++                    nombre="motos_para_evitar_umbral",
++                    input=_entrada_bodega(),
++                ),
++            ],
++            10,
++            6,
++        ),
++        RespuestaLLM(
++            "end_turn",
++            [
++                BloqueTexto(
++                    texto=(
++                        "Si arriendas esa bodega, tu piso de caja queda en "
++                        "[[piso_con]], con un impacto mensual de "
++                        "[[impacto_mensual]]. Para no cruzar el umbral "
++                        "necesitas [[unidades_extra]] más al mes, lo que deja "
++                        "el piso en [[piso_con_unidades]]."
++                    )
++                )
++            ],
++            8,
++            20,
++        ),
++    ]
++    r = await srv.consultar(
++        "¿qué pasa si arriendo una bodega de $20M/mes desde septiembre?",
++        actor_id="u1",
++        cliente=ClienteFake(guiones),
++    )
++    assert r.abstuvo is False
++    assert "[[" not in r.texto  # ningún token crudo se filtró
++    assert "$40.000.000 (cruzas el umbral en 2026-11)" in r.texto
++    assert "$20.000.000" in r.texto
++    assert "12 motos" in r.texto
++    assert "$82.000.000" in r.texto
++    conceptos = {
++        "piso_sin",
++        "piso_con",
++        "impacto_mensual",
++        "unidades_extra",
++        "piso_con_unidades",
++    }
++    assert conceptos.issubset(set(r.conceptos_usados))
++
++
++@pytest.mark.asyncio
++async def test_escenario_conteo_crudo_de_motos_reintenta_y_abstiene(
++    monkeypatch, _audit
++):
++    """Contrato inc4 tarea 3 end-to-end: si el modelo escribe el conteo de motos
++    CRUDO ("12 motos") en vez de citar [[unidades_extra]], el verificador lo atrapa
++    (_RE_UNIDADES), dispara EL reintento correctivo (D-3: uno solo) y, si el modelo
++    reincide en escribir el número crudo, el servicio se abstiene — jamás publica ni
++    entra en un loop."""
++
++    async def fake_tool(nombre, entrada=None):
++        return [_UNIDADES_EXTRA]
++
++    monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
++    guiones = [
++        RespuestaLLM(
++            "tool_use",
++            [
++                BloqueToolUse(
++                    id="t1",
++                    nombre="motos_para_evitar_umbral",
++                    input=_entrada_bodega(),
++                )
++            ],
++            5,
++            3,
++        ),
++        RespuestaLLM(
++            "end_turn",
++            [BloqueTexto(texto="Necesitas vender 12 motos más para evitarlo.")],
++            4,
++            8,
++        ),
++        RespuestaLLM(
++            "end_turn",
++            [BloqueTexto(texto="Perdón, serían 12 motos entonces.")],
++            4,
++            6,
++        ),
++    ]
++    fake = ClienteFake(guiones)
++    r = await srv.consultar(
++        "¿cuántas motos más para no cruzar el umbral?", actor_id="u1", cliente=fake
++    )
++    assert r.abstuvo is True and r.motivo == "verificacion"
++    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
++
++
+ @pytest.mark.asyncio
+ async def test_sin_key_abstiene(monkeypatch, _audit):
+     monkeypatch.setattr(srv, "crear_cliente", lambda: None)
+@@ -39,8 +224,8 @@ async def test_sin_key_abstiene(monkeypatch, _audit):
+ 
+ @pytest.mark.asyncio
+ async def test_camino_feliz(monkeypatch, _audit):
+-    async def fake_tool(nombre):
+-        return _res()
++    async def fake_tool(nombre, entrada=None):
++        return [_res()]
+ 
+     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+     # inc3 Pieza A: el modelo cita el TOKEN del concepto, nunca escribe la cifra cruda.
+@@ -67,8 +252,8 @@ async def test_camino_feliz(monkeypatch, _audit):
+ 
+ @pytest.mark.asyncio
+ async def test_alucinacion_reintento_falla_abstiene(monkeypatch, _audit):
+-    async def fake_tool(nombre):
+-        return _res()
++    async def fake_tool(nombre, entrada=None):
++        return [_res()]
+ 
+     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+     # 1ra conversación: tool + texto con cifra inventada. Reintento: sigue inventando.
+@@ -90,8 +275,8 @@ async def test_alucinacion_reintento_falla_abstiene(monkeypatch, _audit):
+ 
+ @pytest.mark.asyncio
+ async def test_publica_con_tokens_sustituidos(monkeypatch, _audit):
+-    async def fake_tool(nombre):
+-        return _res()
++    async def fake_tool(nombre, entrada=None):
++        return [_res()]
+ 
+     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+     guiones = [
+@@ -115,8 +300,8 @@ async def test_publica_con_tokens_sustituidos(monkeypatch, _audit):
+ async def test_reincidencia_en_cifra_cruda_abstiene_un_solo_reintento(
+     monkeypatch, _audit
+ ):
+-    async def fake_tool(nombre):
+-        return _res()
++    async def fake_tool(nombre, entrada=None):
++        return [_res()]
+ 
+     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+     # 1ª: tool + cifra cruda (aunque numéricamente correcta); reintento: vuelve a
+@@ -152,8 +337,8 @@ async def test_error_interno_no_revienta_y_audita(monkeypatch, _audit):
+ 
+ @pytest.mark.asyncio
+ async def test_consultar_usa_historial_y_expone_texto_crudo(monkeypatch, _audit):
+-    async def fake_tool(nombre):
+-        return _res()  # ResultadoCFO caja_hoy disponible
++    async def fake_tool(nombre, entrada=None):
++        return [_res()]  # ResultadoCFO caja_hoy disponible
+ 
+     monkeypatch.setattr("app.cfo.agente.loop.ejecutar_tool", fake_tool)
+     guiones = [
+diff --git a/backend/tests/cfo/agente/test_tools.py b/backend/tests/cfo/agente/test_tools.py
+index abf4762..3e9eaa7 100644
+--- a/backend/tests/cfo/agente/test_tools.py
++++ b/backend/tests/cfo/agente/test_tools.py
+@@ -16,11 +16,34 @@ def _res(valor):
+     )
+ 
+ 
+-def test_schema_tres_tools_sin_parametros():
++def test_schema_tools_sin_parametros_siguen_sin_propiedades():
++    # Las 3 tools de cero args de antes de T7 no cambian: siguen sin propiedades.
++    # (La afirmación de set-igualdad completa de antes de T7 ahora vive partida
++    # entre este test y test_schema_incluye_tools_de_escenario, porque T7 agrega
++    # dos tools CON propiedades.)
++    sin_args = {"caja_disponible_hoy", "runway_meses", "iva_del_cuatrimestre"}
++    por_nombre = {t["name"]: t for t in tools.TOOLS_SCHEMA}
++    assert sin_args <= por_nombre.keys()
++    for nombre in sin_args:
++        assert por_nombre[nombre]["input_schema"]["properties"] == {}
++
++
++def test_schema_incluye_tools_de_escenario():
+     nombres = {t["name"] for t in tools.TOOLS_SCHEMA}
+-    assert nombres == {"caja_disponible_hoy", "runway_meses", "iva_del_cuatrimestre"}
+-    for t in tools.TOOLS_SCHEMA:
+-        assert t["input_schema"]["properties"] == {}
++    assert {"impacto_escenario", "motos_para_evitar_umbral"} <= nombres
++    for nombre in ("impacto_escenario", "motos_para_evitar_umbral"):
++        t = next(x for x in tools.TOOLS_SCHEMA if x["name"] == nombre)
++        assert t["input_schema"]["additionalProperties"] is False
++        assert set(t["input_schema"]["required"]) == {
++            "naturaleza",
++            "monto",
++            "mes_inicio",
++        }
++        props = t["input_schema"]["properties"]
++        assert props["naturaleza"]["enum"] == ["gasto", "ingreso"]
++        assert props["monto"]["type"] == "string"
++        assert props["mes_inicio"]["type"] == "string"
++        assert props["mes_fin"]["type"] == "string"
+ 
+ 
+ def test_resultado_a_dict_no_expone_valor_ni_detalle():
+@@ -47,10 +70,133 @@ async def test_ejecutar_tool_despacha(monkeypatch):
+ 
+     monkeypatch.setitem(tools.DISPATCH, "caja_disponible_hoy", fake)
+     r = await tools.ejecutar_tool("caja_disponible_hoy")
+-    assert r.valor == Decimal("123")
++    # inc4 T4: ejecutar_tool SIEMPRE devuelve lista; una calc de un solo concepto
++    # (como esta, de cero args) se normaliza a [r].
++    assert isinstance(r, list) and len(r) == 1
++    assert r[0].valor == Decimal("123")
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_ejecutar_tool_desconocida_falla():
+     with pytest.raises(KeyError):
+         await tools.ejecutar_tool("no_existe")
++
++
++@pytest.mark.asyncio
++async def test_ejecutar_tool_devuelve_lista(monkeypatch):
++    r = await tools.ejecutar_tool("caja_disponible_hoy")
++    assert isinstance(r, list) and all(isinstance(x, ResultadoCFO) for x in r)
++
++
++@pytest.mark.asyncio
++async def test_tool_desconocida_es_error():
++    # Exception amplia a propósito (brief T4): el contrato es "cualquier error",
++    # no un tipo específico — el dispatcher cerrado hoy usa KeyError, pero el
++    # test no debe acoplarse a ese detalle de implementación.
++    with pytest.raises(Exception):  # noqa: B017
++        await tools.ejecutar_tool("no_existe")
++
++
++# --- T7: tools de escenario (parametrizadas) --------------------------------
++#
++# Ruling-T7 (progress.md): el test ilustrativo del brief hace
++# `monkeypatch.setitem(tools.DISPATCH, "impacto_escenario", None)` como
++# "placeholder" — con el dispatcher real ese `None` rompería `ejecutar_tool`
++# (inspect.signature(None) no es callable). El wrapper real en DISPATCH
++# (`_impacto_escenario`/`_motos_para_evitar_umbral`) llama a
++# `escenario.impacto_escenario`/`escenario.motos_para_evitar_umbral` por
++# atributo de módulo (no `from ... import impacto_escenario`), así que basta
++# monkeypatchear esos dos nombres en `app.cfo.calc.escenario` — se preserva la
++# aserción del brief (monto parseado a Decimal) sin tocar DISPATCH.
++
++
++@pytest.mark.asyncio
++async def test_impacto_escenario_parsea_monto(monkeypatch):
++    llamado = {}
++
++    async def fake_calc(*, naturaleza, monto, mes_inicio, mes_fin=None):
++        llamado.update(
++            naturaleza=naturaleza, monto=monto, mes_inicio=mes_inicio, mes_fin=mes_fin
++        )
++        return []
++
++    monkeypatch.setattr("app.cfo.calc.escenario.impacto_escenario", fake_calc)
++    r = await tools.ejecutar_tool(
++        "impacto_escenario",
++        {"naturaleza": "gasto", "monto": "20000000", "mes_inicio": "2026-09"},
++    )
++    assert llamado["monto"] == Decimal("20000000")
++    assert llamado["naturaleza"] == "gasto"
++    assert llamado["mes_inicio"] == "2026-09"
++    assert llamado["mes_fin"] is None
++    assert r == []  # ejecutar_tool no reenvuelve una lista ya devuelta por la calc
++
++
++@pytest.mark.asyncio
++async def test_motos_para_evitar_umbral_parsea_monto_y_mes_fin(monkeypatch):
++    llamado = {}
++
++    async def fake_calc(*, naturaleza, monto, mes_inicio, mes_fin=None):
++        llamado.update(monto=monto, mes_fin=mes_fin)
++        return []
++
++    monkeypatch.setattr(
++        "app.cfo.calc.escenario.motos_para_evitar_umbral", fake_calc
++    )
++    await tools.ejecutar_tool(
++        "motos_para_evitar_umbral",
++        {
++            "naturaleza": "ingreso",
++            "monto": "5000000",
++            "mes_inicio": "2026-10",
++            "mes_fin": "2026-12",
++        },
++    )
++    assert llamado["monto"] == Decimal("5000000")
++    assert llamado["mes_fin"] == "2026-12"
++
++
++@pytest.mark.asyncio
++async def test_naturaleza_invalida_falla_sin_llegar_a_la_calc(monkeypatch):
++    # impactos._delta_flujo trata cualquier naturaleza != 'gasto' como 'ingreso'
++    # SIN error — por eso el dispatcher debe rechazar un valor fuera del enum
++    # antes de llamar la calc (que aquí ni se monkeypatchea: si el guard falla,
++    # el intento de llamar la calc real revienta la conexión y el test lo nota).
++    with pytest.raises(ValueError, match="naturaleza"):
++        await tools.ejecutar_tool(
++            "impacto_escenario",
++            {"naturaleza": "gastoo", "monto": "1000", "mes_inicio": "2026-09"},
++        )
++
++
++@pytest.mark.asyncio
++async def test_monto_invalido_falla():
++    with pytest.raises(ValueError, match="monto"):
++        await tools.ejecutar_tool(
++            "impacto_escenario",
++            {"naturaleza": "gasto", "monto": "no-es-numero", "mes_inicio": "2026-09"},
++        )
++
++
++@pytest.mark.asyncio
++async def test_monto_no_finito_falla():
++    # Decimal("Infinity")/("NaN") NO lanzan InvalidOperation al construirse — sin
++    # este guard, envenenarían la caja acumulada aguas abajo (mismo hazard P1-8
++    # de app.core.money).
++    with pytest.raises(ValueError, match="monto"):
++        await tools.ejecutar_tool(
++            "impacto_escenario",
++            {"naturaleza": "gasto", "monto": "Infinity", "mes_inicio": "2026-09"},
++        )
++
++
++@pytest.mark.asyncio
++async def test_monto_numero_crudo_falla():
++    # El input_schema declara `monto` como string (regla 1); si el modelo manda un
++    # número JSON crudo en vez de string, se rechaza explícito en vez de aceptar
++    # silenciosamente un float en el camino a un Ajuste de caja.
++    with pytest.raises(ValueError, match="monto"):
++        await tools.ejecutar_tool(
++            "impacto_escenario",
++            {"naturaleza": "gasto", "monto": 20000000, "mes_inicio": "2026-09"},
++        )
+diff --git a/backend/tests/cfo/agente/test_verificador.py b/backend/tests/cfo/agente/test_verificador.py
+index 80d34c3..fc54275 100644
+--- a/backend/tests/cfo/agente/test_verificador.py
++++ b/backend/tests/cfo/agente/test_verificador.py
+@@ -217,3 +217,54 @@ def test_extrae_montos_y_meses_ignora_anios_y_fechas():
+     assert (Decimal("4.2"), "meses") in cifras
+     # 2026 (año), 10 (día), C2 (etiqueta) NO son cifras monetarias/unitarias
+     assert all(not (v == Decimal("2026")) for v, _, _ in extraer_cifras(texto))
++
++
++# --- Unidades crudas (inc4 Task 3): "12 motos" cierra el hueco del entero pequeño ---
++# Antes de este contrato, un conteo de motos ("12 motos") no se detectaba: 12 tiene
++# menos de 5 dígitos y no lleva separador, así que `_es_monto` lo dejaba pasar como
++# inocuo (nº de cuenta/día). El modelo debe citar `[[unidades_extra]]`, nunca escribir
++# el conteo — igual que ya no puede escribir COP/meses/% crudos.
++
++
++def _disp(concepto, unidad="unidades", valor=12):
++    return ResultadoCFO(
++        concepto=concepto,
++        valor=Decimal(valor),
++        unidad=unidad,
++        disponible=True,
++        evidencia=Evidencia(fuente="x", fecha_corte=None, ref="r"),
++    )
++
++
++def test_rechaza_unidades_crudas():
++    v = verificar("Vende 12 motos más.", [_disp("unidades_extra")])
++    assert v.ok is False and any("12 motos" in c for c in v.cifras_sin_evidencia)
++
++
++def test_acepta_token_de_unidades():
++    v = verificar("Vende [[unidades_extra]] más.", [_disp("unidades_extra")])
++    assert v.ok is True
++
++
++# --- Fix round 1: singular "unidad" (bug del regex original, hallazgo de review) ---
++# `unidades?` compila a "unidade" + 's' opcional — NUNCA matchea el singular real
++# "unidad" (que no lleva la 'e' final). Bypass reproducido: "1 unidad" pasaba con
++# ok=True. Fix: `unidad(?:es)?`, el mismo patrón que ya usa `_RE_MESES`
++# (`mes(?:es)?`) para pluralizar sustantivos terminados en consonante.
++
++
++def test_rechaza_unidad_singular_cruda():
++    v = verificar("Vende 1 unidad más.", [_disp("unidades_extra")])
++    assert v.ok is False and any("1 unidad" in c for c in v.cifras_sin_evidencia)
++
++
++def test_rechaza_moto_singular_cruda():
++    # simetría con el plural "motos" (ya cubierto arriba): el singular "1 moto" ya
++    # funcionaba hoy (motos? sí cubre el singular), pero no tenía test dedicado.
++    v = verificar("Compra 1 moto más.", [_disp("unidades_extra")])
++    assert v.ok is False
++
++
++def test_rechaza_motocicleta_singular_cruda():
++    v = verificar("1 motocicleta.", [_disp("unidades_extra")])
++    assert v.ok is False
+diff --git a/backend/tests/cfo/calc/__init__.py b/backend/tests/cfo/calc/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/tests/cfo/calc/test_escenario.py b/backend/tests/cfo/calc/test_escenario.py
+new file mode 100644
+index 0000000..2362770
+--- /dev/null
++++ b/backend/tests/cfo/calc/test_escenario.py
+@@ -0,0 +1,361 @@
++from decimal import Decimal
++from types import SimpleNamespace
++
++import pytest
++from app.cfo.calc import escenario
++from app.core.time import now_bogota
++
++
++def _ref_horizonte() -> str:
++    ahora = now_bogota()
++    return f"{ahora.year:04d}-{ahora.month:02d}"
++
++
++def _fake_vigente(
++    *,
++    caja_minima: Decimal,
++    motos_base: int = 78,
++    horizonte_meses: int = 60,
++):
++    """Factory para parchar `escenario.params_service.obtener_vigente`: un objeto
++    liviano con `.caja_minima`/`.motos_base`/`.horizonte_meses` (lo que
++    `motos_para_evitar_umbral` lee de `vig` ANTES de delegar en `_proyectar_fn_para`,
++    que en estos tests va fakeado aparte). Devuelve el callable async de 0 args que
++    monkeypatch necesita para reemplazar `obtener_vigente`."""
++    vig = SimpleNamespace(
++        caja_minima=caja_minima,
++        motos_base=motos_base,
++        horizonte_meses=horizonte_meses,
++    )
++
++    async def _obtener():
++        return vig
++
++    return _obtener
++
++
++@pytest.mark.asyncio
++async def test_impacto_arma_conceptos_y_mes_de_quiebre(monkeypatch):
++    async def fake_impactos(*, ajustes, escenario, mes_inicio, horizonte_meses):
++        return {
++            "base": {"piso_caja": "100000000"},
++            "ajustada": {
++                "piso_caja": "40000000",
++                "meses": [
++                    {"mes": "2026-09", "estado": "ok", "caja": "90000000"},
++                    {"mes": "2026-10", "estado": "ok", "caja": "60000000"},
++                    {"mes": "2026-11", "estado": "critico", "caja": "40000000"},
++                ],
++            },
++            "delta_por_mes": ["-20000000", "-20000000", "-20000000"],
++        }
++
++    monkeypatch.setattr(escenario.proy_service, "proyectar_impactos", fake_impactos)
++    rs = await escenario.impacto_escenario(
++        naturaleza="gasto", monto=Decimal("20000000"), mes_inicio="2026-09"
++    )
++    by = {r.concepto: r for r in rs}
++    assert by["piso_sin"].valor == Decimal("100000000")
++    assert by["piso_con"].valor == Decimal("40000000")
++    assert by["piso_con"].evidencia.ref == "quiebre:2026-11"
++    assert by["impacto_mensual"].valor == Decimal("20000000")
++    assert all(r.disponible for r in rs)
++    # Integridad de evidencia: piso_sin es la proyección BASE (independiente del
++    # ajuste) — su ref es el ancla del HORIZONTE (mes de hoy, como runway.py), no el
++    # mes_inicio del escenario hipotético ("2026-09"), que sugeriría falsamente que
++    # el caso base varía con el escenario.
++    ref_horizonte = _ref_horizonte()
++    assert by["piso_sin"].evidencia.ref == ref_horizonte
++    # impacto_mensual es el monto de ENTRADA ecoado (no algo que proyectar_impactos
++    # calculó): su fuente debe decirlo, no atribuirlo al motor de proyección.
++    assert by["impacto_mensual"].evidencia.fuente == "escenario (entrada)"
++    assert by["impacto_mensual"].evidencia.ref == ref_horizonte
++    # piso_con sí es un resultado real de proyectar_impactos: su fuente no cambia.
++    assert by["piso_con"].evidencia.fuente == "proyeccion.service.proyectar_impactos"
++
++
++@pytest.mark.asyncio
++async def test_impacto_quiebre_nunca_si_ningun_mes_rompe(monkeypatch):
++    async def fake_impactos(*, ajustes, escenario, mes_inicio, horizonte_meses):
++        return {
++            "base": {"piso_caja": "100000000"},
++            "ajustada": {
++                "piso_caja": "80000000",
++                "meses": [
++                    {"mes": "2026-09", "estado": "ok", "caja": "90000000"},
++                    {"mes": "2026-10", "estado": "ok", "caja": "85000000"},
++                    {"mes": "2026-11", "estado": "ok", "caja": "80000000"},
++                ],
++            },
++            "delta_por_mes": ["-5000000", "-5000000", "-5000000"],
++        }
++
++    monkeypatch.setattr(escenario.proy_service, "proyectar_impactos", fake_impactos)
++    rs = await escenario.impacto_escenario(
++        naturaleza="gasto", monto=Decimal("5000000"), mes_inicio="2026-09"
++    )
++    by = {r.concepto: r for r in rs}
++    assert by["piso_con"].evidencia.ref == "quiebre:nunca"
++
++
++@pytest.mark.asyncio
++async def test_impacto_quiebre_en_primer_mes_sin_off_by_one(monkeypatch):
++    async def fake_impactos(*, ajustes, escenario, mes_inicio, horizonte_meses):
++        return {
++            "base": {"piso_caja": "100000000"},
++            "ajustada": {
++                "piso_caja": "10000000",
++                "meses": [
++                    {"mes": "2026-09", "estado": "critico", "caja": "10000000"},
++                    {"mes": "2026-10", "estado": "critico", "caja": "5000000"},
++                    {"mes": "2026-11", "estado": "negativo", "caja": "-1000000"},
++                ],
++            },
++            "delta_por_mes": ["-90000000", "-90000000", "-90000000"],
++        }
++
++    monkeypatch.setattr(escenario.proy_service, "proyectar_impactos", fake_impactos)
++    rs = await escenario.impacto_escenario(
++        naturaleza="gasto", monto=Decimal("90000000"), mes_inicio="2026-09"
++    )
++    by = {r.concepto: r for r in rs}
++    # El primer mes de la serie YA rompe: el quiebre es ese, no uno posterior.
++    assert by["piso_con"].evidencia.ref == "quiebre:2026-09"
++
++
++@pytest.mark.asyncio
++async def test_impacto_abstiene_sin_config(monkeypatch):
++    async def boom(**kw):
++        raise escenario.ProyeccionError("sin config")
++
++    monkeypatch.setattr(escenario.proy_service, "proyectar_impactos", boom)
++    rs = await escenario.impacto_escenario(
++        naturaleza="gasto", monto=Decimal("20000000"), mes_inicio="2026-09"
++    )
++    assert len(rs) == 1 and rs[0].disponible is False
++
++
++@pytest.mark.asyncio
++async def test_motos_devuelve_unidades_y_piso(monkeypatch):
++    """Fix round 1: `_proyectar_fn_para` y `resolver_unidades_para_umbral` son ASYNC
++    ahora (corren el pipeline completo por candidato) — los fakes también lo son."""
++    from app.proyeccion.solver_unidades import UnidadesResultado
++
++    async def fake_proyectar_fn_para(vig, esc, mi, hm):
++        async def proyectar_fn(n):
++            return n
++
++        return proyectar_fn
++
++    async def fake_resolver(proyectar_fn, ajustes, caja_minima, **kw):
++        return UnidadesResultado(
++            unidades_extra=12,
++            alcanzable=True,
++            piso_resultante=Decimal("5000000"),
++            meta=Decimal("0"),
++        )
++
++    monkeypatch.setattr(escenario, "_proyectar_fn_para", fake_proyectar_fn_para)
++    monkeypatch.setattr(escenario, "resolver_unidades_para_umbral", fake_resolver)
++    monkeypatch.setattr(
++        escenario.params_service,
++        "obtener_vigente",
++        _fake_vigente(caja_minima=Decimal("0")),
++    )
++    rs = await escenario.motos_para_evitar_umbral(
++        naturaleza="gasto", monto=Decimal("20000000"), mes_inicio="2026-09"
++    )
++    by = {r.concepto: r for r in rs}
++    assert (
++        by["unidades_extra"].valor == Decimal("12")
++        and by["unidades_extra"].unidad == "unidades"
++    )
++    assert by["piso_con_unidades"].valor == Decimal("5000000")
++    # Integridad de evidencia: mismo ancla de horizonte que impacto_escenario (mes de
++    # HOY), no el mes_inicio del escenario hipotético ("2026-09").
++    ref_horizonte = _ref_horizonte()
++    assert by["unidades_extra"].evidencia.ref == ref_horizonte
++    assert by["piso_con_unidades"].evidencia.ref == ref_horizonte
++    assert by["unidades_extra"].disponible and by["piso_con_unidades"].disponible
++
++
++@pytest.mark.asyncio
++async def test_motos_no_alcanzable_abstiene_sin_inventar_numero(monkeypatch):
++    """El solver puede no encontrar N dentro de su tope (`alcanzable=False`) — la
++    abstención debe ganarle a cualquier valor parcial, nunca se inventa un N."""
++    from app.proyeccion.solver_unidades import UnidadesResultado
++
++    async def fake_proyectar_fn_para(vig, esc, mi, hm):
++        async def proyectar_fn(n):
++            return n
++
++        return proyectar_fn
++
++    async def fake_resolver(proyectar_fn, ajustes, caja_minima, **kw):
++        return UnidadesResultado(
++            unidades_extra=0,
++            alcanzable=False,
++            piso_resultante=None,
++            meta=Decimal("100000000"),
++        )
++
++    monkeypatch.setattr(escenario, "_proyectar_fn_para", fake_proyectar_fn_para)
++    monkeypatch.setattr(escenario, "resolver_unidades_para_umbral", fake_resolver)
++    monkeypatch.setattr(
++        escenario.params_service,
++        "obtener_vigente",
++        _fake_vigente(caja_minima=Decimal("100000000")),
++    )
++    rs = await escenario.motos_para_evitar_umbral(
++        naturaleza="gasto", monto=Decimal("500000000"), mes_inicio="2026-09"
++    )
++    assert len(rs) == 1
++    assert rs[0].concepto == "unidades_extra"
++    assert rs[0].disponible is False and rs[0].valor is None
++    assert rs[0].evidencia.ref.startswith("no-alcanzable:")
++
++
++@pytest.mark.asyncio
++async def test_motos_abstiene_sin_config(monkeypatch):
++    async def sin_config():
++        return None
++
++    monkeypatch.setattr(escenario.params_service, "obtener_vigente", sin_config)
++    rs = await escenario.motos_para_evitar_umbral(
++        naturaleza="gasto", monto=Decimal("20000000"), mes_inicio="2026-09"
++    )
++    assert len(rs) == 1
++    assert rs[0].disponible is False and rs[0].valor is None
++    assert rs[0].evidencia.ref == "sin-config"
++
++
++@pytest.mark.asyncio
++async def test_motos_abstiene_sin_modelos_activos(monkeypatch):
++    """`_proyectar_fn_para` real levanta ProyeccionError sin modelos activos (mismo
++    guard que `proyectar_preview`); el wrapper lo convierte en abstención honesta, no
++    en una excepción que reviente al caller."""
++
++    async def sin_modelos(*a, **kw):
++        raise escenario.ProyeccionError("no hay modelos de moto activos", 409)
++
++    monkeypatch.setattr(escenario, "_proyectar_fn_para", sin_modelos)
++    monkeypatch.setattr(
++        escenario.params_service,
++        "obtener_vigente",
++        _fake_vigente(caja_minima=Decimal("0")),
++    )
++    rs = await escenario.motos_para_evitar_umbral(
++        naturaleza="gasto", monto=Decimal("20000000"), mes_inicio="2026-09"
++    )
++    assert len(rs) == 1
++    assert rs[0].disponible is False and rs[0].valor is None
++    assert rs[0].evidencia.ref == "sin-config"
++
++
++@pytest.mark.asyncio
++async def test_motos_reconcilia_con_impacto_escenario_en_n_cero(monkeypatch):
++    """Fix round 1 (revisión Opus): el solver de unidades y `impacto_escenario` deben
++    dar el MISMO piso para el mismo escenario+params cuando N=0 — ambos corren sobre
++    el pipeline completo (paramétrico → E1 → D2), no dos bases distintas. Deja correr
++    `aplicar_impactos`/`resolver_unidades_para_umbral` DE VERDAD (no se fakea ninguno
++    de los dos) para no tautologizar la aserción — solo se fakea la fuente de datos de
++    cada camino (`proy_service.proyectar_impactos` / `_proyectar_fn_para`), y esas dos
++    fuentes describen la MISMA proyección base a mano."""
++    from app.core.money import money_str
++    from app.proyeccion.motor import MesProyeccion, ResultadoProyeccion
++
++    def _mes(mes: str, flujo: Decimal, caja: Decimal) -> MesProyeccion:
++        return MesProyeccion(
++            mes=mes,
++            motos=10,
++            cartera=10,
++            recaudo_credito=Decimal("0"),
++            cuotas_iniciales=Decimal("0"),
++            ingreso_bruto=Decimal("0"),
++            neto=Decimal("0"),
++            provision=Decimal("0"),
++            gastos_fijos=Decimal("0"),
++            gps=Decimal("0"),
++            costo_nueva=Decimal("0"),
++            adelanto=Decimal("0"),
++            pago_inventario=Decimal("0"),
++            fondeo=Decimal("0"),
++            int_deuda=Decimal("0"),
++            iva=Decimal("0"),
++            egresos=Decimal("0"),
++            flujo=flujo,
++            caja=caja,
++            estado="ok",
++        )
++
++    # La MISMA base "cruda" de 2 meses que ambos caminos deben ver: sin ajuste, mes0
++    # arranca de una caja de 100M (98M - flujo(-2M)) y cae a 95M en mes1.
++    base = ResultadoProyeccion(
++        meses=[
++            _mes("2026-09", Decimal("-2000000"), Decimal("98000000")),
++            _mes("2026-10", Decimal("-3000000"), Decimal("95000000")),
++        ],
++        piso_caja=Decimal("95000000"),
++        mes_mas_ajustado="2026-10",
++        meses_bajo_minimo=0,
++        caja_final=Decimal("95000000"),
++        capital_requerido=Decimal("0"),
++        runway_meses=None,
++    )
++    # A mano (reacumular con primer_mes_acumula=True — la convención del servicio,
++    # ver test_piso_con_ajustes_acumula_desde_el_primer_mes en
++    # tests/proyeccion/test_solver_unidades.py, que fija el mismo número de forma
++    # aislada): arranque = 98M - (-2M) = 100M; mes0 = 100M + (-2M-10M) = 88M;
++    # mes1 = 88M + (-3M-10M) = 75M; piso = 75M. Este es el número que los DOS caminos
++    # deben compartir.
++    PISO_CON_ESPERADO = Decimal("75000000")
++
++    async def fake_proyectar_impactos(
++        *, ajustes, escenario, mes_inicio, horizonte_meses
++    ):
++        # Lo que produciría proyectar_impactos DE VERDAD sobre `base` con el mismo
++        # ajuste (gasto absoluto $10M desde 2026-09): lo codifico a mano una vez
++        # arriba, no lo re-derivo aquí, para no ocultar un error de cálculo detrás de
++        # la misma fórmula usada dos veces.
++        return {
++            "base": {"piso_caja": money_str(base.piso_caja)},
++            "ajustada": {
++                "piso_caja": money_str(PISO_CON_ESPERADO),
++                "meses": [
++                    {"mes": "2026-09", "estado": "ok"},
++                    {"mes": "2026-10", "estado": "ok"},
++                ],
++            },
++            "delta_por_mes": ["-12000000.00", "-13000000.00"],
++        }
++
++    async def fake_proyectar_fn_para(vig, esc, mi, hm):
++        async def proyectar_fn(n: int) -> ResultadoProyeccion:
++            return base  # n=0 alcanza la meta de inmediato, nunca se llama con n>0
++
++        return proyectar_fn
++
++    monkeypatch.setattr(
++        escenario.proy_service, "proyectar_impactos", fake_proyectar_impactos
++    )
++    monkeypatch.setattr(escenario, "_proyectar_fn_para", fake_proyectar_fn_para)
++    monkeypatch.setattr(
++        escenario.params_service,
++        "obtener_vigente",
++        _fake_vigente(caja_minima=Decimal("50000000")),
++    )
++
++    kwargs = {
++        "naturaleza": "gasto",
++        "monto": Decimal("10000000"),
++        "mes_inicio": "2026-09",
++    }
++    impacto = await escenario.impacto_escenario(**kwargs)
++    motos = await escenario.motos_para_evitar_umbral(**kwargs)
++
++    piso_con = {r.concepto: r for r in impacto}["piso_con"].valor
++    piso_con_unidades = {r.concepto: r for r in motos}["piso_con_unidades"].valor
++    assert piso_con == PISO_CON_ESPERADO
++    assert piso_con_unidades == PISO_CON_ESPERADO
++    # La propiedad que este test existe para fijar: los dos tools reconcilian.
++    assert piso_con == piso_con_unidades
+diff --git a/backend/tests/cfo/test_escenario_golden.py b/backend/tests/cfo/test_escenario_golden.py
+new file mode 100644
+index 0000000..3f09f0b
+--- /dev/null
++++ b/backend/tests/cfo/test_escenario_golden.py
+@@ -0,0 +1,189 @@
++# backend/tests/cfo/test_escenario_golden.py
++"""FABS · golden de referencia para el escenario "bodega 20M" (inc4 T9, cierre).
++
++A diferencia de `tests/cfo/calc/test_escenario.py` (cobertura por caso), este archivo
++fija UN escenario de referencia — "¿qué pasa si arriendo una bodega de $20M/mes desde
++septiembre?" — cuyos 4 números (piso_sin, piso_con, mes de quiebre, unidades_extra +
++piso_con_unidades) se conocen "al peso" (calculados a mano en los comentarios, no
++re-derivados con la misma fórmula que el código bajo prueba — eso sería tautológico).
++Sirve de regresión: si alguien cambia `escenario.py`/`solver_unidades.py` y estos
++números se mueven sin que el escenario de entrada cambie, el golden lo atrapa.
++
++No requiere Mongo real: fake en la frontera exacta que cada tool usa (`proyectar_
++impactos` para `impacto_escenario`; `_proyectar_fn_para` para `motos_para_evitar_
++umbral`, dejando correr el solver DE VERDAD — ver golden 2)."""
++
++from decimal import Decimal
++
++import pytest
++from app.cfo.calc import escenario
++from app.core.time import now_bogota
++from app.proyeccion.motor import MesProyeccion, ResultadoProyeccion
++
++# El escenario de referencia: "arriendo una bodega de $20M/mes desde septiembre".
++NATURALEZA = "gasto"
++MONTO = Decimal("20000000")
++MES_INICIO = "2026-09"
++
++
++def _ref_horizonte() -> str:
++    ahora = now_bogota()
++    return f"{ahora.year:04d}-{ahora.month:02d}"
++
++
++def _fake_vigente(
++    *, caja_minima: Decimal, motos_base: int = 78, horizonte_meses: int = 1
++):
++    from types import SimpleNamespace
++
++    vig = SimpleNamespace(
++        caja_minima=caja_minima, motos_base=motos_base, horizonte_meses=horizonte_meses
++    )
++
++    async def _obtener():
++        return vig
++
++    return _obtener
++
++
++@pytest.mark.asyncio
++async def test_golden_impacto_escenario_bodega_20m(monkeypatch):
++    """Golden 1: `impacto_escenario` — piso_sin/piso_con/mes de quiebre/impacto_mensual
++    "al peso" para el escenario de referencia. `proyectar_impactos` se fakea con la
++    salida EXACTA que produciría el motor para esta bodega sobre una proyección base
++    conocida (piso base $100M; con la bodega, cae a $40M y cruza el umbral en
++    2026-11, el 3er mes de la serie ajustada) — números fijados a mano, no derivados."""
++
++    async def fake_proyectar_impactos(
++        *, ajustes, escenario, mes_inicio, horizonte_meses
++    ):
++        assert ajustes[0].naturaleza == NATURALEZA
++        assert ajustes[0].valor == MONTO
++        assert ajustes[0].mes_inicio == MES_INICIO
++        return {
++            "base": {"piso_caja": "100000000"},
++            "ajustada": {
++                "piso_caja": "40000000",
++                "meses": [
++                    {"mes": "2026-09", "estado": "ok"},
++                    {"mes": "2026-10", "estado": "ok"},
++                    {"mes": "2026-11", "estado": "critico"},
++                ],
++            },
++            "delta_por_mes": ["-20000000", "-20000000", "-20000000"],
++        }
++
++    monkeypatch.setattr(
++        escenario.proy_service, "proyectar_impactos", fake_proyectar_impactos
++    )
++    rs = await escenario.impacto_escenario(
++        naturaleza=NATURALEZA, monto=MONTO, mes_inicio=MES_INICIO
++    )
++    by = {r.concepto: r for r in rs}
++
++    # GOLDEN — valores "al peso" del escenario de referencia:
++    assert by["piso_sin"].valor == Decimal("100000000")
++    assert by["piso_con"].valor == Decimal("40000000")
++    assert by["piso_con"].evidencia.ref == "quiebre:2026-11"
++    assert by["impacto_mensual"].valor == Decimal("20000000")
++    assert all(r.disponible for r in rs)
++    ref_horizonte = _ref_horizonte()
++    assert by["piso_sin"].evidencia.ref == ref_horizonte
++    assert by["impacto_mensual"].evidencia.ref == ref_horizonte
++
++
++@pytest.mark.asyncio
++async def test_golden_motos_para_evitar_umbral_bodega_20m(monkeypatch):
++    """Golden 2: `motos_para_evitar_umbral` sobre el MISMO escenario de referencia —
++    el solver (`resolver_unidades_para_umbral`) corre DE VERDAD (no se fakea), solo se
++    fakea la fuente de la proyección por candidato N (`_proyectar_fn_para`), con una
++    forma ANALÍTICA cuyo piso(N) se conoce en cerrado.
++
++    Matemática "al peso" (recalculada a mano UNA vez aquí, no re-derivada con la
++    fórmula del código bajo prueba):
++      - Mes único "2026-09". Arranque de caja A = $100.000.000 (constante en N: el
++        proyectar_fn de cada candidato construye caja=A+flujo(N), así que
++        aplicar_impactos —con `primer_mes_acumula=True`— recalcula
++        caja_prev = caja(N) - flujo(N) = A, SIEMPRE, sin importar N).
++      - Flujo base (sin bodega) por candidato: flujo(N) = -$10.000.000 + N×$1.000.000
++        (cada moto extra aporta $1M de flujo/mes).
++      - Ajuste bodega (gasto absoluto $20M desde 2026-09, sin mes_fin): delta de flujo
++        = -$20.000.000 (constante, no depende de N).
++      - piso(N) = caja_prev + flujo(N) + delta = $100.000.000
++                  + (-$10.000.000 + N×$1.000.000) + (-$20.000.000)
++                  = $70.000.000 + N×$1.000.000.
++      - meta = caja_minima ($82.000.000) + colchón ($0) = $82.000.000.
++      - piso(N) >= meta  ⇔  N >= 12 (piso(12)=$82.000.000 exacto; piso(11)=$81.000.000
++        < meta). Mínimo N entero: 12.
++    El solver (bisección real, `solver_unidades.py`) DEBE converger a exactamente
++    N=12, piso_resultante=$82.000.000 — si no, hay una regresión real en el algoritmo
++    o en la fórmula de `_piso_con_ajustes`/`aplicar_impactos`."""
++
++    ARRANQUE = Decimal("100000000")
++    FLUJO_BASE = Decimal("-10000000")
++    PASO_POR_MOTO = Decimal("1000000")
++    CAJA_MINIMA = Decimal("82000000")
++    N_ESPERADO = 12
++    PISO_ESPERADO = Decimal("82000000")
++
++    def _mes_para(n: int) -> MesProyeccion:
++        flujo = FLUJO_BASE + n * PASO_POR_MOTO
++        caja = ARRANQUE + flujo
++        return MesProyeccion(
++            mes=MES_INICIO,
++            motos=78 + n,
++            cartera=78 + n,
++            recaudo_credito=Decimal("0"),
++            cuotas_iniciales=Decimal("0"),
++            ingreso_bruto=Decimal("0"),
++            neto=Decimal("0"),
++            provision=Decimal("0"),
++            gastos_fijos=Decimal("0"),
++            gps=Decimal("0"),
++            costo_nueva=Decimal("0"),
++            adelanto=Decimal("0"),
++            pago_inventario=Decimal("0"),
++            fondeo=Decimal("0"),
++            int_deuda=Decimal("0"),
++            iva=Decimal("0"),
++            egresos=Decimal("0"),
++            flujo=flujo,
++            caja=caja,
++            estado="ok",
++        )
++
++    async def fake_proyectar_fn_para(vig, esc, mi, hm):
++        async def proyectar_fn(n: int) -> ResultadoProyeccion:
++            mes = _mes_para(n)
++            return ResultadoProyeccion(
++                meses=[mes],
++                piso_caja=mes.caja,
++                mes_mas_ajustado=mes.mes,
++                meses_bajo_minimo=0,
++                caja_final=mes.caja,
++                capital_requerido=Decimal("0"),
++                runway_meses=None,
++            )
++
++        return proyectar_fn
++
++    monkeypatch.setattr(escenario, "_proyectar_fn_para", fake_proyectar_fn_para)
++    monkeypatch.setattr(
++        escenario.params_service,
++        "obtener_vigente",
++        _fake_vigente(caja_minima=CAJA_MINIMA),
++    )
++
++    rs = await escenario.motos_para_evitar_umbral(
++        naturaleza=NATURALEZA, monto=MONTO, mes_inicio=MES_INICIO
++    )
++    by = {r.concepto: r for r in rs}
++
++    # GOLDEN — valores "al peso" del escenario de referencia (ver matemática arriba):
++    assert by["unidades_extra"].valor == Decimal(N_ESPERADO)
++    assert by["unidades_extra"].unidad == "unidades"
++    assert by["piso_con_unidades"].valor == PISO_ESPERADO
++    assert by["unidades_extra"].disponible and by["piso_con_unidades"].disponible
++    ref_horizonte = _ref_horizonte()
++    assert by["unidades_extra"].evidencia.ref == ref_horizonte
++    assert by["piso_con_unidades"].evidencia.ref == ref_horizonte
+diff --git a/backend/tests/proyeccion/test_solver_unidades.py b/backend/tests/proyeccion/test_solver_unidades.py
+new file mode 100644
+index 0000000..63bac53
+--- /dev/null
++++ b/backend/tests/proyeccion/test_solver_unidades.py
+@@ -0,0 +1,211 @@
++# backend/tests/proyeccion/test_solver_unidades.py
++from dataclasses import dataclass
++from decimal import Decimal
++
++import pytest
++from app.proyeccion.solver_unidades import (
++    _piso_con_ajustes,
++    resolver_unidades_para_umbral,
++)
++
++
++# Fake mínimo de ResultadoProyeccion: el solver solo necesita que aplicar_impactos
++# corra sobre él. Para aislar el solver de aplicar_impactos, monkeypatcheamos el piso.
++@dataclass
++class _R:  # sustituto de ResultadoProyeccion para el fake
++    piso: Decimal
++
++
++async def _piso_lineal(n: int) -> _R:
++    # piso sube 1.000.000 por unidad extra, arranca en -5.000.000 (bajo el umbral 0)
++    return _R(piso=Decimal(-5_000_000) + Decimal(1_000_000) * n)
++
++
++@pytest.mark.asyncio
++async def test_encuentra_minimo_de_unidades(monkeypatch):
++    # aplicar_impactos(r, ajustes, caja_minima).kpis.piso_caja == r.piso (fake)
++    monkeypatch.setattr(
++        "app.proyeccion.solver_unidades._piso_con_ajustes",
++        lambda r, ajustes, caja_minima: r.piso,
++    )
++    res = await resolver_unidades_para_umbral(
++        _piso_lineal, ajustes=[], caja_minima=Decimal("0")
++    )
++    assert res.alcanzable is True
++    assert res.unidades_extra == 5  # -5M + 5*1M = 0 >= umbral 0
++    assert res.piso_resultante == Decimal("0")
++
++
++@pytest.mark.asyncio
++async def test_ya_cumple_con_cero(monkeypatch):
++    monkeypatch.setattr(
++        "app.proyeccion.solver_unidades._piso_con_ajustes",
++        lambda r, ajustes, caja_minima: r.piso,
++    )
++
++    async def _proyectar_fn(n: int) -> _R:
++        return _R(piso=Decimal(10_000_000))
++
++    res = await resolver_unidades_para_umbral(
++        _proyectar_fn, ajustes=[], caja_minima=Decimal("0")
++    )
++    assert res.unidades_extra == 0 and res.alcanzable is True
++
++
++@pytest.mark.asyncio
++async def test_no_alcanzable_dentro_del_tope(monkeypatch):
++    monkeypatch.setattr(
++        "app.proyeccion.solver_unidades._piso_con_ajustes",
++        lambda r, ajustes, caja_minima: r.piso,
++    )
++
++    async def _proyectar_fn(n: int) -> _R:
++        # piso jamás sube (aunque haya más unidades) → no alcanzable
++        return _R(piso=Decimal(-1))
++
++    res = await resolver_unidades_para_umbral(
++        _proyectar_fn,
++        ajustes=[],
++        caja_minima=Decimal("0"),
++        cap_unidades=100,
++    )
++    assert res.alcanzable is False and res.unidades_extra == 0
++
++
++# ---------------------------------------------------------------------------
++# Fix round 1 (Task 1) — regresión: la búsqueda debe quedar ACOTADA a [0, cap_unidades].
++# ---------------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_minimo_en_el_borde_del_cap_es_alcanzable(monkeypatch):
++    # Escalón: piso < meta para n<10, piso == meta desde n=10 — el mínimo real
++    # CAE justo en el cap. Bug original: la fase de duplicado saltaba 8→16 y
++    # declaraba "no alcanzable" aunque 10 <= cap_unidades=10 (Escenario A).
++    monkeypatch.setattr(
++        "app.proyeccion.solver_unidades._piso_con_ajustes",
++        lambda r, ajustes, caja_minima: r.piso,
++    )
++
++    async def _proyectar_fn(n: int) -> _R:
++        return _R(piso=Decimal("0") if n >= 10 else Decimal("-1"))
++
++    res = await resolver_unidades_para_umbral(
++        _proyectar_fn,
++        ajustes=[],
++        caja_minima=Decimal("0"),
++        cap_unidades=10,
++    )
++    assert res.alcanzable is True
++    assert res.unidades_extra == 10
++    assert res.piso_resultante == Decimal("0")
++
++
++@pytest.mark.asyncio
++async def test_minimo_en_mitad_superior_del_cap_default_es_alcanzable(monkeypatch):
++    # Lineal con cero en n=9000 (> cap_unidades/2 = 5000, usando el cap DEFAULT
++    # 10.000, sin pasarlo explícito). Reproduce el Escenario A al valor LITERAL
++    # del default: la duplicación 8192→16384 se pasaba del cap y perdía el 9000,
++    # que sí era alcanzable.
++    monkeypatch.setattr(
++        "app.proyeccion.solver_unidades._piso_con_ajustes",
++        lambda r, ajustes, caja_minima: r.piso,
++    )
++
++    async def _proyectar_fn(n: int) -> _R:
++        return _R(piso=Decimal(1_000) * (n - 9000))
++
++    res = await resolver_unidades_para_umbral(
++        _proyectar_fn, ajustes=[], caja_minima=Decimal("0")
++    )
++    assert res.alcanzable is True
++    assert res.unidades_extra == 9000
++    assert res.piso_resultante == Decimal("0")
++
++
++@pytest.mark.asyncio
++async def test_cap_cero_bloquea_unidad_que_si_alcanzaria(monkeypatch):
++    # true N=1 (piso(0) < meta <= piso(1)) pero cap_unidades=0 prohíbe CUALQUIER
++    # unidad extra. Bug original (Escenario B): el chequeo del cap vivía DENTRO
++    # del while de duplicado, que nunca se ejecutaba porque piso(1) ya cumplía
++    # la meta en el primer chequeo — el cap quedaba sin aplicar.
++    monkeypatch.setattr(
++        "app.proyeccion.solver_unidades._piso_con_ajustes",
++        lambda r, ajustes, caja_minima: r.piso,
++    )
++
++    async def _proyectar_fn(n: int) -> _R:
++        return _R(piso=Decimal("-1") + Decimal("2") * n)
++
++    res = await resolver_unidades_para_umbral(
++        _proyectar_fn,
++        ajustes=[],
++        caja_minima=Decimal("0"),
++        cap_unidades=0,
++    )
++    assert res.alcanzable is False
++    assert res.unidades_extra == 0
++
++
++# ---------------------------------------------------------------------------
++# Fix round 1 (Task 6 de inc4) — _piso_con_ajustes debe usar primer_mes_acumula=True,
++# la MISMA convención que impacto_escenario/proyectar_impactos, para que los dos
++# caminos reconcilien en el caso más común (un ajuste que arranca en el primer mes
++# del horizonte — motos_para_evitar_umbral siempre ancla el horizonte a HOY).
++# ---------------------------------------------------------------------------
++
++
++def test_piso_con_ajustes_acumula_desde_el_primer_mes():
++    from app.proyeccion.impactos import Ajuste
++    from app.proyeccion.motor import MesProyeccion, ResultadoProyeccion
++
++    def _mes(mes: str, flujo: Decimal, caja: Decimal) -> MesProyeccion:
++        return MesProyeccion(
++            mes=mes,
++            motos=10,
++            cartera=10,
++            recaudo_credito=Decimal("0"),
++            cuotas_iniciales=Decimal("0"),
++            ingreso_bruto=Decimal("0"),
++            neto=Decimal("0"),
++            provision=Decimal("0"),
++            gastos_fijos=Decimal("0"),
++            gps=Decimal("0"),
++            costo_nueva=Decimal("0"),
++            adelanto=Decimal("0"),
++            pago_inventario=Decimal("0"),
++            fondeo=Decimal("0"),
++            int_deuda=Decimal("0"),
++            iva=Decimal("0"),
++            egresos=Decimal("0"),
++            flujo=flujo,
++            caja=caja,
++            estado="ok",
++        )
++
++    base = ResultadoProyeccion(
++        meses=[
++            _mes("2026-09", Decimal("-2000000"), Decimal("98000000")),
++            _mes("2026-10", Decimal("-3000000"), Decimal("95000000")),
++        ],
++        piso_caja=Decimal("95000000"),
++        mes_mas_ajustado="2026-10",
++        meses_bajo_minimo=0,
++        caja_final=Decimal("95000000"),
++        capital_requerido=Decimal("0"),
++        runway_meses=None,
++    )
++    ajuste = Ajuste(
++        nombre="Escenario FABS",
++        naturaleza="gasto",
++        modo="absoluto",
++        valor=Decimal("10000000"),
++        mes_inicio="2026-09",  # el PRIMER mes del horizonte
++    )
++    # A mano (reacumular con primer_mes_acumula=True): arranque = 98M - (-2M) = 100M;
++    # mes0 = 100M + (-2M - 10M) = 88M; mes1 = 88M + (-3M - 10M) = 75M; piso = 75M.
++    # Con primer_mes_acumula=False (el bug de antes de este fix) el mes0 se hubiera
++    # quedado fijo en 98M y el piso habría dado 85M — 10M de diferencia, no un
++    # redondeo.
++    piso = _piso_con_ajustes(base, [ajuste], Decimal("50000000"))
++    assert piso == Decimal("75000000.00")
