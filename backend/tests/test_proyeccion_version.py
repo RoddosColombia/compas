@@ -107,5 +107,34 @@ def test_diff_sin_anterior_lo_dice():
     assert d["hay_anterior"] is False
 
 
+@pytest.mark.asyncio
+async def test_snapshot_aprobada_corre_proyeccion_y_persiste(db, monkeypatch):
+    """Verifica el wrapper que dispara el HOOK del router de aprobación: corre la
+    proyección vigente + valles y deja una versión vigente en la BD."""
+    from app.proyeccion import service as proy_service
+    from app.proyeccion.versionado import snapshot_version_aprobada
+
+    async def _fake_proyectar_vigente(*, escenario, mes_inicio, horizonte_meses):
+        assert escenario == "base"
+        assert mes_inicio == (2026, 8)
+        return _serie(piso="99999999", mes="2027-04")
+
+    async def _fake_valles_vigente(*, escenario, mes_inicio, horizonte_meses):
+        return {"valles": [{"mes": "2027-04"}]}
+
+    monkeypatch.setattr(proy_service, "proyectar_vigente", _fake_proyectar_vigente)
+    monkeypatch.setattr(proy_service, "valles_vigente", _fake_valles_vigente)
+
+    v = await snapshot_version_aprobada(
+        mes_aprobado="2026-08-01", usuario_id="u1", mes_inicio=(2026, 8)
+    )
+    assert v.version == 1
+    assert v.vigente is True
+    assert v.mes_aprobado == "2026-08-01"
+    assert v.piso_caja == "99999999"
+    # el valle del reporte quedó guardado en la versión
+    assert v.valles == [{"mes": "2027-04"}]
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
