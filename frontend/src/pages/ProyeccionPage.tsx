@@ -21,6 +21,7 @@ import { LeyendaOrigen } from "@/components/proyeccion/MarcaOrigen";
 import { MesEnCursoCallout } from "@/components/proyeccion/MesEnCursoCallout";
 import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
 import { TechoGastoCard } from "@/components/proyeccion/TechoGastoCard";
+import { VersionDiffCallout } from "@/components/proyeccion/VersionDiffCallout";
 import { Button } from "@/components/ui/button";
 import { Cargando } from "@/components/ui/cargando";
 import { ChartCard } from "@/components/ui/chart-card";
@@ -46,6 +47,7 @@ import {
   type Escenario,
   type Proyeccion,
   obtenerProyeccion,
+  obtenerVersionDiff,
 } from "@/lib/proyeccion";
 
 const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
@@ -113,6 +115,13 @@ export default function ProyeccionPage() {
     queryFn: () => obtenerValles({ escenario, horizonteMeses: fetchHorizonte }),
   });
 
+  // RF-F2 — diff contra la última versión aprobada (piso, mes del piso, valles).
+  const diffQ = useQuery({
+    queryKey: ["proyeccion", "version", "diff", escenario, fetchHorizonte],
+    queryFn: () =>
+      obtenerVersionDiff({ escenario, horizonteMeses: fetchHorizonte }),
+  });
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
@@ -178,6 +187,8 @@ export default function ProyeccionPage() {
           vallesMeses={(vallesQ.data?.valles ?? []).map((v) => v.mes)}
         />
       )}
+
+      {diffQ.data?.hay_anterior && <VersionDiffCallout diff={diffQ.data} />}
 
       {q.data && (
         <VallesCard

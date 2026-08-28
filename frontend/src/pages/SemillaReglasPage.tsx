@@ -174,7 +174,7 @@ export default function SemillaReglasPage() {
                 <span className="font-display text-sm font-semibold text-ink">
                   {rubro}
                 </span>
-                <span className="tabular text-xs text-ink-faint">
+                <span className="tabular text-apoyo text-ink-faint">
                   {filas.filter((p) => seleccion.has(clave(p))).length}/
                   {filas.length}
                 </span>
@@ -204,10 +204,10 @@ export default function SemillaReglasPage() {
                           {r}
                         </span>
                       ))}
-                      <span className="min-w-0 flex-1 truncate text-xs italic text-ink-faint">
+                      <span className="min-w-0 flex-1 truncate text-apoyo italic text-ink-faint">
                         {p.ejemplos[0] ? `«${p.ejemplos[0]}»` : ""}
                       </span>
-                      <span className="tabular text-xs text-ink-soft">
+                      <span className="tabular text-apoyo text-ink-soft">
                         {p.tipo_flujo} · n={p.evidencia}
                       </span>
                     </li>

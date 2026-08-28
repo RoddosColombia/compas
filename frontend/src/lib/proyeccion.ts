@@ -175,6 +175,32 @@ export async function obtenerProyeccion(
   return apiJson(`/proyeccion${qs ? `?${qs}` : ""}`);
 }
 
+// ── RF-F2: diff contra la última versión aprobada ──
+
+export interface VersionDiff {
+  hay_anterior: boolean;
+  version_anterior?: number;
+  mes_aprobado_anterior?: string;
+  piso?: { anterior: string; actual: string; delta: string };
+  mes_mas_ajustado?: { anterior: string; actual: string };
+  valles?: {
+    anterior: number;
+    actual: number;
+    nuevos: string[];
+    desaparecidos: string[];
+  };
+}
+
+export async function obtenerVersionDiff(
+  p: { escenario?: Escenario; horizonteMeses?: number } = {},
+): Promise<VersionDiff> {
+  const q = new URLSearchParams();
+  if (p.escenario) q.set("escenario", p.escenario);
+  if (p.horizonteMeses) q.set("horizonte_meses", String(p.horizonteMeses));
+  const qs = q.toString();
+  return apiJson(`/proyeccion/version/diff${qs ? `?${qs}` : ""}`);
+}
+
 // DASH-01: agregación operativa (Dashboards). Cartera activa desglosada por AÑADA
 // (cohorte de colocación; 'previa' = los 111 créditos preexistentes) + colocación.
 export interface AnadaCartera {
