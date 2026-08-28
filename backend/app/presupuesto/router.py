@@ -220,4 +220,20 @@ async def aprobar_presupuesto(
     marca.response_status = 200
     marca.response_body = resultado
     await marca.save()
+
+    # RF-F2 (COMPAS 2.0) — hook post-commit: congelar la serie de proyección como
+    # versión inmutable. BEST-EFFORT: si falla, la aprobación NO se revierte (la
+    # versión es derivada/recreable). Mismo criterio que el emit de auditoría.
+    try:
+        from app.proyeccion.versionado import snapshot_version_aprobada
+
+        y, m = _mes_key(mes).split("-")[:2]
+        await snapshot_version_aprobada(
+            mes_aprobado=_mes_key(mes),
+            usuario_id=user.id,
+            mes_inicio=(int(y), int(m)),
+        )
+    except Exception:
+        pass
+
     return resultado

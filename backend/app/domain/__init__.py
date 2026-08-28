@@ -23,6 +23,7 @@ from app.domain.obligacion import FacturaObligacion, MetaIngreso, Obligacion
 from app.domain.pago_planeado import PagoPlaneado
 from app.domain.parametros_proyeccion import ParametrosProyeccion
 from app.domain.presupuesto import PresupuestoLinea
+from app.domain.proyeccion_version import ProyeccionVersion
 from app.domain.regla_clasificacion import ReglaClasificacion
 from app.domain.rubro import Rubro
 from app.domain.transaccion import Transaccion
@@ -51,6 +52,7 @@ DOMAIN_DOCUMENTS: list[type] = [
     CFOGolden,
     VinculoTelegram,
     HiloCFO,
+    ProyeccionVersion,
 ]
 
 __all__ = [
@@ -77,5 +79,6 @@ __all__ = [
     "CFOGolden",
     "VinculoTelegram",
     "HiloCFO",
+    "ProyeccionVersion",
     "DOMAIN_DOCUMENTS",
 ]
