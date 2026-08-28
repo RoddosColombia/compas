@@ -46,11 +46,18 @@ class ClaveConfig(StrEnum):
     # ventas PROYECTADAS. Ausente → 19 %. Editable por dato: si cambia la tarifa, no
     # se toca código.
     TARIFA_IVA = "TARIFA_IVA"
+    # RF-F3 (COMPAS 2.0, D-1): umbral de ATENCIÓN — nivel superior de vigilancia entre
+    # el mínimo (crítico) y "sobre umbrales". Editable, versionado con
+    # (vigente_desde, modificado_por). Ausente → fallback al comportamiento actual de
+    # `valles.py` (caja_minima × factor_atencion). El resolver descarta valores ≤
+    # crítico (dato malo): la atención está por encima del mínimo por definición.
+    UMBRAL_ATENCION = "UMBRAL_ATENCION"
 
 
 # Tipo esperado por clave (M-03). "decimal" | "fecha" | "json".
 _TIPO_POR_CLAVE: dict[ClaveConfig, str] = {
     ClaveConfig.UMBRAL_DIF_BANCO_CIERRE: "decimal",
+    ClaveConfig.UMBRAL_ATENCION: "decimal",
     ClaveConfig.CALENDARIO_DIAN: "json",
     ClaveConfig.DIAS_CREDITO_POR_PROVEEDOR: "json",
     ClaveConfig.PERIODICIDAD_IVA: "json",
