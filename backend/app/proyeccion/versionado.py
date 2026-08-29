@@ -95,8 +95,34 @@ def diff_contra_vigente(
         return {"hay_anterior": False}
     piso_ant = Decimal(str(anterior.piso_caja))
     piso_act = Decimal(str(serie_actual["piso_caja"]))
-    meses_valle_ant = {v.get("mes") for v in anterior.valles}
-    meses_valle_act = {v.get("mes") for v in valles_actual}
+    caja_ant_por_mes = {
+        v.get("mes"): Decimal(str(v.get("caja")))
+        for v in anterior.valles
+        if v.get("caja") is not None
+    }
+    caja_act_por_mes = {
+        v.get("mes"): Decimal(str(v.get("caja")))
+        for v in valles_actual
+        if v.get("caja") is not None
+    }
+    meses_valle_ant = set(caja_ant_por_mes)
+    meses_valle_act = set(caja_act_por_mes)
+    # RF-F3 · P3b — "más profundo": el valle sigue en el mismo mes pero la caja bajó
+    # (menor = más hondo). Solo cuando empeora estrictamente; empatar no cuenta (ruido).
+    # Categorías disjuntas con `nuevos` (mes que no estaba antes) para no doble-contar.
+    mas_profundos = []
+    for mes in sorted(meses_valle_ant & meses_valle_act):
+        ant = caja_ant_por_mes[mes]
+        act = caja_act_por_mes[mes]
+        if act < ant:
+            mas_profundos.append(
+                {
+                    "mes": mes,
+                    "anterior": str(ant),
+                    "actual": str(act),
+                    "delta": money_str(act - ant),
+                }
+            )
     return {
         "hay_anterior": True,
         "version_anterior": anterior.version,
@@ -115,5 +141,6 @@ def diff_contra_vigente(
             "actual": len(valles_actual),
             "nuevos": sorted(meses_valle_act - meses_valle_ant),
             "desaparecidos": sorted(meses_valle_ant - meses_valle_act),
+            "mas_profundos": mas_profundos,
         },
     }

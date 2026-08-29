@@ -61,4 +61,49 @@ describe("VallesCard", () => {
     );
     expect(screen.getByText(/aún no sale/)).toBeInTheDocument();
   });
+
+  // RF-F3 · P3b — chips de cambio vs. última versión aprobada.
+
+  it("marca «nuevo» cuando el mes está en mesesNuevos", () => {
+    render(
+      <VallesCard
+        valles={[valle({ mes: "2027-05" })]}
+        cargando={false}
+        mesesNuevos={new Set(["2027-05"])}
+      />,
+    );
+    expect(screen.getByText("nuevo")).toBeInTheDocument();
+    expect(screen.queryByText("más profundo")).toBeNull();
+  });
+
+  it("marca «más profundo» cuando el mes está en mesesMasProfundos", () => {
+    render(
+      <VallesCard
+        valles={[valle({ mes: "2027-05" })]}
+        cargando={false}
+        mesesMasProfundos={new Set(["2027-05"])}
+      />,
+    );
+    expect(screen.getByText("más profundo")).toBeInTheDocument();
+    expect(screen.queryByText("nuevo")).toBeNull();
+  });
+
+  it("si por bug llegan las dos, gana «nuevo» (disjuntos por diseño en backend)", () => {
+    render(
+      <VallesCard
+        valles={[valle({ mes: "2027-05" })]}
+        cargando={false}
+        mesesNuevos={new Set(["2027-05"])}
+        mesesMasProfundos={new Set(["2027-05"])}
+      />,
+    );
+    expect(screen.getByText("nuevo")).toBeInTheDocument();
+    expect(screen.queryByText("más profundo")).toBeNull();
+  });
+
+  it("sin sets, no pinta ningún chip (compat)", () => {
+    render(<VallesCard valles={[valle()]} cargando={false} />);
+    expect(screen.queryByText("nuevo")).toBeNull();
+    expect(screen.queryByText("más profundo")).toBeNull();
+  });
 });

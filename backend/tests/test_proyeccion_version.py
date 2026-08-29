@@ -107,6 +107,80 @@ def test_diff_sin_anterior_lo_dice():
     assert d["hay_anterior"] is False
 
 
+# ─────────────────────── RF-F3 · P3b — valle más profundo ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_p3b_detecta_valle_mas_profundo_mismo_mes(db):
+    """Un valle en el MISMO mes con caja MENOR que la aprobada anterior es 'más
+    profundo'. Se reporta con delta negativo (menos caja = más hondo)."""
+    anterior = await _persistir_version(
+        serie=_serie(),
+        valles=[{"mes": "2027-05", "caja": "100000000"}],
+        mes_aprobado="2026-08-01",
+        usuario_id="u1",
+    )
+    d = diff_contra_vigente(
+        _serie(),
+        [{"mes": "2027-05", "caja": "80000000"}],  # 20M más hondo
+        anterior,
+    )
+    assert d["valles"]["mas_profundos"] == [
+        {
+            "mes": "2027-05",
+            "anterior": "100000000",
+            "actual": "80000000",
+            "delta": "-20000000.00",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_p3b_ignora_valle_igual_o_menos_profundo(db):
+    """Mismo mes pero caja ≥ anterior no es 'más profundo' — solo se reporta cuando
+    empeora. Empatar tampoco cuenta (evita ruido)."""
+    anterior = await _persistir_version(
+        serie=_serie(),
+        valles=[
+            {"mes": "2027-05", "caja": "100000000"},
+            {"mes": "2027-11", "caja": "80000000"},
+        ],
+        mes_aprobado="2026-08-01",
+        usuario_id="u1",
+    )
+    d = diff_contra_vigente(
+        _serie(),
+        [
+            {"mes": "2027-05", "caja": "100000000"},  # igual → no
+            {"mes": "2027-11", "caja": "90000000"},  # subió → no
+        ],
+        anterior,
+    )
+    assert d["valles"]["mas_profundos"] == []
+
+
+@pytest.mark.asyncio
+async def test_p3b_valle_nuevo_no_cuenta_como_mas_profundo(db):
+    """Un valle NUEVO (mes no estaba antes) se reporta solo en `nuevos`, no en
+    `mas_profundos` — son categorías disjuntas para no doble-contar en la UI."""
+    anterior = await _persistir_version(
+        serie=_serie(),
+        valles=[{"mes": "2027-05", "caja": "100000000"}],
+        mes_aprobado="2026-08-01",
+        usuario_id="u1",
+    )
+    d = diff_contra_vigente(
+        _serie(),
+        [
+            {"mes": "2027-05", "caja": "100000000"},  # sin cambio
+            {"mes": "2028-01", "caja": "70000000"},  # NUEVO
+        ],
+        anterior,
+    )
+    assert d["valles"]["nuevos"] == ["2028-01"]
+    assert d["valles"]["mas_profundos"] == []
+
+
 @pytest.mark.asyncio
 async def test_snapshot_aprobada_corre_proyeccion_y_persiste(db, monkeypatch):
     """Verifica el wrapper que dispara el HOOK del router de aprobación: corre la

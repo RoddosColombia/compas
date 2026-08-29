@@ -192,6 +192,14 @@ export interface VersionDiff {
     actual: number;
     nuevos: string[];
     desaparecidos: string[];
+    // RF-F3 · P3b — valles que siguen en el MISMO mes pero con caja MENOR: el
+    // valle empeoró contra la última aprobación. Categoría disjunta con `nuevos`.
+    mas_profundos?: {
+      mes: string;
+      anterior: string;
+      actual: string;
+      delta: string; // negativo = más hondo
+    }[];
   };
 }
 

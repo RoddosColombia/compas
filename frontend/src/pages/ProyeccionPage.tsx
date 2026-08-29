@@ -195,6 +195,11 @@ export default function ProyeccionPage() {
           valles={vallesQ.data?.valles ?? []}
           cargando={vallesQ.isLoading}
           titulo="Meses de caja más baja"
+          // RF-F3 · P3b — marca cada valle según su cambio vs. última aprobación.
+          mesesNuevos={new Set(diffQ.data?.valles?.nuevos ?? [])}
+          mesesMasProfundos={
+            new Set((diffQ.data?.valles?.mas_profundos ?? []).map((v) => v.mes))
+          }
         />
       )}
     </div>

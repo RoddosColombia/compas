@@ -11,10 +11,16 @@ export function VallesCard({
   valles,
   cargando,
   titulo = "Meses de caja más baja",
+  mesesNuevos,
+  mesesMasProfundos,
 }: {
   valles: Valle[];
   cargando: boolean;
   titulo?: string;
+  // RF-F3 · P3b — meses marcados como cambio respecto a la última versión aprobada.
+  // Se pintan como chip al lado del mes; disjuntos por diseño en el backend.
+  mesesNuevos?: Set<string>;
+  mesesMasProfundos?: Set<string>;
 }) {
   return (
     <Card className="flex flex-col gap-3 p-5">
@@ -28,14 +34,27 @@ export function VallesCard({
       )}
       <ul className="flex flex-col gap-3">
         {valles.map((v) => (
-          <ValleFila key={v.mes} valle={v} />
+          <ValleFila
+            key={v.mes}
+            valle={v}
+            esNuevo={mesesNuevos?.has(v.mes) ?? false}
+            esMasProfundo={mesesMasProfundos?.has(v.mes) ?? false}
+          />
         ))}
       </ul>
     </Card>
   );
 }
 
-function ValleFila({ valle }: { valle: Valle }) {
+function ValleFila({
+  valle,
+  esNuevo,
+  esMasProfundo,
+}: {
+  valle: Valle;
+  esNuevo: boolean;
+  esMasProfundo: boolean;
+}) {
   const perfora = valle.distancia_al_umbral.startsWith("-");
   const meses = valle.meses_para_prepararse;
   // RF-F3 · P2 — hay caracterización del segmento cuando el CEO tiene configurado
@@ -53,8 +72,26 @@ function ValleFila({ valle }: { valle: Valle }) {
   return (
     <li className={`flex flex-col gap-1 border-l-2 pl-3 ${barra}`}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-sans font-semibold text-ink">
+        <span className="flex items-baseline gap-1.5 font-sans font-semibold text-ink">
           {formatMesCorto(valle.mes)}
+          {/* RF-F3 · P3b — cambio vs. última versión aprobada. Disjuntos por diseño;
+              si por bug llegan los dos, gana "nuevo" (categoría más informativa). */}
+          {esNuevo && (
+            <span
+              className="rounded-full bg-atencion/15 px-1.5 py-0.5 font-sans text-apoyo font-semibold text-atencion"
+              title="Este valle no estaba en la última versión aprobada"
+            >
+              nuevo
+            </span>
+          )}
+          {!esNuevo && esMasProfundo && (
+            <span
+              className="rounded-full bg-critico/10 px-1.5 py-0.5 font-sans text-apoyo font-semibold text-critico"
+              title="La caja de este valle es MENOR que la última aprobación"
+            >
+              más profundo
+            </span>
+          )}
         </span>
         <span
           className={`tabular font-sans text-cuerpo ${perfora ? "text-critico" : "text-ink-soft"}`}
