@@ -41,14 +41,19 @@ function sumaCol(
   return filas.reduce<Decimal>((acc, m) => acc.plus(valor(m)), new Decimal(0));
 }
 
+// RF-F3 · P3a — el nivel ámbar 'atencion' ahora es un estado propio (bajo el umbral
+// de atención pero sobre el crítico). 'critico' (perforación del mínimo) queda en rojo,
+// separado del ámbar.
 const ESTADO_ESTILO: Record<EstadoMes, string> = {
   ok: "bg-positivo/10 text-positivo",
-  critico: "bg-atencion/10 text-atencion",
+  atencion: "bg-atencion/10 text-atencion",
+  critico: "bg-critico/10 text-critico",
   negativo: "bg-critico/10 text-critico",
 };
 const ESTADO_SIMBOLO: Record<EstadoMes, string> = {
   ok: "✓",
-  critico: "●",
+  atencion: "●",
+  critico: "▼",
   negativo: "✗",
 };
 

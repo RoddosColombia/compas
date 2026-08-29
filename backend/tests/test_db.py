@@ -28,7 +28,9 @@ async def test_init_beanie_registra_los_documents_de_dominio():
     # + VinculoTelegram/HiloCFO (Task 3, FABS inc3-B — canal Telegram, write gate S1)
     # + ColocacionMes (P6 del ciclo mensual — motos realmente colocadas por mes, el
     #   insumo del termómetro de desviación; NO entra al motor).
-    assert len(DOMAIN_DOCUMENTS) == 23
+    # + ProyeccionVersion (RF-F2, COMPAS 2.0 — Fundacional §3: la ÚNICA entidad cuyo
+    #   ciclo de vida cambia en 2.0; snapshot inmutable al aprobar el presupuesto).
+    assert len(DOMAIN_DOCUMENTS) == 24
     assert Transaccion in mongo.DOCUMENT_MODELS
     assert AuditLog not in mongo.DOCUMENT_MODELS
     client = AsyncMongoMockClient()

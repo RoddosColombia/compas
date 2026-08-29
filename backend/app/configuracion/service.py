@@ -29,22 +29,36 @@ class ConfiguracionError(Exception):
         self.status = status
 
 
-async def leer_umbral_atencion(caja_minima: Decimal) -> Decimal:
-    """Devuelve la última vigencia de `UMBRAL_ATENCION`. Descarta valores incoherentes
-    (≤ crítico) y en su ausencia aplica `caja_minima × factor_atencion` (default 3×) —
-    el mismo umbral con el que `valles.py` filtra hoy sus mínimos relevantes. Así, sin
-    fila configurada, el comportamiento del sistema NO cambia."""
+async def _umbral_atencion_configurado(caja_minima: Decimal) -> Decimal | None:
+    """La vigencia CONFIGURADA (o None si no hay o es incoherente)."""
     fila = (
         await Configuracion.find(Configuracion.clave == ClaveConfig.UMBRAL_ATENCION)
         .sort(-Configuracion.vigente_desde)
         .first_or_none()
     )
-    if fila is not None and fila.valor_decimal is not None:
-        val = Decimal(fila.valor_decimal)
-        if val > caja_minima:
-            return val
-        # dato incoherente (≤ crítico): se ignora y se usa el fallback.
+    if fila is None or fila.valor_decimal is None:
+        return None
+    val = Decimal(fila.valor_decimal)
+    if val <= caja_minima:
+        return None  # dato incoherente
+    return val
+
+
+async def leer_umbral_atencion(caja_minima: Decimal) -> Decimal:
+    """Para la UI (Supuestos): devuelve la vigencia o, en su ausencia, la SUGERENCIA
+    de `caja_minima × factor_atencion` (default 3×) — sirve como pre-carga del editor
+    para que el CEO tenga un valor plausible con qué empezar."""
+    val = await _umbral_atencion_configurado(caja_minima)
+    if val is not None:
+        return val
     return caja_minima * _FACTOR_ATENCION_FALLBACK
+
+
+async def leer_umbral_atencion_activo(caja_minima: Decimal) -> Decimal | None:
+    """Para el pipeline de proyección: la vigencia CONFIGURADA solamente. Sin
+    configurar → None → la banda ámbar NO se activa (comportamiento actual). Así el
+    CEO controla cuándo empieza a colorearse el ámbar (Fundacional D-1)."""
+    return await _umbral_atencion_configurado(caja_minima)
 
 
 async def escribir_umbral_atencion(

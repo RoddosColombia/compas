@@ -7,7 +7,8 @@
 import { apiJson } from "@/lib/api";
 
 export type Escenario = "pesimista" | "base" | "optimista";
-export type EstadoMes = "ok" | "critico" | "negativo";
+// RF-F3 · P3a: nivel intermedio 'atencion' (ámbar) entre 'ok' y 'critico'.
+export type EstadoMes = "ok" | "atencion" | "critico" | "negativo";
 
 // E1·P6 — marca de ORIGEN de la cifra (dimensión distinta de EstadoMes/salud de caja).
 export type MarcaOrigen =
@@ -124,7 +125,9 @@ export interface Proyeccion {
   supuestos?: SupuestosProyeccion;
   /** P2: con qué plata arranca la serie y de dónde salió. Opcional (aditivo). */
   arranque?: ArranqueCaja | null;
-  caja_minima: string; // el umbral (para la curva)
+  caja_minima: string; // el umbral crítico
+  // RF-F3 · P3a — umbral de atención (ámbar). null cuando no está configurado.
+  caja_atencion?: string | null;
   fondo_provision: FondoMes[];
   piso_caja: string;
   mes_mas_ajustado: string;
@@ -154,6 +157,7 @@ export const ESCENARIO_LABEL: Record<Escenario, string> = {
 
 export const ESTADO_LABEL: Record<EstadoMes, string> = {
   ok: "OK",
+  atencion: "Atención",
   critico: "Crítico",
   negativo: "Negativo",
 };

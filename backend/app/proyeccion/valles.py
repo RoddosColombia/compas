@@ -47,6 +47,11 @@ class Valle:
     distancia_al_umbral: Decimal  # caja - umbral (negativo = perfora)
     meses_para_prepararse: int  # desde hoy (índice del mes; 0 = mes en curso)
     causas: list[Causa]
+    # RF-F3 · P2 — caracterización del SEGMENTO del valle. Calculados solo cuando
+    # el caller pasa `caja_atencion` (compat: None cuando no aplica).
+    entrada: str | None = None  # primer mes con caja < caja_atencion cayendo
+    salida: str | None = None  # primer mes con caja > caja_atencion tras el fondo
+    duracion: int | None = None  # meses bajo atención (inclusive; None si no aplica)
 
 
 def _es_minimo_local(cajas: list[Decimal], i: int) -> bool:
@@ -90,24 +95,57 @@ def _causas_del_mes(
     return causas
 
 
+def _segmento_bajo_umbral(
+    cajas: list[Decimal], i: int, umbral: Decimal
+) -> tuple[int, int | None]:
+    """Rango [entrada, salida) del segmento contiguo con caja < umbral que contiene al
+    índice `i`. Devuelve (entrada_idx, salida_idx). `salida_idx` es None si el segmento
+    no se cierra dentro de la serie (aún está bajo umbral al final)."""
+    ini = i
+    while ini > 0 and cajas[ini - 1] < umbral:
+        ini -= 1
+    fin: int | None = None
+    for j in range(i + 1, len(cajas)):
+        if cajas[j] >= umbral:
+            fin = j
+            break
+    return ini, fin
+
+
 def detectar_valles(
     meses: list[MesProyeccion],
     caja_minima: Decimal,
     *,
+    caja_atencion: Decimal | None = None,
     factor_atencion: Decimal = Decimal("3"),
     max_causas: int = 3,
     ventana_causas: int = 6,
 ) -> list[Valle]:
     """Mínimos locales de la caja relevantes por cercanía al umbral, cada uno con sus
-    causas. Devuelve la lista en orden cronológico."""
+    causas y — si el caller pasa `caja_atencion` (RF-F3) — la caracterización del
+    segmento: entrada, salida, duración. Sin `caja_atencion`, el comportamiento es
+    idéntico al anterior (compat: los 3 campos van en None). Orden cronológico."""
     cajas = [f.caja for f in meses]
-    limite = caja_minima * factor_atencion
+    # Cuando el caller pasa caja_atencion (RF-F3), ese es EL umbral de relevancia.
+    # Sin él, mantengo el comportamiento histórico (caja_minima × factor_atencion).
+    limite = (
+        caja_atencion if caja_atencion is not None else caja_minima * factor_atencion
+    )
     valles: list[Valle] = []
     for i in range(len(meses)):
         if not _es_minimo_local(cajas, i):
             continue
         if cajas[i] >= limite:
             continue  # holgado: no relevante
+        entrada: str | None = None
+        salida: str | None = None
+        duracion: int | None = None
+        if caja_atencion is not None:
+            ini, fin = _segmento_bajo_umbral(cajas, i, caja_atencion)
+            entrada = meses[ini].mes
+            salida = meses[fin].mes if fin is not None else None
+            fin_incl = fin if fin is not None else len(cajas)
+            duracion = fin_incl - ini
         valles.append(
             Valle(
                 mes=meses[i].mes,
@@ -115,6 +153,9 @@ def detectar_valles(
                 distancia_al_umbral=_cop(cajas[i] - caja_minima),
                 meses_para_prepararse=i,
                 causas=_causas_del_mes(meses, i, ventana_causas, max_causas),
+                entrada=entrada,
+                salida=salida,
+                duracion=duracion,
             )
         )
     return valles
