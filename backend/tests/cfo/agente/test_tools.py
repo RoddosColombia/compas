@@ -140,9 +140,7 @@ async def test_motos_para_evitar_umbral_parsea_monto_y_mes_fin(monkeypatch):
         llamado.update(monto=monto, mes_fin=mes_fin)
         return []
 
-    monkeypatch.setattr(
-        "app.cfo.calc.escenario.motos_para_evitar_umbral", fake_calc
-    )
+    monkeypatch.setattr("app.cfo.calc.escenario.motos_para_evitar_umbral", fake_calc)
     await tools.ejecutar_tool(
         "motos_para_evitar_umbral",
         {
