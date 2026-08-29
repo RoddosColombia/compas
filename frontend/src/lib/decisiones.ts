@@ -35,6 +35,11 @@ export interface Valle {
   distancia_al_umbral: string; // negativo = perfora
   meses_para_prepararse: number; // desde hoy
   causas: CausaValle[];
+  // RF-F3 · P2 — segmento del valle (solo cuando el umbral de atención está
+  // configurado; null si no aplica). Todos vienen juntos o los tres son null.
+  entrada?: string | null;
+  salida?: string | null;
+  duracion?: number | null;
 }
 
 export interface Impactos {
@@ -49,6 +54,8 @@ export interface Impactos {
 export interface Valles {
   escenario: string;
   caja_minima: string;
+  // RF-F3 · P3a — umbral de atención (ámbar). null cuando no está configurado.
+  caja_atencion?: string | null;
   valles: Valle[];
 }
 

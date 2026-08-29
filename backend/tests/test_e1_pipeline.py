@@ -140,7 +140,7 @@ async def db():
 
 
 async def _correr(anclas_override, facturas_override, *, con_meta=False):
-    r, _cm, _fondo, _rec, meta = await _resultado_con(
+    r, _cm, _fondo, _rec, meta, _caja_atn = await _resultado_con(
         _params(),
         _modelos(),
         escenario="base",

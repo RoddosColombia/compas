@@ -8,6 +8,8 @@ admin} (CR-S5) + `verify_origin`. Sin Idempotency-Key (mismo criterio de C1: no 
 movimiento de dinero; el índice único de patrón activo hace inocuo el replay).
 `aplicar-pendientes` es idempotente por construcción (lo clasificado no se toca)."""
 
+from decimal import Decimal, InvalidOperation
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -16,7 +18,7 @@ from app.auth.models import User
 from app.auth.router import verify_origin
 from app.domain.regla_clasificacion import ReglaClasificacion
 from app.domain.rubro import TipoFlujo
-from app.reglas import service
+from app.reglas import semilla_service, service
 
 router = APIRouter(prefix="/reglas-clasificacion", tags=["reglas"])
 
@@ -154,3 +156,56 @@ async def aplicar_pendientes(
         return await service.aplicar_pendientes(usuario_id=user.id)
     except service.ReglasError as e:
         raise HTTPException(e.status, e.detalle) from e
+
+
+# ── RF-F1: semilla (aprender reglas de la curaduría histórica) ──
+
+
+class SembrarItem(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    patron: str = Field(min_length=3, max_length=120)
+    rubro_id: str
+    tipo_flujo: TipoFlujo
+    prioridad: int = 100
+
+    @field_validator("tipo_flujo", mode="before")
+    @classmethod
+    def _cast_tipo(cls, v: object) -> object:
+        return v if isinstance(v, TipoFlujo) else TipoFlujo(v)
+
+
+class SembrarBody(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    reglas: list[SembrarItem] = Field(min_length=1)
+
+
+@router.get("/semilla")
+async def semilla_propuestas(
+    min_evidencia: int = Query(default=3, ge=1),
+    min_pureza: str = Query(default="1"),
+    _: User = Depends(require_permission("reglas:gestionar")),
+):
+    """RF-F1: reglas aprendidas de la curaduría real (lectura pura, no persiste)."""
+    try:
+        pureza = Decimal(min_pureza)
+    except InvalidOperation:
+        raise HTTPException(422, f"min_pureza inválido: '{min_pureza}'") from None
+    if not (Decimal("0") < pureza <= Decimal("1")):
+        raise HTTPException(422, "min_pureza debe estar en (0, 1]")
+    return await semilla_service.proponer_semilla(
+        min_evidencia=min_evidencia, min_pureza=pureza
+    )
+
+
+@router.post("/semilla/sembrar")
+async def semilla_sembrar(
+    body: SembrarBody,
+    user: User = Depends(require_permission("reglas:gestionar")),
+    _: None = Depends(verify_origin),
+):
+    """RF-F1: siembra las elegidas como APRENDIDAS e INACTIVAS (exigen aprobar)."""
+    return await semilla_service.sembrar_semilla(
+        [r.model_dump() for r in body.reglas], user.id
+    )

@@ -56,6 +56,65 @@ async def proyectar(
         raise HTTPException(e.status, e.detalle) from e
 
 
+# ── RF-F2 (COMPAS 2.0): serie de proyección versionada ──
+
+
+def _serializar_version(v) -> dict:
+    return {
+        "version": v.version,
+        "vigente": v.vigente,
+        "mes_aprobado": v.mes_aprobado,
+        "escenario": v.escenario,
+        "horizonte_meses": v.horizonte_meses,
+        "piso_caja": v.piso_caja,
+        "mes_mas_ajustado": v.mes_mas_ajustado,
+        "caja_minima": v.caja_minima,
+        "creado_por": v.creado_por,
+        "creado_at": v.creado_at.isoformat(),
+        "valles": v.valles,
+        "serie": v.serie,
+    }
+
+
+@router.get("/version")
+async def version_vigente_endpoint(
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """Última versión aprobada de la serie de proyección (o disponible=False)."""
+    from app.proyeccion.versionado import version_vigente
+
+    v = await version_vigente()
+    if v is None:
+        return {"disponible": False}
+    return {"disponible": True, **_serializar_version(v)}
+
+
+@router.get("/version/diff")
+async def version_diff_endpoint(
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """Diff piso/valles entre la proyección actual y la última versión aprobada."""
+    from app.proyeccion.versionado import diff_contra_vigente, version_vigente
+
+    try:
+        actual = await service.proyectar_vigente(
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+        )
+        vd = await service.valles_vigente(
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+    return diff_contra_vigente(actual, vd.get("valles", []), await version_vigente())
+
+
 class PreviewBody(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 

@@ -21,6 +21,7 @@ import { LeyendaOrigen } from "@/components/proyeccion/MarcaOrigen";
 import { MesEnCursoCallout } from "@/components/proyeccion/MesEnCursoCallout";
 import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
 import { TechoGastoCard } from "@/components/proyeccion/TechoGastoCard";
+import { VersionDiffCallout } from "@/components/proyeccion/VersionDiffCallout";
 import { Button } from "@/components/ui/button";
 import { Cargando } from "@/components/ui/cargando";
 import { ChartCard } from "@/components/ui/chart-card";
@@ -46,6 +47,7 @@ import {
   type Escenario,
   type Proyeccion,
   obtenerProyeccion,
+  obtenerVersionDiff,
 } from "@/lib/proyeccion";
 
 const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
@@ -111,6 +113,13 @@ export default function ProyeccionPage() {
   const vallesQ = useQuery({
     queryKey: ["valles", escenario, fetchHorizonte],
     queryFn: () => obtenerValles({ escenario, horizonteMeses: fetchHorizonte }),
+  });
+
+  // RF-F2 — diff contra la última versión aprobada (piso, mes del piso, valles).
+  const diffQ = useQuery({
+    queryKey: ["proyeccion", "version", "diff", escenario, fetchHorizonte],
+    queryFn: () =>
+      obtenerVersionDiff({ escenario, horizonteMeses: fetchHorizonte }),
   });
 
   return (
@@ -179,11 +188,18 @@ export default function ProyeccionPage() {
         />
       )}
 
+      {diffQ.data?.hay_anterior && <VersionDiffCallout diff={diffQ.data} />}
+
       {q.data && (
         <VallesCard
           valles={vallesQ.data?.valles ?? []}
           cargando={vallesQ.isLoading}
           titulo="Meses de caja más baja"
+          // RF-F3 · P3b — marca cada valle según su cambio vs. última aprobación.
+          mesesNuevos={new Set(diffQ.data?.valles?.nuevos ?? [])}
+          mesesMasProfundos={
+            new Set((diffQ.data?.valles?.mas_profundos ?? []).map((v) => v.mes))
+          }
         />
       )}
     </div>

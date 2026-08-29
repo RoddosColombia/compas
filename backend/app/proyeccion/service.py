@@ -14,6 +14,7 @@ from decimal import Decimal
 from app.cartera_previa import service as cartera_previa_service
 from app.cierre.service import _caja_libro, _rubro_ajuste
 from app.cierre.transito import transito_heredado
+from app.configuracion.service import leer_umbral_atencion_activo
 from app.core.money import money_str
 from app.domain.configuracion import ClaveConfig, Configuracion
 from app.domain.mes_control import EstadoMes, MesControl
@@ -52,6 +53,7 @@ from app.proyeccion.motor import (
     ModeloProyeccion,
     ParametrosMotor,
     ResultadoProyeccion,
+    _estado_caja,
     _meses_del_horizonte,
     cartera_activa_mensual,
     cartera_por_anada_mensual,
@@ -307,6 +309,7 @@ def _serializar(
     rec: ResultadoReconciliado | None = None,
     *,
     meta: "AnclajeMeta | None" = None,
+    caja_atencion: Decimal | None = None,
     supuestos: dict | None = None,
 ) -> dict:
     meses_ym = [f.mes for f in r.meses]
@@ -358,6 +361,11 @@ def _serializar(
             if f.mes_idx < len(meses_ym)
         ],
         "caja_minima": money_str(caja_minima),  # el umbral (para la curva del front)
+        # RF-F3 · P3a — el segundo umbral (ámbar) para la banda de atención en el
+        # frontend. None cuando no está configurado (banda no se pinta).
+        "caja_atencion": (
+            money_str(caja_atencion) if caja_atencion is not None else None
+        ),
         "piso_caja": money_str(r.piso_caja),
         "mes_mas_ajustado": r.mes_mas_ajustado,
         "meses_bajo_minimo": r.meses_bajo_minimo,
@@ -619,7 +627,12 @@ async def _resultado_con(
     anclas_override: tuple[dict[str, AnclaMes], list[RubroInfo], set[str]]
     | None = None,
 ) -> tuple[
-    ResultadoProyeccion, object, list, ResultadoReconciliado | None, AnclajeMeta
+    ResultadoProyeccion,
+    Decimal,  # caja_minima (crítico)
+    object,  # fondo
+    ResultadoReconciliado | None,
+    AnclajeMeta,
+    Decimal | None,  # caja_atencion (ámbar, RF-F3; None si no está configurado)
 ]:
     """La tubería completa sobre un set de parámetros DADO, en el orden de precedencia
     `motor → EJECUCIÓN (E1) → OBLIGACIONES (D2) → IMPACTOS (D1)`:
@@ -769,7 +782,23 @@ async def _resultado_con(
         mes_en_curso=completitud,
         arranque=arranque,
     )
-    return r, params.caja_minima, fondo, rec, meta
+
+    # RF-F3 · P3a — re-sella el `estado` de cada mes con el umbral de atención vigente.
+    # Es capa aditiva (post-motor); la aritmética de flujos y saldos NO cambia. Sin
+    # umbral configurado, `_estado_caja` con `None` reproduce ok/critico/negativo
+    # exactamente igual (candado del golden-master).
+    caja_atencion = await leer_umbral_atencion_activo(params.caja_minima)
+    if caja_atencion is not None:
+        meses_reestampados = [
+            replace(
+                m,
+                estado=_estado_caja(m.caja, params.caja_minima, caja_atencion),
+            )
+            for m in r.meses
+        ]
+        r = replace(r, meses=meses_reestampados)
+
+    return r, params.caja_minima, fondo, rec, meta, caja_atencion
 
 
 async def _proyectar_con(
@@ -783,7 +812,7 @@ async def _proyectar_con(
 ) -> dict:
     """Serializa la proyección de `_resultado_con` (mismo shape que GET /proyeccion),
     marcando la ventana reconciliada y el interés de obligaciones (§4)."""
-    r, caja_min, fondo, rec, meta = await _resultado_con(
+    r, caja_min, fondo, rec, meta, caja_atn = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -798,6 +827,7 @@ async def _proyectar_con(
         fondo,
         rec,
         meta=meta,
+        caja_atencion=caja_atn,
         # SUP-5: los drivers efectivos de ESTA curva, para que la pantalla explique
         # el resultado en vez de pedirle al usuario que adivine.
         supuestos=_supuestos_visibles(params, escenario),
@@ -867,6 +897,10 @@ def _serializar_valle(v: Valle) -> dict:
             }
             for c in v.causas
         ],
+        # RF-F3 · P2 — caracterización del segmento (None sin umbral configurado).
+        "entrada": v.entrada,
+        "salida": v.salida,
+        "duracion": v.duracion,
     }
 
 
@@ -890,17 +924,21 @@ async def valles_vigente(
     """D1 §3 — los valles (hitos) de la proyección vigente: mínimos de caja relevantes
     con sus causas. Lectura pura sobre la config vigente."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, _, _, _ = await _resultado_con(
+    r, caja_min, _, _, _, caja_atn = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
     )
-    valles = detectar_valles(r.meses, caja_min)
+    # RF-F3 · P2 — pasa el umbral de atención a `detectar_valles` para que la lista
+    # traiga `entrada`/`salida`/`duracion`. Sin umbral configurado, comportamiento
+    # idéntico al anterior (los 3 campos van en None).
+    valles = detectar_valles(r.meses, caja_min, caja_atencion=caja_atn)
     return {
         "escenario": escenario,
         "caja_minima": money_str(caja_min),
+        "caja_atencion": money_str(caja_atn) if caja_atn is not None else None,
         "valles": [_serializar_valle(v) for v in valles],
     }
 
@@ -916,7 +954,7 @@ async def proyectar_impactos(
     ESCRIBE). Devuelve ambas series con el shape de GET /proyeccion, los valles de cada
     una y el delta de flujo por mes. Con `ajustes` vacío, ajustada == base bit a bit."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, fondo, _, meta = await _resultado_con(
+    r, caja_min, fondo, _, meta, _caja_atn = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -961,7 +999,7 @@ async def resolver(
     """D1 §5 — solvers por bisección sobre la proyección vigente + los `ajustes` en
     pantalla. Compute-only. `objetivo` ∈ {techo_gasto, goal_seek, punto_quiebre}."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, _, _, _ = await _resultado_con(
+    r, caja_min, _, _, _, _ = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -1031,7 +1069,7 @@ async def simular_plazo(
         replace(f, plazo_elegido_dias=max(plazo_dias, f.plazo_base_dias))
         for f in reales
     ]
-    r, _caja, _fondo, rec, _ = await _resultado_con(
+    r, _caja, _fondo, rec, _, _ = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -1388,7 +1426,7 @@ async def fabrica_proyectar_unidades(
         # eso exige separar `_resultado_con` en fase async (una vez) + síncrona (por
         # N), un cambio más grande que no vale la pena sin evidencia real de que el
         # perf importa.
-        r, _caja_min, _fondo, _rec, _meta = await _resultado_con(
+        r, _caja_min, _fondo, _rec, _meta, _caja_atn = await _resultado_con(
             params_n,
             modelos,
             escenario=escenario,

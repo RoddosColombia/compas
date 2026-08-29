@@ -20,6 +20,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PanelImpacto } from "@/components/supuestos/PanelImpacto";
 import { Tornado } from "@/components/supuestos/Tornado";
+import { UmbralAtencionCard } from "@/components/supuestos/UmbralAtencionCard";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -350,7 +351,12 @@ export default function DatosPage() {
           <ModelosPanel puedeGestionar={puedeGestionar} />
         </>
       )}
-      {q.data && <Editor vigente={q.data} puedeGestionar={puedeGestionar} />}
+      {q.data && (
+        <>
+          <UmbralAtencionCard puedeGestionar={puedeGestionar} />
+          <Editor vigente={q.data} puedeGestionar={puedeGestionar} />
+        </>
+      )}
     </div>
   );
 }

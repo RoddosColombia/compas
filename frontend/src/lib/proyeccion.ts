@@ -7,7 +7,8 @@
 import { apiJson } from "@/lib/api";
 
 export type Escenario = "pesimista" | "base" | "optimista";
-export type EstadoMes = "ok" | "critico" | "negativo";
+// RF-F3 · P3a: nivel intermedio 'atencion' (ámbar) entre 'ok' y 'critico'.
+export type EstadoMes = "ok" | "atencion" | "critico" | "negativo";
 
 // E1·P6 — marca de ORIGEN de la cifra (dimensión distinta de EstadoMes/salud de caja).
 export type MarcaOrigen =
@@ -124,7 +125,9 @@ export interface Proyeccion {
   supuestos?: SupuestosProyeccion;
   /** P2: con qué plata arranca la serie y de dónde salió. Opcional (aditivo). */
   arranque?: ArranqueCaja | null;
-  caja_minima: string; // el umbral (para la curva)
+  caja_minima: string; // el umbral crítico
+  // RF-F3 · P3a — umbral de atención (ámbar). null cuando no está configurado.
+  caja_atencion?: string | null;
   fondo_provision: FondoMes[];
   piso_caja: string;
   mes_mas_ajustado: string;
@@ -154,6 +157,7 @@ export const ESCENARIO_LABEL: Record<Escenario, string> = {
 
 export const ESTADO_LABEL: Record<EstadoMes, string> = {
   ok: "OK",
+  atencion: "Atención",
   critico: "Crítico",
   negativo: "Negativo",
 };
@@ -173,6 +177,40 @@ export async function obtenerProyeccion(
   if (p.mesInicio) q.set("mes_inicio", p.mesInicio);
   const qs = q.toString();
   return apiJson(`/proyeccion${qs ? `?${qs}` : ""}`);
+}
+
+// ── RF-F2: diff contra la última versión aprobada ──
+
+export interface VersionDiff {
+  hay_anterior: boolean;
+  version_anterior?: number;
+  mes_aprobado_anterior?: string;
+  piso?: { anterior: string; actual: string; delta: string };
+  mes_mas_ajustado?: { anterior: string; actual: string };
+  valles?: {
+    anterior: number;
+    actual: number;
+    nuevos: string[];
+    desaparecidos: string[];
+    // RF-F3 · P3b — valles que siguen en el MISMO mes pero con caja MENOR: el
+    // valle empeoró contra la última aprobación. Categoría disjunta con `nuevos`.
+    mas_profundos?: {
+      mes: string;
+      anterior: string;
+      actual: string;
+      delta: string; // negativo = más hondo
+    }[];
+  };
+}
+
+export async function obtenerVersionDiff(
+  p: { escenario?: Escenario; horizonteMeses?: number } = {},
+): Promise<VersionDiff> {
+  const q = new URLSearchParams();
+  if (p.escenario) q.set("escenario", p.escenario);
+  if (p.horizonteMeses) q.set("horizonte_meses", String(p.horizonteMeses));
+  const qs = q.toString();
+  return apiJson(`/proyeccion/version/diff${qs ? `?${qs}` : ""}`);
 }
 
 // DASH-01: agregación operativa (Dashboards). Cartera activa desglosada por AÑADA

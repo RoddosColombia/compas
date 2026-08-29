@@ -11,6 +11,7 @@ from app.cargas.router import router as cargas_router
 from app.cartera_previa.router import router as cartera_previa_router
 from app.ciclo.router import router as ciclo_router
 from app.cierre.router import router as cierre_router
+from app.configuracion.router import router as configuracion_router
 from app.control.router import router as control_router
 from app.escenarios_impacto.router import router as escenarios_impacto_router
 from app.facturas.router import router as facturas_router
@@ -36,6 +37,7 @@ api_router.include_router(cargas_router)
 api_router.include_router(cartera_previa_router)
 api_router.include_router(ciclo_router)
 api_router.include_router(cierre_router)
+api_router.include_router(configuracion_router)
 api_router.include_router(control_router)
 api_router.include_router(escenarios_impacto_router)
 api_router.include_router(facturas_router)

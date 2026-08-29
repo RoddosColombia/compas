@@ -662,11 +662,23 @@ class ResultadoProyeccion:
     runway_meses: Decimal | None
 
 
-def _estado_caja(caja: Decimal, caja_minima: Decimal) -> str:
+def _estado_caja(
+    caja: Decimal, caja_minima: Decimal, caja_atencion: Decimal | None = None
+) -> str:
+    """RF-F3 · P3a: introduce el nivel intermedio 'atencion' entre 'ok' y 'critico'.
+
+    IMPORTANTE (candado del motor): `caja_atencion=None` PRESERVA la semántica
+    original — es lo que asegura la paridad del golden-master (que corre sin el
+    argumento). El único caller que pasa el umbral es la capa `_resultado_con`,
+    fuera del motor puro. Aritmética inalterada; el orden de las guardas mantiene
+    la misma proyección numérica.
+    """
     if caja < 0:
         return "negativo"
     if caja < caja_minima:
         return "critico"
+    if caja_atencion is not None and caja <= caja_atencion:
+        return "atencion"
     return "ok"
 
 
