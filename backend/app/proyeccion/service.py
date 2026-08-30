@@ -1438,6 +1438,88 @@ async def fabrica_proyectar_unidades(
     return proyectar_fn
 
 
+_PALANCAS_ESCALARES = {"plazo_semanas", "cuota_inicial", "cuota_semanal"}
+
+
+@dataclass(frozen=True)
+class PalancaImpacto:
+    """inc4 rebanada 2 (Task 1) — resultado crudo del what-if de una palanca de
+    crédito (plazo/cuota inicial/cuota semanal) sobre uno o todos los modelos de
+    moto. Solo tipos planos (Decimal/str): `cfo/calc` lo consume sin importar
+    `app.domain.*` ni `proyeccion.motor` (aislamiento S1)."""
+
+    piso_sin: Decimal
+    piso_con: Decimal
+    mes_quiebre: str  # 'YYYY-MM' o 'nunca'
+    impacto: Decimal  # piso_con - piso_sin (lo computa COMPAS, no el motor)
+
+
+def _mes_de_quiebre_raw(r: ResultadoProyeccion) -> str:
+    return next((m.mes for m in r.meses if m.estado != "ok"), "nunca")
+
+
+def _tipar_palanca(palanca: str, nuevo_valor: Decimal) -> int | Decimal:
+    """Tipa el valor crudo según la palanca: `plazo_semanas` es entero > 0 (semanas
+    no se fraccionan); `cuota_inicial`/`cuota_semanal` son Decimal ≥ 0 (Money)."""
+    if palanca == "plazo_semanas":
+        v = int(nuevo_valor)
+        if v <= 0:
+            raise ProyeccionError("plazo_semanas debe ser > 0", 422)
+        return v
+    if nuevo_valor < 0:  # cuota_inicial / cuota_semanal
+        raise ProyeccionError(f"{palanca} no puede ser negativa", 422)
+    return nuevo_valor
+
+
+async def impacto_palanca_raw(
+    *,
+    palanca: str,
+    nuevo_valor: Decimal,
+    modelo: str = "todos",
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+) -> PalancaImpacto:
+    """inc4 rebanada 2 (Task 1) — el "what-if" de palancas de crédito que exige
+    `cfo.calc.escenario` (rebanada 2): re-proyecta el pipeline COMPLETO dos veces
+    (`_resultado_con`: motor → E1 anclaje → D2 reconciliación) — una vez tal cual
+    (`piso_sin`) y otra con `palanca=nuevo_valor` aplicada al modelo objetivo (o a
+    "todos", vía `ModeloMoto.model_copy`) — y devuelve el delta de piso + mes de
+    quiebre en tipos planos (Decimal/str), igual que `fabrica_proyectar_unidades`
+    hace para `motos_para_evitar_umbral`: `cfo/calc` no puede importar
+    `app.domain.*` ni `proyeccion.motor` directo (aislamiento S1,
+    `test_s1_aislamiento.py`), así que esta función carga params/modelos VIGENTES
+    ella misma (fail-closed 409) en vez de recibirlos del caller."""
+    if palanca not in _PALANCAS_ESCALARES:
+        raise ProyeccionError(f"palanca no soportada: {palanca}", 422)
+    vig = await parametros_service.obtener_vigente()
+    if vig is None:
+        raise ProyeccionError("no hay parámetros de proyección vigentes", 409)
+    modelos = await modelos_service.listar_modelos(activo=True)
+    if not modelos:
+        raise ProyeccionError("no hay modelos de moto activos", 409)
+    if modelo != "todos" and not any(m.nombre == modelo for m in modelos):
+        raise ProyeccionError(f"modelo desconocido: {modelo}", 422)
+    valor = _tipar_palanca(palanca, nuevo_valor)
+
+    def _override(m: ModeloMoto) -> ModeloMoto:
+        if modelo == "todos" or m.nombre == modelo:
+            return m.model_copy(update={palanca: valor})
+        return m
+
+    kw = dict(
+        escenario=escenario, mes_inicio=mes_inicio, horizonte_meses=horizonte_meses
+    )
+    r_sin, *_ = await _resultado_con(vig, modelos, **kw)
+    r_con, *_ = await _resultado_con(vig, [_override(m) for m in modelos], **kw)
+    return PalancaImpacto(
+        piso_sin=r_sin.piso_caja,
+        piso_con=r_con.piso_caja,
+        mes_quiebre=_mes_de_quiebre_raw(r_con),
+        impacto=r_con.piso_caja - r_sin.piso_caja,
+    )
+
+
 ANCLA_MODOS = ("cerrado", "movimientos")
 
 
