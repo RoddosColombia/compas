@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 from app.cfo.agente import servicio as srv
+from app.cfo.agente import tools
 from app.cfo.agente.cliente import BloqueTexto, BloqueToolUse, RespuestaLLM
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
 from tests.cfo.agente.fakes import ClienteFake
@@ -671,3 +672,148 @@ async def test_consultar_usa_historial_y_expone_texto_crudo(monkeypatch, _audit)
     # texto publicado = sustituido; texto_crudo = con token (para guardar en el hilo)
     assert "[[caja_hoy]]" not in r.texto and "$704.722.003" in r.texto
     assert r.texto_crudo == "Tu caja es [[caja_hoy]]."
+
+
+# --- inc4 rebanada 3 sub-3b (Task 5): rumbo_caja end-to-end -------------------
+# rumbo_caja es una tool de CERO args cableada DIRECTO en DISPATCH a
+# tendencias.rumbo_caja (sin wrapper) — a diferencia de tendencia_real (que
+# accede al módulo calc por atributo en cada llamada, así que monkeypatchear
+# `app.cfo.calc.tendencias.tendencia_real` sí lo intercepta), DISPATCH ya
+# capturó la referencia de función al importar tools.py, así que aquí se usa
+# `monkeypatch.setitem(tools.DISPATCH, ...)` — mismo patrón que
+# test_camino_feliz usa a nivel loop para las otras tools de cero args.
+_RUMBO_CAJA_ULT = ResultadoCFO(
+    concepto="caja_real_ult",
+    valor=Decimal("704722003"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.comparar_vigente+proyectar_vigente",
+        fecha_corte=None,
+        ref="2026-08",
+    ),
+)
+_RUMBO_CAJA_PREVIO = ResultadoCFO(
+    concepto="caja_real_previo",
+    valor=Decimal("650000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.comparar_vigente+proyectar_vigente",
+        fecha_corte=None,
+        ref="2026-07",
+    ),
+)
+_RUMBO_DELTA = ResultadoCFO(
+    concepto="delta_caja_rumbo",
+    valor=Decimal("54722003"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.comparar_vigente+proyectar_vigente",
+        fecha_corte=None,
+        ref="direccion:sube",
+    ),
+)
+_RUMBO_PISO = ResultadoCFO(
+    concepto="piso_proyectado",
+    valor=Decimal("40000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.comparar_vigente+proyectar_vigente",
+        fecha_corte=None,
+        ref="quiebre:2026-11",
+    ),
+)
+
+
+@pytest.mark.asyncio
+async def test_rumbo_caja_publica_valores_sustituidos(monkeypatch, _audit):
+    """E2E de la garantía anti-alucinación con la tool rumbo_caja (inc4 rebanada
+    3, sub-3b): el modelo pide `rumbo_caja` (sin parámetros), el DISPATCH/
+    tools.py REAL corre, la calc está fakeada con 4 `ResultadoCFO` conocidos, el
+    modelo cita los 4 tokens y RELATA la dirección (que viene en el `ref` del
+    delta, no la calcula él), el verificador los deja pasar y el servicio
+    sustituye — el texto publicado trae los VALORES formateados, nunca
+    `[[token]]` crudo."""
+
+    async def fake_rumbo_caja():
+        return [_RUMBO_CAJA_ULT, _RUMBO_CAJA_PREVIO, _RUMBO_DELTA, _RUMBO_PISO]
+
+    monkeypatch.setitem(tools.DISPATCH, "rumbo_caja", fake_rumbo_caja)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="rumbo_caja", input={})],
+            10,
+            6,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [
+                BloqueTexto(
+                    texto=(
+                        "Tu caja viene subiendo: hoy tienes [[caja_real_ult]], "
+                        "el mes pasado tenías [[caja_real_previo]], una "
+                        "variación de [[delta_caja_rumbo]]. La proyección "
+                        "apunta a un piso de [[piso_proyectado]]."
+                    )
+                )
+            ],
+            8,
+            20,
+        ),
+    ]
+    r = await srv.consultar(
+        "¿voy en rumbo?", actor_id="u1", cliente=ClienteFake(guiones)
+    )
+    assert r.abstuvo is False
+    assert "[[" not in r.texto  # ningún token crudo se filtró
+    assert "$704.722.003" in r.texto
+    assert "$650.000.000" in r.texto
+    assert "$54.722.003" in r.texto
+    assert "$40.000.000" in r.texto
+    assert {
+        "caja_real_ult",
+        "caja_real_previo",
+        "delta_caja_rumbo",
+        "piso_proyectado",
+    }.issubset(set(r.conceptos_usados))
+
+
+@pytest.mark.asyncio
+async def test_rumbo_caja_cifra_cruda_reintenta_y_abstiene(monkeypatch, _audit):
+    """Si el modelo escribe la caja CRUDA ("$704.722.003") en vez de citar
+    [[caja_real_ult]], el verificador lo atrapa, dispara EL reintento
+    correctivo (D-3: uno solo) y, si el modelo reincide, el servicio se
+    abstiene con `motivo='verificacion'` — jamás publica ni entra en un loop."""
+
+    async def fake_rumbo_caja():
+        return [_RUMBO_CAJA_ULT, _RUMBO_CAJA_PREVIO, _RUMBO_DELTA, _RUMBO_PISO]
+
+    monkeypatch.setitem(tools.DISPATCH, "rumbo_caja", fake_rumbo_caja)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="rumbo_caja", input={})],
+            5,
+            3,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Hoy tu caja es de $704.722.003.")],
+            4,
+            8,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Perdón, serían $704.722.003 entonces.")],
+            4,
+            6,
+        ),
+    ]
+    fake = ClienteFake(guiones)
+    r = await srv.consultar("¿voy en rumbo?", actor_id="u1", cliente=fake)
+    assert r.abstuvo is True and r.motivo == "verificacion"
+    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop

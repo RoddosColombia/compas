@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 from app.cfo.agente import tools
+from app.cfo.calc import tendencias
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
 
 
@@ -335,3 +336,79 @@ async def test_tendencia_real_metrica_invalida_falla_sin_llegar_a_la_calc():
 async def test_tendencia_real_metrica_faltante_falla():
     with pytest.raises(KeyError):
         await tools.ejecutar_tool("tendencia_real", {})
+
+
+# --- T5 (rebanada 3, sub-3b): tool rumbo_caja (sin parámetros) ----------------
+
+
+def test_schema_incluye_tool_rumbo_caja():
+    # rumbo_caja es una tool de CERO args, igual que caja_disponible_hoy/
+    # runway_meses/iva_del_cuatrimestre: sin propiedades, additionalProperties
+    # False.
+    nombres = {t["name"] for t in tools.TOOLS_SCHEMA}
+    assert "rumbo_caja" in nombres
+    t = next(x for x in tools.TOOLS_SCHEMA if x["name"] == "rumbo_caja")
+    assert t["input_schema"]["properties"] == {}
+    assert t["input_schema"]["additionalProperties"] is False
+
+
+@pytest.mark.asyncio
+async def test_ejecutar_rumbo_caja_llega_a_la_calc(monkeypatch):
+    # rumbo_caja se cablea DIRECTO en DISPATCH a tendencias.rumbo_caja (sin
+    # wrapper) — igual que caja.caja_hoy/runway.runway/iva.iva_cuatrimestre, el
+    # dict ya capturó la referencia de función al importar tools.py, así que
+    # monkeypatchear `app.cfo.calc.tendencias.rumbo_caja` DESPUÉS no afectaría
+    # esa entrada (mismo patrón que test_ejecutar_tool_despacha arriba, que por
+    # eso usa monkeypatch.setitem sobre tools.DISPATCH, no sobre el módulo calc).
+    async def fake():
+        return [
+            ResultadoCFO(
+                concepto="caja_real_ult",
+                valor=Decimal("704722003"),
+                unidad="COP",
+                disponible=True,
+                evidencia=Evidencia(fuente="f", fecha_corte=None, ref="2026-08"),
+            )
+        ]
+
+    monkeypatch.setitem(tools.DISPATCH, "rumbo_caja", fake)
+    r = await tools.ejecutar_tool("rumbo_caja")
+    assert isinstance(r, list) and len(r) == 1
+    assert r[0].concepto == "caja_real_ult"
+    assert r[0].valor == Decimal("704722003")
+
+
+@pytest.mark.asyncio
+async def test_ejecutar_rumbo_caja_sin_entrada(monkeypatch):
+    # ejecutar_tool("rumbo_caja") SIN `entrada` debe llegar a la calc real (sin
+    # parámetros, como las otras 3 de cero args) — llamar sin pasar `entrada`
+    # en absoluto no debe fallar por firma. Se fakea proy_service (mismo patrón
+    # que tests/cfo/calc/test_tendencias.py) para no depender de datos
+    # sembrados en la base de test.
+    async def fake_comp(**kw):
+        return {
+            "ancla": {"mes": "2026-07", "caja_real": "4000000"},
+            "actuals": [
+                {"mes": "2026-06", "caja_real": "5000000"},
+                {"mes": "2026-07", "caja_real": "4000000"},
+            ],
+            "forecast": [],
+        }
+
+    async def fake_proy(**kw):
+        return {
+            "piso_caja": "3000000",
+            "runway_meses": None,
+            "meses": [{"mes": "2026-08", "estado": "ok"}],
+        }
+
+    monkeypatch.setattr(tendencias.proy_service, "comparar_vigente", fake_comp)
+    monkeypatch.setattr(tendencias.proy_service, "proyectar_vigente", fake_proy)
+    r = await tools.ejecutar_tool("rumbo_caja")
+    assert isinstance(r, list) and all(isinstance(x, ResultadoCFO) for x in r)
+    assert {x.concepto for x in r} == {
+        "caja_real_ult",
+        "caja_real_previo",
+        "delta_caja_rumbo",
+        "piso_proyectado",
+    }
