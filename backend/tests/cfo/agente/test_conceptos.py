@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from app.cfo.agente.conceptos import CONCEPTOS_CITABLES, formatear, sustituir_tokens
+from app.cfo.agente.conceptos import formatear, sustituir_tokens
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
 
 
@@ -28,10 +28,6 @@ def _r2(concepto, valor, unidad, ref=""):
         disponible=True,
         evidencia=Evidencia(fuente="x", fecha_corte=None, ref=ref),
     )
-
-
-def test_citables():
-    assert CONCEPTOS_CITABLES == frozenset({"caja_hoy", "runway", "iva_cuatrimestre"})
 
 
 def test_formatear_caja_money_es_co_con_fecha():
@@ -118,3 +114,14 @@ def test_formatear_money_positivo_sin_signo():
 def test_formatear_money_cero():
     r = _r("caja_hoy", Decimal("0"), "COP", "2026-08-11")
     assert formatear(r) == "$0 (al 2026-08-11)"
+
+
+def test_formatear_porcentaje():
+    r = ResultadoCFO(
+        concepto="pct_nomina",
+        valor=Decimal("45.3"),
+        unidad="%",
+        disponible=True,
+        evidencia=Evidencia(fuente="f", fecha_corte=None, ref="cerrado:2026-07"),
+    )
+    assert formatear(r) == "45,3%"

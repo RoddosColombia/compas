@@ -12,10 +12,6 @@ from decimal import Decimal
 from app.cfo.calc.evidencia import ResultadoCFO
 from app.core.time import today_bogota
 
-CONCEPTOS_CITABLES: frozenset[str] = frozenset(
-    {"caja_hoy", "runway", "iva_cuatrimestre"}
-)
-
 # Compartida con verificador.py (import directo, NUNCA redefinir ahí): ambos deben
 # reconocer EXACTAMENTE el mismo token o se abre un hueco — verificado-pero-no-
 # sustituido (fuga de placeholder) o sustituido-pero-no-verificado (hueco de
@@ -44,12 +40,18 @@ def _unidades_es(d: Decimal) -> str:
     return f"{int(d)} motos"
 
 
+def _pct_es(d: Decimal) -> str:
+    return f"{d:.1f}".replace(".", ",") + "%"
+
+
 def formatear(r: ResultadoCFO, hoy: date | None = None) -> str:
     """Valor concept-bound listo para prosa, con su contexto server-bound."""
     if r.concepto == "runway":
         return _meses_es(r.valor)
     if r.unidad == "unidades":
         return _unidades_es(r.valor)
+    if r.unidad == "%":
+        return _pct_es(r.valor)
     base = _money_es(r.valor)
     ref = r.evidencia.ref or ""
     if ref.startswith("quiebre:"):
