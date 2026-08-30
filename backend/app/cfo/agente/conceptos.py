@@ -28,8 +28,12 @@ RE_TOKEN = re.compile(r"\[\[\s*(\w+)\s*\]\]")
 
 def _money_es(d: Decimal) -> str:
     # COP para display: parte entera con separador de miles es-CO ('.'), sin centavos.
+    # FINAL-REVIEW M1: el signo va ANTES del '$' ("-$5.000.000"), no después
+    # ("$-5.000.000") — rebanada 3 produce negativos con regularidad (desvío
+    # bajo-presupuesto, delta de caja a la baja) y esto llega al CEO seguido.
     entero = int(d)
-    return "$" + f"{entero:,}".replace(",", ".")
+    signo = "-" if entero < 0 else ""
+    return signo + "$" + f"{abs(entero):,}".replace(",", ".")
 
 
 def _meses_es(d: Decimal) -> str:

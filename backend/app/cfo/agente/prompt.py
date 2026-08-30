@@ -139,7 +139,7 @@ SYSTEM_PROMPT = (
     "LA DIRECCIÓN del desvío (si quedaste sobre, bajo o en línea con el "
     "presupuesto) ya viene calculada por COMPAS en la evidencia `ref` del "
     "concepto desvio_presupuesto, con la forma 'direccion:sobre', "
-    "'direccion:bajo' o 'direccion:en-línea' — RELÁTALA en tus palabras "
+    "'direccion:bajo' o 'direccion:en-linea' — RELÁTALA en tus palabras "
     "(p. ej. 'gastaste por encima de lo presupuestado'), NUNCA la calcules "
     "ni la infieras tú comparando las cifras a ojo: esa comparación ya la "
     "hizo la herramienta y viaja en el `ref` del token del desvío.\n"
