@@ -437,6 +437,47 @@ async def test_real_vs_presupuesto_sin_entrada_en_absoluto(monkeypatch):
     assert r == []
 
 
+# --- T4 (rebanada 4, sub-4a): tool composicion_gasto (% por token) -----------
+
+
+def test_schema_incluye_tool_composicion_gasto():
+    nombres = {t["name"] for t in tools.TOOLS_SCHEMA}
+    assert "composicion_gasto" in nombres
+    t = next(x for x in tools.TOOLS_SCHEMA if x["name"] == "composicion_gasto")
+    assert t["input_schema"]["additionalProperties"] is False
+    assert t["input_schema"]["required"] == ["ventana"]
+    props = t["input_schema"]["properties"]
+    assert props["ventana"]["enum"] == ["cerrado", "acumulado", "curso"]
+
+
+@pytest.mark.asyncio
+async def test_composicion_gasto_llama_la_calc(monkeypatch):
+    llamado = {}
+
+    async def fake_calc(*, ventana):
+        llamado["ventana"] = ventana
+        return []
+
+    monkeypatch.setattr("app.cfo.calc.ratios.composicion_gasto", fake_calc)
+    r = await tools.ejecutar_tool("composicion_gasto", {"ventana": "cerrado"})
+    assert llamado["ventana"] == "cerrado"
+    assert r == []
+
+
+@pytest.mark.asyncio
+async def test_composicion_gasto_ventana_invalida_falla_sin_llegar_a_la_calc():
+    # Sin monkeypatch: si el guard falla, el intento de llamar la calc real
+    # revienta la conexión y el test lo nota.
+    with pytest.raises(ValueError, match="ventana"):
+        await tools.ejecutar_tool("composicion_gasto", {"ventana": "trimestre"})
+
+
+@pytest.mark.asyncio
+async def test_composicion_gasto_ventana_faltante_falla():
+    with pytest.raises(KeyError):
+        await tools.ejecutar_tool("composicion_gasto", {})
+
+
 @pytest.mark.asyncio
 async def test_ejecutar_rumbo_caja_sin_entrada(monkeypatch):
     # ejecutar_tool("rumbo_caja") SIN `entrada` debe llegar a la calc real (sin

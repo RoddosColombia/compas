@@ -30,13 +30,22 @@ SIN nada que validar: `mes` es un string 'YYYY-MM' opcional sin enum ni Decimal
 detrás (a diferencia de `_kwargs_tendencia`/`_kwargs_palanca`/`_kwargs_escenario`),
 así que su envoltorio (`_real_vs_presupuesto`) solo extrae `entrada.get("mes")`
 (None si se omite) y deja que `tendencias.real_vs_presupuesto` resuelva el default
-del mes cerrado más reciente."""
+del mes cerrado más reciente.
+
+`composicion_gasto` (inc4 rebanada 4, sub-4a) vuelve al molde de
+`_kwargs_tendencia`: un enum a validar (`ventana` ∈ {cerrado,acumulado,curso}),
+ni Decimal ni fecha libre. Su envoltorio (`_kwargs_composicion_gasto`) rechaza
+una ventana fuera del enum ANTES de llamar `ratios.composicion_gasto`, que
+devuelve varios conceptos por grupo (`cop_<grupo>`/`pct_<grupo>`) más
+`gasto_total_comp` -- el `%` de cada `pct_<grupo>` lo computa esa calc, nunca
+el modelo; el modelo solo cita el token (ver `agente/prompt.py` y
+`agente/verificador.py`)."""
 
 import inspect
 from collections.abc import Awaitable, Callable
 from decimal import Decimal, InvalidOperation
 
-from app.cfo.calc import caja, escenario, iva, palanca, runway, tendencias
+from app.cfo.calc import caja, escenario, iva, palanca, ratios, runway, tendencias
 from app.cfo.calc.evidencia import ResultadoCFO
 
 CalcSinArgs = Callable[[], Awaitable[ResultadoCFO]]
@@ -46,6 +55,7 @@ _NATURALEZAS = {"gasto", "ingreso"}
 _PALANCAS = {"plazo_semanas", "cuota_inicial", "cuota_semanal"}
 _MODELOS = {"Raider", "Apache", "Sport", "todos"}
 _METRICAS_TENDENCIA = {"ingreso", "gasto", "caja"}
+_VENTANAS_COMPOSICION = {"cerrado", "acumulado", "curso"}
 
 
 def _kwargs_escenario(entrada: dict) -> dict:
@@ -163,6 +173,26 @@ async def _real_vs_presupuesto(entrada: dict) -> list[ResultadoCFO]:
     return await tendencias.real_vs_presupuesto(mes=entrada.get("mes"))
 
 
+def _kwargs_composicion_gasto(entrada: dict) -> dict:
+    """Parsea/valida la `entrada` cruda del modelo a los kwargs keyword-only de
+    `ratios.composicion_gasto`.
+
+    `ventana`: se exige ∈ {cerrado,acumulado,curso} -- un valor fuera del enum
+    se rechaza aquí, antes de llegar a la calc (mismo molde que
+    `_kwargs_tendencia`/`_kwargs_palanca`/`_kwargs_escenario`)."""
+    ventana = entrada["ventana"]
+    if ventana not in _VENTANAS_COMPOSICION:
+        raise ValueError(
+            f"ventana debe ser una de {sorted(_VENTANAS_COMPOSICION)!r}; "
+            f"recibido: {ventana!r}"
+        )
+    return {"ventana": ventana}
+
+
+async def _composicion_gasto(entrada: dict) -> list[ResultadoCFO]:
+    return await ratios.composicion_gasto(**_kwargs_composicion_gasto(entrada))
+
+
 DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "caja_disponible_hoy": caja.caja_hoy,
     "runway_meses": runway.runway,
@@ -173,6 +203,7 @@ DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "tendencia_real": _tendencia_real,
     "rumbo_caja": tendencias.rumbo_caja,
     "real_vs_presupuesto": _real_vs_presupuesto,
+    "composicion_gasto": _composicion_gasto,
 }
 
 TOOLS_SCHEMA: list[dict] = [
@@ -427,6 +458,37 @@ TOOLS_SCHEMA: list[dict] = [
                 },
             },
             "required": [],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "composicion_gasto",
+        "description": (
+            "¿Qué % de mi gasto es nómina/deuda/operación? Devuelve la "
+            "composición del gasto REAL total por grupo (costo de producto, "
+            "operación, nómina, deudas y obligaciones, otros) para una "
+            "ventana: 'cerrado' (último mes cerrado), 'acumulado' (año "
+            "corrido) o 'curso' (mes en curso). Devuelve gasto_total_comp "
+            "(el gasto total en COP) y, por cada grupo, DOS conceptos: "
+            "cop_<grupo> (su monto en COP) y pct_<grupo> (su % de "
+            "participación, YA CALCULADO por COMPAS). Sin gasto en la "
+            "ventana, disponible=false. Es de solo lectura: nunca escribe "
+            "nada."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ventana": {
+                    "type": "string",
+                    "enum": ["cerrado", "acumulado", "curso"],
+                    "description": (
+                        "Qué ventana de meses componer: 'cerrado' (último mes "
+                        "cerrado), 'acumulado' (año corrido) o 'curso' (mes en "
+                        "curso)."
+                    ),
+                },
+            },
+            "required": ["ventana"],
             "additionalProperties": False,
         },
     },

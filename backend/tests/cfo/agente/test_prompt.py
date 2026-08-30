@@ -226,6 +226,43 @@ def test_prompt_presupuesto_relata_direccion_desde_ref_no_la_calcula():
     assert "sobre" in bloque and "bajo" in bloque
 
 
+def test_prompt_menciona_composicion_gasto():
+    # inc4 rebanada 4 (sub-4a): el modelo debe saber que composicion_gasto
+    # existe para "¿qué % de mi gasto es nómina/deuda/operación?" -- si el
+    # prompt no la nombra, el modelo nunca la invoca.
+    p = SYSTEM_PROMPT.lower()
+    assert "composicion_gasto" in p
+
+
+def test_prompt_composicion_cita_tokens_pct_y_cop():
+    # composicion_gasto devuelve, por cada grupo, DOS conceptos nombrados
+    # (cop_<grupo>/pct_<grupo>) más gasto_total_comp; el modelo debe citar
+    # cada uno con su propio token, nunca resumir en una cifra propia.
+    p = SYSTEM_PROMPT
+    for token in (
+        "[[pct_nomina]]",
+        "[[pct_deudas]]",
+        "[[cop_nomina]]",
+        "[[gasto_total_comp]]",
+    ):
+        assert token in p
+
+
+def test_prompt_composicion_advierte_citar_no_escribir_el_porcentaje():
+    # A diferencia de la regla 7 (ningún % que ninguna tool calcule), el %
+    # de composicion_gasto SÍ lo calcula COMPAS -- pero el modelo sigue sin
+    # poder escribirlo: debe citarlo por token, nunca escribir/calcular un
+    # '%' propio (si lo hace, el verificador lo rebota).
+    p = SYSTEM_PROMPT.lower()
+    idx = p.find("composicion_gasto")
+    assert idx != -1
+    bloque = p[idx:]
+    assert "%" in bloque
+    assert "cítalo" in bloque or "citalo" in bloque
+    assert "no lo calcules" in bloque or "nunca escribas un" in bloque
+    assert "rebota" in bloque
+
+
 def test_prompt_presupuesto_reitera_no_porcentajes():
     # Reitera cerca del bloque de real_vs_presupuesto la prohibición de la
     # regla 7 (ningún % calculado por el modelo), no solo en el bloque

@@ -16,7 +16,17 @@ frase con un numero propio. `unidades_extra` es un CONTEO de motos/mes, no un mo
 la regla #1 ya cubre "cifras" en general, pero un entero pequenio como "12 motos" es
 el hueco que cerro `_RE_UNIDADES` en verificador.py (inc4 tarea 3) -- el prompt
 refuerza esa misma prohibicion del lado del modelo, antes de que la respuesta
-llegue al verificador."""
+llegue al verificador.
+
+inc4 rebanada 4 (sub-4a, tarea 4): agrega un bloque para `composicion_gasto`
+(`agente/tools.py`), que devuelve conceptos `pct_<grupo>`/`cop_<grupo>` +
+`gasto_total_comp`. Es la PRIMERA tool cuyo `%` SÍ lo calcula COMPAS -- la
+regla 7 de arriba (ningun % que el modelo invente) NO se toca ni se
+contradice: el bloque nuevo aclara que ese % puntual SÍ existe como concepto,
+pero el modelo lo CITA por token igual que cualquier otro numero (regla 1/2),
+nunca lo escribe crudo. El verificador (`verificador.py`) sigue atrapando
+CUALQUIER '%' crudo en el texto sin excepcion -- abrir el % por token no
+relaja ese control (ver docstring de `verificador.verificar`)."""
 
 SYSTEM_PROMPT = (
     "Eres FABS, el analista financiero de IA de RODDOS S.A.S. Complementas al CFO "
@@ -145,7 +155,26 @@ SYSTEM_PROMPT = (
     "hizo la herramienta y viaja en el `ref` del token del desvío.\n"
     "Recuerda la regla 7 también aquí: JAMÁS des un porcentaje o variación % "
     "sobre el desvío del presupuesto — ninguna herramienta calcula ese %; si "
-    "te lo piden, dilo con honestidad y abstente, sin estimarlo tú mismo."
+    "te lo piden, dilo con honestidad y abstente, sin estimarlo tú mismo.\n\n"
+    "COMPOSICIÓN DEL GASTO ('¿qué % de mi gasto es nómina/deuda/operación?'): "
+    "usa composicion_gasto cuando te pregunten qué porcentaje o participación "
+    "tiene cada grupo de gasto (costo de producto, operación, nómina, deudas "
+    "y obligaciones, otros) sobre el gasto real total, para una `ventana`: "
+    "'cerrado' (último mes cerrado), 'acumulado' (año corrido) o 'curso' (mes "
+    "en curso). Devuelve gasto_total_comp (el gasto total en COP) y, por cada "
+    "grupo, DOS conceptos con SU PROPIO token: cop_<grupo> (el monto en COP) "
+    "y pct_<grupo> (su % de participación) — por ejemplo [[pct_nomina]] con "
+    "[[cop_nomina]], [[pct_deudas]] con [[cop_deudas]], [[pct_operacion]] con "
+    "[[cop_operacion]], [[pct_costo_producto]] con [[cop_costo_producto]], "
+    "[[pct_otros]] con [[cop_otros]]. Cita también [[gasto_total_comp]] si "
+    "mencionas el total. A DIFERENCIA de la regla 7 (que sigue aplicando a "
+    "cualquier OTRO porcentaje que ninguna herramienta te dé), este % SÍ lo "
+    "calcula COMPAS — pero eso NO significa que lo escribas tú: el % ya "
+    "viene calculado por COMPAS, cítalo con su token (p. ej. "
+    "[[pct_nomina]]), NUNCA escribas un '%' propio ni lo calcules tú mismo. "
+    "Si escribes un '%' crudo en tu respuesta (así el número te parezca "
+    "correcto), el sistema te rebota: el verificador lo atrapa como cifra "
+    "sin token y te fuerza a corregir citando el token en vez del número."
 )
 
 CORRECTIVO = (
