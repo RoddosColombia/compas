@@ -21,6 +21,7 @@ MARCADO PARA AUDITORÍA KIMI (motor del sugerido + tabla de autoridad §2.4).
   compensatoria revierte (saga O1). Convergencia ante caída vía Idempotency-Key
   (en el router)."""
 
+from dataclasses import dataclass
 from decimal import Decimal
 
 from beanie import PydanticObjectId
@@ -28,6 +29,7 @@ from bson.decimal128 import Decimal128
 
 from app.audit.events import AuditEvento
 from app.audit.service import emit_audit
+from app.cierre.service import _rubro_ajuste
 from app.core.money import money_str
 from app.core.time import now_utc
 from app.domain.mes_control import EstadoMes, MesControl
@@ -433,3 +435,67 @@ async def aprobar_presupuesto(*, mes: str, usuario_id: str) -> dict:
         "estado": EstadoMes.EN_EJECUCION.value,
         "lineas": efecto["n_lineas"],
     }
+
+
+@dataclass(frozen=True)
+class PresupuestoMes:
+    """Task 6 FABS inc4 rebanada 3 (tendencias): real ejecutado vs presupuesto
+    aprobado de un mes CERRADO. Dataclass plano (S1: la capa cfo/calc lo envuelve
+    en una tarea posterior; no se importa nada de cfo/proyeccion aquí)."""
+
+    mes: str  # 'YYYY-MM'
+    gasto_real: Decimal
+    presupuesto_aprobado: Decimal
+
+
+async def _gasto_real_mes(mes_id, rubro_ajuste_id) -> Decimal:
+    """Σ valor de las Transaccion de EGRESO del mes, excluyendo el rubro de sistema
+    'Ajuste de conciliación' (anti-doble-conteo, igual criterio que `cierre.service`).
+    Duplica deliberadamente `_caja_libro`/`_egreso_real_mes` (Task 1 de proyeccion) —
+    NO se comparte para no crear un import cruzado presupuesto→proyeccion (S1)."""
+    total = Decimal("0")
+    async for t in Transaccion.find(Transaccion.mes_id == mes_id):
+        if t.tipo_flujo == TipoFlujo.EGRESO and t.rubro_id != rubro_ajuste_id:
+            total += t.valor
+    return total
+
+
+async def _aprobado_mes(mes_id) -> Decimal:
+    """Σ `monto_definido` de las PresupuestoLinea vigentes del mes (ignora las que
+    aún no tienen monto_definido — no aprobadas)."""
+    total = Decimal("0")
+    async for ln in PresupuestoLinea.find(
+        PresupuestoLinea.mes_id == mes_id, PresupuestoLinea.vigente == True  # noqa: E712
+    ):
+        if ln.monto_definido is not None:
+            total += ln.monto_definido
+    return total
+
+
+async def real_vs_presupuesto_mes(mes: str | None = None) -> PresupuestoMes | None:
+    """`mes=None` → el último MesControl CERRADO; si no hay ninguno, `None`. Con
+    `mes` explícito ('YYYY-MM'), busca ESE mes y exige que esté CERRADO. Sin
+    presupuesto aprobado (Σ monto_definido == 0) → `None` (nada que comparar)."""
+    if mes is None:
+        got = (
+            await MesControl.find(MesControl.estado == EstadoMes.CERRADO)
+            .sort(-MesControl.mes)
+            .limit(1)
+            .to_list()
+        )
+        mc = got[0] if got else None
+    else:
+        mc = await MesControl.find_one(
+            MesControl.mes == f"{mes}-01", MesControl.estado == EstadoMes.CERRADO
+        )
+    if mc is None:
+        return None
+    rubro_aj = await _rubro_ajuste()
+    aprobado = await _aprobado_mes(mc.id)
+    if aprobado == 0:
+        return None
+    return PresupuestoMes(
+        mes=mc.mes[:7],
+        gasto_real=await _gasto_real_mes(mc.id, rubro_aj.id),
+        presupuesto_aprobado=aprobado,
+    )
