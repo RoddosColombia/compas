@@ -4,12 +4,13 @@
 Se arranca con:  python -m app.jobs.scheduler
 y SOLO debe correr con RUN_SCHEDULER=true (worker de 1 instancia).
 
-Sprint 0, Sesión 1: el scheduler arranca VACÍO (sin jobs). Los 8 jobs
-financieros (recordatorio de carga 8:30, snapshot diario de caja, recálculo de
-sugeridos, alertas IVA/vencimientos, reaper de cargas, dump nocturno,
-archivado mensual, verificación referencial) se registran en sprints
-posteriores. Todos serán idempotentes; jobstore en Mongo; coalesce=True y
-misfire_grace_time por job; heartbeat a Better Stack por job (STACK §2, N-04).
+Primer job registrado: `vigilante_paquete_lunes` (lunes 7:00, paquete del
+comité — FABS proactivo). Los demás jobs financieros (recordatorio de carga
+8:30, snapshot diario de caja, recálculo de sugeridos, alertas IVA/vencimientos,
+reaper de cargas, dump nocturno, archivado mensual, verificación referencial)
+se registran en sprints posteriores. Todos idempotentes; jobstore en Mongo;
+coalesce=True y misfire_grace_time por job; heartbeat a Better Stack por job
+(STACK §2, N-04).
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ def ensure_worker_context(settings: Settings) -> None:
 
 def build_scheduler():
     """Construye el AsyncIOScheduler (import perezoso para no cargar APScheduler
-    en los tests del contrato del flag). Sin jobs todavía."""
+    en los tests del contrato del flag) y registra el job del paquete del lunes."""
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     scheduler = AsyncIOScheduler(timezone="America/Bogota")
@@ -74,7 +75,9 @@ def main() -> None:
     scheduler = build_scheduler()
     scheduler.start()
     logger.info(
-        "compas-jobs arriba (0 jobs registrados — Sesión 1). TZ=%s", settings.tz
+        "compas-jobs arriba (%d jobs registrados). TZ=%s",
+        len(scheduler.get_jobs()),
+        settings.tz,
     )
 
     import asyncio

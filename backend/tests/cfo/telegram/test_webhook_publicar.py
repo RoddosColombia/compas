@@ -104,6 +104,36 @@ async def test_revisor_publica_difunde_a_todo_el_comite(db, audit_col, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_publicar_reintentado_no_redifunde(db, audit_col, monkeypatch):
+    """Paridad de dedup con el Q&A: si Telegram RE-entrega el mismo update_id del
+    comando 'publicar', la 2ª pasada NO vuelve a difundir a todo el comité —
+    reenvía la confirmación previa. Cierra el hallazgo Important de la review final."""
+    monkeypatch.setenv("VIGILANTE_REVISOR_TELEGRAM_ID", "999")
+    await _sembrar_vinculo(999, "u_revisor")
+    await _sembrar_vinculo(888, "u_comite")
+    await _sembrar_borrador()
+
+    tg = FakeTg()
+    update = {
+        "update_id": 77,
+        "message": {"from": {"id": 999}, "chat": {"id": 999}, "text": "publicar"},
+    }
+    await webhook.procesar_update(update, cliente_telegram=tg)
+    n_difusiones_1 = sum(1 for _, t in tg.enviados if t == "EL PAQUETE")
+    assert n_difusiones_1 == 2  # 1ª vez: difunde a todo el comité
+
+    # Telegram re-entrega EXACTAMENTE el mismo update_id
+    await webhook.procesar_update(update, cliente_telegram=tg)
+    n_difusiones_2 = sum(1 for _, t in tg.enviados if t == "EL PAQUETE")
+    assert n_difusiones_2 == 2  # NO re-difundió (sigue en 2, no 4)
+    # el revisor recibe de nuevo la confirmación previa (no silencioso)
+    confirmaciones = [
+        t for c, t in tg.enviados if c == 999 and "publicado al comité" in t
+    ]
+    assert len(confirmaciones) == 2
+
+
+@pytest.mark.asyncio
 async def test_publicar_sin_borrador_avisa(db, audit_col, monkeypatch):
     monkeypatch.setenv("VIGILANTE_REVISOR_TELEGRAM_ID", "999")
     await _sembrar_vinculo(999, "u_revisor")

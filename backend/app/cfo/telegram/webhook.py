@@ -44,10 +44,11 @@ async def _audit_soft(evento, entidad_id: str, metadata: dict) -> None:
 
 async def _publicar_paquete(
     chat_id: int, cliente_telegram: ClienteTelegramProto
-) -> None:
+) -> str:
     """Difunde el último borrador a todo el comité (todos los vínculos) y lo marca
     `publicado` DESPUÉS de difundir. `cliente_telegram.enviar` traga sus propios
-    errores de red, así que el loop de difusión no revienta a medio camino."""
+    errores de red, así que el loop de difusión no revienta a medio camino.
+    Devuelve el texto de confirmación enviado al revisor (para dedup del comando)."""
     borradores = await (
         PaqueteVigilante.find(PaqueteVigilante.estado == "borrador")
         .sort(-PaqueteVigilante.generado_at)
@@ -56,10 +57,9 @@ async def _publicar_paquete(
     )
     pq = borradores[0] if borradores else None
     if pq is None:
-        await cliente_telegram.enviar(
-            chat_id, "No hay un paquete pendiente para publicar."
-        )
-        return
+        msg = "No hay un paquete pendiente para publicar."
+        await cliente_telegram.enviar(chat_id, msg)
+        return msg
 
     vinculos_all = await repositorio.listar_vinculos()
     for v in vinculos_all:
@@ -75,9 +75,9 @@ async def _publicar_paquete(
         {"semana": pq.semana, "n_destinatarios": len(vinculos_all)},
     )
 
-    await cliente_telegram.enviar(
-        chat_id, f"✅ Paquete publicado al comité ({len(vinculos_all)} destinatarios)."
-    )
+    msg = f"✅ Paquete publicado al comité ({len(vinculos_all)} destinatarios)."
+    await cliente_telegram.enviar(chat_id, msg)
+    return msg
 
 
 def _formatear(resp) -> str:
@@ -123,25 +123,31 @@ async def procesar_update(
         )
         return
 
+    hilo = await repositorio.obtener_hilo(user_id)
+    # Dedup por update_id ANTES de bifurcar — cubre por igual el Q&A y el comando
+    # 'publicar' (que también difunde un efecto de una sola vez a todo el comité).
+    # LIMITACIÓN ACEPTADA (piloto, flag off): es check-then-set (no hay claim atómico).
+    # Si Telegram RE-entrega el mismo update_id mientras la 1ª petición sigue en vuelo
+    # (LLM/difusión más lentos que el timeout de entrega de Telegram), ambas pasan
+    # es_reintento==False → doble efecto. NO afecta la garantía anti-alucinación.
+    # Endurecimiento futuro: reclamar el update_id de forma atómica (update condicional)
+    # ANTES de ejecutar el efecto.
+    if hilos.es_reintento(hilo, update_id):
+        # reintento de Telegram: reenvía la respuesta previa (B-1/B-2, no silencioso)
+        if hilo.ultimo_envio:
+            await cliente_telegram.enviar(chat_id, hilo.ultimo_envio)
+        return
+
     es_comando_publicar = (
         texto.strip().lower() == "publicar"
         and telegram_id == config.vigilante_revisor_telegram_id()
     )
     if es_comando_publicar:
-        await _publicar_paquete(chat_id, cliente_telegram)
-        return
-
-    hilo = await repositorio.obtener_hilo(user_id)
-    # LIMITACIÓN ACEPTADA (piloto, flag off): la deduplicación por update_id es
-    # check-then-set (no hay claim atómico). Si Telegram RE-entrega el mismo update_id
-    # mientras la 1ª petición sigue en el LLM (LLM más lento que el timeout de entrega
-    # de Telegram), ambas pasan es_reintento==False → doble respuesta + doble costo LLM.
-    # NO afecta la garantía anti-alucinación. Endurecimiento futuro: reclamar el
-    # update_id de forma atómica (update condicional) ANTES de llamar al LLM.
-    if hilos.es_reintento(hilo, update_id):
-        # reintento de Telegram: reenvía la respuesta previa (B-1/B-2, no silencioso)
-        if hilo.ultimo_envio:
-            await cliente_telegram.enviar(chat_id, hilo.ultimo_envio)
+        # 'publicar' NO llama al LLM: registrar SOLO el dedup (sin tocar los turnos que
+        # se re-alimentan al modelo) para que un reintento reenvíe la confirmación en
+        # vez de re-difundir.
+        envio = await _publicar_paquete(chat_id, cliente_telegram)
+        await hilos.registrar_dedup(user_id, update_id, envio)
         return
 
     historial = hilos.historial_para_loop(hilo, config.cfo_hilo_ventana())

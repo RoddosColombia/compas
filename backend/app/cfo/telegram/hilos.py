@@ -46,3 +46,20 @@ async def registrar_turno(
         actualizado_at=now_utc(),
     )
     await repositorio.guardar_hilo(nuevo)
+
+
+async def registrar_dedup(user_id: str, update_id: int, envio: str) -> None:
+    """Persiste SOLO los campos de dedup (último update_id + último envío) sin tocar
+    los turnos conversacionales. Para comandos que NO pasan por el LLM (p. ej.
+    'publicar'): así un reintento de Telegram reenvía la confirmación previa en vez
+    de re-ejecutar el efecto (re-difundir), y sin inyectar el comando en el historial
+    que se re-alimenta al modelo (que mantiene solo pares user/assistant CRUDOS)."""
+    hilo = await repositorio.obtener_hilo(user_id)
+    nuevo = HiloCFO(
+        user_id=user_id,
+        turnos=hilo.turnos if hilo else [],
+        ultimo_update_id=update_id,
+        ultimo_envio=envio,
+        actualizado_at=now_utc(),
+    )
+    await repositorio.guardar_hilo(nuevo)
