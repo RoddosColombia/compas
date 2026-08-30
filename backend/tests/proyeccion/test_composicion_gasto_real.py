@@ -126,3 +126,49 @@ async def test_composicion_sin_meses_409(db):
     with pytest.raises(svc.ProyeccionError) as exc:
         await svc.composicion_gasto_real(ventana="curso")
     assert exc.value.status == 409
+
+
+async def test_composicion_acumulado_tres_meses_cronologico_y_suma(db):
+    # 'acumulado' = últimos 3 MESES CON MOVIMIENTOS (no "año corrido" — ese label
+    # era incorrecto y ya se corrigió en tools.py/prompt.py). Sembramos mayo, junio
+    # y julio (julio ya viene CERRADO de la fixture `db`) cada uno con movimientos
+    # en grupos distintos, y verificamos orden cronológico ascendente + suma total.
+    mc_may = await MesControl(
+        mes="2026-05-01",
+        estado=EstadoMes.CERRADO,
+        saldo_inicial_caja=Decimal("0"),
+    ).insert()
+    mc_jun = await MesControl(
+        mes="2026-06-01",
+        estado=EstadoMes.CERRADO,
+        saldo_inicial_caja=Decimal("0"),
+    ).insert()
+
+    await _tx(mc_may.id, "2026-05-10", "1000000", db["nomina_id"], "COMP-MAY-1")
+    await _tx(mc_jun.id, "2026-06-10", "2000000", db["deudas_id"], "COMP-JUN-1")
+    await _tx(db["jul_id"], "2026-07-05", "3000000", db["nomina_id"], "COMP-JUL-1")
+
+    c = await svc.composicion_gasto_real(ventana="acumulado")
+
+    assert c.meses == ["2026-05", "2026-06", "2026-07"]  # cronológico ascendente
+    assert c.por_grupo["nomina"] == Decimal("4000000")  # 1M (may) + 3M (jul)
+    assert c.por_grupo["deudas_obligaciones"] == Decimal("2000000")  # jun
+    assert c.total == Decimal("6000000")  # suma de los 3 meses
+
+
+async def test_composicion_curso_solo_ultimo_mes_con_movimientos(db):
+    # 'curso' = el ÚLTIMO mes CON MOVIMIENTOS (no "mes en curso" del calendario);
+    # aunque haya un mes anterior (mayo) con movimientos, 'curso' debe devolver
+    # solo julio (el más reciente con Transaccion) e ignorar mayo por completo.
+    mc_may = await MesControl(
+        mes="2026-05-01",
+        estado=EstadoMes.CERRADO,
+        saldo_inicial_caja=Decimal("0"),
+    ).insert()
+    await _tx(mc_may.id, "2026-05-10", "1000000", db["nomina_id"], "COMP-MAY-2")
+    await _tx(db["jul_id"], "2026-07-05", "3000000", db["nomina_id"], "COMP-JUL-2")
+
+    c = await svc.composicion_gasto_real(ventana="curso")
+
+    assert c.meses == ["2026-07"]
+    assert c.por_grupo["nomina"] == Decimal("3000000")  # solo julio, mayo excluido
