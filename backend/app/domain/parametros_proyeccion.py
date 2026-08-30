@@ -69,7 +69,7 @@ class ParametrosProyeccion(Document):
     # colocación
     motos_base: int = Field(ge=0)
     crec_pct_mensual: Money  # fracción mensual encadenada
-    horizonte_meses: int = Field(gt=0, le=180)  # tope 15 años
+    horizonte_meses: int = Field(gt=0, le=240)  # tope 20 años (RF-F10, era 180)
     # FIX-L: rampa de colocación REAL por mes (YYYY-MM → unidades enteras ≥0). Aditivo:
     # {} → sin rampa (comportamiento de hoy). El servicio la mapea al `rampa` nativo del
     # motor (prefijo contiguo desde mes_inicio; el post-rampa reinicia en motos_base).

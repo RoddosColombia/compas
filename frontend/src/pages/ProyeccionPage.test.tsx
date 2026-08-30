@@ -7,7 +7,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MesProyeccion, Proyeccion } from "@/lib/proyeccion";
 import ProyeccionPage from "@/pages/ProyeccionPage";
@@ -67,11 +67,18 @@ const PROY: Proyeccion = {
   meses: MESES,
 };
 
-const mocks = vi.hoisted(() => ({ obtenerProyeccion: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  obtenerProyeccion: vi.fn(),
+  obtenerProyeccionAgregada: vi.fn(),
+}));
 
 vi.mock("@/lib/proyeccion", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/proyeccion")>();
-  return { ...real, obtenerProyeccion: mocks.obtenerProyeccion };
+  return {
+    ...real,
+    obtenerProyeccion: mocks.obtenerProyeccion,
+    obtenerProyeccionAgregada: mocks.obtenerProyeccionAgregada,
+  };
 });
 
 // ENTREGA 3 pieza 1: el techo de gasto se gatilla con proyeccion:gestionar y usa el
@@ -110,6 +117,10 @@ function renderPage() {
     </QueryClientProvider>,
   );
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("ProyeccionPage — F1.1 §2", () => {
   it("el juicio pide horizonte largo aunque la ventana sea 18 m", async () => {
@@ -201,8 +212,9 @@ describe("ProyeccionPage — F1.1 §2", () => {
     renderPage();
     await screen.findByText("Piso de caja");
     expect(screen.queryByRole("button", { name: "Limpiar" })).toBeNull();
+    // RF-F10 (2026-08-30): «todo» pasó de 180 → 240 meses en OPCIONES_HORIZONTE.
     fireEvent.change(screen.getByLabelText(/Horizonte/), {
-      target: { value: "180" },
+      target: { value: "240" },
     });
     const limpiar = await screen.findByRole("button", { name: "Limpiar" });
     fireEvent.click(limpiar);
@@ -297,5 +309,78 @@ describe("ProyeccionPage — F1.1 §2", () => {
     await screen.findByText("Piso de caja");
     expect(screen.queryByText(/Origen de cada cifra/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Mes en curso/i)).not.toBeInTheDocument();
+  });
+
+  // RF-F10 · Fundacional §2 — Horizonte largo con agregación.
+
+  it("con horizonte < 60 meses no muestra la tarjeta de vista agregada", async () => {
+    renderPage();
+    await screen.findByText("Piso de caja");
+    // default = 18 meses; la tarjeta aparece solo desde 60.
+    expect(
+      screen.queryByText("Horizonte largo — vista agregada"),
+    ).toBeNull();
+    expect(mocks.obtenerProyeccionAgregada).not.toHaveBeenCalled();
+  });
+
+  it("con horizonte ≥ 60 meses muestra la tarjeta y llama al endpoint agregado", async () => {
+    mocks.obtenerProyeccionAgregada.mockResolvedValue({
+      escenario: "base",
+      granularidad: "anual",
+      caja_minima: "125000000.00",
+      caja_atencion: null,
+      periodos: [
+        {
+          etiqueta: "2027",
+          desde: "2027-01",
+          hasta: "2027-12",
+          meses_en_periodo: 12,
+          caja_final: "135000000.00",
+          piso: "90000000.00",
+          flujo: "-50000000.00",
+          ingreso_bruto: "420000000.00",
+          egresos: "-470000000.00",
+          motos: 137,
+        },
+      ],
+    });
+    renderPage();
+    await screen.findByText("Piso de caja");
+    fireEvent.change(screen.getByLabelText(/Horizonte/), {
+      target: { value: "60" },
+    });
+    // La tarjeta aparece y el mock recibe granularidad="anual" (default).
+    expect(
+      await screen.findByText("Horizonte largo — vista agregada"),
+    ).toBeInTheDocument();
+    expect(mocks.obtenerProyeccionAgregada).toHaveBeenCalledWith(
+      "anual",
+      expect.objectContaining({ horizonteMeses: 60 }),
+    );
+    // La fila del periodo muestra la etiqueta y las motos totales.
+    expect(await screen.findByTestId("periodo-2027")).toBeInTheDocument();
+    expect(screen.getByText("137")).toBeInTheDocument();
+  });
+
+  it("cambiar granularidad a Trimestre re-consulta con la nueva granularidad", async () => {
+    mocks.obtenerProyeccionAgregada.mockResolvedValue({
+      escenario: "base",
+      granularidad: "anual",
+      caja_minima: "125000000.00",
+      caja_atencion: null,
+      periodos: [],
+    });
+    renderPage();
+    await screen.findByText("Piso de caja");
+    fireEvent.change(screen.getByLabelText(/Horizonte/), {
+      target: { value: "120" },
+    });
+    await screen.findByText("Horizonte largo — vista agregada");
+    fireEvent.click(screen.getByRole("button", { name: /trimestre/i }));
+    // Se pidió la agregación con "trimestre".
+    expect(mocks.obtenerProyeccionAgregada).toHaveBeenCalledWith(
+      "trimestre",
+      expect.objectContaining({ horizonteMeses: 120 }),
+    );
   });
 });

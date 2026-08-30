@@ -22,6 +22,8 @@ export interface FiltroSelect {
 /** Opciones de horizonte del producto (§9): 18 m default · 3 años · 5 años · todo. */
 // SUP-1 (CEO 2026-08-17): granularidad CORTA para leer el arranque del trimestre y
 // del año (3/6/9/12/15) sin perder las ventanas largas de decisión estructural.
+// RF-F10 · Fundacional §2 (2026-08-30): «todo» sube de 180 → 240 meses (20 años).
+// El horizonte largo con agregación por año/trimestre vive en `/proyeccion/agregada`.
 export const OPCIONES_HORIZONTE: OpcionFiltro[] = [
   { valor: "3", label: "3 meses" },
   { valor: "6", label: "6 meses" },
@@ -31,7 +33,8 @@ export const OPCIONES_HORIZONTE: OpcionFiltro[] = [
   { valor: "18", label: "18 meses" },
   { valor: "36", label: "3 años" },
   { valor: "60", label: "5 años" },
-  { valor: "180", label: "todo (15 años)" },
+  { valor: "120", label: "10 años" },
+  { valor: "240", label: "todo (20 años)" },
 ];
 
 export const HORIZONTE_DEFAULT = "18";

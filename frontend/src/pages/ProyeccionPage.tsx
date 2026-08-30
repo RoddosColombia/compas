@@ -24,6 +24,7 @@ import { TechoGastoCard } from "@/components/proyeccion/TechoGastoCard";
 import { TechoVentanaCard } from "@/components/proyeccion/TechoVentanaCard";
 import { VersionDiffCallout } from "@/components/proyeccion/VersionDiffCallout";
 import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
 import { ChartCard } from "@/components/ui/chart-card";
 import { ErrorEstado } from "@/components/ui/error-estado";
@@ -46,8 +47,11 @@ import {
   type ArranqueCaja,
   ESCENARIO_LABEL,
   type Escenario,
+  type GranularidadAgregada,
+  type PeriodoAgregado,
   type Proyeccion,
   obtenerProyeccion,
+  obtenerProyeccionAgregada,
   obtenerVersionDiff,
 } from "@/lib/proyeccion";
 
@@ -228,6 +232,152 @@ export default function ProyeccionPage() {
           }
         />
       )}
+
+      {/* RF-F10 · Fundacional §2 — Horizonte largo con agregación. Mostrar 120+
+          puntos mensuales es ruido; con la vista por trimestre/año la caja de
+          largo plazo se lee. Solo se ofrece cuando la ventana ≥ 60 meses. */}
+      {horizonte >= 60 && (
+        <HorizonteLargoCard escenario={escenario} horizonte={horizonte} />
+      )}
+    </div>
+  );
+}
+
+function HorizonteLargoCard({
+  escenario,
+  horizonte,
+}: {
+  escenario: Escenario;
+  horizonte: number;
+}) {
+  const [granularidad, setGranularidad] =
+    useState<GranularidadAgregada>("anual");
+  const q = useQuery({
+    queryKey: ["proyeccion", "agregada", escenario, horizonte, granularidad],
+    queryFn: () =>
+      obtenerProyeccionAgregada(granularidad, {
+        escenario,
+        horizonteMeses: horizonte,
+      }),
+  });
+  return (
+    <Card className="flex flex-col gap-3 p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <CardTitle>Horizonte largo — vista agregada</CardTitle>
+        <div className="flex items-center gap-1">
+          <GranularidadChip
+            label="Trimestre"
+            active={granularidad === "trimestre"}
+            onClick={() => setGranularidad("trimestre")}
+          />
+          <GranularidadChip
+            label="Año"
+            active={granularidad === "anual"}
+            onClick={() => setGranularidad("anual")}
+          />
+        </div>
+      </div>
+      {q.isLoading && <Cargando variante="tabla" />}
+      {q.isError && (
+        <ErrorEstado
+          mensaje="No se pudo cargar la vista agregada."
+          onReintentar={() => void q.refetch()}
+        />
+      )}
+      {q.data && <TablaAgregada periodos={q.data.periodos} />}
+    </Card>
+  );
+}
+
+function GranularidadChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        active
+          ? "rounded-full bg-cyan/15 px-3 py-1 font-sans text-apoyo font-semibold text-cyan"
+          : "rounded-full bg-surface-muted px-3 py-1 font-sans text-apoyo text-ink-soft hover:bg-hairline"
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+function TablaAgregada({ periodos }: { periodos: PeriodoAgregado[] }) {
+  if (periodos.length === 0) {
+    return (
+      <p className="font-sans text-cuerpo text-ink-soft">
+        Sin datos para agregar en el horizonte pedido.
+      </p>
+    );
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full font-sans text-sm">
+        <thead>
+          <tr className="border-b border-hairline text-left text-ink-faint">
+            <th className="px-3 py-2 font-semibold">Periodo</th>
+            <th className="px-3 py-2 text-right font-semibold">Caja al cierre</th>
+            <th className="px-3 py-2 text-right font-semibold">
+              Piso del periodo
+            </th>
+            <th className="px-3 py-2 text-right font-semibold">Flujo neto</th>
+            <th className="px-3 py-2 text-right font-semibold">Ingreso bruto</th>
+            <th className="px-3 py-2 text-right font-semibold">Egresos</th>
+            <th className="px-3 py-2 text-right font-semibold">Motos</th>
+          </tr>
+        </thead>
+        <tbody>
+          {periodos.map((p) => (
+            <tr
+              key={p.etiqueta}
+              className="border-b border-hairline/60 last:border-0"
+              data-testid={`periodo-${p.etiqueta}`}
+            >
+              <td className="px-3 py-2 font-medium text-ink">
+                {p.etiqueta}
+                {p.meses_en_periodo < 12 && (
+                  <span
+                    className="ml-1.5 font-sans text-apoyo text-ink-faint"
+                    title={`Periodo parcial (${p.meses_en_periodo} meses)`}
+                  >
+                    · parcial
+                  </span>
+                )}
+              </td>
+              <td className="tabular px-3 py-2 text-right text-ink-soft">
+                {formatCOPCompact(p.caja_final)}
+              </td>
+              <td className="tabular px-3 py-2 text-right text-ink-soft">
+                {formatCOPCompact(p.piso)}
+              </td>
+              <td className="tabular px-3 py-2 text-right text-ink-soft">
+                {formatCOPCompact(p.flujo)}
+              </td>
+              <td className="tabular px-3 py-2 text-right text-ink-soft">
+                {formatCOPCompact(p.ingreso_bruto)}
+              </td>
+              <td className="tabular px-3 py-2 text-right text-ink-soft">
+                {formatCOPCompact(p.egresos)}
+              </td>
+              <td className="tabular px-3 py-2 text-right text-ink-soft">
+                {p.motos}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

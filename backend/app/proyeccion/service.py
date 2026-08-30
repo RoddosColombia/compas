@@ -70,7 +70,7 @@ from app.proyeccion.solvers import (
 )
 from app.proyeccion.valles import Valle, detectar_valles
 
-HORIZONTE_MAX = 180  # 15 años (tope de infraestructura)
+HORIZONTE_MAX = 240  # 20 años (RF-F10 · Fundacional §2, subido de 180)
 _log = logging.getLogger(__name__)
 
 
@@ -860,6 +860,46 @@ async def proyectar_vigente(
         horizonte_meses=horizonte_meses,
         caja_inicial_override=caja_inicial_override,
     )
+
+
+async def proyectar_agregado(
+    *,
+    granularidad: str,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+) -> dict:
+    """RF-F10 · Fundacional §2 — Serie proyectada agregada por trimestre/año.
+
+    Corre el pipeline completo `proyectar → E1 → D2` y colapsa la serie mensual
+    con `agregar_por_periodo` (capa post-motor pura; golden-master intacto). El
+    endpoint `GET /proyeccion/agregada?granularidad=trimestre|anual` la expone.
+    Para la serie MENSUAL, seguir usando `GET /proyeccion` (compat total).
+    """
+    from app.proyeccion.agregacion import agregar_por_periodo
+
+    if granularidad not in ("trimestre", "anual"):
+        raise ProyeccionError(
+            f"granularidad no soportada: {granularidad!r} "
+            "(usa 'trimestre' o 'anual'; la mensual va por GET /proyeccion)",
+            422,
+        )
+    params, modelos = await _cargar_config_vigente()
+    r, caja_min, _, _, _, caja_atn = await _resultado_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+    )
+    periodos = agregar_por_periodo(r.meses, granularidad=granularidad)
+    return {
+        "escenario": escenario,
+        "granularidad": granularidad,
+        "caja_minima": money_str(caja_min),
+        "caja_atencion": money_str(caja_atn) if caja_atn is not None else None,
+        "periodos": periodos,
+    }
 
 
 async def proyectar_preview(
