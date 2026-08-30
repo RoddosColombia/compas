@@ -34,12 +34,27 @@ export interface CausaValle {
 // (unidades) es un stub honesto (disponible=false) porque exige el pipeline
 // completo (Mongo por iteración) que vive en FABS: la UI muestra un enlace
 // en vez de un cero engañoso.
+// RF-F7 · Fundacional §2 — "recomendaciones por impacto: reparto del recorte
+// por rubro" (motor corrido al revés). Solo se adjunta a `recorte_gasto` cuando
+// la palanca es alcanzable. Ordenado por gasto DESC. Todos los montos como
+// string COP (regla 1); `pct_de_su_gasto` es un decimal como string (0.5000 =
+// 50%, tope de la regla del 50% del backend).
+export interface RecomendacionRubro {
+  rubro_id: string;
+  rubro_nombre: string;
+  monto_recortar: string;
+  gasto_actual: string;
+  pct_de_su_gasto: string;
+}
+
 export interface PalancaMonto {
   monto: string;
   unidad: "COP/mes";
   alcanzable: boolean;
   referencia: string;
   mensaje: string;
+  // RF-F7 — presente solo en `recorte_gasto` cuando `alcanzable && monto > 0`.
+  recomendaciones_por_rubro?: RecomendacionRubro[];
 }
 
 export interface PalancaUnidades {
