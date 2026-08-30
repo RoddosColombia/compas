@@ -154,6 +154,7 @@ DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "motos_para_evitar_umbral": _motos_para_evitar_umbral,
     "simular_palanca": _simular_palanca,
     "tendencia_real": _tendencia_real,
+    "rumbo_caja": tendencias.rumbo_caja,
 }
 
 TOOLS_SCHEMA: list[dict] = [
@@ -364,6 +365,25 @@ TOOLS_SCHEMA: list[dict] = [
                 },
             },
             "required": ["metrica"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "rumbo_caja",
+        "description": (
+            "¿Vamos en rumbo? Compara la caja real de los últimos dos meses "
+            "con hacia dónde apunta la proyección vigente (p. ej. '¿voy en "
+            "rumbo?' o '¿hacia dónde va la caja?'). Devuelve caja_real_ult y "
+            "caja_real_previo (los dos últimos meses de caja real), "
+            "delta_caja_rumbo (la diferencia entre ambos, con la dirección "
+            "sube/baja/estable en su evidencia) y piso_proyectado (el piso de "
+            "caja de la proyección vigente, con el mes de quiebre del umbral "
+            "en su evidencia si lo cruza). Sin configuración o sin historia de "
+            "actuals, disponible=false. Es de solo lectura: nunca escribe nada."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
             "additionalProperties": False,
         },
     },

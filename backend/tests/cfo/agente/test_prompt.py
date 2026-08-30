@@ -141,3 +141,49 @@ def test_prompt_tendencia_reitera_no_porcentajes():
     assert idx != -1
     bloque = p[idx:]
     assert "%" in bloque or "porcentaje" in bloque
+
+
+def test_prompt_menciona_rumbo_caja():
+    # inc4 rebanada 3 (sub-3b): el modelo debe saber que rumbo_caja existe para
+    # "¿voy en rumbo?/¿hacia dónde va la caja?" -- si el prompt no la nombra, el
+    # modelo nunca la invoca (tool sin parámetros, igual que caja_disponible_hoy).
+    p = SYSTEM_PROMPT.lower()
+    assert "rumbo_caja" in p
+    assert "rumbo" in p or "umbral" in p
+
+
+def test_prompt_exige_citar_los_tokens_de_rumbo_caja():
+    # rumbo_caja devuelve CUATRO conceptos nombrados en la misma llamada; el
+    # modelo debe citar cada uno con su propio token, nunca resumir en una cifra
+    # propia.
+    p = SYSTEM_PROMPT
+    for token in (
+        "[[caja_real_ult]]",
+        "[[caja_real_previo]]",
+        "[[piso_proyectado]]",
+        "[[delta_caja_rumbo]]",
+    ):
+        assert token in p
+
+
+def test_prompt_rumbo_relata_direccion_desde_ref_no_la_calcula():
+    # La dirección (sube/baja/estable) del delta_caja_rumbo ya viene calculada
+    # por COMPAS en su evidencia `ref` -- el prompt debe decirle al modelo que la
+    # RELATE, nunca que la infiera comparando las cifras a ojo (mismo contrato
+    # que tendencia_real).
+    p = SYSTEM_PROMPT.lower()
+    idx = p.find("rumbo_caja")
+    assert idx != -1
+    bloque = p[idx:]
+    assert "direcci" in bloque  # "dirección"/"direccion"
+    assert "ref" in bloque
+
+
+def test_prompt_rumbo_reitera_no_porcentajes():
+    # Reitera cerca del bloque de rumbo_caja la prohibición de la regla 7 (ningún
+    # % calculado por el modelo), no solo en el bloque original.
+    p = SYSTEM_PROMPT.lower()
+    idx = p.find("rumbo_caja")
+    assert idx != -1
+    bloque = p[idx:]
+    assert "%" in bloque or "porcentaje" in bloque
