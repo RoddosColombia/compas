@@ -214,6 +214,148 @@ async def test_escenario_conteo_crudo_de_motos_reintenta_y_abstiene(
     assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
 
 
+# --- inc4 rebanada 2 (Task 5): palancas de crédito end-to-end (simular_palanca) ---
+# A diferencia de los e2e de escenario (que monkeypatchean `loop.ejecutar_tool`), aquí
+# se deja correr el DISPATCH/tools.py REAL (parseo de `_kwargs_palanca`, enum de
+# palanca/modelo, Decimal de nuevo_valor) y solo se fakea la capa de cálculo
+# (`app.cfo.calc.palanca.impacto_palanca`) — así el test también cubre el wiring real
+# tool→calc que las tareas 2/3 dejaron, no solo el servicio de verificación/sustitución.
+_PALANCA_PISO_SIN = ResultadoCFO(
+    concepto="piso_sin",
+    valor=Decimal("60000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.impacto_palanca_raw", fecha_corte=None, ref="2026-08"
+    ),
+)
+_PALANCA_PISO_CON = ResultadoCFO(
+    concepto="piso_con",
+    valor=Decimal("75000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.impacto_palanca_raw",
+        fecha_corte=None,
+        ref="quiebre:nunca",
+    ),
+)
+_PALANCA_IMPACTO = ResultadoCFO(
+    concepto="impacto",
+    valor=Decimal("15000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.impacto_palanca_raw", fecha_corte=None, ref="2026-08"
+    ),
+)
+
+
+def _entrada_palanca() -> dict:
+    return {"palanca": "plazo_semanas", "nuevo_valor": "78", "modelo": "todos"}
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_publica_valores_sustituidos(monkeypatch, _audit):
+    """E2E de la garantía anti-alucinación con la tool de palancas (inc4 rebanada 2):
+    el modelo pide `simular_palanca`, el DISPATCH/tools.py REAL corre (parsea la
+    entrada, llama `palanca.impacto_palanca` por atributo de módulo), la calc está
+    fakeada con 3 `ResultadoCFO` conocidos, el modelo cita los 3 tokens
+    ([[piso_sin]]/[[piso_con]]/[[impacto]]), el verificador los deja pasar (ningún
+    crudo, los 3 tokens con evidencia de este turno) y el servicio sustituye — el
+    texto publicado trae los VALORES formateados, nunca `[[token]]` crudo."""
+
+    async def fake_impacto_palanca(*, palanca, nuevo_valor, modelo="todos"):
+        assert palanca == "plazo_semanas"
+        assert nuevo_valor == Decimal("78")
+        assert modelo == "todos"
+        return [_PALANCA_PISO_SIN, _PALANCA_PISO_CON, _PALANCA_IMPACTO]
+
+    monkeypatch.setattr("app.cfo.calc.palanca.impacto_palanca", fake_impacto_palanca)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [
+                BloqueToolUse(
+                    id="t1", nombre="simular_palanca", input=_entrada_palanca()
+                )
+            ],
+            10,
+            6,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [
+                BloqueTexto(
+                    texto=(
+                        "Sin el cambio tu piso queda en [[piso_sin]]; con el "
+                        "plazo a 78 semanas queda en [[piso_con]], un impacto de "
+                        "[[impacto]]."
+                    )
+                )
+            ],
+            8,
+            20,
+        ),
+    ]
+    r = await srv.consultar(
+        "¿qué pasa si el plazo pasa a 78 semanas en todos los modelos?",
+        actor_id="u1",
+        cliente=ClienteFake(guiones),
+    )
+    assert r.abstuvo is False
+    assert "[[" not in r.texto  # ningún token crudo se filtró
+    assert "$60.000.000" in r.texto
+    assert "$75.000.000 (no cruzas el umbral)" in r.texto
+    assert "$15.000.000" in r.texto
+    assert {"piso_sin", "piso_con", "impacto"}.issubset(set(r.conceptos_usados))
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_cifra_cruda_reintenta_y_abstiene(monkeypatch, _audit):
+    """Si el modelo escribe el impacto CRUDO ("$15.000.000") en vez de citar
+    [[impacto]], el verificador lo atrapa, dispara EL reintento correctivo (D-3: uno
+    solo) y, si el modelo reincide, el servicio se abstiene con
+    `motivo='verificacion'` — jamás publica ni entra en un loop."""
+
+    async def fake_impacto_palanca(*, palanca, nuevo_valor, modelo="todos"):
+        return [_PALANCA_PISO_SIN, _PALANCA_PISO_CON, _PALANCA_IMPACTO]
+
+    monkeypatch.setattr("app.cfo.calc.palanca.impacto_palanca", fake_impacto_palanca)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [
+                BloqueToolUse(
+                    id="t1", nombre="simular_palanca", input=_entrada_palanca()
+                )
+            ],
+            5,
+            3,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="El impacto sería de $15.000.000 al mes.")],
+            4,
+            8,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Perdón, serían $15.000.000 entonces.")],
+            4,
+            6,
+        ),
+    ]
+    fake = ClienteFake(guiones)
+    r = await srv.consultar(
+        "¿qué pasa si el plazo pasa a 78 semanas en todos los modelos?",
+        actor_id="u1",
+        cliente=fake,
+    )
+    assert r.abstuvo is True and r.motivo == "verificacion"
+    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
+
+
 @pytest.mark.asyncio
 async def test_sin_key_abstiene(monkeypatch, _audit):
     monkeypatch.setattr(srv, "crear_cliente", lambda: None)
