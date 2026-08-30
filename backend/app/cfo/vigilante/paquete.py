@@ -30,7 +30,10 @@ _PROMPT_PAQUETE = (
 async def _audit_soft(evento, entidad_id: str, metadata: dict) -> None:
     try:
         await emit_audit(
-            evento, entidad="vigilante", entidad_id=entidad_id, actor_id="vigilante",
+            evento,
+            entidad="vigilante",
+            entidad_id=entidad_id,
+            actor_id="vigilante",
             metadata=metadata,
         )
     except Exception:  # noqa: BLE001 — job proactivo: no bloquear por fallo de auditoría
@@ -81,7 +84,8 @@ async def generar_y_entregar_paquete() -> PaqueteVigilante | None:
     if cliente_tg is not None:
         await cliente_tg.enviar(
             revisor,
-            "📋 Borrador del paquete del lunes\n\n" + resp.texto
+            "📋 Borrador del paquete del lunes\n\n"
+            + resp.texto
             + "\n\nRespondé 'publicar' para difundirlo al comité.",
         )
     return pq

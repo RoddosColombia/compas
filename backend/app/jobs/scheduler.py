@@ -38,8 +38,14 @@ def build_scheduler():
 
     scheduler = AsyncIOScheduler(timezone="America/Bogota")
     scheduler.add_job(
-        _job_paquete_lunes, "cron", day_of_week="mon", hour=7, minute=0,
-        id="vigilante_paquete_lunes", coalesce=True, misfire_grace_time=3600,
+        _job_paquete_lunes,
+        "cron",
+        day_of_week="mon",
+        hour=7,
+        minute=0,
+        id="vigilante_paquete_lunes",
+        coalesce=True,
+        misfire_grace_time=3600,
         replace_existing=True,
     )
     return scheduler

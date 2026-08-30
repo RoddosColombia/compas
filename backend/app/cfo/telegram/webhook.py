@@ -32,7 +32,10 @@ logger = logging.getLogger(__name__)
 async def _audit_soft(evento, entidad_id: str, metadata: dict) -> None:
     try:
         await emit_audit(
-            evento, entidad="vigilante", entidad_id=entidad_id, actor_id="vigilante",
+            evento,
+            entidad="vigilante",
+            entidad_id=entidad_id,
+            actor_id="vigilante",
             metadata=metadata,
         )
     except Exception:  # noqa: BLE001 — no bloquear la difusión por fallo de auditoría
