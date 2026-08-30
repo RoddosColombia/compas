@@ -525,6 +525,164 @@ async def test_tendencia_real_cifra_cruda_reintenta_y_abstiene(monkeypatch, _aud
     assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
 
 
+# --- inc4 rebanada 4 sub-4a (Task 4): composicion_gasto end-to-end (% por token) ---
+# Igual que real_vs_presupuesto/tendencia_real: se deja correr el DISPATCH/tools.py
+# REAL (wrapper `_composicion_gasto` valida `ventana`) y solo se fakea la capa de
+# cálculo (`app.cfo.calc.ratios.composicion_gasto`) -- así el test cubre el wiring
+# real tool->calc, no solo el servicio de verificación/sustitución. EL PUNTO de esta
+# rebanada: probar que abrir el `%` por TOKEN no debilita el control -- un `%` CRUDO
+# que el modelo escriba de todos modos sigue disparando reintento y abstención.
+_COMP_GASTO_TOTAL = ResultadoCFO(
+    concepto="gasto_total_comp",
+    valor=Decimal("5000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.composicion_gasto_real",
+        fecha_corte=None,
+        ref="cerrado:2026-07",
+    ),
+)
+_COMP_COP_NOMINA = ResultadoCFO(
+    concepto="cop_nomina",
+    valor=Decimal("3400000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.composicion_gasto_real",
+        fecha_corte=None,
+        ref="cerrado:2026-07",
+    ),
+)
+_COMP_PCT_NOMINA = ResultadoCFO(
+    concepto="pct_nomina",
+    valor=Decimal("68.0"),
+    unidad="%",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.composicion_gasto_real",
+        fecha_corte=None,
+        ref="cerrado:2026-07",
+    ),
+)
+
+
+def _entrada_composicion() -> dict:
+    return {"ventana": "cerrado"}
+
+
+@pytest.mark.asyncio
+async def test_composicion_gasto_publica_valores_sustituidos(monkeypatch, _audit):
+    """E2E de la garantía anti-alucinación con la tool de composición (inc4
+    rebanada 4, sub-4a): el modelo pide `composicion_gasto`, el DISPATCH/
+    tools.py REAL corre (parsea `ventana`, llama `ratios.composicion_gasto`
+    por atributo de módulo), la calc está fakeada con 3 `ResultadoCFO`
+    conocidos, el modelo cita [[pct_nomina]]/[[cop_nomina]]/
+    [[gasto_total_comp]] -- NUNCA un '%' propio --, el verificador los deja
+    pasar y el servicio sustituye: el texto publicado trae el '%' YA
+    formateado ("68,0%"), nunca `[[token]]` crudo ni un '%' que el modelo
+    haya escrito él mismo."""
+
+    async def fake_composicion_gasto(*, ventana):
+        assert ventana == "cerrado"
+        return [_COMP_GASTO_TOTAL, _COMP_COP_NOMINA, _COMP_PCT_NOMINA]
+
+    monkeypatch.setattr(
+        "app.cfo.calc.ratios.composicion_gasto", fake_composicion_gasto
+    )
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [
+                BloqueToolUse(
+                    id="t1", nombre="composicion_gasto", input=_entrada_composicion()
+                )
+            ],
+            10,
+            6,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [
+                BloqueTexto(
+                    texto=(
+                        "Tu gasto total del mes cerrado fue [[gasto_total_comp]]; "
+                        "la nómina pesó [[cop_nomina]], es decir [[pct_nomina]] "
+                        "de tu gasto."
+                    )
+                )
+            ],
+            8,
+            20,
+        ),
+    ]
+    r = await srv.consultar(
+        "¿qué % de mi gasto es nómina?",
+        actor_id="u1",
+        cliente=ClienteFake(guiones),
+    )
+    assert r.abstuvo is False
+    assert "[[" not in r.texto  # ningún token crudo se filtró
+    assert "$5.000.000" in r.texto
+    assert "$3.400.000" in r.texto
+    assert "68,0%" in r.texto
+    assert "%" in r.texto  # el % sustituido SÍ llega al texto publicado...
+    # ...pero nunca porque el modelo lo haya escrito él mismo (era un token).
+    assert {"gasto_total_comp", "cop_nomina", "pct_nomina"}.issubset(
+        set(r.conceptos_usados)
+    )
+
+
+@pytest.mark.asyncio
+async def test_composicion_gasto_porcentaje_crudo_reintenta_y_abstiene(
+    monkeypatch, _audit
+):
+    """EL TEST CRÍTICO de esta rebanada: si el modelo escribe el % CRUDO
+    ("45%") en vez de citar [[pct_nomina]], el verificador lo atrapa
+    (`_RE_PORCENTAJE`) igual que antes de esta rebanada -- abrir el % por
+    token NO relaja el control sobre un % que el modelo teclea de su propia
+    cuenta. Dispara EL reintento correctivo (D-3: uno solo) y, si el modelo
+    reincide, el servicio se abstiene con `motivo='verificacion'` -- jamás
+    publica un % que no vino de un token."""
+
+    async def fake_composicion_gasto(*, ventana):
+        return [_COMP_GASTO_TOTAL, _COMP_COP_NOMINA, _COMP_PCT_NOMINA]
+
+    monkeypatch.setattr(
+        "app.cfo.calc.ratios.composicion_gasto", fake_composicion_gasto
+    )
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [
+                BloqueToolUse(
+                    id="t1", nombre="composicion_gasto", input=_entrada_composicion()
+                )
+            ],
+            5,
+            3,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="La nómina es 45% de tu gasto.")],
+            4,
+            8,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Perdón, sería 45% entonces.")],
+            4,
+            6,
+        ),
+    ]
+    fake = ClienteFake(guiones)
+    r = await srv.consultar(
+        "¿qué % de mi gasto es nómina?", actor_id="u1", cliente=fake
+    )
+    assert r.abstuvo is True and r.motivo == "verificacion"
+    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
+
+
 @pytest.mark.asyncio
 async def test_sin_key_abstiene(monkeypatch, _audit):
     monkeypatch.setattr(srv, "crear_cliente", lambda: None)

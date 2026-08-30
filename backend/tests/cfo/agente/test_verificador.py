@@ -120,6 +120,28 @@ def test_porcentaje_con_decimal_y_espacio_tambien_se_rechaza():
     assert v.ok is False
 
 
+def test_porcentaje_crudo_del_modelo_sigue_bloqueado():
+    # rebanada 4 abre el % por TOKEN (pct_* ya es un concepto real, ver
+    # ratios.composicion_gasto), pero un % CRUDO que el modelo escriba con su
+    # propia pluma sigue prohibido: el modelo no calcula ni extrapola ratios
+    # (regla #1) -- el único % legítimo llega por sustitución de token, nunca
+    # tecleado directamente en el texto verificado.
+    v = verificar("la nómina es 45% de tu gasto", [])
+    assert v.ok is False
+
+
+def test_porcentaje_por_token_pasa_y_no_es_crudo():
+    r = ResultadoCFO(
+        concepto="pct_nomina",
+        valor=Decimal("45.3"),
+        unidad="%",
+        disponible=True,
+        evidencia=Evidencia(fuente="f", fecha_corte=None, ref="cerrado:2026-07"),
+    )
+    v = verificar("la nómina pesa [[pct_nomina]]", [r])
+    assert v.ok is True
+
+
 def test_respuesta_sin_cifras_ni_tokens_pasa():
     v = verificar("Con los datos disponibles no puedo confirmar eso.", [])
     assert v.ok is True
