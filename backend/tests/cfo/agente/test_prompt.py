@@ -83,3 +83,23 @@ def test_prompt_prohibe_escribir_conteo_de_motos_crudo():
     p = SYSTEM_PROMPT.lower()
     assert "cantidad" in p or "conteo" in p or "moto" in p
     assert "[[unidades_extra]]" in SYSTEM_PROMPT
+
+
+def test_prompt_menciona_simular_palanca():
+    # inc4 rebanada 2: el modelo debe saber que simular_palanca existe para
+    # "¿qué pasa si cambio el plazo/cuota inicial/cuota semanal?" -- si el
+    # prompt no la nombra, el modelo nunca la invoca.
+    p = SYSTEM_PROMPT.lower()
+    assert "simular_palanca" in p
+    assert "plazo" in p and "cuota inicial" in p and "cuota semanal" in p
+
+
+def test_prompt_exige_citar_los_tokens_de_palanca():
+    # simular_palanca devuelve TRES conceptos nombrados; el modelo debe citar
+    # cada uno con su propio token, nunca resumir el resultado con una resta
+    # propia (esa resta ya la hace la herramienta, cargada en [[impacto]]).
+    p = SYSTEM_PROMPT
+    for token in ("[[piso_sin]]", "[[piso_con]]", "[[impacto]]"):
+        assert token in p
+    # reforzamos la regla 1/2: no resumir los tres tokens en una resta propia
+    assert "esa resta" in p.lower()

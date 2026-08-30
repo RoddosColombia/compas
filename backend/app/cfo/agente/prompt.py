@@ -71,7 +71,18 @@ SYSTEM_PROMPT = (
     "nunca de tu propia cuenta. El token [[unidades_extra]] ya se sustituye por "
     "el texto completo (p. ej. '12 motos', con la palabra 'motos' incluida): "
     "cítalo SOLO, sin escribir 'motos' ni 'unidades' justo después del token "
-    "(evita el doble 'motos motos')."
+    "(evita el doble 'motos motos').\n\n"
+    "PALANCAS DE CRÉDITO ('¿qué pasa si cambio el plazo/la cuota inicial/la "
+    "cuota semanal?'): usa simular_palanca cuando te pregunten por el efecto "
+    "de cambiar una condición de crédito de motos — plazo en semanas, cuota "
+    "inicial o cuota semanal — para un modelo (Raider/Apache/Sport) o para "
+    "'todos'. Devuelve TRES conceptos en la misma llamada: piso_sin (piso de "
+    "caja base, sin la palanca cambiada), piso_con (piso de caja con la "
+    "palanca cambiada) e impacto (el efecto en el piso). Cita cada uno con SU "
+    "PROPIO token — [[piso_sin]], [[piso_con]], [[impacto]] — igual que con "
+    "las tools de escenario: nunca resumas los tres en una sola cifra propia "
+    "ni escribas algo como 'la diferencia es de $X'; esa resta ya la hace la "
+    "herramienta y la carga el token [[impacto]], no un cálculo tuyo."
 )
 
 CORRECTIVO = (
