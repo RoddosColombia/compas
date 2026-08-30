@@ -29,6 +29,7 @@ from pathlib import Path
 
 from anyio import to_thread
 from beanie import PydanticObjectId
+from beanie.exceptions import RevisionIdWasChanged
 from beanie.operators import In
 from pymongo.errors import DuplicateKeyError
 from pymongo.read_concern import ReadConcern
@@ -338,13 +339,19 @@ async def procesar_carga(
 
     except CargaError:
         raise
-    except DuplicateKeyError as dup:
+    except (DuplicateKeyError, RevisionIdWasChanged) as dup:
         # RF-F6 · candado de BD. Si dos cargas del mismo archivo entran a la vez, la
         # dedup por consulta puede pasar ambas (ninguna está COMPLETADA cuando la
         # otra consulta). El índice único parcial `banco_hash_completada_unico` gana
         # la carrera al `save()` que marca COMPLETADA — traducimos el
         # DuplicateKeyError al mismo `CargaDuplicadaError(409)` que la ruta por
         # consulta, con la misma huella en el mensaje (idempotente para el cliente).
+        #
+        # Beanie envuelve el `DuplicateKeyError` en `RevisionIdWasChanged` cuando
+        # el `save()` usa versionado — atrapamos ambos. En este bloque hay UNA sola
+        # causa posible para esas dos excepciones: el índice único parcial de
+        # RF-F6 (la única restricción de unicidad en juego en `_finalizar`), por eso
+        # el mapeo determinista a `CargaDuplicadaError` es seguro.
         _log.info(
             "carga %s perdió la carrera de idempotencia (hash %s…): %s",
             carga.id,
