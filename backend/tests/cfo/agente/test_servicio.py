@@ -1117,4 +1117,132 @@ async def test_real_vs_presupuesto_cifra_cruda_reintenta_y_abstiene(
         cliente=fake,
     )
     assert r.abstuvo is True and r.motivo == "verificacion"
+
+
+# --- inc4 rebanada 4 sub-4b (Task 7): mix_modelos end-to-end ------------------
+# mix_modelos es una tool de CERO args cableada DIRECTO en DISPATCH a
+# ratios.mix_modelos (sin wrapper) — igual que rumbo_caja: DISPATCH ya capturó
+# la referencia de función al importar tools.py, así que aquí se usa
+# monkeypatch.setitem(tools.DISPATCH, ...) — mismo patrón que rumbo_caja arriba.
+_MIX_RAIDER = ResultadoCFO(
+    concepto="mix_raider",
+    valor=Decimal("55.0"),
+    unidad="%",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="app.modelos_moto.service.mix_activos",
+        fecha_corte=None,
+        ref="share-normalizado",
+    ),
+)
+_MIX_APACHE = ResultadoCFO(
+    concepto="mix_apache",
+    valor=Decimal("30.0"),
+    unidad="%",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="app.modelos_moto.service.mix_activos",
+        fecha_corte=None,
+        ref="share-normalizado",
+    ),
+)
+_MIX_SPORT = ResultadoCFO(
+    concepto="mix_sport",
+    valor=Decimal("15.0"),
+    unidad="%",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="app.modelos_moto.service.mix_activos",
+        fecha_corte=None,
+        ref="share-normalizado",
+    ),
+)
+
+
+@pytest.mark.asyncio
+async def test_mix_modelos_publica_valores_sustituidos(monkeypatch, _audit):
+    """E2E de la garantía anti-alucinación con la tool mix_modelos (inc4
+    rebanada 4, sub-4b): el modelo pide `mix_modelos` (sin parámetros), el
+    DISPATCH/tools.py REAL corre, la calc está fakeada con 3 `ResultadoCFO`
+    conocidos, el modelo cita [[mix_raider]]/[[mix_apache]]/[[mix_sport]] --
+    NUNCA un '%' propio --, el verificador los deja pasar y el servicio
+    sustituye: el texto publicado trae el '%' YA formateado, nunca
+    `[[token]]` crudo."""
+
+    async def fake_mix_modelos():
+        return [_MIX_RAIDER, _MIX_APACHE, _MIX_SPORT]
+
+    monkeypatch.setitem(tools.DISPATCH, "mix_modelos", fake_mix_modelos)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="mix_modelos", input={})],
+            10,
+            6,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [
+                BloqueTexto(
+                    texto=(
+                        "Tu mix actual es Raider [[mix_raider]], Apache "
+                        "[[mix_apache]] y Sport [[mix_sport]]."
+                    )
+                )
+            ],
+            8,
+            20,
+        ),
+    ]
+    r = await srv.consultar(
+        "¿cómo está mi mix de modelos?", actor_id="u1", cliente=ClienteFake(guiones)
+    )
+    assert r.abstuvo is False
+    assert "[[" not in r.texto  # ningún token crudo se filtró
+    assert "55,0%" in r.texto
+    assert "30,0%" in r.texto
+    assert "15,0%" in r.texto
+    assert {"mix_raider", "mix_apache", "mix_sport"}.issubset(
+        set(r.conceptos_usados)
+    )
+
+
+@pytest.mark.asyncio
+async def test_mix_modelos_porcentaje_crudo_reintenta_y_abstiene(monkeypatch, _audit):
+    """Si el modelo escribe el % CRUDO ("55%") en vez de citar [[mix_raider]],
+    el verificador lo atrapa (`_RE_PORCENTAJE`), dispara EL reintento
+    correctivo (D-3: uno solo) y, si el modelo reincide, el servicio se
+    abstiene con `motivo='verificacion'` — jamás publica un % que no vino de
+    un token."""
+
+    async def fake_mix_modelos():
+        return [_MIX_RAIDER, _MIX_APACHE, _MIX_SPORT]
+
+    monkeypatch.setitem(tools.DISPATCH, "mix_modelos", fake_mix_modelos)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="mix_modelos", input={})],
+            5,
+            3,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="El Raider pesa 55% de tu mix.")],
+            4,
+            8,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Perdón, seguiría siendo 55% entonces.")],
+            4,
+            6,
+        ),
+    ]
+    fake = ClienteFake(guiones)
+    r = await srv.consultar(
+        "¿cómo está mi mix de modelos?", actor_id="u1", cliente=fake
+    )
+    assert r.abstuvo is True and r.motivo == "verificacion"
+    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
     assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
