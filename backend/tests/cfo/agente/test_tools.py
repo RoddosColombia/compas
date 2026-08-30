@@ -198,3 +198,99 @@ async def test_monto_numero_crudo_falla():
             "impacto_escenario",
             {"naturaleza": "gasto", "monto": 20000000, "mes_inicio": "2026-09"},
         )
+
+
+# --- T3 (rebanada 2): tool simular_palanca -----------------------------------
+
+
+def test_schema_incluye_tool_simular_palanca():
+    nombres = {t["name"] for t in tools.TOOLS_SCHEMA}
+    assert "simular_palanca" in nombres
+    t = next(x for x in tools.TOOLS_SCHEMA if x["name"] == "simular_palanca")
+    assert t["input_schema"]["additionalProperties"] is False
+    assert set(t["input_schema"]["required"]) == {"palanca", "nuevo_valor"}
+    props = t["input_schema"]["properties"]
+    assert props["palanca"]["enum"] == [
+        "plazo_semanas",
+        "cuota_inicial",
+        "cuota_semanal",
+    ]
+    assert props["nuevo_valor"]["type"] == "string"
+    assert props["modelo"]["enum"] == ["Raider", "Apache", "Sport", "todos"]
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_parsea_nuevo_valor_y_default_modelo(monkeypatch):
+    llamado = {}
+
+    async def fake_calc(*, palanca, nuevo_valor, modelo="todos"):
+        llamado.update(palanca=palanca, nuevo_valor=nuevo_valor, modelo=modelo)
+        return []
+
+    monkeypatch.setattr("app.cfo.calc.palanca.impacto_palanca", fake_calc)
+    r = await tools.ejecutar_tool(
+        "simular_palanca", {"palanca": "plazo_semanas", "nuevo_valor": "78"}
+    )
+    assert llamado["palanca"] == "plazo_semanas"
+    assert llamado["nuevo_valor"] == Decimal("78")
+    assert llamado["modelo"] == "todos"
+    assert r == []
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_respeta_modelo_explicito(monkeypatch):
+    llamado = {}
+
+    async def fake_calc(*, palanca, nuevo_valor, modelo="todos"):
+        llamado.update(palanca=palanca, nuevo_valor=nuevo_valor, modelo=modelo)
+        return []
+
+    monkeypatch.setattr("app.cfo.calc.palanca.impacto_palanca", fake_calc)
+    await tools.ejecutar_tool(
+        "simular_palanca",
+        {"palanca": "cuota_semanal", "nuevo_valor": "150000", "modelo": "Raider"},
+    )
+    assert llamado["modelo"] == "Raider"
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_invalida_falla_sin_llegar_a_la_calc():
+    with pytest.raises(ValueError, match="palanca"):
+        await tools.ejecutar_tool(
+            "simular_palanca", {"palanca": "no_existe", "nuevo_valor": "78"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_modelo_invalido_falla():
+    with pytest.raises(ValueError, match="modelo"):
+        await tools.ejecutar_tool(
+            "simular_palanca",
+            {"palanca": "plazo_semanas", "nuevo_valor": "78", "modelo": "Ducati"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_nuevo_valor_invalido_falla():
+    with pytest.raises(ValueError, match="nuevo_valor"):
+        await tools.ejecutar_tool(
+            "simular_palanca",
+            {"palanca": "plazo_semanas", "nuevo_valor": "no-es-numero"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_nuevo_valor_no_finito_falla():
+    with pytest.raises(ValueError, match="nuevo_valor"):
+        await tools.ejecutar_tool(
+            "simular_palanca",
+            {"palanca": "plazo_semanas", "nuevo_valor": "Infinity"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_simular_palanca_nuevo_valor_numero_crudo_falla():
+    with pytest.raises(ValueError, match="nuevo_valor"):
+        await tools.ejecutar_tool(
+            "simular_palanca", {"palanca": "plazo_semanas", "nuevo_valor": 78}
+        )
