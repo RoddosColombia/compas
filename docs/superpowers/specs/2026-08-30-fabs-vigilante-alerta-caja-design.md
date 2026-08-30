@@ -111,13 +111,21 @@ Las cifras SIEMPRE las computa COMPAS (los servicios); el evaluador solo compara
 
 ### 5.4 Texto determinista (plantilla + tokens + verificador)
 
-Sin LLM. El texto se arma por plantilla fija según los disparadores activos; cada cifra es un `[[token]]` respaldado por un `ResultadoCFO` (concepto namespaced `alerta_*`). Ejemplos de línea (los `[[…]]` se sustituyen al final):
+Sin LLM. El texto se arma por plantilla fija según los disparadores activos; cada cifra es un `[[token]]` respaldado por un `ResultadoCFO` (concepto namespaced `alerta_*`, unidad `"COP"`). **El mes de quiebre NO es un token aparte:** viaja en el `evidencia.ref` del concepto del piso como `f"quiebre:{mes}"` — `conceptos.formatear` YA renderiza eso como `"$X (cruzas el umbral en <mes>)"` (idioma de `rumbo_caja`, sin rama nueva de formateo). Conceptos:
 
-- Proyectado ámbar: `⚠️ La caja proyectada entra en zona de atención: el piso baja a [[alerta_piso]] y cruza el umbral de atención [[alerta_umbral_atencion]] en [[alerta_mes_quiebre]].`
-- Proyectado rojo: `🔴 La caja proyectada cae bajo el mínimo: piso [[alerta_piso]] cruza el crítico [[alerta_umbral_critico]] en [[alerta_mes_quiebre]].`
+| Concepto | valor | evidencia.ref | Render de `formatear` |
+|---|---|---|---|
+| `alerta_piso` | piso_caja | `quiebre:<mes>` | `$piso (cruzas el umbral en <mes>)` |
+| `alerta_umbral_atencion` | umbral atención | `umbral:atencion` | `$umbral` |
+| `alerta_umbral_critico` | caja_minima | `umbral:critico` | `$umbral` |
+| `alerta_disponible_hoy` | consolidado_reportado | `disponible:hoy` (+ `fecha_corte=hoy`) | `$disp (al <hoy>)` |
+
+Plantillas (los `[[…]]` se sustituyen al final):
+- Proyectado ámbar: `⚠️ La caja proyectada entra en zona de atención: el piso baja a [[alerta_piso]], por debajo del umbral de atención [[alerta_umbral_atencion]].`
+- Proyectado rojo: `🔴 La caja proyectada cae bajo el mínimo: el piso [[alerta_piso]] cruza el crítico [[alerta_umbral_critico]].`
 - Real rojo: `🔴 El disponible real de hoy [[alerta_disponible_hoy]] está bajo el mínimo [[alerta_umbral_critico]].`
 
-Pipeline (idéntico en garantías al paquete): construir texto crudo con tokens → `verificador.verificar(texto_crudo, conceptos)` como **defensa** (pasa trivial: no hay cifras crudas, todo es token) → `sustituir_tokens` estampa los valores → se guarda `texto` (sustituido) y `texto_crudo`. Formateo de dinero por `conceptos.formatear` (Intl es-CO en el front; aquí `money_str`/formato COP existente). El mes de quiebre se cita como token de texto (no es dinero) con su evidencia.
+Las plantillas **no contienen ningún dígito crudo** (el horizonte y demás nunca se escriben como número en la prosa) para no chocar con el verificador. Pipeline (idéntico en garantías al paquete): construir texto crudo con tokens → `verificador.verificar(texto_crudo, conceptos)` como **defensa** (pasa trivial: no hay cifras crudas, todo es token) → `conceptos.sustituir_tokens` estampa los valores → se guarda `texto` (sustituido) y `texto_crudo`.
 
 > Nota de diseño: como no interviene el LLM, no hay riesgo de cifra alucinada por construcción. El `verificador` se corre igual (defensa en profundidad y consistencia con el contrato). Si en el futuro se quiere voz narrativa, se cambia esta función por una llamada a `consultar()` sin tocar el resto.
 
