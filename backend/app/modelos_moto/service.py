@@ -47,6 +47,12 @@ async def listar_modelos(*, activo: bool | None = None) -> list[ModeloMoto]:
     return await ModeloMoto.find(*filtros).sort(+ModeloMoto.orden).to_list()
 
 
+async def mix_activos() -> list[tuple[str, Decimal]]:
+    """Nombre + participación de mix de cada modelo ACTIVO, como valores planos
+    (str, Decimal) — sin exponer `ModeloMoto` a quien consuma esto (cfo/calc, S1)."""
+    return [(m.nombre, m.participacion_mix) for m in await listar_modelos(activo=True)]
+
+
 def _validar_planes(modelo: ModeloMoto) -> None:
     """PLAN-52: coherencia fail-closed del segundo plan. (plazo, cuota) del plan 2 van
     JUNTOS; `peso_plan1` es fracción 0..1 y sin plan 2 debe ser exactamente 1 (el mix
