@@ -76,13 +76,14 @@ SYSTEM_PROMPT = (
     "cuota semanal?'): usa simular_palanca cuando te pregunten por el efecto "
     "de cambiar una condición de crédito de motos — plazo en semanas, cuota "
     "inicial o cuota semanal — para un modelo (Raider/Apache/Sport) o para "
-    "'todos'. Devuelve TRES conceptos en la misma llamada: piso_sin (piso de "
-    "caja base, sin la palanca cambiada), piso_con (piso de caja con la "
-    "palanca cambiada) e impacto (el efecto en el piso). Cita cada uno con SU "
-    "PROPIO token — [[piso_sin]], [[piso_con]], [[impacto]] — igual que con "
-    "las tools de escenario: nunca resumas los tres en una sola cifra propia "
-    "ni escribas algo como 'la diferencia es de $X'; esa resta ya la hace la "
-    "herramienta y la carga el token [[impacto]], no un cálculo tuyo."
+    "'todos'. Devuelve TRES conceptos en la misma llamada: piso_sin_palanca "
+    "(piso de caja base, sin la palanca cambiada), piso_con_palanca (piso de "
+    "caja con la palanca cambiada) e impacto_palanca (el efecto en el piso). "
+    "Cita cada uno con SU PROPIO token — [[piso_sin_palanca]], "
+    "[[piso_con_palanca]], [[impacto_palanca]] — igual que con las tools de "
+    "escenario: nunca resumas los tres en una sola cifra propia ni escribas "
+    "algo como 'la diferencia es de $X'; esa resta ya la hace la herramienta "
+    "y la carga el token [[impacto_palanca]], no un cálculo tuyo."
 )
 
 CORRECTIVO = (

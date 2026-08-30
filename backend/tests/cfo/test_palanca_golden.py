@@ -27,8 +27,9 @@ Por eso este golden usa un plazo BASE corto (12 semanas, bien dentro de la venta
 significativo, no una degeneración de 1 semana. `cuota_semanal` no se toca; el
 costo de adquisición (Auteco/`pago_inventario`) tampoco depende de `plazo_semanas`
 en `motor.py`, así que un recaudo mayor con costos iguales implica un piso de caja
-proyectado MAYOR: se espera `piso_con >= piso_sin` y por lo tanto
-`impacto = piso_con - piso_sin >= 0`.
+proyectado MAYOR: se espera `piso_con > piso_sin` (estricto: el escenario elegido
+es deliberadamente no-degenerado) y por lo tanto
+`impacto = piso_con - piso_sin > 0`.
 
 Los valores exactos de `piso_sin`/`piso_con`/`mes_quiebre` no se pueden derivar a
 mano (dependen de la composición completa motor→E1→D2 sobre 12 meses) — se
@@ -146,8 +147,8 @@ async def test_golden_plazo_12_a_78_todos(db, monkeypatch):
     # horizonte, así que el recaudo cae frente al caso con plazo largo (78 sem), donde
     # las mismas cohortes siguen activas. El costo de adquisición no depende de
     # plazo_semanas -> más recaudo con mismo costo = piso de caja proyectado MAYOR.
-    assert out.piso_con >= out.piso_sin
-    assert out.impacto >= Decimal("0")
+    assert out.piso_con > out.piso_sin
+    assert out.impacto > Decimal("0")
 
     # --- identidad de reconciliación (misma tubería, no una resta inventada aparte) ---
     assert out.impacto == out.piso_con - out.piso_sin

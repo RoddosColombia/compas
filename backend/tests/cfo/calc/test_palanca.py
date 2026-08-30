@@ -21,10 +21,10 @@ async def test_impacto_palanca_arma_conceptos(monkeypatch):
         palanca="plazo_semanas", nuevo_valor=Decimal("78"), modelo="todos"
     )
     by = {r.concepto: r for r in rs}
-    assert by["piso_sin"].valor == Decimal("100000000")
-    assert by["piso_con"].valor == Decimal("120000000")
-    assert by["piso_con"].evidencia.ref == "quiebre:nunca"
-    assert by["impacto"].valor == Decimal("20000000")
+    assert by["piso_sin_palanca"].valor == Decimal("100000000")
+    assert by["piso_con_palanca"].valor == Decimal("120000000")
+    assert by["piso_con_palanca"].evidencia.ref == "quiebre:nunca"
+    assert by["impacto_palanca"].valor == Decimal("20000000")
     assert all(r.disponible for r in rs)
 
 

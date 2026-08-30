@@ -60,7 +60,7 @@ Bloque corto: usar `simular_palanca` para "¿qué pasa si cambio el plazo/cuota�
 
 ## 6. Contrato de datos
 
-- Conceptos citables nuevos: `piso_sin`, `piso_con` (con contexto de quiebre en `ref`), `impacto` — todos `unidad="COP"`. (Reusan el formateo COP + quiebre de `conceptos.py`.) *Nota: `piso_sin`/`piso_con` ya existen como nombres en la rebanada 1; conviven sin colisión porque el verificador/sustituidor operan sobre los `resultados` del turno.*
+- Conceptos citables nuevos: `piso_sin_palanca`, `piso_con_palanca` (con contexto de quiebre en `ref`), `impacto_palanca` — todos `unidad="COP"`. (Reusan el formateo COP + quiebre de `conceptos.py`.) *Nota: `piso_sin`/`piso_con` ya existen como nombres en la rebanada 1 (`escenario.impacto_escenario`) — el sustituidor (`sustituir_tokens`) arma `{r.concepto: r}` sobre TODOS los `ResultadoCFO` acumulados en el turno (last-wins), así que si ambas tools se disparan en el mismo turno, un `piso_sin`/`piso_con` compartido haría que el resultado de la última tool en ejecutar pise silenciosamente al de la primera. Por eso los conceptos de rebanada 2 van NAMESPACED con el sufijo `_palanca` (`piso_sin_palanca`/`piso_con_palanca`/`impacto_palanca`): evita la colisión por construcción en vez de confiar en que las dos tools nunca coincidan en un turno.*
 - Montos Decimal en backend, string en el borde. `plazo_semanas` es entero; `cuota_*` son COP.
 
 ## 7. Manejo por-modelo

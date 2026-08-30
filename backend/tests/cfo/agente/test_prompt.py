@@ -95,11 +95,13 @@ def test_prompt_menciona_simular_palanca():
 
 
 def test_prompt_exige_citar_los_tokens_de_palanca():
-    # simular_palanca devuelve TRES conceptos nombrados; el modelo debe citar
+    # simular_palanca devuelve TRES conceptos nombrados (namespaced con sufijo
+    # `_palanca` para no colisionar con los de escenario); el modelo debe citar
     # cada uno con su propio token, nunca resumir el resultado con una resta
-    # propia (esa resta ya la hace la herramienta, cargada en [[impacto]]).
+    # propia (esa resta ya la hace la herramienta, cargada en [[impacto_palanca]]).
     p = SYSTEM_PROMPT
-    for token in ("[[piso_sin]]", "[[piso_con]]", "[[impacto]]"):
+    tokens = ("[[piso_sin_palanca]]", "[[piso_con_palanca]]", "[[impacto_palanca]]")
+    for token in tokens:
         assert token in p
     # reforzamos la regla 1/2: no resumir los tres tokens en una resta propia
     assert "esa resta" in p.lower()

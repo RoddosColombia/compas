@@ -221,7 +221,7 @@ async def test_escenario_conteo_crudo_de_motos_reintenta_y_abstiene(
 # (`app.cfo.calc.palanca.impacto_palanca`) — así el test también cubre el wiring real
 # tool→calc que las tareas 2/3 dejaron, no solo el servicio de verificación/sustitución.
 _PALANCA_PISO_SIN = ResultadoCFO(
-    concepto="piso_sin",
+    concepto="piso_sin_palanca",
     valor=Decimal("60000000"),
     unidad="COP",
     disponible=True,
@@ -230,7 +230,7 @@ _PALANCA_PISO_SIN = ResultadoCFO(
     ),
 )
 _PALANCA_PISO_CON = ResultadoCFO(
-    concepto="piso_con",
+    concepto="piso_con_palanca",
     valor=Decimal("75000000"),
     unidad="COP",
     disponible=True,
@@ -241,7 +241,7 @@ _PALANCA_PISO_CON = ResultadoCFO(
     ),
 )
 _PALANCA_IMPACTO = ResultadoCFO(
-    concepto="impacto",
+    concepto="impacto_palanca",
     valor=Decimal("15000000"),
     unidad="COP",
     disponible=True,
@@ -261,9 +261,12 @@ async def test_simular_palanca_publica_valores_sustituidos(monkeypatch, _audit):
     el modelo pide `simular_palanca`, el DISPATCH/tools.py REAL corre (parsea la
     entrada, llama `palanca.impacto_palanca` por atributo de módulo), la calc está
     fakeada con 3 `ResultadoCFO` conocidos, el modelo cita los 3 tokens
-    ([[piso_sin]]/[[piso_con]]/[[impacto]]), el verificador los deja pasar (ningún
-    crudo, los 3 tokens con evidencia de este turno) y el servicio sustituye — el
-    texto publicado trae los VALORES formateados, nunca `[[token]]` crudo."""
+    ([[piso_sin_palanca]]/[[piso_con_palanca]]/[[impacto_palanca]]), el verificador
+    los deja pasar (ningún crudo, los 3 tokens con evidencia de este turno) y el
+    servicio sustituye — el texto publicado trae los VALORES formateados, nunca
+    `[[token]]` crudo. Los nombres llevan sufijo `_palanca` para nunca colisionar
+    con `piso_sin`/`piso_con` de escenario (rebanada 1) si ambas tools se piden en
+    el mismo turno."""
 
     async def fake_impacto_palanca(*, palanca, nuevo_valor, modelo="todos"):
         assert palanca == "plazo_semanas"
@@ -288,9 +291,9 @@ async def test_simular_palanca_publica_valores_sustituidos(monkeypatch, _audit):
             [
                 BloqueTexto(
                     texto=(
-                        "Sin el cambio tu piso queda en [[piso_sin]]; con el "
-                        "plazo a 78 semanas queda en [[piso_con]], un impacto de "
-                        "[[impacto]]."
+                        "Sin el cambio tu piso queda en [[piso_sin_palanca]]; con "
+                        "el plazo a 78 semanas queda en [[piso_con_palanca]], un "
+                        "impacto de [[impacto_palanca]]."
                     )
                 )
             ],
@@ -308,14 +311,16 @@ async def test_simular_palanca_publica_valores_sustituidos(monkeypatch, _audit):
     assert "$60.000.000" in r.texto
     assert "$75.000.000 (no cruzas el umbral)" in r.texto
     assert "$15.000.000" in r.texto
-    assert {"piso_sin", "piso_con", "impacto"}.issubset(set(r.conceptos_usados))
+    assert {"piso_sin_palanca", "piso_con_palanca", "impacto_palanca"}.issubset(
+        set(r.conceptos_usados)
+    )
 
 
 @pytest.mark.asyncio
 async def test_simular_palanca_cifra_cruda_reintenta_y_abstiene(monkeypatch, _audit):
     """Si el modelo escribe el impacto CRUDO ("$15.000.000") en vez de citar
-    [[impacto]], el verificador lo atrapa, dispara EL reintento correctivo (D-3: uno
-    solo) y, si el modelo reincide, el servicio se abstiene con
+    [[impacto_palanca]], el verificador lo atrapa, dispara EL reintento correctivo
+    (D-3: uno solo) y, si el modelo reincide, el servicio se abstiene con
     `motivo='verificacion'` — jamás publica ni entra en un loop."""
 
     async def fake_impacto_palanca(*, palanca, nuevo_valor, modelo="todos"):

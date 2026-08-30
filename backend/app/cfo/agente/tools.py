@@ -277,10 +277,11 @@ TOOLS_SCHEMA: list[dict] = [
             "semanal (p. ej. '¿qué pasa si el plazo pasa a 78 semanas?' o '¿y si "
             "subo la cuota inicial a $500.000?'). Extrae la palanca, el nuevo "
             "valor y el modelo afectado (Raider/Apache/Sport) o 'todos' si no se "
-            "especifica un modelo. Devuelve piso_sin, piso_con (con el mes de "
-            "quiebre si la caja llega a cruzar el umbral) e impacto (piso_con - "
-            "piso_sin). disponible=false si no hay configuración de proyección "
-            "vigente. Es simulación de solo lectura: nunca escribe nada."
+            "especifica un modelo. Devuelve piso_sin_palanca, piso_con_palanca "
+            "(con el mes de quiebre si la caja llega a cruzar el umbral) e "
+            "impacto_palanca (piso_con_palanca - piso_sin_palanca). "
+            "disponible=false si no hay configuración de proyección vigente. Es "
+            "simulación de solo lectura: nunca escribe nada."
         ),
         "input_schema": {
             "type": "object",

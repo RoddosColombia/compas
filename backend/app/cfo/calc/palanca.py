@@ -26,7 +26,7 @@ _UNIDAD = "COP"
 def _abstencion() -> list[ResultadoCFO]:
     return [
         ResultadoCFO(
-            concepto="impacto",
+            concepto="palanca",
             valor=None,
             unidad=_UNIDAD,
             disponible=False,
@@ -43,13 +43,16 @@ async def impacto_palanca(
 ) -> list[ResultadoCFO]:
     """¿Qué pasa con el piso de caja proyectado si `palanca` (plazo_semanas,
     cuota_inicial o cuota_semanal) cambia a `nuevo_valor` en `modelo` (o "todos")?
-    Devuelve 3 conceptos, todos COP:
-    - `piso_sin`: piso de caja BASE (sin la palanca cambiada); ref = ancla de
+    Devuelve 3 conceptos, todos COP (nombres NAMESPACED con sufijo `_palanca` para
+    que nunca colisionen con `piso_sin`/`piso_con` de `escenario.impacto_escenario`
+    cuando ambas tools se disparan en el mismo turno — `sustituir_tokens` arma
+    `{r.concepto: r}` sobre TODOS los resultados del turno, last-wins):
+    - `piso_sin_palanca`: piso de caja BASE (sin la palanca cambiada); ref = ancla de
       horizonte (mes de HOY, igual que `escenario.impacto_escenario`).
-    - `piso_con`: piso de caja CON la palanca aplicada; su evidencia trae el mes de
-      quiebre (`quiebre:<YYYY-MM>` o `quiebre:nunca`).
-    - `impacto`: `piso_con - piso_sin`, tomado directo de `res.impacto` (NO se
-      recalcula aquí); ref = ancla de horizonte.
+    - `piso_con_palanca`: piso de caja CON la palanca aplicada; su evidencia trae el
+      mes de quiebre (`quiebre:<YYYY-MM>` o `quiebre:nunca`).
+    - `impacto_palanca`: `piso_con - piso_sin`, tomado directo de `res.impacto` (NO
+      se recalcula aquí); ref = ancla de horizonte.
 
     `detalle` lleva `{palanca, modelo, nuevo_valor}` para trazabilidad (no citable
     por el verificador anti-alucinación: no es una cifra, es metadata de la consulta).
@@ -74,7 +77,7 @@ async def impacto_palanca(
     ref_horizonte = f"{ahora.year:04d}-{ahora.month:02d}"
     return [
         ResultadoCFO(
-            concepto="piso_sin",
+            concepto="piso_sin_palanca",
             valor=res.piso_sin,
             unidad=_UNIDAD,
             disponible=True,
@@ -82,7 +85,7 @@ async def impacto_palanca(
             detalle=detalle,
         ),
         ResultadoCFO(
-            concepto="piso_con",
+            concepto="piso_con_palanca",
             valor=res.piso_con,
             unidad=_UNIDAD,
             disponible=True,
@@ -92,7 +95,7 @@ async def impacto_palanca(
             detalle=detalle,
         ),
         ResultadoCFO(
-            concepto="impacto",
+            concepto="impacto_palanca",
             valor=res.impacto,
             unidad=_UNIDAD,
             disponible=True,
