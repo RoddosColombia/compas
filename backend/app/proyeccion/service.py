@@ -1489,15 +1489,11 @@ async def impacto_palanca_raw(
     hace para `motos_para_evitar_umbral`: `cfo/calc` no puede importar
     `app.domain.*` ni `proyeccion.motor` directo (aislamiento S1,
     `test_s1_aislamiento.py`), así que esta función carga params/modelos VIGENTES
-    ella misma (fail-closed 409) en vez de recibirlos del caller."""
+    ella misma (fail-closed 409, vía `_cargar_config_vigente`) en vez de recibirlos
+    del caller."""
     if palanca not in _PALANCAS_ESCALARES:
         raise ProyeccionError(f"palanca no soportada: {palanca}", 422)
-    vig = await parametros_service.obtener_vigente()
-    if vig is None:
-        raise ProyeccionError("no hay parámetros de proyección vigentes", 409)
-    modelos = await modelos_service.listar_modelos(activo=True)
-    if not modelos:
-        raise ProyeccionError("no hay modelos de moto activos", 409)
+    vig, modelos = await _cargar_config_vigente()
     if modelo != "todos" and not any(m.nombre == modelo for m in modelos):
         raise ProyeccionError(f"modelo desconocido: {modelo}", 422)
     valor = _tipar_palanca(palanca, nuevo_valor)
