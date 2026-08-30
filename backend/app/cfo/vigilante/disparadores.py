@@ -10,9 +10,13 @@ from decimal import Decimal
 
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
 from app.cierre.service import CierreError, conciliacion
-from app.configuracion.service import leer_alerta_horizonte_meses
+from app.configuracion.service import (
+    leer_alerta_horizonte_meses,
+    leer_umbral_atencion_activo,
+)
 from app.core.time import now_bogota, today_bogota
 from app.domain.mes_control import EstadoMes, MesControl
+from app.parametros_proyeccion import service as parametros_service
 from app.proyeccion import service as proy_service
 from app.proyeccion.service import ProyeccionError
 
@@ -49,9 +53,9 @@ def _umbral_res(concepto: str, valor: Decimal, ref: str) -> ResultadoCFO:
     )
 
 
-def _disparador_proyectado(proy: dict) -> tuple[Disparo | None, list[ResultadoCFO]]:
-    minima = Decimal(proy["caja_minima"])
-    atencion = Decimal(proy["caja_atencion"]) if proy["caja_atencion"] else None
+def _disparador_proyectado(
+    proy: dict, minima: Decimal, atencion: Decimal | None
+) -> tuple[Disparo | None, list[ResultadoCFO]]:
     quiebre = next((m for m in proy["meses"] if m["estado"] != "ok"), None)
     if quiebre is None:
         return None, []
@@ -112,6 +116,15 @@ async def _disparador_real(
 
 
 async def evaluar_disparadores() -> ResultadoAlerta | None:
+    # Los umbrales se leen INDEPENDIENTES de la proyección: si `proyectar_vigente`
+    # revienta (sin modelos activos, p.ej.) el disparador REAL debe poder seguir —
+    # es justo la caja de hoy la que puede estar crítica en ese estado (spec §5.3/§8).
+    params = await parametros_service.obtener_vigente()
+    if params is None:
+        return None  # sin params no hay umbral que comparar en ninguna vía
+    minima = params.caja_minima
+    atencion = await leer_umbral_atencion_activo(minima)
+
     ahora = now_bogota()
     try:
         proy = await proy_service.proyectar_vigente(
@@ -120,17 +133,15 @@ async def evaluar_disparadores() -> ResultadoAlerta | None:
             horizonte_meses=await leer_alerta_horizonte_meses(),
         )
     except ProyeccionError:
-        return None  # sin config no hay umbral que comparar: abstención total
-
-    minima = Decimal(proy["caja_minima"])
-    atencion = Decimal(proy["caja_atencion"]) if proy["caja_atencion"] else None
+        proy = None  # sin config de proyección: solo se abstiene la vía proyectada
 
     disparos: list[Disparo] = []
     resultados: list[ResultadoCFO] = []
-    d_proy, r_proy = _disparador_proyectado(proy)
-    if d_proy is not None:
-        disparos.append(d_proy)
-        resultados.extend(r_proy)
+    if proy is not None:
+        d_proy, r_proy = _disparador_proyectado(proy, minima, atencion)
+        if d_proy is not None:
+            disparos.append(d_proy)
+            resultados.extend(r_proy)
     d_real, r_real = await _disparador_real(minima, atencion)
     if d_real is not None:
         disparos.append(d_real)
