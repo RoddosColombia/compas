@@ -187,3 +187,51 @@ def test_prompt_rumbo_reitera_no_porcentajes():
     assert idx != -1
     bloque = p[idx:]
     assert "%" in bloque or "porcentaje" in bloque
+
+
+def test_prompt_menciona_real_vs_presupuesto():
+    # inc4 rebanada 3 (sub-3c): el modelo debe saber que real_vs_presupuesto
+    # existe para "¿gasté más/menos de lo presupuestado?" -- si el prompt no la
+    # nombra, el modelo nunca la invoca (tool con parámetro `mes` OPCIONAL).
+    p = SYSTEM_PROMPT.lower()
+    assert "real_vs_presupuesto" in p
+    assert "presupuesto" in p
+
+
+def test_prompt_exige_citar_los_tokens_de_presupuesto():
+    # real_vs_presupuesto devuelve TRES conceptos nombrados en la misma
+    # llamada; el modelo debe citar cada uno con su propio token, nunca
+    # resumir en una cifra propia.
+    p = SYSTEM_PROMPT
+    for token in (
+        "[[gasto_real_mes]]",
+        "[[presupuesto_mes]]",
+        "[[desvio_presupuesto]]",
+    ):
+        assert token in p
+
+
+def test_prompt_presupuesto_relata_direccion_desde_ref_no_la_calcula():
+    # La dirección (sobre/bajo/en-línea) del desvío ya viene calculada por
+    # COMPAS en la evidencia `ref` del concepto desvio_presupuesto -- el
+    # prompt debe decirle al modelo que la RELATE, nunca que la calcule ni la
+    # infiera comparando las cifras a ojo (mismo contrato que tendencia_real/
+    # rumbo_caja).
+    p = SYSTEM_PROMPT.lower()
+    idx = p.find("real_vs_presupuesto")
+    assert idx != -1
+    bloque = p[idx:]
+    assert "direcci" in bloque  # "dirección"/"direccion"
+    assert "ref" in bloque
+    assert "sobre" in bloque and "bajo" in bloque
+
+
+def test_prompt_presupuesto_reitera_no_porcentajes():
+    # Reitera cerca del bloque de real_vs_presupuesto la prohibición de la
+    # regla 7 (ningún % calculado por el modelo), no solo en el bloque
+    # original.
+    p = SYSTEM_PROMPT.lower()
+    idx = p.find("real_vs_presupuesto")
+    assert idx != -1
+    bloque = p[idx:]
+    assert "%" in bloque or "porcentaje" in bloque

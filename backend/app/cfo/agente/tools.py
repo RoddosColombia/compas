@@ -23,7 +23,14 @@ mal-signado sin error visible) y `monto` se parsea de string a Decimal (regla 1)
 rechazando no-string y no-finito (mismo patrón que
 `escenarios_impacto/router.py:_a_embebido`, que arma el mismo `Ajuste`). Sus
 envoltorios en DISPATCH toman UN `entrada: dict` posicional — para calzar con
-`calc(entrada or {})` arriba —, nunca `**kwargs`."""
+`calc(entrada or {})` arriba —, nunca `**kwargs`.
+
+`real_vs_presupuesto` (inc4 rebanada 3, T8) es la primera tool CON parámetro pero
+SIN nada que validar: `mes` es un string 'YYYY-MM' opcional sin enum ni Decimal
+detrás (a diferencia de `_kwargs_tendencia`/`_kwargs_palanca`/`_kwargs_escenario`),
+así que su envoltorio (`_real_vs_presupuesto`) solo extrae `entrada.get("mes")`
+(None si se omite) y deja que `tendencias.real_vs_presupuesto` resuelva el default
+del mes cerrado más reciente."""
 
 import inspect
 from collections.abc import Awaitable, Callable
@@ -146,6 +153,16 @@ async def _tendencia_real(entrada: dict) -> list[ResultadoCFO]:
     return await tendencias.tendencia_real(**_kwargs_tendencia(entrada))
 
 
+async def _real_vs_presupuesto(entrada: dict) -> list[ResultadoCFO]:
+    """`mes` es OPCIONAL (string 'YYYY-MM' o ausente) — a diferencia de
+    `_kwargs_tendencia`/`_kwargs_palanca`/`_kwargs_escenario`, no hay enum ni
+    Decimal que validar aquí: se extrae tal cual y se deja que
+    `tendencias.real_vs_presupuesto` (que a su vez delega en
+    `presupuesto.service.real_vs_presupuesto_mes`) resuelva el default (mes
+    CERRADO más reciente con presupuesto aprobado) cuando se omite."""
+    return await tendencias.real_vs_presupuesto(mes=entrada.get("mes"))
+
+
 DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "caja_disponible_hoy": caja.caja_hoy,
     "runway_meses": runway.runway,
@@ -155,6 +172,7 @@ DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "simular_palanca": _simular_palanca,
     "tendencia_real": _tendencia_real,
     "rumbo_caja": tendencias.rumbo_caja,
+    "real_vs_presupuesto": _real_vs_presupuesto,
 }
 
 TOOLS_SCHEMA: list[dict] = [
@@ -384,6 +402,33 @@ TOOLS_SCHEMA: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "real_vs_presupuesto",
+        "description": (
+            "¿Gasté más o menos de lo presupuestado este mes? Compara el "
+            "gasto REAL de un mes cerrado con su presupuesto aprobado (p. "
+            "ej. '¿gasté más de lo presupuestado en julio?'). Devuelve TRES "
+            "conceptos: gasto_real_mes, presupuesto_mes y "
+            "desvio_presupuesto (gasto_real_mes - presupuesto_mes; su "
+            "evidencia trae la dirección sobre/bajo/en-línea). Sin mes "
+            "cerrado con presupuesto aprobado, disponible=false. Es de solo "
+            "lectura: nunca escribe nada."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mes": {
+                    "type": "string",
+                    "description": (
+                        "Mes 'YYYY-MM' (opcional; por defecto el último mes "
+                        "cerrado)."
+                    ),
+                },
+            },
+            "required": [],
             "additionalProperties": False,
         },
     },

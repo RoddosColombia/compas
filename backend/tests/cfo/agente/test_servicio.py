@@ -817,3 +817,146 @@ async def test_rumbo_caja_cifra_cruda_reintenta_y_abstiene(monkeypatch, _audit):
     r = await srv.consultar("¿voy en rumbo?", actor_id="u1", cliente=fake)
     assert r.abstuvo is True and r.motivo == "verificacion"
     assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
+
+
+# --- inc4 rebanada 3 sub-3c (Task 8): real_vs_presupuesto end-to-end ----------
+# Igual que simular_palanca/tendencia_real: se deja correr el DISPATCH/tools.py
+# REAL (wrapper `_real_vs_presupuesto` extrae `mes` opcional) y solo se fakea la
+# capa de cálculo (`app.cfo.calc.tendencias.real_vs_presupuesto`) — así el test
+# cubre el wiring real tool→calc, no solo el servicio de verificación/sustitución.
+_PRESU_GASTO_REAL = ResultadoCFO(
+    concepto="gasto_real_mes",
+    valor=Decimal("45000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="presupuesto.service.real_vs_presupuesto_mes",
+        fecha_corte=None,
+        ref="2026-07",
+    ),
+)
+_PRESU_PRESUPUESTO = ResultadoCFO(
+    concepto="presupuesto_mes",
+    valor=Decimal("40000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="presupuesto.service.real_vs_presupuesto_mes",
+        fecha_corte=None,
+        ref="2026-07",
+    ),
+)
+_PRESU_DESVIO = ResultadoCFO(
+    concepto="desvio_presupuesto",
+    valor=Decimal("5000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="presupuesto.service.real_vs_presupuesto_mes",
+        fecha_corte=None,
+        ref="direccion:sobre",
+    ),
+)
+
+
+@pytest.mark.asyncio
+async def test_real_vs_presupuesto_publica_valores_sustituidos(monkeypatch, _audit):
+    """E2E de la garantía anti-alucinación con la tool real_vs_presupuesto (inc4
+    rebanada 3, sub-3c): el modelo pide `real_vs_presupuesto` (mes opcional), el
+    DISPATCH/tools.py REAL corre (wrapper extrae `mes` de la entrada y llama
+    `tendencias.real_vs_presupuesto` por atributo de módulo), la calc está
+    fakeada con 3 `ResultadoCFO` conocidos, el modelo cita los 3 tokens y
+    RELATA la dirección (que viene en el `ref` del desvío, no la calcula él),
+    el verificador los deja pasar y el servicio sustituye — el texto publicado
+    trae los VALORES formateados, nunca `[[token]]` crudo."""
+
+    async def fake_real_vs_presupuesto(*, mes=None):
+        assert mes is None
+        return [_PRESU_GASTO_REAL, _PRESU_PRESUPUESTO, _PRESU_DESVIO]
+
+    monkeypatch.setattr(
+        "app.cfo.calc.tendencias.real_vs_presupuesto", fake_real_vs_presupuesto
+    )
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="real_vs_presupuesto", input={})],
+            10,
+            6,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [
+                BloqueTexto(
+                    texto=(
+                        "Gastaste más de lo presupuestado: tu gasto real fue "
+                        "[[gasto_real_mes]] contra un presupuesto de "
+                        "[[presupuesto_mes]], un desvío de "
+                        "[[desvio_presupuesto]]."
+                    )
+                )
+            ],
+            8,
+            20,
+        ),
+    ]
+    r = await srv.consultar(
+        "¿gasté más o menos de lo presupuestado este mes?",
+        actor_id="u1",
+        cliente=ClienteFake(guiones),
+    )
+    assert r.abstuvo is False
+    assert "[[" not in r.texto  # ningún token crudo se filtró
+    assert "$45.000.000" in r.texto
+    assert "$40.000.000" in r.texto
+    assert "$5.000.000" in r.texto
+    assert {
+        "gasto_real_mes",
+        "presupuesto_mes",
+        "desvio_presupuesto",
+    }.issubset(set(r.conceptos_usados))
+
+
+@pytest.mark.asyncio
+async def test_real_vs_presupuesto_cifra_cruda_reintenta_y_abstiene(
+    monkeypatch, _audit
+):
+    """Si el modelo escribe el gasto CRUDO ("$45.000.000") en vez de citar
+    [[gasto_real_mes]], el verificador lo atrapa, dispara EL reintento
+    correctivo (D-3: uno solo) y, si el modelo reincide, el servicio se
+    abstiene con `motivo='verificacion'` — jamás publica ni entra en un loop."""
+
+    async def fake_real_vs_presupuesto(*, mes=None):
+        return [_PRESU_GASTO_REAL, _PRESU_PRESUPUESTO, _PRESU_DESVIO]
+
+    monkeypatch.setattr(
+        "app.cfo.calc.tendencias.real_vs_presupuesto", fake_real_vs_presupuesto
+    )
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [BloqueToolUse(id="t1", nombre="real_vs_presupuesto", input={})],
+            5,
+            3,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Tu gasto real fue de $45.000.000.")],
+            4,
+            8,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Perdón, serían $45.000.000 entonces.")],
+            4,
+            6,
+        ),
+    ]
+    fake = ClienteFake(guiones)
+    r = await srv.consultar(
+        "¿gasté más o menos de lo presupuestado este mes?",
+        actor_id="u1",
+        cliente=fake,
+    )
+    assert r.abstuvo is True and r.motivo == "verificacion"
+    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop

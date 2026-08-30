@@ -378,6 +378,65 @@ async def test_ejecutar_rumbo_caja_llega_a_la_calc(monkeypatch):
     assert r[0].valor == Decimal("704722003")
 
 
+# --- T8 (rebanada 3, sub-3c): tool real_vs_presupuesto (mes OPCIONAL) ---------
+
+
+def test_schema_incluye_tool_real_vs_presupuesto():
+    nombres = {t["name"] for t in tools.TOOLS_SCHEMA}
+    assert "real_vs_presupuesto" in nombres
+    t = next(x for x in tools.TOOLS_SCHEMA if x["name"] == "real_vs_presupuesto")
+    assert t["input_schema"]["additionalProperties"] is False
+    # `mes` es OPCIONAL: required vacío, a diferencia de tendencia_real/simular_palanca.
+    assert t["input_schema"]["required"] == []
+    props = t["input_schema"]["properties"]
+    assert props["mes"]["type"] == "string"
+
+
+@pytest.mark.asyncio
+async def test_real_vs_presupuesto_llama_la_calc_sin_mes(monkeypatch):
+    llamado = {}
+
+    async def fake_calc(*, mes=None):
+        llamado["mes"] = mes
+        return []
+
+    monkeypatch.setattr("app.cfo.calc.tendencias.real_vs_presupuesto", fake_calc)
+    r = await tools.ejecutar_tool("real_vs_presupuesto", {})
+    assert llamado["mes"] is None
+    assert r == []
+
+
+@pytest.mark.asyncio
+async def test_real_vs_presupuesto_llama_la_calc_con_mes(monkeypatch):
+    llamado = {}
+
+    async def fake_calc(*, mes=None):
+        llamado["mes"] = mes
+        return []
+
+    monkeypatch.setattr("app.cfo.calc.tendencias.real_vs_presupuesto", fake_calc)
+    r = await tools.ejecutar_tool("real_vs_presupuesto", {"mes": "2026-06"})
+    assert llamado["mes"] == "2026-06"
+    assert r == []
+
+
+@pytest.mark.asyncio
+async def test_real_vs_presupuesto_sin_entrada_en_absoluto(monkeypatch):
+    # ejecutar_tool("real_vs_presupuesto") SIN `entrada` (None) debe llegar a la
+    # calc real con mes=None -- mismo contrato que rumbo_caja sin entrada,
+    # `entrada or {}` normaliza el None antes del `.get("mes")`.
+    llamado = {}
+
+    async def fake_calc(*, mes=None):
+        llamado["mes"] = mes
+        return []
+
+    monkeypatch.setattr("app.cfo.calc.tendencias.real_vs_presupuesto", fake_calc)
+    r = await tools.ejecutar_tool("real_vs_presupuesto")
+    assert llamado["mes"] is None
+    assert r == []
+
+
 @pytest.mark.asyncio
 async def test_ejecutar_rumbo_caja_sin_entrada(monkeypatch):
     # ejecutar_tool("rumbo_caja") SIN `entrada` debe llegar a la calc real (sin
