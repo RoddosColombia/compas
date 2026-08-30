@@ -21,6 +21,7 @@ import { LeyendaOrigen } from "@/components/proyeccion/MarcaOrigen";
 import { MesEnCursoCallout } from "@/components/proyeccion/MesEnCursoCallout";
 import { TablaEgreso } from "@/components/proyeccion/TablaEgreso";
 import { TechoGastoCard } from "@/components/proyeccion/TechoGastoCard";
+import { TechoVentanaCard } from "@/components/proyeccion/TechoVentanaCard";
 import { VersionDiffCallout } from "@/components/proyeccion/VersionDiffCallout";
 import { Button } from "@/components/ui/button";
 import { Cargando } from "@/components/ui/cargando";
@@ -100,6 +101,19 @@ export default function ProyeccionPage() {
     enabled: puedeGestionar,
   });
 
+  // RF-F4 — Techo en VENTANA de 9 meses contra el umbral de ATENCIÓN. Detecta el
+  // valle cercano aunque el horizonte largo cierre bien. Se pinta al lado del techo
+  // clásico; con la bandera roja pintada cuando la ventana perfora la atención.
+  const techoVentanaQ = useQuery({
+    queryKey: ["resolver", "techo-ventana", escenario],
+    queryFn: () =>
+      resolver(
+        { objetivo: "techo_gasto_ventana", ventana_meses: 9 },
+        { escenario, horizonteMeses: HORIZONTE_JUICIO },
+      ),
+    enabled: puedeGestionar,
+  });
+
   // Se consulta el máximo entre la ventana elegida y el horizonte del juicio:
   // la ventana es un slice, así que una sola query cubre ambos.
   const fetchHorizonte = Math.max(horizonte, HORIZONTE_JUICIO);
@@ -155,15 +169,27 @@ export default function ProyeccionPage() {
         ))}
       </div>
 
-      {/* Pieza 1: el techo de gasto — con qué el CEO arma el presupuesto del mes */}
+      {/* Pieza 1: el techo de gasto — con qué el CEO arma el presupuesto del mes.
+          RF-F4 · a su lado el techo de VENTANA (9m contra atención): atrapa el valle
+          cercano aunque el horizonte largo cierre bien. */}
       {puedeGestionar && (
-        <TechoGastoCard
-          techo={
-            techoQ.data?.objetivo === "techo_gasto" ? techoQ.data : undefined
-          }
-          cargando={techoQ.isFetching}
-          horizonteJuicio={HORIZONTE_JUICIO}
-        />
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <TechoGastoCard
+            techo={
+              techoQ.data?.objetivo === "techo_gasto" ? techoQ.data : undefined
+            }
+            cargando={techoQ.isFetching}
+            horizonteJuicio={HORIZONTE_JUICIO}
+          />
+          <TechoVentanaCard
+            techo={
+              techoVentanaQ.data?.objetivo === "techo_gasto_ventana"
+                ? techoVentanaQ.data
+                : undefined
+            }
+            cargando={techoVentanaQ.isFetching}
+          />
+        </div>
       )}
 
       {q.isLoading && (

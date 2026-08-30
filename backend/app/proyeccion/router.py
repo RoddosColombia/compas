@@ -220,11 +220,17 @@ async def impactos(
 class ResolverBody(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    objetivo: Literal["techo_gasto", "goal_seek", "punto_quiebre"]
+    objetivo: Literal[
+        "techo_gasto",
+        "techo_gasto_ventana",  # RF-F4: techo en ventana contra atención
+        "goal_seek",
+        "punto_quiebre",
+    ]
     ajustes: list[AjusteBody] = []  # el escenario en pantalla (opcional)
     colchon: str = "0"  # techo_gasto
     variable: Literal["ingreso_pct", "ingreso_absoluto", "gasto_absoluto"] | None = None
     objetivo_caja: str | None = None  # goal_seek: piso objetivo
+    ventana_meses: int = 9  # RF-F4 · Fundacional §2: default 9m
 
 
 def _a_decimal(s: str, campo: str) -> Decimal:
@@ -263,6 +269,7 @@ async def resolver(
             colchon=_a_decimal(body.colchon, "colchon"),
             variable=body.variable,
             objetivo_caja=objetivo_caja,
+            ventana_meses=body.ventana_meses,
         )
     except service.ProyeccionError as e:
         raise HTTPException(e.status, e.detalle) from e
