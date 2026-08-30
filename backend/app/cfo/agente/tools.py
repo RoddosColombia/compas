@@ -377,8 +377,7 @@ TOOLS_SCHEMA: list[dict] = [
                     "type": "string",
                     "enum": ["ingreso", "gasto", "caja"],
                     "description": (
-                        "Qué métrica real consultar: 'ingreso', 'gasto' o "
-                        "'caja'."
+                        "Qué métrica real consultar: 'ingreso', 'gasto' o 'caja'."
                     ),
                 },
             },
@@ -423,8 +422,7 @@ TOOLS_SCHEMA: list[dict] = [
                 "mes": {
                     "type": "string",
                     "description": (
-                        "Mes 'YYYY-MM' (opcional; por defecto el último mes "
-                        "cerrado)."
+                        "Mes 'YYYY-MM' (opcional; por defecto el último mes cerrado)."
                     ),
                 },
             },
