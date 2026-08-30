@@ -23,12 +23,14 @@ una copia local (`dir_originales`); sin ningún destino se rechaza (regla dura).
 """
 
 import hashlib
+import logging
 import shutil
 from pathlib import Path
 
 from anyio import to_thread
 from beanie import PydanticObjectId
 from beanie.operators import In
+from pymongo.errors import DuplicateKeyError
 from pymongo.read_concern import ReadConcern
 
 from app.audit.events import AuditEvento
@@ -47,6 +49,8 @@ from app.reglas.service import (
 )
 
 RUBRO_POR_CLASIFICAR = "Por clasificar"
+
+_log = logging.getLogger(__name__)
 
 
 class CargaError(Exception):
@@ -334,6 +338,30 @@ async def procesar_carga(
 
     except CargaError:
         raise
+    except DuplicateKeyError as dup:
+        # RF-F6 · candado de BD. Si dos cargas del mismo archivo entran a la vez, la
+        # dedup por consulta puede pasar ambas (ninguna está COMPLETADA cuando la
+        # otra consulta). El índice único parcial `banco_hash_completada_unico` gana
+        # la carrera al `save()` que marca COMPLETADA — traducimos el
+        # DuplicateKeyError al mismo `CargaDuplicadaError(409)` que la ruta por
+        # consulta, con la misma huella en el mensaje (idempotente para el cliente).
+        _log.info(
+            "carga %s perdió la carrera de idempotencia (hash %s…): %s",
+            carga.id,
+            archivo_hash[:8],
+            dup,
+        )
+        # Borra la CargaBancaria PROCESANDO que quedó "colgada" — nunca insertó
+        # transacciones (la carrera se ganó en el `save()` que marca COMPLETADA, y
+        # el `insert_many` de transacciones va DESPUÉS en la misma transacción,
+        # que se aborta con el fallo del save).
+        try:
+            await carga.delete()
+        except Exception:  # noqa: BLE001 — no enmascarar el original
+            pass
+        raise CargaDuplicadaError(
+            f"el archivo ya fue cargado (hash {archivo_hash[:8]}…)"
+        ) from dup
     except Exception as exc:
         carga.estado = EstadoCarga.FALLIDA
         carga.motivo_fallo = str(exc)[:500]

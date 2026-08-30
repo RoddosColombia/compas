@@ -72,6 +72,21 @@ class CargaBancaria(Document):
         name = CARGAS_COLLECTION
         indexes = [
             IndexModel([("archivo_hash", 1), ("estado", 1)], name="hash_estado"),
+            # RF-F6 · Fundacional §2 — Cargas idempotentes por huella. Índice único
+            # parcial: para el mismo (banco, hash), solo UNA carga puede quedar como
+            # COMPLETADA. Es el candado de BD contra el race entre dos cargas
+            # concurrentes del mismo archivo (Bancolombia septiembre) — la consulta
+            # de dedup en `service.procesar_carga` sigue atrapando el caso normal y
+            # este índice cierra la carrera. La escritura fatal ocurre en
+            # `service._finalizar` al pasar el estado a COMPLETADA; ahí se traduce el
+            # DuplicateKeyError a `CargaDuplicadaError` (mismo 409 idempotente que la
+            # ruta por consulta).
+            IndexModel(
+                [("banco", 1), ("archivo_hash", 1)],
+                name="banco_hash_completada_unico",
+                unique=True,
+                partialFilterExpression={"estado": "completada"},
+            ),
         ]
 
     @field_validator("banco", mode="before")
