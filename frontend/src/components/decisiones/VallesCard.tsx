@@ -2,9 +2,14 @@
 // Compartida por la pestaña Decisiones (serie ajustada) y Proyecciones (serie vigente).
 // Montos como string (regla 1); Number solo para el % de un desvío ya calculado.
 
+import { useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
-import type { PalancasValle, Valle } from "@/lib/decisiones";
+import type {
+  PalancasValle,
+  RecomendacionRubro,
+  Valle,
+} from "@/lib/decisiones";
 import { formatCOP, formatCOPCompact, formatMesCorto } from "@/lib/money";
 
 export function VallesCard({
@@ -145,35 +150,95 @@ function PalancasFila({ palancas }: { palancas: PalancasValle }) {
   const hayGasto = g.alcanzable && Number(g.monto.replace(/[^\d.-]/g, "")) > 0;
   const hayIngreso =
     i.alcanzable && Number(i.monto.replace(/[^\d.-]/g, "")) > 0;
+  // RF-F7 · reparto por rubro: presente solo cuando el recorte alcanza y viene
+  // con al menos 1 rubro. La lista es la respuesta a "de dónde", ordenada por
+  // impacto DESC (regla del 50% aplicada en el backend). Cerrado por defecto.
+  const reparto = g.recomendaciones_por_rubro ?? [];
+  const hayReparto = hayGasto && reparto.length > 0;
+  const [abierto, setAbierto] = useState(false);
   if (!hayGasto && !hayIngreso) return null;
   return (
-    <div className="mt-1 flex flex-wrap gap-1.5">
-      {hayGasto && (
+    <div className="mt-1 flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {hayGasto && (
+          <span
+            className="rounded-full bg-atencion/10 px-2 py-0.5 font-sans text-apoyo text-atencion"
+            title={
+              g.mensaje || "Recortar gasto/mes lleva el piso a la referencia"
+            }
+          >
+            recortar {formatCOP(g.monto)}/mes
+          </span>
+        )}
+        {hayReparto && (
+          <button
+            type="button"
+            onClick={() => setAbierto((v) => !v)}
+            className="rounded-full bg-surface-muted px-2 py-0.5 font-sans text-apoyo text-ink-soft hover:bg-hairline"
+            title="Cómo se reparte el recorte por rubro, ordenado por impacto"
+          >
+            {abierto ? "− ocultar reparto" : "+ ver reparto"}
+          </button>
+        )}
+        {hayIngreso && (
+          <span
+            className="rounded-full bg-positivo/10 px-2 py-0.5 font-sans text-apoyo text-positivo"
+            title={
+              i.mensaje || "Vender de más /mes lleva el piso a la referencia"
+            }
+          >
+            ingresar {formatCOP(i.monto)}/mes
+          </span>
+        )}
         <span
-          className="rounded-full bg-atencion/10 px-2 py-0.5 font-sans text-apoyo text-atencion"
-          title={
-            g.mensaje || "Recortar gasto/mes lleva el piso a la referencia"
-          }
+          className="rounded-full bg-surface-muted px-2 py-0.5 font-sans text-apoyo text-ink-soft"
+          title={`Se calcula en FABS (${palancas.unidades_extra.ver_en})`}
         >
-          recortar {formatCOP(g.monto)}/mes
+          motos extra: ver en FABS
         </span>
+      </div>
+      {hayReparto && abierto && (
+        <RepartoLista reparto={reparto} objetivo={g.monto} />
       )}
-      {hayIngreso && (
-        <span
-          className="rounded-full bg-positivo/10 px-2 py-0.5 font-sans text-apoyo text-positivo"
-          title={
-            i.mensaje || "Vender de más /mes lleva el piso a la referencia"
-          }
-        >
-          ingresar {formatCOP(i.monto)}/mes
-        </span>
+    </div>
+  );
+}
+
+// RF-F7 · lista del reparto. La suma puede ser menor al objetivo (tope 50% por
+// rubro) — si hay faltante, se declara para que el CEO sepa que tocan otras
+// palancas (ingreso extra, unidades, revisar umbral).
+function RepartoLista({
+  reparto,
+  objetivo,
+}: {
+  reparto: RecomendacionRubro[];
+  objetivo: string;
+}) {
+  const suma = reparto.reduce((acc, r) => acc + Number(r.monto_recortar), 0);
+  const meta = Number(objetivo);
+  const faltante = Math.max(0, meta - suma);
+  return (
+    <div className="rounded-md border border-hairline bg-surface-muted/50 p-2">
+      <ul className="flex flex-col gap-1">
+        {reparto.map((r) => (
+          <li
+            key={r.rubro_id}
+            className="flex items-baseline justify-between gap-3 font-sans text-apoyo"
+          >
+            <span className="text-ink-soft">{r.rubro_nombre}</span>
+            <span className="tabular text-ink" title={formatCOP(r.gasto_actual)}>
+              {formatCOP(r.monto_recortar)} ·{" "}
+              {Math.round(Number(r.pct_de_su_gasto) * 100)}% del rubro
+            </span>
+          </li>
+        ))}
+      </ul>
+      {faltante > 0 && (
+        <p className="mt-1 font-sans text-apoyo text-atencion">
+          Falta cubrir {formatCOP(String(faltante))}/mes — tocan otras palancas
+          (regla del 50% por rubro).
+        </p>
       )}
-      <span
-        className="rounded-full bg-surface-muted px-2 py-0.5 font-sans text-apoyo text-ink-soft"
-        title={`Se calcula en FABS (${palancas.unidades_extra.ver_en})`}
-      >
-        motos extra: ver en FABS
-      </span>
     </div>
   );
 }
