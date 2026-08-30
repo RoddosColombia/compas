@@ -47,7 +47,7 @@ Hoy `fabrica_proyectar_unidades` re-proyecta el pipeline completo con `motos_bas
 `async def impacto_palanca(*, palanca: str, nuevo_valor: Decimal, modelo: str = "todos") -> list[ResultadoCFO]`:
 - Valida `palanca ∈ {plazo_semanas, cuota_inicial, cuota_semanal}` y `modelo ∈ {Raider, Apache, Sport, todos}` (contra los modelos vigentes; si el modelo no existe → abstención honesta).
 - Base = `fabrica_proyectar_con_overrides()` sin overrides (o la proyección vigente); Con = con el `modelo_override`.
-- Devuelve `piso_sin` (COP), `piso_con` (COP, `ref="quiebre:<...>"` = primer mes `estado!="ok"` de la serie con la palanca), `impacto` (COP = piso_con − piso_sin, **computado por COMPAS**, no por el modelo). Evidencia con ancla de horizonte (como el fix de rebanada 1). Sin config → abstención (patrón `runway.py`).
+- Devuelve `piso_sin_palanca` (COP), `piso_con_palanca` (COP, `ref="quiebre:<...>"` = primer mes `estado!="ok"` de la serie con la palanca), `impacto_palanca` (COP = piso_con − piso_sin, **computado por COMPAS**, no por el modelo). Evidencia con ancla de horizonte (como el fix de rebanada 1). Sin config → abstención (patrón `runway.py`, `concepto="palanca"`). *(Conceptos namespaced con sufijo `_palanca` — ver §6.)*
 - **Reconciliación:** base y con corren el MISMO pipeline completo → el piso de "con" y el de la proyección vigente cuadran.
 
 ### 5.3 Registrar la tool — `cfo/agente/tools.py`
@@ -56,7 +56,7 @@ Nueva tool `simular_palanca` en `DISPATCH` + `TOOLS_SCHEMA` (wrapper async de UN
 - Descripciones claras para que el modelo elija la palanca y extraiga el valor + el modelo de la pregunta.
 
 ### 5.4 Prompt — `cfo/agente/prompt.py`
-Bloque corto: usar `simular_palanca` para "¿qué pasa si cambio el plazo/cuota…?"; devuelve `[[piso_sin]]`/`[[piso_con]]`/`[[impacto]]`; citar con tokens, nunca escribir cifras. (Regla 1/2 sin cambios.)
+Bloque corto: usar `simular_palanca` para "¿qué pasa si cambio el plazo/cuota…?"; devuelve `[[piso_sin_palanca]]`/`[[piso_con_palanca]]`/`[[impacto_palanca]]` (tokens namespaced, ver §6); citar con tokens, nunca escribir cifras. (Regla 1/2 sin cambios.)
 
 ## 6. Contrato de datos
 
