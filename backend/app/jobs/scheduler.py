@@ -37,9 +37,27 @@ def build_scheduler():
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     scheduler = AsyncIOScheduler(timezone="America/Bogota")
-    # TODO(Sprint 5+): registrar los 8 jobs idempotentes con jobstore en Mongo,
-    # coalesce=True, misfire_grace_time por job y heartbeat de Better Stack.
+    scheduler.add_job(
+        _job_paquete_lunes, "cron", day_of_week="mon", hour=7, minute=0,
+        id="vigilante_paquete_lunes", coalesce=True, misfire_grace_time=3600,
+        replace_existing=True,
+    )
     return scheduler
+
+
+async def _job_paquete_lunes() -> None:
+    """Lunes 7:00 (America/Bogota). No-op si CFO_ENABLED está off; import perezoso para
+    no acoplar el scheduler al dominio cfo en los tests del contrato del flag."""
+    from app.cfo import config as cfo_config
+
+    if not cfo_config.cfo_enabled():
+        return
+    from app.cfo.vigilante.paquete import generar_y_entregar_paquete
+
+    try:
+        await generar_y_entregar_paquete()
+    except Exception:  # noqa: BLE001 — un job proactivo no revienta el worker
+        logger.exception("fallo en el job del paquete del lunes")
 
 
 def main() -> None:
