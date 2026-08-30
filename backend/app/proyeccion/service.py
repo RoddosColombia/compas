@@ -24,8 +24,8 @@ from app.domain.parametros_proyeccion import (
     ParametrosProyeccion,
     costo_alistamiento_total,
 )
-from app.domain.rubro import TipoFlujo
-from app.domain.transaccion import Transaccion
+from app.domain.rubro import Rubro, RubroGrupo, TipoFlujo
+from app.domain.transaccion import Transaccion, pares_clasificacion
 from app.facturas import service as facturas_service
 from app.iva.liquidacion import (
     FacturaIva,
@@ -1671,6 +1671,74 @@ async def actuals_mensuales(*, meses: int = 3) -> list[ActualMes]:
             )
         )
     return out
+
+
+_GRUPOS_GASTO = [g for g in RubroGrupo if g != RubroGrupo.INGRESOS_OPERATIVOS]
+
+
+@dataclass(frozen=True)
+class ComposicionGasto:
+    """FABS inc4 rebanada 4 (ratios/mix) — egreso REAL agregado por RubroGrupo de
+    gasto (los 5, sin ingresos_operativos), sobre los meses de una ventana. Valores
+    planos (Decimal/str) para que cfo/calc compute el % después (S1); el % NO se
+    calcula aquí."""
+
+    ventana: str
+    meses: list[str]  # 'YYYY-MM'
+    por_grupo: dict[str, Decimal]  # RubroGrupo.value -> COP
+    total: Decimal
+
+
+async def _meses_de_ventana(ventana: str) -> list[MesControl]:
+    """Los MesControl de la ventana pedida, cronológico ascendente. 'cerrado' = el
+    último CERRADO; 'curso' = el último con movimientos; 'acumulado' = los últimos 3
+    con movimientos. Ventana desconocida → 422 (fail-closed, no se adivina)."""
+    todos = await MesControl.find_all().sort(+MesControl.mes).to_list()
+    if ventana == "cerrado":
+        cerrados = [mc for mc in todos if mc.estado == EstadoMes.CERRADO]
+        return cerrados[-1:]
+    con_mov: list[MesControl] = []
+    for mc in reversed(todos):  # más recientes primero
+        if await Transaccion.find(Transaccion.mes_id == mc.id).count() > 0:
+            con_mov.append(mc)
+    if ventana == "curso":
+        return con_mov[:1]
+    if ventana == "acumulado":
+        return list(reversed(con_mov[:3]))
+    raise ProyeccionError(f"ventana no soportada: {ventana}", 422)
+
+
+async def composicion_gasto_real(*, ventana: str) -> ComposicionGasto:
+    """Egreso REAL de la ventana, agregado por RubroGrupo, excluyendo el rubro de
+    sistema 'Ajuste de conciliación' (mismo criterio que `_caja_libro` /
+    `actuals_mensuales`) — tanto en el rubro PRIMARIO como en cada `parte` de una
+    transacción dividida (PTS6-B). mongomock no soporta pipelines `$group`
+    confiables: se agrega iterando `Transaccion.find` + `pares_clasificacion`, como
+    el resto del módulo."""
+    meses = await _meses_de_ventana(ventana)
+    if not meses:
+        raise ProyeccionError("sin meses con datos para la ventana", 409)
+    rubro_aj = await _rubro_ajuste()
+    grupo_de = {r.id: r.grupo for r in await Rubro.find_all().to_list()}
+    por_grupo: dict[str, Decimal] = {g.value: Decimal("0") for g in _GRUPOS_GASTO}
+    mes_ids = [mc.id for mc in meses]
+    async for t in Transaccion.find(
+        {"mes_id": {"$in": mes_ids}, "tipo_flujo": TipoFlujo.EGRESO.value}
+    ):
+        for rid, val in pares_clasificacion(t):
+            if rid == rubro_aj.id:
+                continue
+            g = grupo_de.get(rid)
+            if g is None or g == RubroGrupo.INGRESOS_OPERATIVOS:
+                continue
+            por_grupo[g.value] += val
+    total = sum(por_grupo.values(), Decimal("0"))
+    return ComposicionGasto(
+        ventana=ventana,
+        meses=[mc.mes[:7] for mc in meses],
+        por_grupo=por_grupo,
+        total=total,
+    )
 
 
 async def _actuals_por_mes(rubro_ajuste_id) -> list[tuple[MesControl, object]]:
