@@ -106,4 +106,73 @@ describe("VallesCard", () => {
     expect(screen.queryByText("nuevo")).toBeNull();
     expect(screen.queryByText("más profundo")).toBeNull();
   });
+
+  // RF-F5 · Las 3 palancas del valle.
+
+  it("con palancas activas muestra los chips de gasto e ingreso + link a FABS", () => {
+    const v = valle({
+      palancas: {
+        recorte_gasto: {
+          monto: "5000000.00",
+          unidad: "COP/mes",
+          alcanzable: true,
+          referencia: "100000000.00",
+          mensaje: "",
+        },
+        ingreso_extra: {
+          monto: "8000000.00",
+          unidad: "COP/mes",
+          alcanzable: true,
+          referencia: "100000000.00",
+          mensaje: "",
+        },
+        unidades_extra: {
+          monto: null,
+          unidad: "motos/mes",
+          alcanzable: false,
+          disponible: false,
+          ver_en: "cfo.escenario.motos_para_evitar_umbral",
+          mes_referencia: "2027-05",
+        },
+      },
+    });
+    render(<VallesCard valles={[v]} cargando={false} />);
+    expect(screen.getByText(/recortar/i)).toBeInTheDocument();
+    expect(screen.getByText(/ingresar/i)).toBeInTheDocument();
+    expect(screen.getByText(/motos extra: ver en FABS/i)).toBeInTheDocument();
+  });
+
+  it("con palancas de monto 0 no las pinta (no ensucia la lectura)", () => {
+    const v = valle({
+      palancas: {
+        recorte_gasto: {
+          monto: "0",
+          unidad: "COP/mes",
+          alcanzable: true,
+          referencia: "30000000",
+          mensaje: "Ya se cumple sin cambios.",
+        },
+        ingreso_extra: {
+          monto: "0",
+          unidad: "COP/mes",
+          alcanzable: true,
+          referencia: "30000000",
+          mensaje: "Ya se cumple sin cambios.",
+        },
+        unidades_extra: {
+          monto: null,
+          unidad: "motos/mes",
+          alcanzable: false,
+          disponible: false,
+          ver_en: "cfo.escenario.motos_para_evitar_umbral",
+          mes_referencia: "2027-05",
+        },
+      },
+    });
+    render(<VallesCard valles={[v]} cargando={false} />);
+    expect(screen.queryByText(/recortar/i)).toBeNull();
+    expect(screen.queryByText(/ingresar/i)).toBeNull();
+    // Tampoco el chip de FABS (si no hay palancas útiles, no aportamos ruido)
+    expect(screen.queryByText(/motos extra/i)).toBeNull();
+  });
 });

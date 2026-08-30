@@ -923,11 +923,74 @@ def _kpis_a_resultado(aj) -> ResultadoProyeccion:
     )
 
 
+def _palancas_por_valle(
+    r: ResultadoProyeccion,
+    valle: dict,
+    caja_minima: Decimal,
+    caja_atencion: Decimal | None,
+) -> dict:
+    """RF-F5 · Fundacional §2 — Las 3 palancas de acción para UN valle:
+
+    1. **recorte_gasto**: cuánto recortar/mes (goal_seek variable=gasto_absoluto)
+       para que el piso quede en la `referencia` (atención cuando existe; crítico si
+       no). Ver `solvers.goal_seek`.
+    2. **ingreso_extra**: cuánto ingreso extra/mes (goal_seek ingreso_absoluto).
+    3. **unidades_extra**: cuántas motos extra/mes; hoy es un stub (`disponible=False`)
+       — la bisección entera vive en `cfo.calc.escenario.motos_para_evitar_umbral`,
+       que consulta Mongo por iteración. El endpoint del cockpit no puede correr esa
+       ruta síncrona; se expone el shape para que la UI muestre "en FABS" y el
+       usuario navegue allá.
+
+    Compute-only, sin escrituras. Motor sin tocar (usa `goal_seek` que va por
+    `aplicar_impactos`). Todos los montos como string COP (regla 1)."""
+    # Import diferido: solvers ya está importado arriba, pero hay que evitar ciclos.
+    referencia = caja_atencion if caja_atencion is not None else caja_minima
+
+    def _pal(variable: str) -> dict:
+        g = goal_seek(
+            r,
+            caja_minima,
+            variable=variable,
+            objetivo_caja=referencia,
+        )
+        return {
+            "monto": (
+                money_str(g.valor) if g.valor is not None else money_str(Decimal("0"))
+            ),
+            "unidad": "COP/mes",
+            "alcanzable": g.alcanzable,
+            "referencia": money_str(referencia),
+            "mensaje": g.mensaje,
+        }
+
+    return {
+        "recorte_gasto": _pal("gasto_absoluto"),
+        "ingreso_extra": _pal("ingreso_absoluto"),
+        # Stub honesto: la palanca de unidades exige el pipeline completo y vive en
+        # FABS (motos_para_evitar_umbral). Aquí se declara con `disponible=False`
+        # para que la UI muestre el enlace correcto (no un cero engañoso).
+        "unidades_extra": {
+            "monto": None,
+            "unidad": "motos/mes",
+            "alcanzable": False,
+            "disponible": False,
+            "ver_en": "cfo.escenario.motos_para_evitar_umbral",
+            # el mes del valle es la referencia natural para el usuario; incluirla
+            # aunque no calculemos: la UI lo puede pasar al link
+            "mes_referencia": valle.get("mes"),
+        },
+    }
+
+
 async def valles_vigente(
     *, escenario: str, mes_inicio: tuple[int, int], horizonte_meses: int | None
 ) -> dict:
     """D1 §3 — los valles (hitos) de la proyección vigente: mínimos de caja relevantes
-    con sus causas. Lectura pura sobre la config vigente."""
+    con sus causas. Lectura pura sobre la config vigente.
+
+    RF-F5 · Fundacional §2 — cada valle llega con sus 3 palancas listas (recorte de
+    gasto, ingreso extra, unidades extra) contra la referencia vigente (atención si
+    está configurada, crítico si no)."""
     params, modelos = await _cargar_config_vigente()
     r, caja_min, _, _, _, caja_atn = await _resultado_con(
         params,
@@ -940,11 +1003,15 @@ async def valles_vigente(
     # traiga `entrada`/`salida`/`duracion`. Sin umbral configurado, comportamiento
     # idéntico al anterior (los 3 campos van en None).
     valles = detectar_valles(r.meses, caja_min, caja_atencion=caja_atn)
+    valles_serial = [_serializar_valle(v) for v in valles]
+    # RF-F5 · adjunta las palancas a cada valle. Compute-only.
+    for v in valles_serial:
+        v["palancas"] = _palancas_por_valle(r, v, caja_min, caja_atn)
     return {
         "escenario": escenario,
         "caja_minima": money_str(caja_min),
         "caja_atencion": money_str(caja_atn) if caja_atn is not None else None,
-        "valles": [_serializar_valle(v) for v in valles],
+        "valles": valles_serial,
     }
 
 

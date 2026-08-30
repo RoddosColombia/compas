@@ -29,6 +29,34 @@ export interface CausaValle {
   vs_promedio: string | null; // desvío relativo (0.40 = 40%); null si promedio 0
 }
 
+// RF-F5 · Fundacional §2 — cada valle llega con sus 3 palancas de acción.
+// Los dos primeros (gasto, ingreso) vienen resueltos vía `goal_seek`; el 3º
+// (unidades) es un stub honesto (disponible=false) porque exige el pipeline
+// completo (Mongo por iteración) que vive en FABS: la UI muestra un enlace
+// en vez de un cero engañoso.
+export interface PalancaMonto {
+  monto: string;
+  unidad: "COP/mes";
+  alcanzable: boolean;
+  referencia: string;
+  mensaje: string;
+}
+
+export interface PalancaUnidades {
+  monto: null;
+  unidad: "motos/mes";
+  alcanzable: false;
+  disponible: false;
+  ver_en: string;
+  mes_referencia: string;
+}
+
+export interface PalancasValle {
+  recorte_gasto: PalancaMonto;
+  ingreso_extra: PalancaMonto;
+  unidades_extra: PalancaUnidades;
+}
+
 export interface Valle {
   mes: string;
   caja: string;
@@ -40,6 +68,9 @@ export interface Valle {
   entrada?: string | null;
   salida?: string | null;
   duracion?: number | null;
+  // RF-F5 · las 3 palancas por valle (opcional en el tipo por compat con mocks;
+  // el backend siempre las emite hoy).
+  palancas?: PalancasValle;
 }
 
 export interface Impactos {

@@ -4,7 +4,7 @@
 
 import { Card, CardTitle } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
-import type { Valle } from "@/lib/decisiones";
+import type { PalancasValle, Valle } from "@/lib/decisiones";
 import { formatCOP, formatCOPCompact, formatMesCorto } from "@/lib/money";
 
 export function VallesCard({
@@ -131,6 +131,49 @@ function ValleFila({
             .join(" · ")}
         </span>
       )}
+      {valle.palancas && <PalancasFila palancas={valle.palancas} />}
     </li>
+  );
+}
+
+// RF-F5 · Las 3 palancas por valle (recorte gasto, ingreso extra, unidades extra).
+// Cero palancas útiles con montos 0 → no se pinta (no ensuciamos la lectura); un
+// stub honesto para unidades (disponible=false) muestra "en FABS" en vez de un 0.
+function PalancasFila({ palancas }: { palancas: PalancasValle }) {
+  const g = palancas.recorte_gasto;
+  const i = palancas.ingreso_extra;
+  const hayGasto = g.alcanzable && Number(g.monto.replace(/[^\d.-]/g, "")) > 0;
+  const hayIngreso =
+    i.alcanzable && Number(i.monto.replace(/[^\d.-]/g, "")) > 0;
+  if (!hayGasto && !hayIngreso) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-1.5">
+      {hayGasto && (
+        <span
+          className="rounded-full bg-atencion/10 px-2 py-0.5 font-sans text-apoyo text-atencion"
+          title={
+            g.mensaje || "Recortar gasto/mes lleva el piso a la referencia"
+          }
+        >
+          recortar {formatCOP(g.monto)}/mes
+        </span>
+      )}
+      {hayIngreso && (
+        <span
+          className="rounded-full bg-positivo/10 px-2 py-0.5 font-sans text-apoyo text-positivo"
+          title={
+            i.mensaje || "Vender de más /mes lleva el piso a la referencia"
+          }
+        >
+          ingresar {formatCOP(i.monto)}/mes
+        </span>
+      )}
+      <span
+        className="rounded-full bg-surface-muted px-2 py-0.5 font-sans text-apoyo text-ink-soft"
+        title={`Se calcula en FABS (${palancas.unidades_extra.ver_en})`}
+      >
+        motos extra: ver en FABS
+      </span>
+    </div>
   );
 }
