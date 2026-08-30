@@ -41,6 +41,27 @@
   --color-surface-muted: #f8fafc; /* fondos tenues (slate-50) */
   --color-hairline: #e2e8f0; /* bordes de 1px (slate-200) */
 
+  /* ── RV-V1 · DESIGN.md §3: TOKENS DE ROL PARA GRÁFICOS ──
+     Prerrequisito de todo lo visual (RV-V2 en adelante). Las series no se
+     distinguen por color de ESTADO (regla 2 del DESIGN.md): la diferencia
+     real/proyección es FORMA (sólido/punteado); los tokens de rol solo
+     REFUERZAN visualmente. Los categóricos de composición son DISJUNTOS del
+     semáforo (regla 9): ni verde de estado, ni ámbar, ni rojo. Se afinarán
+     en RV-V3 con tweakcn (verificación AA + daltonismo); aquí quedan las
+     variables para que RV-V2 no hardcodee ningún hex. */
+
+  /* Series de la curva de caja — el trazo (forma) manda; el color refuerza. */
+  --color-chart-real: #0f172a; /* = --color-ink · trazo sólido con ancla */
+  --color-chart-proyectado: #0fa9b8; /* = --color-cyan · punteado */
+  --color-chart-escenario: #15803d; /* = --color-positivo · punteado + área */
+
+  /* Composición del flujo — categórica, disjunta del semáforo. */
+  --color-chart-ingreso: #15803d; /* = --color-positivo · única categoría que
+                                     * toca el verde (arriba del cero) */
+  --color-chart-gasto-fijo: #2563eb; /* azul (blue-600) · fuera del semáforo */
+  --color-chart-auteco: #c026d3; /* magenta (fuchsia-600) · dispara el valle */
+  --color-chart-otros: #0d9488; /* teal-600 · distinto del cyan de marca */
+
   /* Compat: alias del token histórico `brand` (verde) para no romper vistas previas */
   --color-brand: #12a312;
   --color-brand-soft: #1dc91d;

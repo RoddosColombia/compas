@@ -97,31 +97,32 @@ se usan los **semánticos AA** de arriba.
 
 ---
 
-## 3 · Tokens de rol para gráficos (a agregar en `@theme`)
+## 3 · Tokens de rol para gráficos (en `@theme` — **materializados 2026-08-30**)
 
-`index.css` tiene marca y estado, pero **aún no** los roles que las gráficas necesitan. RV-V1
-los **define** aquí (derivados de los de arriba) para que RV-V2 tenga contrato de tokens.
-Se materializan en `index.css` cuando se construya RV-V2 (y se afinan con **tweakcn**, RV-V3).
+RV-V1 cierre: los 7 tokens de rol viven en `frontend/src/index.css` como
+variables Tailwind 4. Las clases utilitarias (`text-chart-real`,
+`bg-chart-auteco`, etc.) están disponibles para RV-V2 sin hardcodear ningún hex.
 
 ### 3.1 Series de la curva de caja (por forma; el color solo refuerza)
-| Rol | Deriva de | Trazo |
-|-----|-----------|-------|
-| `--chart-real` | `--color-ink` `#0f172a` | sólido, con puntos + ancla |
-| `--chart-proyectado` | `--color-cyan` `#0fa9b8` | punteado |
-| `--chart-escenario` | `--color-positivo` `#15803d` | punteado + área |
+| Token | Hex | Trazo | Deriva de |
+|-------|-----|-------|-----------|
+| `--color-chart-real` | `#0f172a` | sólido, con puntos + ancla | `--color-ink` |
+| `--color-chart-proyectado` | `#0fa9b8` | punteado | `--color-cyan` |
+| `--color-chart-escenario` | `#15803d` | punteado + área | `--color-positivo` |
 
 ### 3.2 Composición del flujo (categórica, **disjunta del semáforo** — regla 9)
-| Rol | Deriva de | Nota |
-|-----|-----------|------|
-| `--chart-ingreso` | `--color-positivo` `#15803d` | única categoría que sí toca el verde: es ingreso neto, arriba del cero |
-| `--chart-gasto-fijo` | familia azul (nuevo, provisional) | egreso — azul, fuera del semáforo |
-| `--chart-auteco` | familia magenta (nuevo, provisional) | inventario Auteco — el que dispara el valle |
-| `--chart-otros` | familia teal (nuevo, provisional) | otros egresos |
+| Token | Hex | Nota |
+|-------|-----|------|
+| `--color-chart-ingreso` | `#15803d` | única categoría que toca el verde: es ingreso neto, arriba del cero (= `--color-positivo`) |
+| `--color-chart-gasto-fijo` | `#2563eb` | **blue-600** — fuera del semáforo (no verde/ámbar/rojo) |
+| `--color-chart-auteco` | `#c026d3` | **fuchsia-600** — el que dispara el valle |
+| `--color-chart-otros` | `#0d9488` | **teal-600** — distinto del `--color-cyan` de marca |
 
-> **Provisional:** los tres colores categóricos de egreso (azul/magenta/teal) **no** existen
-> aún en `index.css`. Se fijan en **RV-V3 (tweakcn)** con verificación de contraste AA y de
-> daltonismo, garantizando que **ninguno colisione** con `positivo/atención/crítico`. Hasta
-> entonces, RV-V2 los toma de este contrato como variables, nunca hardcodeados.
+> **Afinables en RV-V3 (tweakcn)**: los 3 categóricos de egreso (azul/magenta/teal)
+> están fijados con valores AA sobre blanco para elementos NO-texto (áreas,
+> barras, líneas gruesas). RV-V3 los revalidará contra daltonismo con la
+> herramienta, garantizando que ninguno colisione con `positivo/atención/crítico`.
+> Hasta entonces, RV-V2 los consume por **token** (nunca hex literal).
 
 ---
 
