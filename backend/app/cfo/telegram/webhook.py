@@ -16,13 +16,65 @@ ya se traga sus propios errores de red."""
 
 import logging
 
+from app.audit.events import AuditEvento
+from app.audit.service import emit_audit
 from app.cfo import config
 from app.cfo.agente import servicio
 from app.cfo.agente.cliente import crear_cliente as crear_cliente_llm
 from app.cfo.telegram import hilos, repositorio, vinculos
 from app.cfo.telegram.cliente import ClienteTelegramProto
+from app.cfo.vigilante.modelos import PaqueteVigilante
+from app.core.time import now_bogota
 
 logger = logging.getLogger(__name__)
+
+
+async def _audit_soft(evento, entidad_id: str, metadata: dict) -> None:
+    try:
+        await emit_audit(
+            evento, entidad="vigilante", entidad_id=entidad_id, actor_id="vigilante",
+            metadata=metadata,
+        )
+    except Exception:  # noqa: BLE001 — no bloquear la difusión por fallo de auditoría
+        logger.exception("fallo al auditar %s", evento)
+
+
+async def _publicar_paquete(
+    chat_id: int, cliente_telegram: ClienteTelegramProto
+) -> None:
+    """Difunde el último borrador a todo el comité (todos los vínculos) y lo marca
+    `publicado` DESPUÉS de difundir. `cliente_telegram.enviar` traga sus propios
+    errores de red, así que el loop de difusión no revienta a medio camino."""
+    borradores = await (
+        PaqueteVigilante.find(PaqueteVigilante.estado == "borrador")
+        .sort(-PaqueteVigilante.generado_at)
+        .limit(1)
+        .to_list()
+    )
+    pq = borradores[0] if borradores else None
+    if pq is None:
+        await cliente_telegram.enviar(
+            chat_id, "No hay un paquete pendiente para publicar."
+        )
+        return
+
+    vinculos_all = await repositorio.listar_vinculos()
+    for v in vinculos_all:
+        await cliente_telegram.enviar(v.telegram_id, pq.texto)
+
+    pq.estado = "publicado"
+    pq.publicado_at = now_bogota()
+    await pq.save()
+
+    await _audit_soft(
+        AuditEvento.vigilante_paquete_publicado,
+        pq.semana,
+        {"semana": pq.semana, "n_destinatarios": len(vinculos_all)},
+    )
+
+    await cliente_telegram.enviar(
+        chat_id, f"✅ Paquete publicado al comité ({len(vinculos_all)} destinatarios)."
+    )
 
 
 def _formatear(resp) -> str:
@@ -66,6 +118,14 @@ async def procesar_update(
             f"No estás autorizado para usar FABS. Tu ID de Telegram es "
             f"{telegram_id} — pídele al administrador que te vincule.",
         )
+        return
+
+    es_comando_publicar = (
+        texto.strip().lower() == "publicar"
+        and telegram_id == config.vigilante_revisor_telegram_id()
+    )
+    if es_comando_publicar:
+        await _publicar_paquete(chat_id, cliente_telegram)
         return
 
     hilo = await repositorio.obtener_hilo(user_id)
