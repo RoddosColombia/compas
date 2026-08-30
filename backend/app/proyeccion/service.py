@@ -24,6 +24,7 @@ from app.domain.parametros_proyeccion import (
     ParametrosProyeccion,
     costo_alistamiento_total,
 )
+from app.domain.rubro import TipoFlujo
 from app.domain.transaccion import Transaccion
 from app.facturas import service as facturas_service
 from app.iva.liquidacion import (
@@ -1611,6 +1612,65 @@ async def impacto_palanca_raw(
 
 
 ANCLA_MODOS = ("cerrado", "movimientos")
+
+
+@dataclass(frozen=True)
+class ActualMes:
+    """FABS inc4 rebanada 3 (tendencias) — ingreso/gasto/caja REALES de un mes ya
+    cargado (Transaccion), para que el cfo/calc de tendencias pueda comparar meses
+    reales sin importar tipos de dominio (S1 isolation: solo Decimal/str)."""
+
+    mes: str  # 'YYYY-MM'
+    ingreso_real: Decimal
+    gasto_real: Decimal
+    caja_real: Decimal
+
+
+async def _ingreso_real_mes(mes_id) -> Decimal:
+    """Σ `valor` de las Transaccion INGRESO del mes (mongomock no soporta pipelines
+    de agregación completos — se suma iterando `find`, como `_caja_libro`)."""
+    total = Decimal("0")
+    async for t in Transaccion.find(Transaccion.mes_id == mes_id):
+        if t.tipo_flujo == TipoFlujo.INGRESO:
+            total += t.valor
+    return total
+
+
+async def _egreso_real_mes(mes_id, rubro_ajuste_id) -> Decimal:
+    """Σ `valor` de las Transaccion EGRESO del mes, excluyendo el rubro 'Ajuste de
+    conciliación' por `rubro_id` PRIMARIO — mismo criterio que `_caja_libro` (el
+    ajuste es un artefacto del cierre, no gasto real)."""
+    total = Decimal("0")
+    async for t in Transaccion.find(Transaccion.mes_id == mes_id):
+        if t.tipo_flujo == TipoFlujo.EGRESO and t.rubro_id != rubro_ajuste_id:
+            total += t.valor
+    return total
+
+
+async def actuals_mensuales(*, meses: int = 3) -> list[ActualMes]:
+    """Los últimos `meses` MesControl CON movimientos, cronológico ascendente, con
+    su ingreso/gasto/caja reales. Base de las preguntas de tendencia sobre datos
+    REALES (FABS inc4 rebanada 3)."""
+    rubro_aj = await _rubro_ajuste()
+    todos = await MesControl.find_all().sort(+MesControl.mes).to_list()
+    # meses con movimientos, los más recientes primero, hasta `meses`
+    con_mov: list[MesControl] = []
+    for mc in reversed(todos):
+        if await Transaccion.find(Transaccion.mes_id == mc.id).count() > 0:
+            con_mov.append(mc)
+            if len(con_mov) >= meses:
+                break
+    out: list[ActualMes] = []
+    for mc in reversed(con_mov):  # cronológico asc
+        out.append(
+            ActualMes(
+                mes=mc.mes[:7],
+                ingreso_real=await _ingreso_real_mes(mc.id),
+                gasto_real=await _egreso_real_mes(mc.id, rubro_aj.id),
+                caja_real=await _caja_libro(mc.id, rubro_aj.id, mc.saldo_inicial_caja),
+            )
+        )
+    return out
 
 
 async def _actuals_por_mes(rubro_ajuste_id) -> list[tuple[MesControl, object]]:
