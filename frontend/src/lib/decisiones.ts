@@ -102,11 +102,16 @@ export type VariableGoalSeek =
   | "gasto_absoluto";
 
 export interface ResolverBody {
-  objetivo: "techo_gasto" | "goal_seek" | "punto_quiebre";
+  objetivo:
+    | "techo_gasto"
+    | "techo_gasto_ventana" // RF-F4
+    | "goal_seek"
+    | "punto_quiebre";
   ajustes?: Ajuste[];
   colchon?: string; // techo_gasto
   variable?: VariableGoalSeek; // goal_seek
   objetivo_caja?: string; // goal_seek
+  ventana_meses?: number; // RF-F4 · default 9
 }
 
 export interface TechoResultado {
@@ -136,8 +141,24 @@ export interface QuiebreResultado {
   perfora: boolean;
 }
 
+// RF-F4 — techo restringido a los primeros `ventana` meses, contra el umbral de
+// atención (si está configurado; si no, contra el crítico). La bandera roja
+// `perfora_atencion` la enciende el backend cuando el valle DE LA VENTANA (base,
+// sin ajuste) ya está bajo la referencia.
+export interface TechoVentanaResultado {
+  objetivo: "techo_gasto_ventana";
+  techo_mensual: string;
+  valle_limitante_mes: string;
+  piso_resultante: string;
+  referencia: string;
+  ventana: number;
+  hay_holgura: boolean;
+  perfora_atencion: boolean;
+}
+
 export type ResolverResultado =
   | TechoResultado
+  | TechoVentanaResultado
   | GoalSeekResultado
   | QuiebreResultado;
 

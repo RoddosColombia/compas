@@ -60,7 +60,12 @@ from app.proyeccion.motor import (
     colocacion_mensual,
     proyectar,
 )
-from app.proyeccion.solvers import goal_seek, punto_de_quiebre, techo_gasto
+from app.proyeccion.solvers import (
+    goal_seek,
+    punto_de_quiebre,
+    techo_gasto,
+    techo_gasto_ventana,
+)
 from app.proyeccion.valles import Valle, detectar_valles
 
 HORIZONTE_MAX = 180  # 15 años (tope de infraestructura)
@@ -995,11 +1000,13 @@ async def resolver(
     colchon: Decimal = Decimal("0"),
     variable: str | None = None,
     objetivo_caja: Decimal | None = None,
+    ventana_meses: int = 9,
 ) -> dict:
     """D1 §5 — solvers por bisección sobre la proyección vigente + los `ajustes` en
-    pantalla. Compute-only. `objetivo` ∈ {techo_gasto, goal_seek, punto_quiebre}."""
+    pantalla. Compute-only. `objetivo` ∈ {techo_gasto, techo_gasto_ventana (RF-F4),
+    goal_seek, punto_quiebre}."""
     params, modelos = await _cargar_config_vigente()
-    r, caja_min, _, _, _, _ = await _resultado_con(
+    r, caja_min, _, _, _, caja_atn = await _resultado_con(
         params,
         modelos,
         escenario=escenario,
@@ -1016,6 +1023,26 @@ async def resolver(
             "meta": money_str(t.meta),
             "colchon": money_str(t.colchon),
             "hay_holgura": t.hay_holgura,
+        }
+    if objetivo == "techo_gasto_ventana":
+        # RF-F4 — techo mirando SOLO los primeros `ventana_meses` meses, contra el
+        # umbral de ATENCIÓN (D-1) cuando está configurado; sin él cae al crítico.
+        tv = techo_gasto_ventana(
+            r,
+            caja_min,
+            ventana=ventana_meses,
+            referencia=caja_atn,
+            ajustes_previos=ajustes,
+        )
+        return {
+            "objetivo": "techo_gasto_ventana",
+            "techo_mensual": money_str(tv.techo_mensual),
+            "valle_limitante_mes": tv.valle_limitante_mes,
+            "piso_resultante": money_str(tv.piso_resultante),
+            "referencia": money_str(tv.referencia),
+            "ventana": tv.ventana,
+            "hay_holgura": tv.hay_holgura,
+            "perfora_atencion": tv.perfora_atencion,
         }
     if objetivo == "goal_seek":
         if variable is None or objetivo_caja is None:
