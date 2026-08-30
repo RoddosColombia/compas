@@ -10,12 +10,15 @@ GO Kimi PLAN-I 9.3) + saldo_banco.reportado (CR-S6, C4 ajuste diario de caja,
 GO Kimi PLAN-I 9.3) + pago_planeado.creado/editado/cancelado (CR-S7, C9 pagos
 de la semana, GO CEO 2026-07-23) + modelo_moto.creado/editado/desactivado +
 parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
-2026-07-23) = 44. No se inventan eventos sin CR."""
+2026-07-23) = 44. No se inventan eventos sin CR.
+
+vigilante.paquete.generado/publicado (CR-CFO-3, FABS vigilante paquete lunes,
+GO CEO 2026-08-30) llevan el catálogo a 68 (ver test abajo)."""
 
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_66_eventos():
+def test_catalogo_tiene_exactamente_68_eventos():
     # 59 + factura_obligacion.pagada (D2 §7, GO CEO 2026-08-04)
     # + transaccion.dividida + transaccion.division_deshecha (PTS6-B, CR división de
     #   clasificación, GO CEO 2026-08-10) = 62
@@ -23,8 +26,10 @@ def test_catalogo_tiene_exactamente_66_eventos():
     #   GO CEO 2026-08-11) = 64
     # + cfo.vinculo_creado + cfo.vinculo_eliminado (CR-CFO-2, FABS inc3 Pieza B —
     #   canal Telegram, GO CEO 2026-08-17) = 66.
-    assert len(AuditEvento) == 66
-    assert len(CATALOGO_EVENTOS) == 66
+    # + vigilante.paquete.generado + vigilante.paquete.publicado (CR-CFO-3, FABS
+    #   vigilante paquete lunes, GO CEO 2026-08-30) = 68.
+    assert len(AuditEvento) == 68
+    assert len(CATALOGO_EVENTOS) == 68
     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
     assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
     assert AuditEvento.transaccion_dividida.value == "transaccion.dividida"
@@ -36,6 +41,8 @@ def test_catalogo_tiene_exactamente_66_eventos():
     assert "cfo.respuesta" in CATALOGO_EVENTOS
     assert "cfo.vinculo_creado" in CATALOGO_EVENTOS
     assert "cfo.vinculo_eliminado" in CATALOGO_EVENTOS
+    assert "vigilante.paquete.generado" in CATALOGO_EVENTOS
+    assert "vigilante.paquete.publicado" in CATALOGO_EVENTOS
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():
@@ -84,6 +91,8 @@ def test_eventos_clave_presentes():
         "meta_ingreso.creada",  # CR-D2: alta de meta de ingreso
         "meta_ingreso.editada",  # CR-D2: edición de meta
         "meta_ingreso.eliminada",  # CR-D2: baja lógica de meta
+        "vigilante.paquete.generado",  # CR-CFO-3: job arma el borrador semanal
+        "vigilante.paquete.publicado",  # CR-CFO-3: revisor difunde al comité
     ):
         assert esperado in CATALOGO_EVENTOS
 

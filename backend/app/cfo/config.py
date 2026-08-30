@@ -50,3 +50,15 @@ def cfo_hilo_ventana() -> int:
     """Cuántos mensajes previos del hilo se anteponen como `historial` en cada
     consulta nueva (ventana deslizante; default 8)."""
     return int(os.environ.get("CFO_HILO_VENTANA", "8"))
+
+
+def vigilante_revisor_telegram_id() -> int | None:
+    """telegram_id del revisor que recibe el borrador del "paquete del lunes"
+    (SOLO env var; nunca en repo). Ausente/vacío/no-entero ⇒ None."""
+    v = os.environ.get("VIGILANTE_REVISOR_TELEGRAM_ID", "").strip()
+    if not v:
+        return None
+    try:
+        return int(v)
+    except ValueError:
+        return None

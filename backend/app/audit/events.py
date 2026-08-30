@@ -146,6 +146,15 @@ class AuditEvento(StrEnum):
     cfo_vinculo_creado = "cfo.vinculo_creado"
     cfo_vinculo_eliminado = "cfo.vinculo_eliminado"
 
+    # ── CR-CFO-3 (2) — FABS vigilante paquete lunes (GO CEO 2026-08-30) ──
+    # Proactivo: `vigilante.paquete.generado` = el job armó el borrador semanal
+    # (metadata {semana, abstuvo, conceptos_usados}); `vigilante.paquete.publicado`
+    # = el revisor lo difundió al comité vía "publicar" (metadata {semana,
+    # n_destinatarios}). La generación también emite cfo.consulta/cfo.respuesta
+    # (reusa consultar). Catálogo 66 -> 68.
+    vigilante_paquete_generado = "vigilante.paquete.generado"
+    vigilante_paquete_publicado = "vigilante.paquete.publicado"
+
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)
