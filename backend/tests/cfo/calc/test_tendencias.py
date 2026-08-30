@@ -114,3 +114,33 @@ async def test_rumbo_caja_abstiene_sin_actuals(monkeypatch):
     monkeypatch.setattr(tendencias.proy_service, "proyectar_vigente", fake_proy)
     rs = await tendencias.rumbo_caja()
     assert len(rs) == 1 and rs[0].disponible is False
+
+
+@pytest.mark.asyncio
+async def test_real_vs_presupuesto_sobre(monkeypatch):
+    from app.presupuesto.service import PresupuestoMes
+
+    async def fake(mes=None):
+        return PresupuestoMes(
+            mes="2026-06",
+            gasto_real=Decimal("1500000"),
+            presupuesto_aprobado=Decimal("1200000"),
+        )
+
+    monkeypatch.setattr(tendencias.presu_service, "real_vs_presupuesto_mes", fake)
+    rs = await tendencias.real_vs_presupuesto()
+    by = {r.concepto: r for r in rs}
+    assert by["gasto_real_mes"].valor == Decimal("1500000")
+    assert by["presupuesto_mes"].valor == Decimal("1200000")
+    assert by["desvio_presupuesto"].valor == Decimal("300000")
+    assert by["desvio_presupuesto"].evidencia.ref == "direccion:sobre"
+
+
+@pytest.mark.asyncio
+async def test_real_vs_presupuesto_abstiene(monkeypatch):
+    async def fake(mes=None):
+        return None
+
+    monkeypatch.setattr(tendencias.presu_service, "real_vs_presupuesto_mes", fake)
+    rs = await tendencias.real_vs_presupuesto()
+    assert len(rs) == 1 and rs[0].disponible is False
