@@ -52,6 +52,11 @@ class ClaveConfig(StrEnum):
     # `valles.py` (caja_minima × factor_atencion). El resolver descarta valores ≤
     # crítico (dato malo): la atención está por encima del mínimo por definición.
     UMBRAL_ATENCION = "UMBRAL_ATENCION"
+    # FABS vigilante · alerta de caja (2026-08-30). Editable por dato (no hardcode).
+    # ALERTA_CAJA_ACTIVA {"activa": bool} — on/off (ausente → False).
+    # ALERTA_CAJA_HORIZONTE_MESES {"meses": int} — meses adelante (ausente → 6).
+    ALERTA_CAJA_ACTIVA = "ALERTA_CAJA_ACTIVA"
+    ALERTA_CAJA_HORIZONTE_MESES = "ALERTA_CAJA_HORIZONTE_MESES"
 
 
 # Tipo esperado por clave (M-03). "decimal" | "fecha" | "json".
@@ -66,6 +71,8 @@ _TIPO_POR_CLAVE: dict[ClaveConfig, str] = {
     ClaveConfig.IVA_ALIMENTA_PROYECCION: "json",
     ClaveConfig.SALDO_FAVOR_IVA_DECLARADO: "json",
     ClaveConfig.TARIFA_IVA: "json",
+    ClaveConfig.ALERTA_CAJA_ACTIVA: "json",
+    ClaveConfig.ALERTA_CAJA_HORIZONTE_MESES: "json",
 }
 
 

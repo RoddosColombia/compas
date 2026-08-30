@@ -84,3 +84,61 @@ async def escribir_umbral_atencion(
     )
     await fila.insert()
     return fila
+
+
+_ALERTA_HORIZONTE_FALLBACK = 6
+
+
+async def leer_alerta_caja_activa() -> bool:
+    """On/off del vigilante de caja. Ausente/incoherente → False (apagada)."""
+    fila = (
+        await Configuracion.find(Configuracion.clave == ClaveConfig.ALERTA_CAJA_ACTIVA)
+        .sort(-Configuracion.vigente_desde)
+        .first_or_none()
+    )
+    if fila is None or fila.valor_json is None:
+        return False
+    return bool(fila.valor_json.get("activa", False))
+
+
+async def leer_alerta_horizonte_meses() -> int:
+    """Meses hacia adelante del disparador proyectado. Ausente/incoherente → 6."""
+    fila = (
+        await Configuracion.find(
+            Configuracion.clave == ClaveConfig.ALERTA_CAJA_HORIZONTE_MESES
+        )
+        .sort(-Configuracion.vigente_desde)
+        .first_or_none()
+    )
+    if fila is None or fila.valor_json is None:
+        return _ALERTA_HORIZONTE_FALLBACK
+    m = fila.valor_json.get("meses")
+    return m if isinstance(m, int) and m > 0 else _ALERTA_HORIZONTE_FALLBACK
+
+
+async def escribir_alerta_caja_activa(
+    *, activa: bool, usuario_id: str, vigente_desde: date | None = None
+) -> Configuracion:
+    fila = Configuracion(
+        clave=ClaveConfig.ALERTA_CAJA_ACTIVA,
+        valor_json={"activa": bool(activa)},
+        vigente_desde=(vigente_desde or today_bogota()).isoformat(),
+        modificado_por=usuario_id,
+    )
+    await fila.insert()
+    return fila
+
+
+async def escribir_alerta_horizonte_meses(
+    *, meses: int, usuario_id: str, vigente_desde: date | None = None
+) -> Configuracion:
+    if not isinstance(meses, int) or meses <= 0:
+        raise ConfiguracionError("el horizonte debe ser un entero de meses > 0", 422)
+    fila = Configuracion(
+        clave=ClaveConfig.ALERTA_CAJA_HORIZONTE_MESES,
+        valor_json={"meses": meses},
+        vigente_desde=(vigente_desde or today_bogota()).isoformat(),
+        modificado_por=usuario_id,
+    )
+    await fila.insert()
+    return fila
