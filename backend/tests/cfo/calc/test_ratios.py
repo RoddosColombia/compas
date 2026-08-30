@@ -45,3 +45,40 @@ async def test_composicion_abstiene_sin_gasto(monkeypatch):
     monkeypatch.setattr(ratios.proy_service, "composicion_gasto_real", fake)
     rs = await ratios.composicion_gasto(ventana="curso")
     assert len(rs) == 1 and rs[0].disponible is False
+
+
+@pytest.mark.asyncio
+async def test_mix_modelos_normaliza(monkeypatch):
+    async def fake():
+        return [
+            ("Raider", Decimal("0.5")),
+            ("Apache", Decimal("0.3")),
+            ("Sport", Decimal("0.2")),
+        ]
+
+    monkeypatch.setattr(ratios.modelos_service, "mix_activos", fake)
+    rs = await ratios.mix_modelos()
+    by = {r.concepto: r for r in rs}
+    assert by["mix_raider"].valor == Decimal("50.0")
+    assert by["mix_raider"].unidad == "%"
+    assert by["mix_apache"].valor == Decimal("30.0")
+
+
+@pytest.mark.asyncio
+async def test_mix_modelos_normaliza_suma_distinta_de_uno(monkeypatch):
+    async def fake():  # suman 0.8, no 1.0 -> normaliza por 0.8
+        return [("Raider", Decimal("0.4")), ("Apache", Decimal("0.4"))]
+
+    monkeypatch.setattr(ratios.modelos_service, "mix_activos", fake)
+    by = {r.concepto: r for r in await ratios.mix_modelos()}
+    assert by["mix_raider"].valor == Decimal("50.0")  # 0.4/0.8*100
+
+
+@pytest.mark.asyncio
+async def test_mix_modelos_abstiene_sin_mix(monkeypatch):
+    async def fake():
+        return []
+
+    monkeypatch.setattr(ratios.modelos_service, "mix_activos", fake)
+    rs = await ratios.mix_modelos()
+    assert len(rs) == 1 and rs[0].disponible is False

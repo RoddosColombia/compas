@@ -4,9 +4,11 @@ proyeccion.service.composicion_gasto_real (que ya agrega el egreso REAL por
 RubroGrupo); NO recalcula, NO importa dominio ni el proyector interno
 (aislamiento S1). El % lo computa esta capa, Decimal puro, cuantizado a 0.1."""
 
+import re
 from decimal import Decimal
 
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
+from app.modelos_moto import service as modelos_service
 from app.proyeccion import service as proy_service
 from app.proyeccion.service import ProyeccionError
 
@@ -70,6 +72,48 @@ async def composicion_gasto(*, ventana: str) -> list[ResultadoCFO]:
         out.append(
             ResultadoCFO(
                 concepto=f"pct_{suf}",
+                valor=pct,
+                unidad=_UNIDAD_PCT,
+                disponible=True,
+                evidencia=evidencia,
+            )
+        )
+    return out
+
+
+_FUENTE_MIX = "app.modelos_moto.service.mix_activos"
+
+
+def _slug(nombre: str) -> str:
+    return re.sub(r"\W+", "_", nombre.lower()).strip("_")
+
+
+async def mix_modelos() -> list[ResultadoCFO]:
+    """% de participación de mix de cada modelo ACTIVO, normalizado (Σ=100). Envuelve
+    modelos_moto.service.mix_activos (tuplas planas nombre/participación); NO importa
+    el modelo de dominio (aislamiento S1)."""
+    mix = await modelos_service.mix_activos()
+    total = sum((p for _, p in mix), Decimal("0"))
+    if total <= 0:
+        return [
+            ResultadoCFO(
+                concepto="mix",
+                valor=None,
+                unidad=_UNIDAD_PCT,
+                disponible=False,
+                evidencia=Evidencia(
+                    fuente=_FUENTE_MIX, fecha_corte=None, ref="sin-mix"
+                ),
+            )
+        ]
+
+    evidencia = Evidencia(fuente=_FUENTE_MIX, fecha_corte=None, ref="share-normalizado")
+    out: list[ResultadoCFO] = []
+    for nombre, participacion in mix:
+        pct = (participacion / total * _CIEN).quantize(_CUANTO_PCT)
+        out.append(
+            ResultadoCFO(
+                concepto=f"mix_{_slug(nombre)}",
                 valor=pct,
                 unidad=_UNIDAD_PCT,
                 disponible=True,
