@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
 from app.core.time import now_bogota
+from app.presupuesto import service as presu_service
 from app.proyeccion import service as proy_service
 from app.proyeccion.service import ProyeccionError
 
@@ -151,3 +152,41 @@ async def rumbo_caja() -> list[ResultadoCFO]:
         )
     )
     return out
+
+
+async def real_vs_presupuesto(*, mes: str | None = None) -> list[ResultadoCFO]:
+    """¿Gasté más o menos de lo presupuestado? Envuelve
+    presupuesto.service.real_vs_presupuesto_mes (mes CERRADO con presupuesto
+    aprobado). Sin dato → abstención (nada que comparar)."""
+    fuente = "presupuesto.service.real_vs_presupuesto_mes"
+    res = await presu_service.real_vs_presupuesto_mes(mes=mes)
+    if res is None:
+        return _abstencion("presupuesto", "sin-cerrado", fuente)
+    desvio = res.gasto_real - res.presupuesto_aprobado
+    return [
+        ResultadoCFO(
+            concepto="gasto_real_mes",
+            valor=res.gasto_real,
+            unidad=_UNIDAD,
+            disponible=True,
+            evidencia=Evidencia(fuente=fuente, fecha_corte=None, ref=res.mes),
+        ),
+        ResultadoCFO(
+            concepto="presupuesto_mes",
+            valor=res.presupuesto_aprobado,
+            unidad=_UNIDAD,
+            disponible=True,
+            evidencia=Evidencia(fuente=fuente, fecha_corte=None, ref=res.mes),
+        ),
+        ResultadoCFO(
+            concepto="desvio_presupuesto",
+            valor=desvio,
+            unidad=_UNIDAD,
+            disponible=True,
+            evidencia=Evidencia(
+                fuente=fuente,
+                fecha_corte=None,
+                ref=f"direccion:{_dir(desvio, 'sobre', 'bajo', 'en-linea')}",
+            ),
+        ),
+    ]
