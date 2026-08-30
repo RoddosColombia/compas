@@ -28,8 +28,11 @@ export interface RubroCrearInput {
   grupo: string;
   nombre: string;
   tipo_flujo: TipoFlujo;
-  codigo?: string;
-  tipo?: TipoRubro;
+  // RF-F9 · Fundacional §2 — Plan de cuentas completo: código contable + clase
+  // (Fijo/Variable) son obligatorios al crear. El backend rechaza el POST sin
+  // ellos (RubroCrearBody). Rubros previos sin código NO se tocan.
+  codigo: string;
+  tipo: TipoRubro;
 }
 
 export interface RubroEditarInput {

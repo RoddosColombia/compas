@@ -385,29 +385,35 @@ function FormNueva({
   onCrear,
 }: {
   creando: boolean;
+  // RF-F9 · «Plan de cuentas completo»: `codigo` (contable) y `tipo` (clase
+  // Fijo/Variable) son obligatorios al crear. La firma refleja el contrato del
+  // backend (RubroCrearBody sin `| None`).
   onCrear: (input: {
     grupo: string;
     nombre: string;
     tipo_flujo: TipoFlujo;
-    codigo?: string;
-    tipo?: TipoRubro;
+    codigo: string;
+    tipo: TipoRubro;
   }) => void;
 }) {
   const [grupo, setGrupo] = useState("operacion");
   const [nombre, setNombre] = useState("");
   const [flujo, setFlujo] = useState<TipoFlujo>("egreso");
   const [codigo, setCodigo] = useState("");
-  const [clase, setClase] = useState<TipoRubro | "">("variable");
+  const [clase, setClase] = useState<TipoRubro>("variable");
+
+  const listo =
+    nombre.trim().length > 0 && codigo.trim().length > 0 && clase !== undefined;
 
   function enviar(e: FormEvent) {
     e.preventDefault();
-    if (!nombre.trim()) return;
+    if (!listo) return;
     onCrear({
       grupo,
       nombre: nombre.trim(),
       tipo_flujo: flujo,
-      codigo: codigo.trim() || undefined,
-      tipo: clase || undefined,
+      codigo: codigo.trim(),
+      tipo: clase,
     });
     setNombre("");
     setCodigo("");
@@ -432,12 +438,13 @@ function FormNueva({
           </select>
         </label>
         <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
-          Código
+          Código *
           <input
             className={`${INPUT_CLASS} tabular w-20`}
             value={codigo}
             maxLength={8}
             placeholder="2140"
+            required
             onChange={(e) => setCodigo(e.target.value)}
           />
         </label>
@@ -462,13 +469,13 @@ function FormNueva({
           </select>
         </label>
         <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
-          Clase
+          Clase *
           <select
             className={INPUT_CLASS}
             value={clase}
-            onChange={(e) => setClase(e.target.value as TipoRubro | "")}
+            onChange={(e) => setClase(e.target.value as TipoRubro)}
+            required
           >
-            <option value="">—</option>
             <option value="fijo">Fijo</option>
             <option value="variable">Variable</option>
           </select>
@@ -477,7 +484,12 @@ function FormNueva({
           type="submit"
           variant="cyan"
           size="sm"
-          disabled={creando || !nombre.trim()}
+          disabled={creando || !listo}
+          title={
+            listo
+              ? undefined
+              : "Nombre, código y clase son obligatorios (RF-F9)"
+          }
         >
           {creando ? "Creando…" : "Crear"}
         </Button>

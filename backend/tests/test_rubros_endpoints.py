@@ -241,7 +241,14 @@ async def test_post_crea_con_orden_max_grupo_mas_1_y_emite_creado(api):
     h = await _token(ac)
     r = await ac.post(
         "/api/v1/rubros",
-        json={"grupo": "operacion", "nombre": "Freelance", "tipo_flujo": "egreso"},
+        # RF-F9: codigo + tipo obligatorios al crear categoría.
+        json={
+            "grupo": "operacion",
+            "nombre": "Freelance",
+            "tipo_flujo": "egreso",
+            "codigo": "2140",
+            "tipo": "variable",
+        },
         headers=h,
     )
     assert r.status_code == 201
@@ -259,7 +266,13 @@ async def test_post_grupo_vacio_arranca_en_1(api):
     h = await _token(ac)
     r = await ac.post(
         "/api/v1/rubros",
-        json={"grupo": "nomina", "nombre": "Sueldos", "tipo_flujo": "egreso"},
+        json={
+            "grupo": "nomina",
+            "nombre": "Sueldos",
+            "tipo_flujo": "egreso",
+            "codigo": "3011",
+            "tipo": "fijo",
+        },
         headers=h,
     )
     assert r.status_code == 201
@@ -271,7 +284,13 @@ async def test_post_duplicado_409(api):
     h = await _token(ac)
     r = await ac.post(
         "/api/v1/rubros",
-        json={"grupo": "operacion", "nombre": "Arriendos", "tipo_flujo": "egreso"},
+        json={
+            "grupo": "operacion",
+            "nombre": "Arriendos",
+            "tipo_flujo": "egreso",
+            "codigo": "2011",
+            "tipo": "fijo",
+        },
         headers=h,
     )
     assert r.status_code == 409
@@ -283,7 +302,13 @@ async def test_post_mismo_nombre_en_otro_grupo_ok(api):
     h = await _token(ac)
     r = await ac.post(
         "/api/v1/rubros",
-        json={"grupo": "otros", "nombre": "Arriendos", "tipo_flujo": "egreso"},
+        json={
+            "grupo": "otros",
+            "nombre": "Arriendos",
+            "tipo_flujo": "egreso",
+            "codigo": "5099",
+            "tipo": "variable",
+        },
         headers=h,
     )
     assert r.status_code == 201
@@ -512,7 +537,14 @@ async def test_mutaciones_403_consulta_y_directivo(api, email):
 async def test_mutaciones_ok_financiero_y_admin(api, email):
     ac, _ = api
     h = await _token(ac, email)
-    body = {"grupo": "otros", "nombre": f"Nuevo {email}", "tipo_flujo": "egreso"}
+    # RF-F9: codigo + tipo obligatorios al crear categoría.
+    body = {
+        "grupo": "otros",
+        "nombre": f"Nuevo {email}",
+        "tipo_flujo": "egreso",
+        "codigo": "5088",
+        "tipo": "variable",
+    }
     assert (await ac.post("/api/v1/rubros", json=body, headers=h)).status_code == 201
 
 
@@ -536,7 +568,13 @@ async def test_fail_closed_crear_compensa(api, monkeypatch):
     with pytest.raises(RuntimeError):
         await ac.post(
             "/api/v1/rubros",
-            json={"grupo": "otros", "nombre": "Fantasma", "tipo_flujo": "egreso"},
+            json={
+                "grupo": "otros",
+                "nombre": "Fantasma",
+                "tipo_flujo": "egreso",
+                "codigo": "5077",
+                "tipo": "variable",
+            },
             headers=h,
         )
     assert await Rubro.find_one(Rubro.nombre == "Fantasma") is None
