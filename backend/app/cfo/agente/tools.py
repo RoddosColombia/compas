@@ -474,8 +474,9 @@ TOOLS_SCHEMA: list[dict] = [
             "¿Qué % de mi gasto es nómina/deuda/operación? Devuelve la "
             "composición del gasto REAL total por grupo (costo de producto, "
             "operación, nómina, deudas y obligaciones, otros) para una "
-            "ventana: 'cerrado' (último mes cerrado), 'acumulado' (año "
-            "corrido) o 'curso' (mes en curso). Devuelve gasto_total_comp "
+            "ventana: 'cerrado' (último mes cerrado), 'acumulado' (últimos 3 "
+            "meses con movimientos) o 'curso' (último mes con movimientos). "
+            "Devuelve gasto_total_comp "
             "(el gasto total en COP) y, por cada grupo, DOS conceptos: "
             "cop_<grupo> (su monto en COP) y pct_<grupo> (su % de "
             "participación, YA CALCULADO por COMPAS). Sin gasto en la "
@@ -490,8 +491,8 @@ TOOLS_SCHEMA: list[dict] = [
                     "enum": ["cerrado", "acumulado", "curso"],
                     "description": (
                         "Qué ventana de meses componer: 'cerrado' (último mes "
-                        "cerrado), 'acumulado' (año corrido) o 'curso' (mes en "
-                        "curso)."
+                        "cerrado), 'acumulado' (últimos 3 meses con "
+                        "movimientos) o 'curso' (último mes con movimientos)."
                     ),
                 },
             },
