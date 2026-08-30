@@ -376,6 +376,159 @@ async def anular_pago(*, factura_id: str, usuario_id: str) -> FacturaObligacion:
     return factura
 
 
+async def simular_negociacion_factura(
+    *,
+    factura_id: str,
+    plazo_elegido_dias_nuevo: int | None = None,
+    fecha_factura_nueva: str | None = None,
+    escenario: str = "base",
+    mes_inicio: tuple[int, int] | None = None,
+    horizonte_meses: int | None = None,
+) -> dict:
+    """RF-F8 · Fundacional §2 — "Negocia esta deuda" en modo simulación.
+
+    Compute-only: NO escribe Mongo, NO emite eventos audit (regla 11: catálogo
+    cerrado). Corre el pipeline completo `proyectar → E1 → D2` sobre una lista de
+    facturas donde ESTA factura aparece con el plazo/fecha modificados, y
+    compara piso/valles contra la base.
+
+    Auteco YA se proyecta factura a factura (D2 vive vía `reconciliar`); esta
+    función solo expone la palanca de "qué pasaría si…". La renegociación
+    PERSISTIDA queda para CR-RF-F8-B (requiere evento `factura_obligacion.editada`
+    en el catálogo — no lo agregamos aquí sin CR).
+
+    Contrato:
+      · Al menos uno de `plazo_elegido_dias_nuevo` o `fecha_factura_nueva`.
+      · Factura activa y NO pagada (409 si lo está — el pago ya salió de caja).
+      · Obligación de naturaleza `facturacion` (409 si `cuotas`).
+      · `plazo_elegido_dias_nuevo` en `[plazo_base_dias, plazo_max_dias]` (422).
+    Salida: `{piso_actual, piso_negociado, delta_piso, mes_pago_actual,
+      mes_pago_negociado, valles_actuales, valles_negociados}` — montos COP str.
+    """
+    from decimal import Decimal
+
+    from app.core.money import money_str
+    from app.core.time import now_bogota
+    from app.obligaciones.reconciliacion import FacturaReconciliar
+    from app.proyeccion import service as _pservice
+    from app.proyeccion.valles import detectar_valles
+
+    if plazo_elegido_dias_nuevo is None and fecha_factura_nueva is None:
+        raise ObligacionesError(
+            "nada que simular: pasa `plazo_elegido_dias_nuevo` o `fecha_factura_nueva`",
+            422,
+        )
+
+    factura = await _obtener_factura(factura_id)
+    if not factura.activo:
+        raise ObligacionesError("la factura está anulada", 409)
+    if factura.pagada_desde is not None:
+        raise ObligacionesError(
+            f"la factura ya está pagada (desde {factura.pagada_desde}); "
+            "una factura pagada no se negocia",
+            409,
+        )
+    obligacion = await Obligacion.get(factura.obligacion_id)
+    if obligacion is None or not obligacion.activo:
+        raise ObligacionesError(
+            "la obligación de la factura no existe o está inactiva", 409
+        )
+    if obligacion.naturaleza != "facturacion":
+        raise ObligacionesError(
+            "solo las obligaciones de naturaleza `facturacion` se negocian "
+            "factura a factura",
+            409,
+        )
+    base = obligacion.plazo_base_dias or 0
+    maximo = obligacion.plazo_max_dias or 0
+    plazo_negociado = (
+        plazo_elegido_dias_nuevo
+        if plazo_elegido_dias_nuevo is not None
+        else factura.plazo_elegido_dias
+    )
+    if not base <= plazo_negociado <= maximo:
+        raise ObligacionesError(
+            f"plazo_elegido_dias_nuevo debe estar en [{base}, {maximo}]", 422
+        )
+    fecha_negociada = fecha_factura_nueva or factura.fecha_factura
+
+    # Toma el mes_inicio pedido; si no viene, el mes en curso Bogotá — mismo default
+    # que el resto del pipeline de proyección.
+    if mes_inicio is None:
+        ahora = now_bogota()
+        mes_inicio = (ahora.year, ahora.month)
+
+    # Carga la lista real de facturas y arma una variante con esta factura editada.
+    facturas_reales = await _pservice._facturas_reconciliar()
+    tasa = obligacion.tasa_excedente_mensual or Decimal("0")
+    facturas_negociadas: list[FacturaReconciliar] = []
+    for fr in facturas_reales:
+        # `FacturaReconciliar` es frozen y no lleva id — reconocemos "esta factura"
+        # por la tripleta (fecha_factura, valor, plazo_elegido_dias) que coincide con
+        # la persistida antes de negociar. Es la clave natural desde
+        # `_facturas_reconciliar`.
+        if (
+            fr.fecha_factura == factura.fecha_factura
+            and fr.valor == factura.valor
+            and fr.plazo_elegido_dias == factura.plazo_elegido_dias
+        ):
+            facturas_negociadas.append(
+                FacturaReconciliar(
+                    fecha_factura=fecha_negociada,
+                    valor=factura.valor,
+                    plazo_elegido_dias=plazo_negociado,
+                    plazo_base_dias=base,
+                    tasa_excedente_mensual=tasa,
+                )
+            )
+        else:
+            facturas_negociadas.append(fr)
+
+    # Corre el pipeline dos veces: base (facturas reales) y negociado.
+    params, modelos = await _pservice._cargar_config_vigente()
+
+    async def _correr(facturas: list[FacturaReconciliar]):
+        r, caja_min, _, _, _, caja_atn = await _pservice._resultado_con(
+            params,
+            modelos,
+            escenario=escenario,
+            mes_inicio=mes_inicio,
+            horizonte_meses=horizonte_meses,
+            facturas_override=facturas,
+        )
+        valles = detectar_valles(r.meses, caja_min, caja_atencion=caja_atn)
+        return r, valles
+
+    r_actual, valles_actuales = await _correr(facturas_reales)
+    r_negociado, valles_negociados = await _correr(facturas_negociadas)
+
+    delta = r_negociado.piso_caja - r_actual.piso_caja
+
+    # Mes de pago = fecha_factura + plazo (aprox // 30 días para pasar a mes).
+    def _mes_pago(fecha_iso: str, plazo_dias: int) -> str:
+        from datetime import date, timedelta
+
+        y, m, d = (int(x) for x in fecha_iso.split("-"))
+        f = date(y, m, d) + timedelta(days=plazo_dias)
+        return f"{f.year:04d}-{f.month:02d}"
+
+    return {
+        "piso_actual": money_str(r_actual.piso_caja),
+        "piso_negociado": money_str(r_negociado.piso_caja),
+        "delta_piso": money_str(delta),
+        "mes_pago_actual": _mes_pago(
+            factura.fecha_factura, factura.plazo_elegido_dias
+        ),
+        "mes_pago_negociado": _mes_pago(fecha_negociada, plazo_negociado),
+        "valles_actuales": [
+            {"mes": v.mes, "caja": money_str(v.caja)} for v in valles_actuales
+        ],
+        "valles_negociados": [
+            {"mes": v.mes, "caja": money_str(v.caja)} for v in valles_negociados
+        ],
+    }
+
+
 async def saldos_pendientes() -> dict[str, Money]:
     """Saldo pendiente por obligación = Σ valor de facturas activas SIN pagar
     (pagada_desde is None). roddos y tercero bajan la deuda. Una sola consulta."""

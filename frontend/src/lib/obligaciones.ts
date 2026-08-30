@@ -109,6 +109,42 @@ export async function anularPago(
   });
 }
 
+// RF-F8 · Fundacional §2 — "Negocia esta deuda" (simulación compute-only).
+// El backend NO escribe: solo devuelve el impacto que TENDRÍA la renegociación.
+// La persistencia queda para CR-RF-F8-B (necesita evento audit nuevo aprobado).
+export interface ValleResumen {
+  mes: string; // YYYY-MM
+  caja: string; // COP
+}
+
+export interface SimulacionNegociacion {
+  piso_actual: string;
+  piso_negociado: string;
+  delta_piso: string; // negociado - actual; positivo = mejora el piso
+  mes_pago_actual: string; // YYYY-MM
+  mes_pago_negociado: string;
+  valles_actuales: ValleResumen[];
+  valles_negociados: ValleResumen[];
+}
+
+export async function simularNegociacion(
+  obligacionId: string,
+  facturaId: string,
+  input: {
+    plazo_elegido_dias_nuevo?: number;
+    fecha_factura_nueva?: string;
+  },
+): Promise<SimulacionNegociacion> {
+  return apiJson(
+    `/obligaciones/${obligacionId}/facturas/${facturaId}/simular`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 // Mes de pago derivado (D2 §4): fecha_factura + plazo//30 meses. Solo para mostrar;
 // la reconciliación del backend es la fuente de verdad de la caja.
 export function mesDePago(fechaFactura: string, plazoDias: number): string {

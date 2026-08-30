@@ -312,6 +312,41 @@ async def pagar_factura(
     return _ser_factura(f)
 
 
+class SimularNegociacionBody(BaseModel):
+    """RF-F8 · Fundacional §2 — "Negocia esta deuda" (simulación compute-only).
+
+    Al menos uno de los dos campos debe venir; sin ambos el servicio devuelve 422.
+    No hay lista blanca de otros campos por diseño: la simulación solo mueve
+    fecha/plazo (los términos que RODDOS negocia con el proveedor)."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    plazo_elegido_dias_nuevo: int | None = Field(default=None, ge=0)
+    fecha_factura_nueva: str | None = None
+
+
+@router.post("/{obligacion_id}/facturas/{factura_id}/simular")
+async def simular_negociacion_factura(
+    obligacion_id: str,  # noqa: ARG001 (ruta anidada por claridad; la factura basta)
+    factura_id: str,
+    body: SimularNegociacionBody,
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """RF-F8 — Simula "¿qué pasaría si negocio esta factura a X días / fecha Y?".
+
+    Compute-only: NO escribe Mongo, NO emite audit. Devuelve piso actual vs.
+    negociado, delta, mes de pago actual vs. negociado y valles antes/después.
+    RBAC `dashboard:leer` — es lectura simulada, sin verify_origin (no muta)."""
+    try:
+        return await service.simular_negociacion_factura(
+            factura_id=factura_id,
+            plazo_elegido_dias_nuevo=body.plazo_elegido_dias_nuevo,
+            fecha_factura_nueva=body.fecha_factura_nueva,
+        )
+    except service.ObligacionesError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
 @router.delete("/{obligacion_id}/facturas/{factura_id}/pagar")
 async def anular_pago(
     obligacion_id: str,  # noqa: ARG001
