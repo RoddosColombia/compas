@@ -361,6 +361,169 @@ async def test_simular_palanca_cifra_cruda_reintenta_y_abstiene(monkeypatch, _au
     assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
 
 
+# --- inc4 rebanada 3 sub-3a (Task 3): tendencias reales end-to-end (tendencia_real) --
+# Igual que simular_palanca (rebanada 2): se deja correr el DISPATCH/tools.py REAL
+# (parseo de metrica) y solo se fakea la capa de cálculo
+# (`app.cfo.calc.tendencias.tendencia_real`) — así el test cubre el wiring real
+# tool→calc, no solo el servicio de verificación/sustitución.
+_TENDENCIA_GASTO_M0 = ResultadoCFO(
+    concepto="gasto_real_m0",
+    valor=Decimal("45000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.actuals_mensuales", fecha_corte=None, ref="2026-08"
+    ),
+)
+_TENDENCIA_GASTO_M1 = ResultadoCFO(
+    concepto="gasto_real_m1",
+    valor=Decimal("40000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.actuals_mensuales", fecha_corte=None, ref="2026-07"
+    ),
+)
+_TENDENCIA_GASTO_M2 = ResultadoCFO(
+    concepto="gasto_real_m2",
+    valor=Decimal("38000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.actuals_mensuales", fecha_corte=None, ref="2026-06"
+    ),
+)
+_TENDENCIA_DELTA_GASTO = ResultadoCFO(
+    concepto="delta_gasto_real",
+    valor=Decimal("5000000"),
+    unidad="COP",
+    disponible=True,
+    evidencia=Evidencia(
+        fuente="proyeccion.service.actuals_mensuales",
+        fecha_corte=None,
+        ref="direccion:sube",
+    ),
+)
+
+
+def _entrada_tendencia() -> dict:
+    return {"metrica": "gasto"}
+
+
+@pytest.mark.asyncio
+async def test_tendencia_real_publica_valores_sustituidos(monkeypatch, _audit):
+    """E2E de la garantía anti-alucinación con la tool de tendencias (inc4
+    rebanada 3, sub-3a): el modelo pide `tendencia_real`, el DISPATCH/tools.py
+    REAL corre (parsea metrica, llama `tendencias.tendencia_real` por atributo
+    de módulo), la calc está fakeada con 4 `ResultadoCFO` conocidos (m0/m1/m2 +
+    delta), el modelo cita los 4 tokens y RELATA la dirección (que viene en el
+    `ref` del delta, no la calcula él), el verificador los deja pasar (ningún
+    crudo, los 4 tokens con evidencia de este turno) y el servicio sustituye —
+    el texto publicado trae los VALORES formateados, nunca `[[token]]` crudo."""
+
+    async def fake_tendencia_real(*, metrica):
+        assert metrica == "gasto"
+        return [
+            _TENDENCIA_GASTO_M0,
+            _TENDENCIA_GASTO_M1,
+            _TENDENCIA_GASTO_M2,
+            _TENDENCIA_DELTA_GASTO,
+        ]
+
+    monkeypatch.setattr("app.cfo.calc.tendencias.tendencia_real", fake_tendencia_real)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [
+                BloqueToolUse(
+                    id="t1", nombre="tendencia_real", input=_entrada_tendencia()
+                )
+            ],
+            10,
+            6,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [
+                BloqueTexto(
+                    texto=(
+                        "Tu gasto viene subiendo: este mes [[gasto_real_m0]], el "
+                        "mes pasado [[gasto_real_m1]] y hace dos meses "
+                        "[[gasto_real_m2]], una variación de [[delta_gasto_real]]."
+                    )
+                )
+            ],
+            8,
+            20,
+        ),
+    ]
+    r = await srv.consultar(
+        "¿cómo viene el gasto vs el mes pasado?",
+        actor_id="u1",
+        cliente=ClienteFake(guiones),
+    )
+    assert r.abstuvo is False
+    assert "[[" not in r.texto  # ningún token crudo se filtró
+    assert "$45.000.000" in r.texto
+    assert "$40.000.000" in r.texto
+    assert "$38.000.000" in r.texto
+    assert "$5.000.000" in r.texto
+    assert {
+        "gasto_real_m0",
+        "gasto_real_m1",
+        "gasto_real_m2",
+        "delta_gasto_real",
+    }.issubset(set(r.conceptos_usados))
+
+
+@pytest.mark.asyncio
+async def test_tendencia_real_cifra_cruda_reintenta_y_abstiene(monkeypatch, _audit):
+    """Si el modelo escribe el gasto CRUDO ("$45.000.000") en vez de citar
+    [[gasto_real_m0]], el verificador lo atrapa, dispara EL reintento correctivo
+    (D-3: uno solo) y, si el modelo reincide, el servicio se abstiene con
+    `motivo='verificacion'` — jamás publica ni entra en un loop."""
+
+    async def fake_tendencia_real(*, metrica):
+        return [
+            _TENDENCIA_GASTO_M0,
+            _TENDENCIA_GASTO_M1,
+            _TENDENCIA_GASTO_M2,
+            _TENDENCIA_DELTA_GASTO,
+        ]
+
+    monkeypatch.setattr("app.cfo.calc.tendencias.tendencia_real", fake_tendencia_real)
+    guiones = [
+        RespuestaLLM(
+            "tool_use",
+            [
+                BloqueToolUse(
+                    id="t1", nombre="tendencia_real", input=_entrada_tendencia()
+                )
+            ],
+            5,
+            3,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Este mes el gasto fue de $45.000.000.")],
+            4,
+            8,
+        ),
+        RespuestaLLM(
+            "end_turn",
+            [BloqueTexto(texto="Perdón, serían $45.000.000 entonces.")],
+            4,
+            6,
+        ),
+    ]
+    fake = ClienteFake(guiones)
+    r = await srv.consultar(
+        "¿cómo viene el gasto vs el mes pasado?", actor_id="u1", cliente=fake
+    )
+    assert r.abstuvo is True and r.motivo == "verificacion"
+    assert fake._guiones == []  # tope D-3: exactamente 1 reintento, jamás loop
+
+
 @pytest.mark.asyncio
 async def test_sin_key_abstiene(monkeypatch, _audit):
     monkeypatch.setattr(srv, "crear_cliente", lambda: None)

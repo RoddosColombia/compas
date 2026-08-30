@@ -29,7 +29,7 @@ import inspect
 from collections.abc import Awaitable, Callable
 from decimal import Decimal, InvalidOperation
 
-from app.cfo.calc import caja, escenario, iva, palanca, runway
+from app.cfo.calc import caja, escenario, iva, palanca, runway, tendencias
 from app.cfo.calc.evidencia import ResultadoCFO
 
 CalcSinArgs = Callable[[], Awaitable[ResultadoCFO]]
@@ -38,6 +38,7 @@ CalcConArgs = Callable[[dict], Awaitable[list[ResultadoCFO]]]
 _NATURALEZAS = {"gasto", "ingreso"}
 _PALANCAS = {"plazo_semanas", "cuota_inicial", "cuota_semanal"}
 _MODELOS = {"Raider", "Apache", "Sport", "todos"}
+_METRICAS_TENDENCIA = {"ingreso", "gasto", "caja"}
 
 
 def _kwargs_escenario(entrada: dict) -> dict:
@@ -125,6 +126,26 @@ async def _simular_palanca(entrada: dict) -> list[ResultadoCFO]:
     return await palanca.impacto_palanca(**_kwargs_palanca(entrada))
 
 
+def _kwargs_tendencia(entrada: dict) -> dict:
+    """Parsea/valida la `entrada` cruda del modelo a los kwargs keyword-only de
+    `tendencias.tendencia_real`.
+
+    `metrica`: se exige ∈ {ingreso,gasto,caja} — un valor fuera del enum se
+    rechaza aquí, antes de llegar a la calc (mismo molde que
+    `_kwargs_palanca`/`_kwargs_escenario`)."""
+    metrica = entrada["metrica"]
+    if metrica not in _METRICAS_TENDENCIA:
+        raise ValueError(
+            f"metrica debe ser una de {sorted(_METRICAS_TENDENCIA)!r}; "
+            f"recibido: {metrica!r}"
+        )
+    return {"metrica": metrica}
+
+
+async def _tendencia_real(entrada: dict) -> list[ResultadoCFO]:
+    return await tendencias.tendencia_real(**_kwargs_tendencia(entrada))
+
+
 DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "caja_disponible_hoy": caja.caja_hoy,
     "runway_meses": runway.runway,
@@ -132,6 +153,7 @@ DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "impacto_escenario": _impacto_escenario,
     "motos_para_evitar_umbral": _motos_para_evitar_umbral,
     "simular_palanca": _simular_palanca,
+    "tendencia_real": _tendencia_real,
 }
 
 TOOLS_SCHEMA: list[dict] = [
@@ -314,6 +336,34 @@ TOOLS_SCHEMA: list[dict] = [
                 },
             },
             "required": ["palanca", "nuevo_valor"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "tendencia_real",
+        "description": (
+            "Cómo viene el ingreso, el gasto o la caja REAL vs los últimos "
+            "meses (p. ej. '¿cómo viene el gasto vs el mes pasado?'). Devuelve "
+            "hasta TRES meses reales de la métrica pedida (metrica_real_m0 el "
+            "más reciente, m1 y m2 los anteriores) y delta_metrica_real (la "
+            "diferencia entre los dos últimos meses, con la dirección "
+            "sube/baja/estable en su evidencia). disponible=false si no hay "
+            "suficiente historia de actuals. Es de solo lectura: nunca escribe "
+            "nada."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "metrica": {
+                    "type": "string",
+                    "enum": ["ingreso", "gasto", "caja"],
+                    "description": (
+                        "Qué métrica real consultar: 'ingreso', 'gasto' o "
+                        "'caja'."
+                    ),
+                },
+            },
+            "required": ["metrica"],
             "additionalProperties": False,
         },
     },
