@@ -512,3 +512,64 @@ async def test_ejecutar_rumbo_caja_sin_entrada(monkeypatch):
         "delta_caja_rumbo",
         "piso_proyectado",
     }
+
+
+# --- T7 (rebanada 4, sub-4b): tool mix_modelos (sin parámetros) ---------------
+
+
+def test_schema_incluye_tool_mix_modelos():
+    # mix_modelos es una tool de CERO args, igual que rumbo_caja/
+    # caja_disponible_hoy/runway_meses/iva_del_cuatrimestre: sin propiedades,
+    # additionalProperties False.
+    nombres = {t["name"] for t in tools.TOOLS_SCHEMA}
+    assert "mix_modelos" in nombres
+    t = next(x for x in tools.TOOLS_SCHEMA if x["name"] == "mix_modelos")
+    assert t["input_schema"]["properties"] == {}
+    assert t["input_schema"]["additionalProperties"] is False
+
+
+@pytest.mark.asyncio
+async def test_ejecutar_mix_modelos_llega_a_la_calc(monkeypatch):
+    # mix_modelos se cablea DIRECTO en DISPATCH a ratios.mix_modelos (sin
+    # wrapper) — igual que rumbo_caja: el dict ya capturó la referencia de
+    # función al importar tools.py, así que se usa monkeypatch.setitem sobre
+    # tools.DISPATCH, no sobre el módulo calc.
+    async def fake():
+        return [
+            ResultadoCFO(
+                concepto="mix_raider",
+                valor=Decimal("55.0"),
+                unidad="%",
+                disponible=True,
+                evidencia=Evidencia(
+                    fuente="f", fecha_corte=None, ref="share-normalizado"
+                ),
+            )
+        ]
+
+    monkeypatch.setitem(tools.DISPATCH, "mix_modelos", fake)
+    r = await tools.ejecutar_tool("mix_modelos")
+    assert isinstance(r, list) and len(r) == 1
+    assert r[0].concepto == "mix_raider"
+    assert r[0].valor == Decimal("55.0")
+
+
+@pytest.mark.asyncio
+async def test_ejecutar_mix_modelos_sin_entrada(monkeypatch):
+    # ejecutar_tool("mix_modelos") SIN `entrada` debe llegar a la calc real
+    # (sin parámetros, como rumbo_caja/las 3 de cero args) — se fakea
+    # modelos_service.mix_activos (la dependencia real de ratios.mix_modelos)
+    # para no depender de datos sembrados en la base de test.
+    async def fake_mix_activos():
+        return [
+            ("Raider", Decimal("55")),
+            ("Apache", Decimal("30")),
+            ("Sport", Decimal("15")),
+        ]
+
+    monkeypatch.setattr(
+        "app.modelos_moto.service.mix_activos", fake_mix_activos
+    )
+    r = await tools.ejecutar_tool("mix_modelos")
+    assert isinstance(r, list) and all(isinstance(x, ResultadoCFO) for x in r)
+    assert {x.concepto for x in r} == {"mix_raider", "mix_apache", "mix_sport"}

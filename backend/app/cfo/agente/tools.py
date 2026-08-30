@@ -39,7 +39,13 @@ una ventana fuera del enum ANTES de llamar `ratios.composicion_gasto`, que
 devuelve varios conceptos por grupo (`cop_<grupo>`/`pct_<grupo>`) más
 `gasto_total_comp` -- el `%` de cada `pct_<grupo>` lo computa esa calc, nunca
 el modelo; el modelo solo cita el token (ver `agente/prompt.py` y
-`agente/verificador.py`)."""
+`agente/verificador.py`).
+
+`mix_modelos` (inc4 rebanada 4, sub-4b) vuelve al molde de `rumbo_caja`: tool
+de CERO parámetros cableada DIRECTO en DISPATCH a `ratios.mix_modelos` (sin
+envoltorio) -- devuelve un concepto `mix_<modelo>` por cada modelo activo
+(p. ej. `mix_raider`), unidad `%`, YA normalizado por esa calc; el modelo solo
+cita el token, nunca escribe ni calcula el `%`."""
 
 import inspect
 from collections.abc import Awaitable, Callable
@@ -204,6 +210,7 @@ DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "rumbo_caja": tendencias.rumbo_caja,
     "real_vs_presupuesto": _real_vs_presupuesto,
     "composicion_gasto": _composicion_gasto,
+    "mix_modelos": ratios.mix_modelos,
 }
 
 TOOLS_SCHEMA: list[dict] = [
@@ -489,6 +496,22 @@ TOOLS_SCHEMA: list[dict] = [
                 },
             },
             "required": ["ventana"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "mix_modelos",
+        "description": (
+            "¿Cómo está mi mix Raider/Apache/Sport? Devuelve la participación "
+            "de mix de cada modelo de moto ACTIVO, normalizada en % (suma "
+            "100%): un concepto mix_<modelo> por modelo (p. ej. mix_raider, "
+            "mix_apache, mix_sport), YA CALCULADO por COMPAS. Sin modelos "
+            "activos, disponible=false. Es de solo lectura: nunca escribe "
+            "nada."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
             "additionalProperties": False,
         },
     },

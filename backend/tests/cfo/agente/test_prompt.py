@@ -272,3 +272,35 @@ def test_prompt_presupuesto_reitera_no_porcentajes():
     assert idx != -1
     bloque = p[idx:]
     assert "%" in bloque or "porcentaje" in bloque
+
+
+def test_prompt_menciona_mix_modelos():
+    # inc4 rebanada 4 (sub-4b): el modelo debe saber que mix_modelos existe
+    # para "¿cómo está mi mix Raider/Apache/Sport?" -- si el prompt no la
+    # nombra, el modelo nunca la invoca (tool sin parámetros, igual que
+    # rumbo_caja).
+    p = SYSTEM_PROMPT.lower()
+    assert "mix_modelos" in p
+    assert "mix" in p
+
+
+def test_prompt_mix_modelos_cita_tokens_por_modelo():
+    # mix_modelos devuelve un concepto mix_<modelo> por cada modelo activo; el
+    # modelo debe citar cada uno con su propio token (Raider/Apache/Sport son
+    # los tres modelos vigentes de RODDOS), nunca resumir en una cifra propia.
+    p = SYSTEM_PROMPT
+    for token in ("[[mix_raider]]", "[[mix_apache]]", "[[mix_sport]]"):
+        assert token in p
+
+
+def test_prompt_mix_modelos_advierte_citar_no_escribir_el_porcentaje():
+    # Igual que composicion_gasto: el % de mix_modelos SÍ lo calcula COMPAS
+    # (es un share normalizado), pero el modelo sigue sin poder escribirlo:
+    # debe citarlo por token, nunca escribir/calcular un '%' propio.
+    p = SYSTEM_PROMPT.lower()
+    idx = p.find("mix_modelos")
+    assert idx != -1
+    bloque = p[idx:]
+    assert "%" in bloque
+    assert "cítalo" in bloque or "citalo" in bloque
+    assert "no lo calcules" in bloque or "nunca escribas un" in bloque
