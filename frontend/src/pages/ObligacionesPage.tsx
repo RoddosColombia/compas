@@ -23,6 +23,7 @@ import {
   type FacturaObligacion,
   type Obligacion,
   type OrigenPago,
+  type SimulacionNegociacion,
   anularFactura,
   anularPago,
   listarFacturas,
@@ -30,6 +31,7 @@ import {
   mesDePago,
   registrarFactura,
   registrarPago,
+  simularNegociacion,
 } from "@/lib/obligaciones";
 
 const RE_MONTO = /^\d+(\.\d{1,2})?$/;
@@ -100,6 +102,8 @@ function ObligacionCard({
   const [nuevaFactura, setNuevaFactura] = useState(false);
   const [pagoDe, setPagoDe] = useState<FacturaObligacion | null>(null);
   const [anular, setAnular] = useState<FacturaObligacion | null>(null);
+  // RF-F8 · «negocia esta deuda» (compute-only, sin persistir).
+  const [negociar, setNegociar] = useState<FacturaObligacion | null>(null);
 
   const invalidar = () => {
     void qc.invalidateQueries({
@@ -182,6 +186,8 @@ function ObligacionCard({
           onPagar={setPagoDe}
           onAnularPago={(f) => anularPagoMut.mutate(f)}
           onAnular={setAnular}
+          onNegociar={setNegociar}
+          obligacion={obligacion}
         />
       )}
 
@@ -208,6 +214,14 @@ function ObligacionCard({
         />
       )}
 
+      {negociar && (
+        <NegociarDialog
+          factura={negociar}
+          obligacion={obligacion}
+          onCerrar={() => setNegociar(null)}
+        />
+      )}
+
       {anular && (
         <ConfirmarAnular
           factura={anular}
@@ -231,13 +245,24 @@ function TablaFacturas({
   onPagar,
   onAnularPago,
   onAnular,
+  onNegociar,
+  obligacion,
 }: {
   facturas: FacturaObligacion[];
   gestiona: boolean;
   onPagar: (f: FacturaObligacion) => void;
   onAnularPago: (f: FacturaObligacion) => void;
   onAnular: (f: FacturaObligacion) => void;
+  // RF-F8 · «simular negociación» (compute-only). Solo se ofrece cuando la
+  // obligación tiene rango de plazo real (plazo_max > plazo_base): sin rango,
+  // no hay nada para negociar.
+  onNegociar: (f: FacturaObligacion) => void;
+  obligacion: Obligacion;
 }) {
+  const puedeNegociar =
+    typeof obligacion.plazo_max_dias === "number" &&
+    typeof obligacion.plazo_base_dias === "number" &&
+    obligacion.plazo_max_dias > obligacion.plazo_base_dias;
   return (
     <div className="overflow-x-auto">
       <table className="w-full font-sans text-sm">
@@ -290,6 +315,16 @@ function TablaFacturas({
                       >
                         Registrar pago
                       </button>
+                      {puedeNegociar && (
+                        <button
+                          type="button"
+                          className="ml-3 font-medium text-ink-soft hover:underline"
+                          onClick={() => onNegociar(f)}
+                          title="Simula el impacto de cambiar plazo o fecha (no persiste)"
+                        >
+                          Simular negociación
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="ml-3 font-medium text-critico hover:underline"
@@ -624,6 +659,145 @@ function Campo({
       <span className="font-medium text-ink">{etiqueta}</span>
       {children}
     </label>
+  );
+}
+
+// RF-F8 · Fundacional §2 — «negocia esta deuda» (simulación compute-only).
+// Muestra el impacto que TENDRÍA la renegociación en el piso de caja y en los
+// valles ANTES de decidir hacerla (persistir es CR-RF-F8-B; ese endpoint aún
+// no existe: aquí solo se lee la simulación).
+function NegociarDialog({
+  factura,
+  obligacion,
+  onCerrar,
+}: {
+  factura: FacturaObligacion;
+  obligacion: Obligacion;
+  onCerrar: () => void;
+}) {
+  const [plazo, setPlazo] = useState<string>(String(factura.plazo_elegido_dias));
+  const [fecha, setFecha] = useState<string>(factura.fecha_factura);
+  const [sim, setSim] = useState<SimulacionNegociacion | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const plazoBase = obligacion.plazo_base_dias ?? 0;
+  const plazoMax = obligacion.plazo_max_dias ?? 0;
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      const plazoNum = Number.parseInt(plazo, 10);
+      const cambiaPlazo = plazoNum !== factura.plazo_elegido_dias;
+      const cambiaFecha = fecha !== factura.fecha_factura;
+      if (!cambiaPlazo && !cambiaFecha) {
+        throw new Error("cambia el plazo o la fecha para simular");
+      }
+      return simularNegociacion(obligacion.id, factura.id, {
+        plazo_elegido_dias_nuevo: cambiaPlazo ? plazoNum : undefined,
+        fecha_factura_nueva: cambiaFecha ? fecha : undefined,
+      });
+    },
+    onSuccess: (r) => {
+      setSim(r);
+      setError(null);
+    },
+    onError: (e) => {
+      setError(e instanceof Error ? e.message : "no se pudo simular");
+      setSim(null);
+    },
+  });
+
+  const deltaPositivo = sim ? Number(sim.delta_piso) > 0 : false;
+  const deltaNegativo = sim ? Number(sim.delta_piso) < 0 : false;
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
+      <dialog
+        open
+        aria-label={`Simular negociación de factura ${factura.numero ?? factura.id}`}
+        className="static w-full max-w-lg rounded-lg border border-hairline bg-surface p-6 text-inherit shadow-lg"
+      >
+        <h3 className="mb-1 font-display text-lg font-semibold text-ink">
+          Simular negociación
+        </h3>
+        <p className="mb-4 font-sans text-apoyo text-ink-faint">
+          El cambio NO se guarda. Solo ves qué pasaría con el piso de caja.
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            mut.mutate();
+          }}
+          className="flex flex-col gap-3 font-sans text-sm"
+        >
+          <Campo etiqueta={`Plazo nuevo (rango ${plazoBase}–${plazoMax} días)`}>
+            <input
+              type="number"
+              min={plazoBase}
+              max={plazoMax}
+              value={plazo}
+              onChange={(e) => setPlazo(e.target.value)}
+              className={inputCls}
+              required
+            />
+          </Campo>
+          <Campo etiqueta="Fecha de factura (YYYY-MM-DD)">
+            <input
+              type="date"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+              className={inputCls}
+              required
+            />
+          </Campo>
+          {error && <AlertBanner variant="danger">{error}</AlertBanner>}
+          {sim && (
+            <div className="rounded-md border border-hairline bg-surface-muted/50 p-3">
+              <p className="mb-2 font-sans text-apoyo text-ink-faint">
+                Mes de pago: {sim.mes_pago_actual} → {sim.mes_pago_negociado}
+              </p>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1 font-sans text-sm">
+                <dt className="text-ink-soft">Piso actual</dt>
+                <dd className="tabular text-right text-ink">
+                  {formatCOP(sim.piso_actual)}
+                </dd>
+                <dt className="text-ink-soft">Piso negociado</dt>
+                <dd className="tabular text-right text-ink">
+                  {formatCOP(sim.piso_negociado)}
+                </dd>
+                <dt className="font-semibold text-ink">Delta piso</dt>
+                <dd
+                  className={`tabular text-right font-semibold ${
+                    deltaPositivo
+                      ? "text-positivo"
+                      : deltaNegativo
+                        ? "text-critico"
+                        : "text-ink"
+                  }`}
+                >
+                  {deltaPositivo ? "+" : ""}
+                  {formatCOP(sim.delta_piso)}
+                </dd>
+              </dl>
+              <p className="mt-2 font-sans text-apoyo text-ink-faint">
+                {deltaPositivo
+                  ? "Negociar mejora el piso de caja."
+                  : deltaNegativo
+                    ? "Negociar empeora el piso de caja."
+                    : "No hay cambio en el piso."}
+              </p>
+            </div>
+          )}
+          <div className="mt-2 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCerrar}>
+              Cerrar
+            </Button>
+            <Button type="submit" variant="cyan" disabled={mut.isPending}>
+              {mut.isPending ? "Simulando…" : "Simular"}
+            </Button>
+          </div>
+        </form>
+      </dialog>
+    </div>
   );
 }
 

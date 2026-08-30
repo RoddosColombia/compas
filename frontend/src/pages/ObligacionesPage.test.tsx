@@ -4,7 +4,13 @@
 // Montos string (regla 1).
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   registrarPago: vi.fn(),
   anularFactura: vi.fn(),
   anularPago: vi.fn(),
+  simularNegociacion: vi.fn(),
   caps: { actual: [] as string[] },
 }));
 
@@ -38,6 +45,7 @@ vi.mock("@/lib/obligaciones", async (importOriginal) => {
     registrarPago: mocks.registrarPago,
     anularFactura: mocks.anularFactura,
     anularPago: mocks.anularPago,
+    simularNegociacion: mocks.simularNegociacion,
   };
 });
 
@@ -214,5 +222,86 @@ describe("ObligacionesPage — RBAC", () => {
     expect(
       screen.queryByRole("button", { name: /registrar pago/i }),
     ).toBeNull();
+  });
+});
+
+describe("ObligacionesPage — RF-F8 «Simular negociación»", () => {
+  it("no muestra el botón si la obligación no tiene rango de plazo (plazo_max == plazo_base)", async () => {
+    // Auteco por defecto tiene 150/150 → sin rango, no hay nada que negociar.
+    mocks.listarObligaciones.mockResolvedValue({ items: [obligacion()] });
+    mocks.listarFacturas.mockResolvedValue({ items: [factura()] });
+    renderPage();
+    expect(await screen.findByText("Obligaciones")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /simular negociación/i }),
+    ).toBeNull();
+  });
+
+  it("muestra el botón cuando plazo_max > plazo_base, abre diálogo y llama simularNegociacion con el delta", async () => {
+    mocks.listarObligaciones.mockResolvedValue({
+      items: [
+        obligacion({ plazo_base_dias: 90, plazo_max_dias: 180 }),
+      ],
+    });
+    mocks.listarFacturas.mockResolvedValue({
+      items: [
+        factura({ plazo_elegido_dias: 90, fecha_factura: "2026-09-01" }),
+      ],
+    });
+    mocks.simularNegociacion.mockResolvedValue({
+      piso_actual: "30000000.00",
+      piso_negociado: "55000000.00",
+      delta_piso: "25000000.00",
+      mes_pago_actual: "2026-12",
+      mes_pago_negociado: "2027-03",
+      valles_actuales: [],
+      valles_negociados: [],
+    });
+    renderPage();
+    const boton = await screen.findByRole("button", {
+      name: /simular negociación/i,
+    });
+    fireEvent.click(boton);
+    const dialogo = await screen.findByRole("dialog", {
+      name: /simular negociación/i,
+    });
+    // El input de plazo trae el actual (90). Lo cambio a 180 y disparo.
+    const inputPlazo = within(dialogo).getByLabelText(/plazo nuevo/i);
+    fireEvent.change(inputPlazo, { target: { value: "180" } });
+    fireEvent.click(within(dialogo).getByRole("button", { name: /simular/i }));
+    // El servicio recibe SOLO el plazo (la fecha no cambió).
+    await waitFor(() =>
+      expect(mocks.simularNegociacion).toHaveBeenCalledWith("o1", "f1", {
+        plazo_elegido_dias_nuevo: 180,
+        fecha_factura_nueva: undefined,
+      }),
+    );
+    // El resultado se pinta: piso actual → negociado + delta positivo.
+    expect(await within(dialogo).findByText(/piso negociado/i)).toBeInTheDocument();
+    expect(
+      within(dialogo).getByText(/negociar mejora el piso/i),
+    ).toBeInTheDocument();
+  });
+
+  it("bloquea el submit si NADA cambió (mismo plazo y misma fecha)", async () => {
+    mocks.listarObligaciones.mockResolvedValue({
+      items: [obligacion({ plazo_base_dias: 90, plazo_max_dias: 180 })],
+    });
+    mocks.listarFacturas.mockResolvedValue({
+      items: [factura({ plazo_elegido_dias: 90, fecha_factura: "2026-09-01" })],
+    });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /simular negociación/i }),
+    );
+    const dialogo = await screen.findByRole("dialog", {
+      name: /simular negociación/i,
+    });
+    // Sin cambiar nada, click simular → error visible, no se llama al backend.
+    fireEvent.click(within(dialogo).getByRole("button", { name: /simular/i }));
+    expect(
+      await within(dialogo).findByText(/cambia el plazo o la fecha/i),
+    ).toBeInTheDocument();
+    expect(mocks.simularNegociacion).not.toHaveBeenCalled();
   });
 });
