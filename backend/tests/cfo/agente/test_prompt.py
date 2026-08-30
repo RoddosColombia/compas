@@ -105,3 +105,12 @@ def test_prompt_exige_citar_los_tokens_de_palanca():
         assert token in p
     # reforzamos la regla 1/2: no resumir los tres tokens en una resta propia
     assert "esa resta" in p.lower()
+
+
+def test_prompt_salvedad_de_plazo_largo_plazo():
+    # fast-follow 2026-08-29: para la palanca de PLAZO, cuando el impacto es 0 dentro
+    # del horizonte corto, FABS no debe reportar "$0" a secas -- debe explicar que el
+    # efecto del plazo es de largo plazo. El prompt le enseña a leer la marca del ref.
+    p = SYSTEM_PROMPT
+    assert "plazo-sin-efecto-horizonte" in p
+    assert "largo plazo" in p.lower()

@@ -83,7 +83,16 @@ SYSTEM_PROMPT = (
     "[[piso_con_palanca]], [[impacto_palanca]] — igual que con las tools de "
     "escenario: nunca resumas los tres en una sola cifra propia ni escribas "
     "algo como 'la diferencia es de $X'; esa resta ya la hace la herramienta "
-    "y la carga el token [[impacto_palanca]], no un cálculo tuyo."
+    "y la carga el token [[impacto_palanca]], no un cálculo tuyo.\n"
+    "SALVEDAD DEL PLAZO: si el concepto impacto_palanca viene con evidencia "
+    "ref 'plazo-sin-efecto-horizonte', significa que cambiar el plazo NO mueve "
+    "el piso de caja dentro del horizonte proyectado (ninguna cohorte de "
+    "crédito alcanza todavía la semana de su plazo original). Cita "
+    "[[impacto_palanca]] igual (será $0) y AÑADE, en tus palabras, que el "
+    "efecto del plazo sobre la caja es de LARGO PLAZO: aparece más allá del "
+    "horizonte, cuando los créditos superan su plazo original — no lo "
+    "presentes como 'sin efecto' a secas. Las palancas de cuota inicial y "
+    "cuota semanal, en cambio, mueven el piso de inmediato."
 )
 
 CORRECTIVO = (

@@ -52,7 +52,9 @@ async def impacto_palanca(
     - `piso_con_palanca`: piso de caja CON la palanca aplicada; su evidencia trae el
       mes de quiebre (`quiebre:<YYYY-MM>` o `quiebre:nunca`).
     - `impacto_palanca`: `piso_con - piso_sin`, tomado directo de `res.impacto` (NO
-      se recalcula aquí); ref = ancla de horizonte.
+      se recalcula aquí); ref = ancla de horizonte, SALVO plazo con impacto 0, donde
+      ref = 'plazo-sin-efecto-horizonte' (señal para que el prompt explique que el
+      efecto del plazo es de largo plazo, no un "$0" a secas).
 
     `detalle` lleva `{palanca, modelo, nuevo_valor}` para trazabilidad (no citable
     por el verificador anti-alucinación: no es una cifra, es metadata de la consulta).
@@ -75,6 +77,15 @@ async def impacto_palanca(
         return _abstencion()
 
     ref_horizonte = f"{ahora.year:04d}-{ahora.month:02d}"
+    # Salvedad del PLAZO (fast-follow 2026-08-29): cambiar el plazo no mueve el piso
+    # de caja DENTRO de un horizonte corto (ninguna cohorte alcanza aún la semana de
+    # su plazo original) -> impacto == 0. Marcamos el ref de impacto_palanca para que
+    # el prompt le diga a FABS que explique que el efecto del plazo es de largo plazo,
+    # no un "$0" a secas. Solo el plazo: las palancas de cuota (inicial/semanal) mueven
+    # el piso de inmediato, así que un impacto 0 ahí es un 0 real, sin salvedad.
+    ref_impacto = ref_horizonte
+    if palanca == "plazo_semanas" and res.impacto == 0:
+        ref_impacto = "plazo-sin-efecto-horizonte"
     return [
         ResultadoCFO(
             concepto="piso_sin_palanca",
@@ -99,7 +110,7 @@ async def impacto_palanca(
             valor=res.impacto,
             unidad=_UNIDAD,
             disponible=True,
-            evidencia=Evidencia(fuente=_FUENTE, fecha_corte=None, ref=ref_horizonte),
+            evidencia=Evidencia(fuente=_FUENTE, fecha_corte=None, ref=ref_impacto),
             detalle=detalle,
         ),
     ]
