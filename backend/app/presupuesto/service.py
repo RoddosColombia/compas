@@ -465,7 +465,8 @@ async def _aprobado_mes(mes_id) -> Decimal:
     aún no tienen monto_definido — no aprobadas)."""
     total = Decimal("0")
     async for ln in PresupuestoLinea.find(
-        PresupuestoLinea.mes_id == mes_id, PresupuestoLinea.vigente == True  # noqa: E712
+        PresupuestoLinea.mes_id == mes_id,
+        PresupuestoLinea.vigente == True,  # noqa: E712
     ):
         if ln.monto_definido is not None:
             total += ln.monto_definido
