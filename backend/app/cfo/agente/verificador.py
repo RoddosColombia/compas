@@ -17,9 +17,19 @@ IVA mal-etiquetada como caja pasaba si el VALOR caía en tolerancia de CUALQUIER
 ResultadoCFO en COP del turno. Ahora el modelo no puede mal-etiquetar un valor porque
 no escribe valores — solo cita conceptos, y el concepto sí se valida.
 
-Huecos de detección residuales (aceptados, sin cambio respecto a inc2 — a diferencia
-de los porcentajes, que YA NO son un hueco: se atrapan siempre, ver `_RE_PORCENTAJE`
-arriba): el contrato de este módulo es "ninguna cifra cruda DETECTADA + tokens
+Porcentajes (rebanada 4, conceptos `pct_*`/`mix_*`): COMPAS SÍ computa `%` ahora
+(antes no existía el concepto). Eso NO relaja este módulo — el modelo sigue sin
+ver valores (A2) y cita el ratio por TOKEN (`[[pct_nomina]]`, sin '%' literal);
+`sustituir_tokens` en `conceptos.py` recién estampa el '%' literal DESPUÉS de este
+veredicto, sobre texto que ya no se re-verifica. Un '%' CRUDO escrito por el
+modelo sigue siendo violación sin excepción — el modelo no calcula ni extrapola
+ratios (regla #1) — por eso `_RE_PORCENTAJE` y toda la lógica de abajo quedan
+SIN CAMBIO: siguen atrapando cualquier '%' crudo en el texto, ya que el único
+camino legítimo para que un '%' llegue al usuario es la sustitución posterior
+al veredicto, nunca el texto verificado.
+
+Huecos de detección residuales (aceptados, sin cambio respecto a inc2): el
+contrato de este módulo es "ninguna cifra cruda DETECTADA + tokens
 válidos", no una garantía matemática contra toda forma de número. Los regex de
 `extraer_cifras` no parsean (b) un entero pelado de MENOS de 5 dígitos sin separador
 (`"500"` en vez de `"$500"`, ver `_es_monto`) ni (c) números en palabras (`"mil
@@ -55,10 +65,13 @@ from app.cfo.calc.evidencia import ResultadoCFO
 _RE_NUM = re.compile(r"\$?\s?\d[\d.,]*\d|\$?\s?\d")
 # Meses: número (decimal con , o .) seguido de 'mes'/'meses'.
 _RE_MESES = re.compile(r"(\d+(?:[.,]\d+)?)\s*mes(?:es)?\b", re.IGNORECASE)
-# Porcentaje: número (decimal con , o .) seguido de '%'. COMPAS no tiene concepto
-# de "porcentaje" — ninguna tool lo calcula ni lo devuelve — así que cualquier %
-# en la respuesta es una cifra auto-computada por el modelo, prohibida por regla
-# #1 (ver su uso en `extraer_cifras`, FIX 1 FINAL-REVIEW inc2).
+# Porcentaje: número (decimal con , o .) seguido de '%'. COMPAS SÍ computa
+# porcentajes desde rebanada 4 (conceptos `pct_*`/`mix_*`), pero el modelo los
+# cita por TOKEN (`[[pct_nomina]]`, sin '%' literal) — el '%' literal lo estampa
+# `sustituir_tokens` DESPUÉS del veredicto, sobre texto ya no re-verificado. Un
+# '%' CRUDO en la respuesta del modelo sigue siendo una cifra auto-computada,
+# prohibida por regla #1 sin excepción (ver su uso en `extraer_cifras`, FIX 1
+# FINAL-REVIEW inc2).
 _RE_PORCENTAJE = re.compile(r"\d+(?:[.,]\d+)?\s*%")
 # Unidades: entero seguido de 'moto(s)'/'motocicleta(s)'/'unidad(es)'. Cierra el
 # hueco del entero pequeño para conteos de motos (inc4 tarea 3): "12 motos" tiene
@@ -147,8 +160,11 @@ def extraer_cifras(texto: str) -> list[tuple[Decimal, str, str]]:
             cifras.append((val, "meses", m.group(0)))
             tramos.append((m.start(1), m.end(1)))
     for m in _RE_PORCENTAJE.finditer(texto):
-        # COMPAS no calcula porcentajes: no existe pool "pct", así que TODO %
-        # queda huérfano → fuerza reintento/abstención (regla #1: el modelo no
+        # COMPAS sí calcula porcentajes (rebanada 4: pool `pct`/`mix`), pero el
+        # modelo cita el concepto por TOKEN, nunca escribe el '%' — el valor
+        # aquí no importa (igual que 'unidades'), el contrato exige token, no
+        # comparación de valor. TODO '%' crudo en el texto sigue siendo
+        # violación → fuerza reintento/abstención (regla #1: el modelo no
         # extrapola ratios).
         val = _a_decimal_meses(m.group(0).rstrip("% ").strip()) or Decimal(0)
         cifras.append((val, "pct", m.group(0)))
