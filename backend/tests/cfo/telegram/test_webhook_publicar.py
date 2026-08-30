@@ -7,7 +7,7 @@ otro remitente, o cualquier otro texto (incluso uno que MENCIONE "publicar"
 dentro de una frase), cae al camino normal de Q&A — el match es exacto.
 
 DB: mongomock con las clases de dominio inicializadas (mismo patrón que
-tests/cfo/vigilante/test_paquete.py — PaqueteVigilante es un Document real).
+tests/cfo/vigilante/test_paquete.py — AvisoVigilante es un Document real).
 Auditoría: verificada contra la colección cruda `audit_log` vía
 `audit_service.configure_audit` (mismo patrón que tests/test_audit_emit.py),
 NUNCA `AuditLog.find_one` (AuditLog es un BaseModel, no un Document)."""
@@ -19,7 +19,7 @@ import pytest_asyncio
 from app.audit import service as audit_service
 from app.cfo.telegram import webhook
 from app.cfo.telegram.modelos import VinculoTelegram
-from app.cfo.vigilante.modelos import PaqueteVigilante
+from app.cfo.vigilante.modelos import AvisoVigilante
 from app.core.time import now_utc
 from app.domain import DOMAIN_DOCUMENTS
 from beanie import init_beanie
@@ -28,7 +28,7 @@ from mongomock_motor import AsyncMongoMockClient
 
 @pytest_asyncio.fixture
 async def db():
-    """DB mongomock con las clases de dominio inicializadas (incl. PaqueteVigilante
+    """DB mongomock con las clases de dominio inicializadas (incl. AvisoVigilante
     y VinculoTelegram)."""
     client = AsyncMongoMockClient(tz_aware=True)
     await init_beanie(database=client["compas_test"], document_models=DOMAIN_DOCUMENTS)
@@ -61,9 +61,10 @@ async def _sembrar_vinculo(telegram_id: int, user_id: str) -> None:
     ).insert()
 
 
-async def _sembrar_borrador(semana: str = "2026-08-31") -> None:
-    await PaqueteVigilante(
-        semana=semana,
+async def _sembrar_borrador(periodo: str = "2026-08-31") -> None:
+    await AvisoVigilante(
+        tipo="paquete_lunes",
+        periodo=periodo,
         texto="EL PAQUETE",
         texto_crudo="[[x]]",
         estado="borrador",
@@ -89,14 +90,14 @@ async def test_revisor_publica_difunde_a_todo_el_comite(db, audit_col, monkeypat
     destinos_paquete = {c for c, t in tg.enviados if t == "EL PAQUETE"}
     assert destinos_paquete == {999, 888}  # difundido a todo el comité
 
-    got = await PaqueteVigilante.find_one(PaqueteVigilante.semana == "2026-08-31")
+    got = await AvisoVigilante.find_one(AvisoVigilante.periodo == "2026-08-31")
     assert got is not None
     assert got.estado == "publicado"
     assert got.publicado_at is not None
 
     doc = await audit_col.find_one({"evento": "vigilante.paquete.publicado"})
     assert doc is not None
-    assert doc["metadata"]["semana"] == "2026-08-31"
+    assert doc["metadata"]["periodo"] == "2026-08-31"
     assert doc["metadata"]["n_destinatarios"] == 2
 
     # el revisor recibe además la confirmación de publicación
@@ -146,7 +147,7 @@ async def test_publicar_sin_borrador_avisa(db, audit_col, monkeypatch):
     await webhook.procesar_update(update, cliente_telegram=tg)
 
     assert any("no hay" in t.lower() for _, t in tg.enviados)
-    assert await PaqueteVigilante.find_one({}) is None
+    assert await AvisoVigilante.find_one({}) is None
 
 
 @pytest.mark.asyncio
@@ -178,7 +179,7 @@ async def test_publicar_de_no_revisor_cae_al_qa(db, audit_col, monkeypatch):
     await webhook.procesar_update(update, cliente_telegram=tg)
 
     assert llamado["v"] is True  # cayó al Q&A, no a la difusión
-    pq = await PaqueteVigilante.find_one(PaqueteVigilante.semana == "2026-08-31")
+    pq = await AvisoVigilante.find_one(AvisoVigilante.periodo == "2026-08-31")
     assert pq.estado == "borrador"  # nadie lo publicó
     assert not any(t == "EL PAQUETE" for _, t in tg.enviados)
 
@@ -218,5 +219,5 @@ async def test_frase_que_menciona_publicar_cae_al_qa(db, audit_col, monkeypatch)
     await webhook.procesar_update(update, cliente_telegram=tg)
 
     assert llamado["v"] is True
-    pq = await PaqueteVigilante.find_one(PaqueteVigilante.semana == "2026-08-31")
+    pq = await AvisoVigilante.find_one(AvisoVigilante.periodo == "2026-08-31")
     assert pq.estado == "borrador"

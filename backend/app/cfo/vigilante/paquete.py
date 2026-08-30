@@ -14,7 +14,7 @@ from app.cfo import config
 from app.cfo.agente.cliente import crear_cliente
 from app.cfo.agente.servicio import consultar
 from app.cfo.telegram.cliente import crear_cliente_telegram
-from app.cfo.vigilante.modelos import PaqueteVigilante
+from app.cfo.vigilante.modelos import AvisoVigilante
 from app.core.time import now_bogota
 
 logger = logging.getLogger(__name__)
@@ -40,10 +40,12 @@ async def _audit_soft(evento, entidad_id: str, metadata: dict) -> None:
         logger.exception("fallo al auditar %s", evento)
 
 
-async def generar_y_entregar_paquete() -> PaqueteVigilante | None:
-    semana = now_bogota().date().isoformat()
-    if await PaqueteVigilante.find_one(PaqueteVigilante.semana == semana):
-        logger.info("paquete de la semana %s ya existe; no se regenera", semana)
+async def generar_y_entregar_paquete() -> AvisoVigilante | None:
+    periodo = now_bogota().date().isoformat()
+    if await AvisoVigilante.find_one(
+        AvisoVigilante.tipo == "paquete_lunes", AvisoVigilante.periodo == periodo
+    ):
+        logger.info("paquete del %s ya existe; no se regenera", periodo)
         return None
 
     resp = await consultar(
@@ -53,8 +55,9 @@ async def generar_y_entregar_paquete() -> PaqueteVigilante | None:
         logger.info("consultar abstuvo sin cifras; no se guarda borrador vacío")
         return None
 
-    pq = PaqueteVigilante(
-        semana=semana,
+    pq = AvisoVigilante(
+        tipo="paquete_lunes",
+        periodo=periodo,
         texto=resp.texto,
         texto_crudo=resp.texto_crudo,
         estado="borrador",
@@ -65,9 +68,10 @@ async def generar_y_entregar_paquete() -> PaqueteVigilante | None:
 
     await _audit_soft(
         AuditEvento.vigilante_paquete_generado,
-        semana,
+        periodo,
         {
-            "semana": semana,
+            "periodo": periodo,
+            "tipo": "paquete_lunes",
             "abstuvo": resp.abstuvo,
             "conceptos_usados": list(resp.conceptos_usados),
         },

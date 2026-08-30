@@ -13,12 +13,14 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
 2026-07-23) = 44. No se inventan eventos sin CR.
 
 vigilante.paquete.generado/publicado (CR-CFO-3, FABS vigilante paquete lunes,
-GO CEO 2026-08-30) llevan el catálogo a 68 (ver test abajo)."""
+GO CEO 2026-08-30) llevan el catálogo a 68 + vigilante.alerta.generada/publicada
+(CR-CFO-4, FABS vigilante alerta de caja, GO CEO 2026-08-30) lo llevan a 70
+(ver test abajo)."""
 
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
 
-def test_catalogo_tiene_exactamente_68_eventos():
+def test_catalogo_tiene_exactamente_70_eventos():
     # 59 + factura_obligacion.pagada (D2 §7, GO CEO 2026-08-04)
     # + transaccion.dividida + transaccion.division_deshecha (PTS6-B, CR división de
     #   clasificación, GO CEO 2026-08-10) = 62
@@ -28,8 +30,10 @@ def test_catalogo_tiene_exactamente_68_eventos():
     #   canal Telegram, GO CEO 2026-08-17) = 66.
     # + vigilante.paquete.generado + vigilante.paquete.publicado (CR-CFO-3, FABS
     #   vigilante paquete lunes, GO CEO 2026-08-30) = 68.
-    assert len(AuditEvento) == 68
-    assert len(CATALOGO_EVENTOS) == 68
+    # + vigilante.alerta.generada + vigilante.alerta.publicada (CR-CFO-4, FABS
+    #   vigilante alerta de caja, GO CEO 2026-08-30) = 70.
+    assert len(AuditEvento) == 70
+    assert len(CATALOGO_EVENTOS) == 70
     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
     assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
     assert AuditEvento.transaccion_dividida.value == "transaccion.dividida"
@@ -43,6 +47,8 @@ def test_catalogo_tiene_exactamente_68_eventos():
     assert "cfo.vinculo_eliminado" in CATALOGO_EVENTOS
     assert "vigilante.paquete.generado" in CATALOGO_EVENTOS
     assert "vigilante.paquete.publicado" in CATALOGO_EVENTOS
+    assert "vigilante.alerta.generada" in CATALOGO_EVENTOS
+    assert "vigilante.alerta.publicada" in CATALOGO_EVENTOS
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():
@@ -93,6 +99,8 @@ def test_eventos_clave_presentes():
         "meta_ingreso.eliminada",  # CR-D2: baja lógica de meta
         "vigilante.paquete.generado",  # CR-CFO-3: job arma el borrador semanal
         "vigilante.paquete.publicado",  # CR-CFO-3: revisor difunde al comité
+        "vigilante.alerta.generada",  # CR-CFO-4: job diario arma el borrador de alerta
+        "vigilante.alerta.publicada",  # CR-CFO-4: revisor difunde la alerta al comité
     ):
         assert esperado in CATALOGO_EVENTOS
 

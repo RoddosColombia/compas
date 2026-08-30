@@ -23,7 +23,7 @@ from app.cfo.agente import servicio
 from app.cfo.agente.cliente import crear_cliente as crear_cliente_llm
 from app.cfo.telegram import hilos, repositorio, vinculos
 from app.cfo.telegram.cliente import ClienteTelegramProto
-from app.cfo.vigilante.modelos import PaqueteVigilante
+from app.cfo.vigilante.modelos import AvisoVigilante
 from app.core.time import now_bogota
 
 logger = logging.getLogger(__name__)
@@ -50,8 +50,11 @@ async def _publicar_paquete(
     errores de red, así que el loop de difusión no revienta a medio camino.
     Devuelve el texto de confirmación enviado al revisor (para dedup del comando)."""
     borradores = await (
-        PaqueteVigilante.find(PaqueteVigilante.estado == "borrador")
-        .sort(-PaqueteVigilante.generado_at)
+        AvisoVigilante.find(
+            AvisoVigilante.tipo == "paquete_lunes",
+            AvisoVigilante.estado == "borrador",
+        )
+        .sort(-AvisoVigilante.generado_at)
         .limit(1)
         .to_list()
     )
@@ -71,8 +74,8 @@ async def _publicar_paquete(
 
     await _audit_soft(
         AuditEvento.vigilante_paquete_publicado,
-        pq.semana,
-        {"semana": pq.semana, "n_destinatarios": len(vinculos_all)},
+        pq.periodo,
+        {"periodo": pq.periodo, "n_destinatarios": len(vinculos_all)},
     )
 
     msg = f"✅ Paquete publicado al comité ({len(vinculos_all)} destinatarios)."

@@ -148,12 +148,22 @@ class AuditEvento(StrEnum):
 
     # ── CR-CFO-3 (2) — FABS vigilante paquete lunes (GO CEO 2026-08-30) ──
     # Proactivo: `vigilante.paquete.generado` = el job armó el borrador semanal
-    # (metadata {semana, abstuvo, conceptos_usados}); `vigilante.paquete.publicado`
-    # = el revisor lo difundió al comité vía "publicar" (metadata {semana,
-    # n_destinatarios}). La generación también emite cfo.consulta/cfo.respuesta
-    # (reusa consultar). Catálogo 66 -> 68.
+    # (metadata {periodo, tipo, abstuvo, conceptos_usados}); `vigilante.paquete.
+    # publicado` = el revisor lo difundió al comité vía "publicar" (metadata
+    # {periodo, n_destinatarios}). La generación también emite cfo.consulta/
+    # cfo.respuesta (reusa consultar). Catálogo 66 -> 68. (Task 1 de CR-CFO-4
+    # generalizó el modelo `PaqueteVigilante` → `AvisoVigilante(tipo)`, renombrando
+    # el campo `semana` → `periodo`; estos 2 valores de evento NO cambian.)
     vigilante_paquete_generado = "vigilante.paquete.generado"
     vigilante_paquete_publicado = "vigilante.paquete.publicado"
+
+    # ── CR-CFO-4 (2) — FABS vigilante alerta de caja (GO CEO 2026-08-30) ──
+    # `vigilante.alerta.generada` = el job diario armó el borrador de alerta
+    # (metadata {periodo, disparadores, severidad, conceptos_usados});
+    # `vigilante.alerta.publicada` = el revisor la difundió al comité
+    # (metadata {periodo, n_destinatarios}). Catálogo 68 -> 70.
+    vigilante_alerta_generada = "vigilante.alerta.generada"
+    vigilante_alerta_publicada = "vigilante.alerta.publicada"
 
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).

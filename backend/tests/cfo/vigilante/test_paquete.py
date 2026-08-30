@@ -8,7 +8,7 @@ import pytest
 import pytest_asyncio
 from app.audit import service as audit_service
 from app.cfo.vigilante import paquete as P
-from app.cfo.vigilante.modelos import PaqueteVigilante
+from app.cfo.vigilante.modelos import AvisoVigilante
 from app.domain import DOMAIN_DOCUMENTS
 from beanie import init_beanie
 from mongomock_motor import AsyncMongoMockClient
@@ -26,7 +26,7 @@ class _Resp:
 
 @pytest_asyncio.fixture
 async def db():
-    """DB mongomock con las clases de dominio inicializadas (incl. PaqueteVigilante)."""
+    """DB mongomock con las clases de dominio inicializadas (incl. AvisoVigilante)."""
     client = AsyncMongoMockClient(tz_aware=True)
     await init_beanie(database=client["compas_test"], document_models=DOMAIN_DOCUMENTS)
     yield client
@@ -62,14 +62,16 @@ async def test_genera_guarda_audita_envia(db, audit_col, monkeypatch):
     pq = await P.generar_y_entregar_paquete()
 
     assert pq is not None and pq.estado == "borrador"
-    borrador = await PaqueteVigilante.find_one(PaqueteVigilante.estado == "borrador")
+    borrador = await AvisoVigilante.find_one(AvisoVigilante.estado == "borrador")
     assert borrador is not None
     assert enviados and enviados[0][0] == 999
     assert "Caja hoy $10.000.000" in enviados[0][1]
 
     doc = await audit_col.find_one({"evento": "vigilante.paquete.generado"})
     assert doc is not None
-    assert doc["entidad_id"] == pq.semana
+    assert doc["entidad_id"] == pq.periodo
+    assert doc["metadata"]["periodo"] == pq.periodo
+    assert doc["metadata"]["tipo"] == "paquete_lunes"
     assert doc["metadata"]["conceptos_usados"] == ["caja_hoy"]
 
 
@@ -99,7 +101,7 @@ async def test_abstiene_sin_cifras_no_guarda(db, monkeypatch):
     monkeypatch.setattr(P, "crear_cliente_telegram", lambda: None)
 
     assert await P.generar_y_entregar_paquete() is None
-    assert await PaqueteVigilante.find_one({}) is None
+    assert await AvisoVigilante.find_one({}) is None
 
 
 @pytest.mark.asyncio
