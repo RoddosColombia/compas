@@ -66,3 +66,51 @@ async def test_tendencia_abstiene_sin_historia(monkeypatch):
 async def test_tendencia_metrica_invalida():
     with pytest.raises(ValueError):
         await tendencias.tendencia_real(metrica="no-existe")
+
+
+@pytest.mark.asyncio
+async def test_rumbo_caja_arma_real_y_proyectado(monkeypatch):
+    async def fake_comp(**kw):
+        return {
+            "ancla": {"mes": "2026-07", "caja_real": "4000000"},
+            "actuals": [
+                {"mes": "2026-06", "caja_real": "5000000"},
+                {"mes": "2026-07", "caja_real": "4000000"},
+            ],
+            "forecast": [{"mes": "2026-08", "caja": "3500000"}],
+        }
+
+    async def fake_proy(**kw):
+        return {
+            "piso_caja": "3000000",
+            "runway_meses": None,
+            "meses": [
+                {"mes": "2026-08", "estado": "ok"},
+                {"mes": "2026-09", "estado": "critico"},
+            ],
+        }
+
+    monkeypatch.setattr(tendencias.proy_service, "comparar_vigente", fake_comp)
+    monkeypatch.setattr(tendencias.proy_service, "proyectar_vigente", fake_proy)
+    rs = await tendencias.rumbo_caja()
+    by = {r.concepto: r for r in rs}
+    assert by["caja_real_ult"].valor == Decimal("4000000")
+    assert by["caja_real_previo"].valor == Decimal("5000000")
+    assert by["piso_proyectado"].valor == Decimal("3000000")
+    assert by["piso_proyectado"].evidencia.ref == "quiebre:2026-09"
+    assert by["delta_caja_rumbo"].valor == Decimal("-1000000")
+    assert by["delta_caja_rumbo"].evidencia.ref == "direccion:baja"
+
+
+@pytest.mark.asyncio
+async def test_rumbo_caja_abstiene_sin_actuals(monkeypatch):
+    async def fake_comp(**kw):
+        return {"ancla": None, "actuals": [], "forecast": []}
+
+    async def fake_proy(**kw):
+        return {"piso_caja": "0", "runway_meses": None, "meses": []}
+
+    monkeypatch.setattr(tendencias.proy_service, "comparar_vigente", fake_comp)
+    monkeypatch.setattr(tendencias.proy_service, "proyectar_vigente", fake_proy)
+    rs = await tendencias.rumbo_caja()
+    assert len(rs) == 1 and rs[0].disponible is False
