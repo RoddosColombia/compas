@@ -294,3 +294,44 @@ async def test_simular_palanca_nuevo_valor_numero_crudo_falla():
         await tools.ejecutar_tool(
             "simular_palanca", {"palanca": "plazo_semanas", "nuevo_valor": 78}
         )
+
+
+# --- T3 (rebanada 3, sub-3a): tool tendencia_real -----------------------------
+
+
+def test_schema_incluye_tool_tendencia_real():
+    nombres = {t["name"] for t in tools.TOOLS_SCHEMA}
+    assert "tendencia_real" in nombres
+    t = next(x for x in tools.TOOLS_SCHEMA if x["name"] == "tendencia_real")
+    assert t["input_schema"]["additionalProperties"] is False
+    assert t["input_schema"]["required"] == ["metrica"]
+    props = t["input_schema"]["properties"]
+    assert props["metrica"]["enum"] == ["ingreso", "gasto", "caja"]
+
+
+@pytest.mark.asyncio
+async def test_tendencia_real_llama_la_calc(monkeypatch):
+    llamado = {}
+
+    async def fake_calc(*, metrica):
+        llamado["metrica"] = metrica
+        return []
+
+    monkeypatch.setattr("app.cfo.calc.tendencias.tendencia_real", fake_calc)
+    r = await tools.ejecutar_tool("tendencia_real", {"metrica": "gasto"})
+    assert llamado["metrica"] == "gasto"
+    assert r == []
+
+
+@pytest.mark.asyncio
+async def test_tendencia_real_metrica_invalida_falla_sin_llegar_a_la_calc():
+    # Sin monkeypatch: si el guard falla, el intento de llamar la calc real
+    # revienta la conexión y el test lo nota.
+    with pytest.raises(ValueError, match="metrica"):
+        await tools.ejecutar_tool("tendencia_real", {"metrica": "ventas"})
+
+
+@pytest.mark.asyncio
+async def test_tendencia_real_metrica_faltante_falla():
+    with pytest.raises(KeyError):
+        await tools.ejecutar_tool("tendencia_real", {})

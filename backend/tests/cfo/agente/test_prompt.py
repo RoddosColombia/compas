@@ -114,3 +114,30 @@ def test_prompt_salvedad_de_plazo_largo_plazo():
     p = SYSTEM_PROMPT
     assert "plazo-sin-efecto-horizonte" in p
     assert "largo plazo" in p.lower()
+
+
+def test_prompt_menciona_tendencia_real():
+    # inc4 rebanada 3 (sub-3a): el modelo debe saber que tendencia_real existe
+    # para "¿cómo viene el ingreso/gasto/caja vs el mes pasado?" -- si el prompt
+    # no la nombra, el modelo nunca la invoca.
+    p = SYSTEM_PROMPT.lower()
+    assert "tendencia_real" in p
+
+
+def test_prompt_tendencia_relata_direccion_desde_ref_no_la_calcula():
+    # La dirección (sube/baja/estable) viene calculada por COMPAS en el `ref`
+    # del concepto delta_..._real -- el prompt debe decirle al modelo que la
+    # RELATE, nunca que la infiera comparando los meses a ojo.
+    p = SYSTEM_PROMPT.lower()
+    assert "direcci" in p  # "dirección"/"direccion"
+    assert "ref" in p
+
+
+def test_prompt_tendencia_reitera_no_porcentajes():
+    # Reitera cerca del bloque de tendencia_real la prohibición de la regla 7
+    # (ningún % calculado por el modelo), no solo en el bloque original.
+    p = SYSTEM_PROMPT.lower()
+    idx = p.find("tendencia_real")
+    assert idx != -1
+    bloque = p[idx:]
+    assert "%" in bloque or "porcentaje" in bloque
