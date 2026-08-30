@@ -412,7 +412,7 @@ TOOLS_SCHEMA: list[dict] = [
             "ej. '¿gasté más de lo presupuestado en julio?'). Devuelve TRES "
             "conceptos: gasto_real_mes, presupuesto_mes y "
             "desvio_presupuesto (gasto_real_mes - presupuesto_mes; su "
-            "evidencia trae la dirección sobre/bajo/en-línea). Sin mes "
+            "evidencia trae la dirección sobre/bajo/en-linea). Sin mes "
             "cerrado con presupuesto aprobado, disponible=false. Es de solo "
             "lectura: nunca escribe nada."
         ),

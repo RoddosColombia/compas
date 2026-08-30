@@ -100,3 +100,21 @@ def test_piso_con_contexto_de_quiebre():
 def test_piso_sin_quiebre():
     out = formatear(_r2("piso_con", 40000000, "COP", ref="quiebre:nunca"))
     assert "$40.000.000" in out and "no cruzas el umbral" in out
+
+
+def test_formatear_money_negativo_signo_antes_del_peso():
+    # FINAL-REVIEW M1: rebanada 3 produce negativos con regularidad (desvío
+    # bajo-presupuesto, delta de caja a la baja); el signo debe ir ANTES del
+    # '$' ("-$5.000.000"), no después ("$-5.000.000").
+    r = _r("caja_hoy", Decimal("-5000000.00"), "COP", "2026-08-11")
+    assert formatear(r) == "-$5.000.000 (al 2026-08-11)"
+
+
+def test_formatear_money_positivo_sin_signo():
+    r = _r("caja_hoy", Decimal("5000000.00"), "COP", "2026-08-11")
+    assert formatear(r) == "$5.000.000 (al 2026-08-11)"
+
+
+def test_formatear_money_cero():
+    r = _r("caja_hoy", Decimal("0"), "COP", "2026-08-11")
+    assert formatear(r) == "$0 (al 2026-08-11)"
