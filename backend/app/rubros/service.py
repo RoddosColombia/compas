@@ -92,7 +92,23 @@ async def crear_rubro(
     tipo: TipoRubro | None = None,
 ) -> Rubro:
     """POST: crea con `orden` = máx(grupo)+1 y emite `rubro.creado` (fail-closed).
-    `codigo` (jerárquico) y `tipo` (Fijo/Variable) son opcionales (ARQUITECTURA)."""
+
+    RF-F9 · Fundacional §2 — «Plan de cuentas completo». `codigo` (contable) y
+    `tipo` (clase Fijo/Variable) son OBLIGATORIOS al crear un rubro que no sea
+    de sistema. Rubros previos a RF-F9 sin código NO se tocan (regla es «al
+    CREAR»; el histórico es intacto — regla 4 en espíritu). `Ajuste de
+    conciliación` sigue siendo la única excepción legítima (es de sistema)."""
+    codigo_norm = codigo.strip() if isinstance(codigo, str) else codigo
+    if not codigo_norm:
+        raise RubrosError(
+            "codigo contable es obligatorio al crear categoría (RF-F9)", 422
+        )
+    if tipo is None:
+        raise RubrosError(
+            "tipo (clase Fijo/Variable) es obligatorio al crear categoría (RF-F9)",
+            422,
+        )
+    codigo = codigo_norm
     if await Rubro.find_one(Rubro.grupo == grupo, Rubro.nombre == nombre) is not None:
         raise RubrosError(
             f"ya existe un rubro '{nombre}' en el grupo '{grupo.value}'", 409

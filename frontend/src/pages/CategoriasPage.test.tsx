@@ -5,7 +5,7 @@
 // helper agruparRubros ordena por `orden` dentro del grupo.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { type Rubro, agruparRubros } from "@/lib/rubros";
@@ -116,5 +116,41 @@ describe("CategoriasPage", () => {
     expect(screen.getByText("Activa")).toBeInTheDocument();
     expect(screen.getByText("Inactiva")).toBeInTheDocument();
     expect(screen.getByText("Sistema")).toBeInTheDocument();
+  });
+
+  // RF-F9 · Fundacional §2 — «Plan de cuentas completo».
+
+  it("RF-F9: el botón «Crear» se deshabilita hasta que nombre, código y clase estén llenos", async () => {
+    puedeMock.mockImplementation(() => true);
+    renderPage();
+    await screen.findByText("Nueva categoría");
+    const crear = screen.getByRole("button", { name: /crear/i });
+    // El estado inicial: nombre "", código "", clase "variable" (default).
+    // Falta nombre y código → botón deshabilitado.
+    expect(crear).toBeDisabled();
+    // Llenar solo el nombre → sigue deshabilitado (falta código).
+    fireEvent.change(screen.getByLabelText(/nombre/i), {
+      target: { value: "Nueva cat" },
+    });
+    expect(crear).toBeDisabled();
+    // Llenar código → habilitado.
+    fireEvent.change(screen.getByLabelText(/código/i), {
+      target: { value: "2900" },
+    });
+    expect(crear).toBeEnabled();
+    // Blanquear código de nuevo → vuelve a deshabilitarse.
+    fireEvent.change(screen.getByLabelText(/código/i), { target: { value: "" } });
+    expect(crear).toBeDisabled();
+  });
+
+  it("RF-F9: la clase no ofrece la opción vacía; sale con «variable» por defecto", async () => {
+    puedeMock.mockImplementation(() => true);
+    renderPage();
+    await screen.findByText("Nueva categoría");
+    const clase = screen.getByLabelText(/clase/i) as HTMLSelectElement;
+    // No hay opción vacía (RF-F9 obliga la clase).
+    const opciones = Array.from(clase.options).map((o) => o.value);
+    expect(opciones).toEqual(["fijo", "variable"]);
+    expect(clase.value).toBe("variable");
   });
 });
