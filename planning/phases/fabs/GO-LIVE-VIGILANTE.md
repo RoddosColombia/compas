@@ -177,7 +177,7 @@ El job lee esos valores cada ejecución (no precisa restart del worker si los ca
 > composición, tendencia, rumbo al umbral).
 
 ### Qué hace esta pieza (una vez viva)
-Cada **día 7:30 América/Bogotá** (el mismo job del `paquete_lunes` pero orden de ejecución 3er), el worker corre un detector
+Cada **día 7:30 América/Bogotá** (un job SEPARADO `vigilante_cierre_mensual`, orden de ejecución 3er), el worker corre un detector
 que identifica si se cerró un mes nuevo desde la última corrida. Si es así:
 1. Corre el servicio `consultar()` UNA única vez con un prompt fijo que le pide 5 puntos:
    - Caja hoy y piso proyectado del mes cerrado.
@@ -191,7 +191,7 @@ que identifica si se cerró un mes nuevo desde la última corrida. Si es así:
 5. FABS reenvía el comentario tal cual (nunca lo recalcula) a todos los vinculados del comité y audita.
 6. Si no respondés, el comentario queda en borrador — nadie más lo ve.
 
-**Nota:** idempotencia mensual garantizada por índice único `periodo`. Si el mes ya se procesó, el job lo omite.
+**Nota:** idempotencia garantizada por índice único `(tipo, periodo)`. Si el mes ya se procesó, el job lo omite.
 
 ### Configuración (Paso 1 de GO-LIVE-VIGILANTE.md se aplica aquí también)
 No hay variables nuevas — reutiliza:
@@ -201,9 +201,9 @@ No hay variables nuevas — reutiliza:
 
 ### Orden de ejecución en el scheduler
 El worker `compas-jobs` **corre 3 jobs en orden** cada mañana a la hora exacta:
-1. **7:30:** generador del paquete del lunes (si es lunes).
-2. **8:00:** evaluador de alertas (cada día).
-3. **7:30:** generador del cierre (cada día, si se detectó mes cerrado).
+1. **7:00:** generador del paquete del lunes (si es lunes).
+2. **7:30:** generador del cierre (cada día, si se detectó mes cerrado).
+3. **8:00:** evaluador de alertas (cada día).
 
 En la práctica, el cierre tarda segundos (es idempotente por mes) — si ya pasó en la corrida anterior, este job es un no-op.
 

@@ -1,8 +1,8 @@
 # backend/app/cfo/vigilante/modelos.py
 """FABS · vigilante — avisos salientes (borrador→publicar). Un `AvisoVigilante` guarda
 el borrador que un job proactivo arma (texto sustituido + texto_crudo con [[tokens]])
-hasta que el revisor lo publica al comité. `tipo` distingue el paquete del lunes de la
-alerta de caja; `(tipo, periodo)` es la clave de idempotencia (lunes / día)."""
+hasta que el revisor lo publica al comité. `tipo` distingue el paquete del lunes, la
+alerta de caja y el cierre mensual; `(tipo, periodo)` es la clave de idempotencia."""
 
 from datetime import datetime
 
@@ -16,7 +16,7 @@ CFO_AVISOS_COLLECTION = "cfo_avisos_vigilante"
 class AvisoVigilante(Document):
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    tipo: str  # 'paquete_lunes' | 'alerta_caja'
+    tipo: str  # 'paquete_lunes' | 'alerta_caja' | 'cierre_mensual'
     periodo: str  # 'YYYY-MM-DD' (lunes para el paquete, día para la alerta)
     texto: str
     texto_crudo: str
