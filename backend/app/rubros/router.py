@@ -26,8 +26,11 @@ class RubroCrearBody(BaseModel):
     grupo: RubroGrupo
     nombre: str = Field(min_length=1, max_length=80)
     tipo_flujo: TipoFlujo = TipoFlujo.EGRESO
-    codigo: str | None = Field(default=None, max_length=8)
-    tipo: TipoRubro | None = None  # Fijo/Variable (ARQUITECTURA_PRESUPUESTAL)
+    # RF-F9 · Fundacional §2 — «Plan de cuentas completo». `codigo` (contable) y
+    # `tipo` (clase Fijo/Variable) son obligatorios al CREAR. Rubros existentes
+    # sin código no se tocan (regla es «al CREAR», no reescritura del histórico).
+    codigo: str = Field(min_length=1, max_length=8)
+    tipo: TipoRubro
 
     @field_validator("grupo", mode="before")
     @classmethod
@@ -43,7 +46,7 @@ class RubroCrearBody(BaseModel):
     @field_validator("tipo", mode="before")
     @classmethod
     def _cast_tipo_rubro(cls, v: object) -> object:
-        return v if v is None or isinstance(v, TipoRubro) else TipoRubro(v)
+        return v if isinstance(v, TipoRubro) else TipoRubro(v)
 
 
 class RubroEditarBody(BaseModel):
