@@ -30,7 +30,8 @@ async def test_init_beanie_registra_los_documents_de_dominio():
     #   insumo del termómetro de desviación; NO entra al motor).
     # + ProyeccionVersion (RF-F2, COMPAS 2.0 — Fundacional §3: la ÚNICA entidad cuyo
     #   ciclo de vida cambia en 2.0; snapshot inmutable al aprobar el presupuesto).
-    assert len(DOMAIN_DOCUMENTS) == 24
+    # + PaqueteVigilante (FABS-VIGILANTE-1, `df3b0b1`, paquete del lunes).
+    assert len(DOMAIN_DOCUMENTS) == 25
     assert Transaccion in mongo.DOCUMENT_MODELS
     assert AuditLog not in mongo.DOCUMENT_MODELS
     client = AsyncMongoMockClient()
