@@ -173,6 +173,14 @@ class AuditEvento(StrEnum):
     vigilante_cierre_generado = "vigilante.cierre.generado"
     vigilante_cierre_publicado = "vigilante.cierre.publicado"
 
+    # ── CR-CFO-6 (2) — FABS vigilante alerta de IVA (GO CEO 2026-08-31) ──
+    # `vigilante.iva.generado` = el job proactivo armó el borrador de alerta de IVA
+    # (metadata {periodo, disparadores, severidad, conceptos_usados});
+    # `vigilante.iva.publicado` = el revisor la difundió al comité (metadata {periodo,
+    # n_destinatarios}). Catálogo 72 -> 74.
+    vigilante_iva_generado = "vigilante.iva.generado"
+    vigilante_iva_publicado = "vigilante.iva.publicado"
+
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)

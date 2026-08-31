@@ -35,8 +35,10 @@ def test_catalogo_tiene_exactamente_70_eventos():
     #   vigilante alerta de caja, GO CEO 2026-08-30) = 70.
     # + vigilante.cierre.generado + vigilante.cierre.publicado (CR-CFO-5, FABS
     #   vigilante cierre mensual comentado, GO CEO 2026-08-30) = 72.
-    assert len(AuditEvento) == 72
-    assert len(CATALOGO_EVENTOS) == 72
+    # + vigilante.iva.generado + vigilante.iva.publicado (CR-CFO-6, FABS vigilante
+    #   alerta de IVA, GO CEO 2026-08-31) = 74.
+    assert len(AuditEvento) == 74
+    assert len(CATALOGO_EVENTOS) == 74
     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
     assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
     assert AuditEvento.transaccion_dividida.value == "transaccion.dividida"
@@ -52,6 +54,10 @@ def test_catalogo_tiene_exactamente_70_eventos():
     assert "vigilante.paquete.publicado" in CATALOGO_EVENTOS
     assert "vigilante.alerta.generada" in CATALOGO_EVENTOS
     assert "vigilante.alerta.publicada" in CATALOGO_EVENTOS
+    assert "vigilante.cierre.generado" in CATALOGO_EVENTOS
+    assert "vigilante.cierre.publicado" in CATALOGO_EVENTOS
+    assert "vigilante.iva.generado" in CATALOGO_EVENTOS
+    assert "vigilante.iva.publicado" in CATALOGO_EVENTOS
 
 
 def test_extracto_cargado_es_el_evento_30_de_cr001():
@@ -106,6 +112,8 @@ def test_eventos_clave_presentes():
         "vigilante.alerta.publicada",  # CR-CFO-4: revisor difunde la alerta al comité
         "vigilante.cierre.generado",  # CR-CFO-5: job diario detectó mes cerrado y armó comentario
         "vigilante.cierre.publicado",  # CR-CFO-5: revisor difundió el comentario al comité
+        "vigilante.iva.generado",  # CR-CFO-6: job proactivo armó el borrador de alerta de IVA
+        "vigilante.iva.publicado",  # CR-CFO-6: revisor difundió la alerta de IVA al comité
     ):
         assert esperado in CATALOGO_EVENTOS
 

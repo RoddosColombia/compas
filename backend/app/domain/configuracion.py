@@ -57,6 +57,11 @@ class ClaveConfig(StrEnum):
     # ALERTA_CAJA_HORIZONTE_MESES {"meses": int} — meses adelante (ausente → 6).
     ALERTA_CAJA_ACTIVA = "ALERTA_CAJA_ACTIVA"
     ALERTA_CAJA_HORIZONTE_MESES = "ALERTA_CAJA_HORIZONTE_MESES"
+    # FABS vigilante · alerta de IVA (2026-08-31). Editable por dato (no hardcode).
+    # ALERTA_IVA_ACTIVA {"activa": bool} — on/off (ausente → False).
+    # ALERTA_IVA_DIAS {"dias": int} — días adelante (ausente → 30).
+    ALERTA_IVA_ACTIVA = "ALERTA_IVA_ACTIVA"
+    ALERTA_IVA_DIAS = "ALERTA_IVA_DIAS"
 
 
 # Tipo esperado por clave (M-03). "decimal" | "fecha" | "json".
@@ -73,6 +78,8 @@ _TIPO_POR_CLAVE: dict[ClaveConfig, str] = {
     ClaveConfig.TARIFA_IVA: "json",
     ClaveConfig.ALERTA_CAJA_ACTIVA: "json",
     ClaveConfig.ALERTA_CAJA_HORIZONTE_MESES: "json",
+    ClaveConfig.ALERTA_IVA_ACTIVA: "json",
+    ClaveConfig.ALERTA_IVA_DIAS: "json",
 }
 
 

@@ -142,3 +142,59 @@ async def escribir_alerta_horizonte_meses(
     )
     await fila.insert()
     return fila
+
+
+_ALERTA_IVA_DIAS_FALLBACK = 30
+
+
+async def leer_alerta_iva_activa() -> bool:
+    """On/off del vigilante de IVA. Ausente/incoherente → False (apagada)."""
+    fila = (
+        await Configuracion.find(Configuracion.clave == ClaveConfig.ALERTA_IVA_ACTIVA)
+        .sort(-Configuracion.vigente_desde)
+        .first_or_none()
+    )
+    if fila is None or fila.valor_json is None:
+        return False
+    return bool(fila.valor_json.get("activa", False))
+
+
+async def leer_alerta_iva_dias() -> int:
+    """Días hacia adelante del disparador del IVA. Ausente/incoherente → 30."""
+    fila = (
+        await Configuracion.find(Configuracion.clave == ClaveConfig.ALERTA_IVA_DIAS)
+        .sort(-Configuracion.vigente_desde)
+        .first_or_none()
+    )
+    if fila is None or fila.valor_json is None:
+        return _ALERTA_IVA_DIAS_FALLBACK
+    d = fila.valor_json.get("dias")
+    return d if isinstance(d, int) and d > 0 else _ALERTA_IVA_DIAS_FALLBACK
+
+
+async def escribir_alerta_iva_activa(
+    *, activa: bool, usuario_id: str, vigente_desde: date | None = None
+) -> Configuracion:
+    fila = Configuracion(
+        clave=ClaveConfig.ALERTA_IVA_ACTIVA,
+        valor_json={"activa": bool(activa)},
+        vigente_desde=(vigente_desde or today_bogota()).isoformat(),
+        modificado_por=usuario_id,
+    )
+    await fila.insert()
+    return fila
+
+
+async def escribir_alerta_iva_dias(
+    *, dias: int, usuario_id: str, vigente_desde: date | None = None
+) -> Configuracion:
+    if not isinstance(dias, int) or dias <= 0:
+        raise ConfiguracionError("los días deben ser un entero > 0", 422)
+    fila = Configuracion(
+        clave=ClaveConfig.ALERTA_IVA_DIAS,
+        valor_json={"dias": dias},
+        vigente_desde=(vigente_desde or today_bogota()).isoformat(),
+        modificado_por=usuario_id,
+    )
+    await fila.insert()
+    return fila
