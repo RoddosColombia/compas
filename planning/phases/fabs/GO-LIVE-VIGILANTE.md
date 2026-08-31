@@ -118,6 +118,53 @@ No hace falta esperar al lunes para confirmar que el worker arrancó bien:
 - Cierre mensual asistido — pendiente.
 - No hay endpoint ni pantalla en COMPAS para leer el historial de paquetes — solo Telegram.
 
+---
+
+## Alerta de caja
+
+> El mismo worker **`compas-jobs`** corre la segunda pieza del Vigilante: una alerta proactiva
+> diaria (8:00 América/Bogotá) cuando la caja proyectada cruza el umbral crítico (`caja_minima`)
+> o se acerca (umbral de atención `UMBRAL_ATENCION`). Complementa el paquete del lunes (que es
+> semanal, determinista, sin LLM) con vigilancia continua de la salud de caja.
+
+### Qué hace esta pieza (una vez viva)
+Cada **día 8:00 América/Bogotá**, el worker corre un job que:
+1. Calcula la proyección REAL desde hoy (E1+D2 del motor, vía `rumbo_caja`).
+2. Verifica si la caja real en los últimos bancos reportados + la caja proyectada hasta el horizonte (default 6 meses) cruza:
+   - **Umbral crítico (`caja_minima`):** genera alerta severidad CRÍTICA.
+   - **Umbral de atención (`UMBRAL_ATENCION`):** genera alerta severidad ATENCIÓN.
+3. Si hay una alerta nueva (no duplicada de días anteriores):
+   - La guarda como borrador con el mismo patrón que el paquete del lunes.
+   - Te la envía a vos (el revisor) por Telegram: **"⚠️ Alerta de caja: [severidad]…"**
+4. Vos revisás. Si respondés **"publicar alerta"** (tal cual, ese texto), FABS la reenvía al comité y audita el evento.
+
+**Nota:** la alerta _real_ depende de que los bancos reporten el saldo diario. Si no hay datos
+bancarios frescos, el job abstiene (no publica alerta falsa) — anotará en el log que espera
+datos.
+
+### Configuración (Paso 1 de GO-LIVE-VIGILANTE.md se aplica aquí también)
+En Render → **compas-jobs** → **Environment**:
+
+| Key | Value |
+|---|---|
+| `ALERTA_CAJA_ACTIVA` | `{"activa": true}` — por defecto OFF. Encenderla activa el job diario. |
+| `ALERTA_CAJA_HORIZONTE_MESES` | (Opcional) `{"meses": 6}` — cuán lejos adelante proyectar (default 6 meses). |
+
+### Umbrales — dónde se editan
+Los dos umbrales (crítico y atención) **no se configuran aquí** — se editan en la pantalla **Supuestos**
+de COMPAS como una fila más, igual que ahora:
+- **`caja_minima`** (umbral crítico, ej. $50M).
+- **`UMBRAL_ATENCION`** (umbral de atención, ej. $100M, > crítico).
+
+El job lee esos valores cada ejecución (no precisa restart del worker si los cambiás).
+
+### Qué pasa si algo falla
+- **`ALERTA_CAJA_ACTIVA` sin configurar / `"activa": false`:** el job es un no-op (ni siquiera corre la proyección).
+- **Sin datos bancarios frescos:** el job se abstiene — documentado en logs, no dispara alerta fantasma.
+- **Proyección falla:** fail-soft; audita sin bloquear el worker.
+- **Ya existe una alerta de la misma severidad hoy:** el job no regenera otra — una alerta por día por severidad.
+- **Revisor no responde:** alerta queda en `estado='borrador'`, nadie más la ve hasta que vos respondas "publicar alerta".
+
 ## Prompt para Claude-in-Chrome (verificar salud del worker, sin tocar secretos)
 ```
 Estás controlando mi Chrome real. REGLA DURA: no teclees NUNCA secretos (API keys,
