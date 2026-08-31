@@ -1,0 +1,80 @@
+{
+  "$comment": "AND-2 · COMPAS 2.0 · ECC (Environment Control per project). Perfil CORE del proyecto: hooks apagados por default, permisos acotados, versión del método fijada. Los overrides personales del CEO viven en su ~/.claude/settings.json — este archivo solo declara lo que aplica a TODA sesión sobre este repo.",
+  "permissions": {
+    "$comment": "COMPAS 2.0 · defensivo por default. Los mutantes destructivos exigen confirmación explícita del CEO en cada uso. Lecturas y edits de código son libres.",
+    "allow": [
+      "Read(**)",
+      "Glob(**)",
+      "Grep(**)",
+      "Edit(backend/**)",
+      "Edit(frontend/**)",
+      "Edit(docs/**)",
+      "Edit(planning/**)",
+      "Edit(.claude/**)",
+      "Edit(.github/**)",
+      "Write(backend/**)",
+      "Write(frontend/**)",
+      "Write(docs/**)",
+      "Write(planning/**)",
+      "Write(.claude/**)",
+      "Write(.github/**)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git rebase:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh api repos/RoddosColombia/compas/branches/main/protection:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m ruff:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npx vitest run:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(git push --force*)",
+      "Bash(gh pr merge:*)",
+      "Bash(npm install:*)",
+      "Bash(pip install:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git push --force main*)",
+      "Bash(gh repo delete:*)",
+      "Bash(gh api repos/*:*:DELETE)",
+      "Read(docs/INVENTARIO-SECRETOS.xlsx)",
+      "Read(.env)",
+      "Read(**/.env*)",
+      "Read(**/secrets/**)"
+    ]
+  },
+  "hooks": {
+    "$comment": "AND-2 · hooks APAGADOS por default en el perfil core. Si el CEO quiere activar algo (pre-commit, formatter automático, etc.) va en su ~/.claude/settings.json personal, no acá — para que ninguna sesión sobre el proyecto herede efectos que otro colaborador no esperaba."
+  },
+  "$fijados": {
+    "$comment": "AND-2 · versiones fijadas. El método NO trabaja contra 'latest'.",
+    "python": "3.12",
+    "node": "22",
+    "mongodb": "7",
+    "referencias": {
+      "fundacional": "docs/COMPAS_2.0_FUNDACIONAL.md",
+      "roadmap": "docs/COMPAS_2.0_ROADMAP.md",
+      "capacidades": "docs/CAPACIDADES.md",
+      "design": "docs/DESIGN.md",
+      "reglas": "CLAUDE.md"
+    }
+  }
+}
