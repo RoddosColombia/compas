@@ -48,31 +48,35 @@ El cierre de cada mes desplaza la frontera un mes hacia adelante.
 
 MoSCoW. Detalle completo en la hoja de ruta Paso 1.
 
+**Velocímetro (2026-08-30, con base en `origin/main`):** funcional **10/10** cerrado en main (must 5/5 · should 3/3 · could 2/2). Todos los RF-F* mergeados.
+
 ### Imprescindibles (must)
-- **RF-F1 · Reglas sembradas con patrones reales.** Semilla desde *Base real egresos*; cola de «Por clasificar» vaciada con reglas aprendidas.
+- **RF-F1 · Reglas sembradas con patrones reales.** Semilla desde *Base real egresos*; cola de «Por clasificar» vaciada con reglas aprendidas. **✅ hecho**
   *AC:* Dado un extracto cargado, cuando corren las reglas, ≥ 90 % de los movimientos entran clasificados y «Por clasificar» deja de ser el mayor rubro del mes; cada movimiento queda sellado con `clasificada_por/at` + `regla_id`.
-- **RF-F2 · Costura presupuesto → proyección.** `Ajuste.rubro_id` entra en el cálculo; aprobar el mes genera los ajustes según D-2 y produce una serie versionada.
+- **RF-F2 · Costura presupuesto → proyección.** `Ajuste.rubro_id` entra en el cálculo; aprobar el mes genera los ajustes según D-2 y produce una serie versionada. **✅ hecho**
   *AC:* Dado un mes con presupuesto aprobado, cuando se aprueba, la proyección muestra serie nueva, anterior y diferencia en piso y valles, sin recálculo manual. **Golden-master del motor intacto.**
-- **RF-F3 · Objetivo como regla de valles.** Umbral de atención administrable (D-1); valle como entidad (entrada, fondo, salida, profundidad, duración); dos clases de alerta (nivel; y valle nuevo/más profundo vs. versión aprobada). Reusa `valles.py`.
-- **RF-F4 · Techo de gasto en ventana.** `techo_gasto_ventana(mes_inicio, ventana_meses=9, referencia)`: bandera roja si el valle **dentro de la ventana** perfora la **atención** (no el mínimo), aunque el horizonte cierre bien. Parametriza `techo_gasto`.
-- **RF-F5 · Solvers dentro de la app.** Techo, objetivo de venta (`goal_seek`) y unidades (`solver_unidades`) expuestos en la cabina del mes y en proyección; cada alerta de valle llega con sus tres palancas.
+- **RF-F3 · Objetivo como regla de valles.** Umbral de atención administrable (D-1); valle como entidad (entrada, fondo, salida, profundidad, duración); dos clases de alerta (nivel; y valle nuevo/más profundo vs. versión aprobada). Reusa `valles.py`. **✅ hecho**
+- **RF-F4 · Techo de gasto en ventana.** `techo_gasto_ventana(mes_inicio, ventana_meses=9, referencia)`: bandera roja si el valle **dentro de la ventana** perfora la **atención** (no el mínimo), aunque el horizonte cierre bien. Parametriza `techo_gasto`. **✅ hecho**
+- **RF-F5 · Solvers dentro de la app.** Techo, objetivo de venta (`goal_seek`) y unidades (`solver_unidades`) expuestos en la cabina del mes y en proyección; cada alerta de valle llega con sus tres palancas. **✅ hecho**
 
 ### Debería (should)
-- **RF-F6 · Cargas idempotentes por huella** — antes de que entre Bancolombia en septiembre.
-- **RF-F7 · Recomendaciones por impacto** — reparto del recorte por rubro; motor corrido al revés.
-- **RF-F9 · Plan de cuentas completo** — código contable y clase obligatorios al crear categoría.
+- **RF-F6 · Cargas idempotentes por huella** — antes de que entre Bancolombia en septiembre. **✅ hecho**
+- **RF-F7 · Recomendaciones por impacto** — reparto del recorte por rubro; motor corrido al revés. **✅ hecho (PR #119, main 62d24d5)**
+- **RF-F9 · Plan de cuentas completo** — código contable y clase obligatorios al crear categoría. **✅ hecho (PR #121, main 7aebfba)**
 
 ### Podría (could)
-- **RF-F8 · Obligaciones factura a factura** — generaliza Auteco; habilita fecha exacta de pago y «negocia esta deuda». Esfuerzo alto.
-- **RF-F10 · Horizonte a 240 meses con agregación** por año/trimestre.
+- **RF-F8 · Obligaciones factura a factura** — generaliza Auteco; habilita fecha exacta de pago y «negocia esta deuda». Esfuerzo alto. **✅ rebanada A hecha (PR #120, main a24466b · simulación compute-only)** — la persistida queda para CR-RF-F8-B (requiere evento audit nuevo).
+- **RF-F10 · Horizonte a 240 meses con agregación** por año/trimestre. **✅ hecho (PR #122, main ab05af7)**
 
 ---
 
 ## 3 · Alcance — visual y operativo
 
+**Velocímetro visual (2026-08-30, con base en `origin/main`):** RV-V1 ✅ mergeado. RV-V2 en curso — rebanada 1 (7 de 10 AC) ✅ mergeada en main; rebanadas 2 (AC #8) y 3 (AC #5/#7) por venir. RV-V3..V10 y los 6 gates siguen.
+
 ### Imprescindibles (must)
-- **RV-V1 · DESIGN.md con la gramática de gráficos** (8 reglas) + paleta de marca como tokens. Prerrequisito de todo lo visual.
-- **RV-V2 · Rehacer las dos gráficas principales.** Referencia visual vinculante: `docs/design-references/proyeccion-mockup.html`.
+- **RV-V1 · DESIGN.md con la gramática de gráficos** (8 reglas) + paleta de marca como tokens. Prerrequisito de todo lo visual. **✅ hecho (PR #123, main a071d46)** — los 7 tokens de rol de gráfico (`--color-chart-*`) materializados en `frontend/src/index.css`; contrato listo para RV-V2.
+- **RV-V2 · Rehacer las dos gráficas principales.** Referencia visual vinculante: `docs/design-references/proyeccion-mockup.html`. **🔄 en curso** — rebanada 1 (curva de caja, 7 de 10 AC) ✅ mergeada en main (PR #124, main 031b1ad). Rebanada 2 (AC #8 composición separada) en branch `feat/rv-v2-composicion` (WIP). Rebanada 3 (AC #5 escenario superpuesto + AC #7 motos editable) pendiente.
   *AC (verificable contra el mockup):*
   1. Real en trazo sólido, proyectado punteado, con el ancla marcada.
   2. Valle sombreado como zona con su duración; dos umbrales dibujados (atención ámbar, crítico rojo).
