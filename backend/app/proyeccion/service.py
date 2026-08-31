@@ -61,6 +61,7 @@ from app.proyeccion.motor import (
     colocacion_mensual,
     proyectar,
 )
+from app.proyeccion.reparto import reparto_por_rubro
 from app.proyeccion.solvers import (
     goal_seek,
     punto_de_quiebre,
@@ -983,6 +984,82 @@ def _palancas_por_valle(
     }
 
 
+async def _recomendaciones_recorte_por_impacto(
+    monto_recorte: Decimal,
+) -> list[dict]:
+    """RF-F7 · Fundacional §2 — Recomendaciones por impacto: reparto del recorte
+    por rubro (motor corrido al revés).
+
+    Reusa lo mismo que el sugerido (§1.4.1): los 3 meses cerrados previos como
+    ventana de referencia y `_ejecutados_por_rubro_mes` para el gasto por rubro.
+    Filtra a rubros EGRESO activos no-sistema (los únicos donde tiene sentido
+    "recortar"). El reparto puro (`reparto_por_rubro`) hace el ordenamiento por
+    impacto + regla del 50%.
+
+    Devuelve una lista serializada COP-string (regla 1) con `rubro_id`,
+    `rubro_nombre`, `monto_recortar`, `gasto_actual` y `pct_de_su_gasto` (0.5000
+    = 50%). Puede quedar corta contra el objetivo — el caller usa
+    `sum(monto_recortar)` para saber si el reparto CUBRE el objetivo o hace falta
+    otra palanca.
+    """
+    # Imports diferidos para evitar ciclos (presupuesto/rubros dependen de
+    # proyeccion indirectamente por dominio compartido).
+    from app.domain.rubro import Rubro
+    from app.domain.rubro import TipoFlujo as _TF
+    from app.presupuesto.service import (
+        _ejecutados_por_rubro_mes,
+        _meses_cerrados_previos,
+    )
+
+    if monto_recorte <= 0:
+        return []
+    # No conocemos aquí un "mes objetivo": el reparto usa la historia global (los
+    # últimos 3 cerrados). Es la misma ventana del sugerido §1.4.1 — coherente.
+    cerrados = await _meses_cerrados_previos(mes="9999-99")
+    if not cerrados:
+        return []
+    # Solo EGRESO activos no-sistema (mismo criterio del sugerido; los rubros de
+    # sistema — ej. IVA, cargue inicial — no son "recortables" por el CEO).
+    rubros_egreso = await Rubro.find(
+        Rubro.activo == True,  # noqa: E712 (Beanie construye el filtro)
+        Rubro.es_sistema == False,  # noqa: E712
+        Rubro.tipo_flujo == _TF.EGRESO,
+    ).to_list()
+    if not rubros_egreso:
+        return []
+    agg = await _ejecutados_por_rubro_mes(
+        [mc.id for mc in cerrados], [r.id for r in rubros_egreso]
+    )
+    # Promedio N-cerrados por rubro (mismo cálculo que el sugerido, sin la
+    # tendencia ni el %crec — el reparto pregunta "cuánto pesa en promedio").
+    n = Decimal(str(len(cerrados)))
+    gasto_por_rubro: dict[str, Decimal] = {}
+    nombres: dict[str, str] = {}
+    for rubro in rubros_egreso:
+        total = sum(
+            (agg.get((str(rubro.id), str(mc.id)), Decimal("0")) for mc in cerrados),
+            Decimal("0"),
+        )
+        promedio = (total / n) if n else Decimal("0")
+        if promedio <= 0:
+            continue  # `reparto_por_rubro` los filtra también; salta aquí evita
+            # ruido en el dict.
+        rid = str(rubro.id)
+        gasto_por_rubro[rid] = promedio
+        nombres[rid] = rubro.nombre
+    lineas = reparto_por_rubro(monto_recorte, gasto_por_rubro)
+    return [
+        {
+            "rubro_id": ln["rubro_id"],
+            "rubro_nombre": nombres.get(ln["rubro_id"], ""),
+            "monto_recortar": money_str(ln["monto_recortar"]),
+            "gasto_actual": money_str(ln["gasto_actual"]),
+            "pct_de_su_gasto": str(ln["pct_de_su_gasto"]),
+        }
+        for ln in lineas
+    ]
+
+
 async def valles_vigente(
     *, escenario: str, mes_inicio: tuple[int, int], horizonte_meses: int | None
 ) -> dict:
@@ -1006,8 +1083,17 @@ async def valles_vigente(
     valles = detectar_valles(r.meses, caja_min, caja_atencion=caja_atn)
     valles_serial = [_serializar_valle(v) for v in valles]
     # RF-F5 · adjunta las palancas a cada valle. Compute-only.
+    # RF-F7 · si la palanca `recorte_gasto` alcanza, adjunta el reparto por rubro
+    # (motor corrido al revés): "de dónde saco ese recorte, ordenado por impacto".
     for v in valles_serial:
-        v["palancas"] = _palancas_por_valle(r, v, caja_min, caja_atn)
+        palancas = _palancas_por_valle(r, v, caja_min, caja_atn)
+        rg = palancas["recorte_gasto"]
+        if rg["alcanzable"]:
+            monto = Decimal(rg["monto"])
+            rg["recomendaciones_por_rubro"] = (
+                await _recomendaciones_recorte_por_impacto(monto)
+            )
+        v["palancas"] = palancas
     return {
         "escenario": escenario,
         "caja_minima": money_str(caja_min),
