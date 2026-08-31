@@ -32,12 +32,14 @@ _COMANDOS_PUBLICAR = {
     "publicar": ("paquete_lunes", AuditEvento.vigilante_paquete_publicado),
     "publicar alerta": ("alerta_caja", AuditEvento.vigilante_alerta_publicada),
     "publicar cierre": ("cierre_mensual", AuditEvento.vigilante_cierre_publicado),
+    "publicar iva": ("iva_tesoreria", AuditEvento.vigilante_iva_publicado),
 }
 
 _ETIQUETAS_AVISO = {
     "paquete_lunes": ("un paquete", "Paquete", "publicado"),
     "alerta_caja": ("una alerta", "Alerta", "publicada"),
     "cierre_mensual": ("un cierre", "Cierre", "publicado"),
+    "iva_tesoreria": ("un aviso de IVA", "Aviso de IVA", "publicado"),
 }
 
 

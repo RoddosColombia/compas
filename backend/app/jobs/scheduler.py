@@ -5,14 +5,15 @@ Se arranca con:  python -m app.jobs.scheduler
 y SOLO debe correr con RUN_SCHEDULER=true (worker de 1 instancia).
 
 Jobs registrados: `vigilante_paquete_lunes` (lunes 7:00, paquete del comité —
-FABS proactivo), `vigilante_alerta_caja` (diario 8:00, alerta de umbral de
-caja — FABS proactivo) y `vigilante_cierre_mensual` (diario 7:30, comenta el
-último mes cerrado — FABS proactivo). Los demás jobs financieros (recordatorio de carga
-8:30, snapshot diario de caja, recálculo de sugeridos, alertas IVA/vencimientos,
-reaper de cargas, dump nocturno, archivado mensual, verificación referencial)
-se registran en sprints posteriores. Todos idempotentes; jobstore en Mongo;
-coalesce=True y misfire_grace_time por job; heartbeat a Better Stack por job
-(STACK §2, N-04).
+FABS proactivo), `vigilante_cierre_mensual` (diario 7:30, comenta el último
+mes cerrado — FABS proactivo), `vigilante_iva_tesoreria` (diario 7:45, aviso
+de provisión de IVA como tesorería — FABS proactivo) y `vigilante_alerta_caja`
+(diario 8:00, alerta de umbral de caja — FABS proactivo). Los demás jobs financieros
+(recordatorio de carga 8:30, snapshot diario de caja, recálculo de sugeridos,
+alertas de vencimientos, reaper de cargas, dump nocturno, archivado mensual,
+verificación referencial) se registran en sprints posteriores. Todos idempotentes;
+jobstore en Mongo; coalesce=True y misfire_grace_time por job; heartbeat a Better
+Stack por job (STACK §2, N-04).
 """
 
 from __future__ import annotations
@@ -71,6 +72,16 @@ def build_scheduler():
         misfire_grace_time=3600,
         replace_existing=True,
     )
+    scheduler.add_job(
+        _job_iva_tesoreria,
+        "cron",
+        hour=7,
+        minute=45,
+        id="vigilante_iva_tesoreria",
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
     return scheduler
 
 
@@ -106,6 +117,25 @@ async def _job_alerta_caja() -> None:
         await generar_y_entregar_alerta()
     except Exception:  # noqa: BLE001 — un job proactivo no revienta el worker
         logger.exception("fallo en el job de la alerta de caja")
+
+
+async def _job_iva_tesoreria() -> None:
+    """Diario 7:45 (America/Bogota). No-op si CFO_ENABLED off o la alerta de IVA está
+    apagada por config. Import perezoso para no acoplar el scheduler al dominio cfo."""
+    from app.cfo import config as cfo_config
+
+    if not cfo_config.cfo_enabled():
+        return
+    from app.configuracion.service import leer_alerta_iva_activa
+
+    if not await leer_alerta_iva_activa():
+        return
+    from app.cfo.vigilante.iva import generar_y_entregar_iva
+
+    try:
+        await generar_y_entregar_iva()
+    except Exception:  # noqa: BLE001 — un job proactivo no revienta el worker
+        logger.exception("fallo en el job de la provisión de IVA")
 
 
 async def _job_cierre_mensual() -> None:
