@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
+import { ComposicionFlujoRV2 } from "@/components/charts/ComposicionFlujoRV2";
 import { CurvaCajaRV2 } from "@/components/charts/CurvaCajaRV2";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -523,10 +524,21 @@ function ProyeccionContenido({
         }
       >
         {/* RV-V2 rebanada 1 (2026-08-30): CurvaCajaRV2 reemplaza a ComposicionCaja
-            en la vista principal. La composición del flujo pasa a su gráfica propia
-            en la rebanada 2 (AC #8 pendiente). ComposicionCaja queda disponible
-            para usos futuros; sin consumidores hoy tras este cambio. */}
+            en la vista principal. */}
         <CurvaCajaRV2 data={data} ventanaMeses={ventanaMeses} />
+      </ChartCard>
+
+      {/* RV-V2 rebanada 2 (2026-08-30) · AC #8 · Composición del flujo en GRÁFICA
+          PROPIA (no franja, regla 7 del DESIGN.md): ingreso arriba, egresos por
+          concepto abajo apilados, línea de flujo neto. Usa los 4 tokens categóricos
+          de RV-V1 (`--color-chart-ingreso/gasto-fijo/auteco/otros`), disjuntos
+          del semáforo (regla 9). */}
+      <ChartCard
+        conclusion="De qué está hecho el flujo cada mes"
+        subtitulo={`composición del flujo · ${ventana.length} de ${data.meses.length} meses · ingreso arriba, egresos por concepto abajo`}
+        pie="Las 4 categorías (ingreso · gastos fijos · Auteco · otros) no comparten familia de color con los umbrales — el semáforo queda reservado a estado (regla 9 del DESIGN.md)."
+      >
+        <ComposicionFlujoRV2 meses={ventana} />
       </ChartCard>
 
       {/* SUP-5 — qué variables componen esa curva: los supuestos efectivos del
