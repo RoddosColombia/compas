@@ -56,6 +56,28 @@ async def proyectar(
         raise HTTPException(e.status, e.detalle) from e
 
 
+@router.get("/agregada")
+async def proyectar_agregado(
+    granularidad: Literal["trimestre", "anual"] = Query(),
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """RF-F10 · Fundacional §2 — Serie agregada por trimestre/año para el
+    horizonte largo (hasta 240 meses = 20 años). Para la mensual, `GET
+    /proyeccion` directo (compat total). Compute-only, sin escritura."""
+    try:
+        return await service.proyectar_agregado(
+            granularidad=granularidad,
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
 # ── RF-F2 (COMPAS 2.0): serie de proyección versionada ──
 
 

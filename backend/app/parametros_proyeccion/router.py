@@ -62,7 +62,7 @@ class ParametrosCampos(BaseModel):
     caja_minima: str
     motos_base: int = Field(ge=0)
     crec_pct_mensual: str
-    horizonte_meses: int = Field(gt=0, le=180)
+    horizonte_meses: int = Field(gt=0, le=240)  # RF-F10: era 180
     adelanto_auteco: str
     plazo_auteco_dias: int = Field(ge=0)
     base_auteco_dias: int = Field(ge=0)

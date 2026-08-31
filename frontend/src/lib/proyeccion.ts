@@ -179,6 +179,45 @@ export async function obtenerProyeccion(
   return apiJson(`/proyeccion${qs ? `?${qs}` : ""}`);
 }
 
+// RF-F10 · Fundacional §2 — Serie AGREGADA por trimestre/año. Para horizontes
+// largos (hasta 240 meses = 20 años) mostrar 240 puntos mensuales es ruido; el
+// backend colapsa preservando semántica stock/flujo (caja_final = último mes,
+// piso = min, flujo/ingreso/egresos/motos = suma). Montos como STRING COP.
+export type GranularidadAgregada = "trimestre" | "anual";
+
+export interface PeriodoAgregado {
+  etiqueta: string; // '2027' (anual) o '2027-Q3' (trimestre)
+  desde: string; // 'YYYY-MM'
+  hasta: string; // 'YYYY-MM'
+  meses_en_periodo: number;
+  caja_final: string; // stock (último mes del periodo)
+  piso: string; // min caja durante el periodo
+  flujo: string; // suma de flujos mensuales
+  ingreso_bruto: string; // suma
+  egresos: string; // suma
+  motos: number; // suma
+}
+
+export interface ProyeccionAgregada {
+  escenario: string;
+  granularidad: GranularidadAgregada;
+  caja_minima: string;
+  caja_atencion: string | null;
+  periodos: PeriodoAgregado[];
+}
+
+export async function obtenerProyeccionAgregada(
+  granularidad: GranularidadAgregada,
+  p: ProyeccionParams = {},
+): Promise<ProyeccionAgregada> {
+  const q = new URLSearchParams();
+  q.set("granularidad", granularidad);
+  if (p.escenario) q.set("escenario", p.escenario);
+  if (p.horizonteMeses) q.set("horizonte_meses", String(p.horizonteMeses));
+  if (p.mesInicio) q.set("mes_inicio", p.mesInicio);
+  return apiJson(`/proyeccion/agregada?${q.toString()}`);
+}
+
 // ── RF-F2: diff contra la última versión aprobada ──
 
 export interface VersionDiff {
