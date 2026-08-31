@@ -82,3 +82,102 @@ describe("KpiTileV2 (sistema F1)", () => {
     expect(screen.getByText("1 de 18")).toBeInTheDocument();
   });
 });
+
+// ── RV-V3 rebanada 2: sparkline (mini-gráfica de tendencia) ──────────────────
+// Contrato: la baldosa acepta una serie opcional (números crudos, sin formato)
+// y la dibuja como polyline SVG inline sobre --color-chart-real (RV-V1 token).
+// Sin serie → sin SVG (backward compat con los 18 usos existentes).
+
+describe("KpiTileV2 · sparkline (RV-V3 rebanada 2)", () => {
+  it("con `sparkline` renderiza un SVG polyline con un punto por valor", () => {
+    const { container } = render(
+      <KpiTileV2
+        label="Piso de caja"
+        valor="100000000"
+        contexto="en may-27"
+        sparkline={[80, 90, 85, 100, 95, 110]}
+      />,
+    );
+    const svg = container.querySelector("svg[aria-label]");
+    expect(svg).toBeInTheDocument();
+    const line = svg?.querySelector("polyline");
+    expect(line).toBeInTheDocument();
+    const pts = line?.getAttribute("points")?.trim().split(/\s+/) ?? [];
+    expect(pts).toHaveLength(6);
+  });
+
+  it("sin `sparkline` no renderiza SVG (backward compat con los 18 usos)", () => {
+    const { container } = render(
+      <KpiTileV2
+        label="Piso de caja"
+        valor="100000000"
+        contexto="en may-27"
+      />,
+    );
+    expect(container.querySelector("svg[aria-label]")).not.toBeInTheDocument();
+  });
+
+  it("el aria-label refleja la tendencia (sube/baja/estable) del primero al último punto", () => {
+    const { container, rerender } = render(
+      <KpiTileV2
+        label="X"
+        valor="0"
+        contexto="c"
+        sparkline={[10, 20, 30]}
+      />,
+    );
+    expect(container.querySelector("svg")?.getAttribute("aria-label")).toMatch(
+      /sube|subiendo/i,
+    );
+
+    rerender(
+      <KpiTileV2
+        label="X"
+        valor="0"
+        contexto="c"
+        sparkline={[30, 20, 10]}
+      />,
+    );
+    expect(container.querySelector("svg")?.getAttribute("aria-label")).toMatch(
+      /baja|bajando/i,
+    );
+
+    rerender(
+      <KpiTileV2
+        label="X"
+        valor="0"
+        contexto="c"
+        sparkline={[10, 10, 10]}
+      />,
+    );
+    expect(container.querySelector("svg")?.getAttribute("aria-label")).toMatch(
+      /estable|plano/i,
+    );
+  });
+
+  it("con menos de 2 puntos no renderiza el sparkline (no hay tendencia posible)", () => {
+    const { container: c1 } = render(
+      <KpiTileV2 label="X" valor="0" contexto="c" sparkline={[42]} />,
+    );
+    expect(c1.querySelector("svg[aria-label]")).not.toBeInTheDocument();
+
+    const { container: c0 } = render(
+      <KpiTileV2 label="X" valor="0" contexto="c" sparkline={[]} />,
+    );
+    expect(c0.querySelector("svg[aria-label]")).not.toBeInTheDocument();
+  });
+
+  it("los tokens del stroke vienen del contrato RV-V1 (no hardcodea hex)", () => {
+    const { container } = render(
+      <KpiTileV2
+        label="X"
+        valor="0"
+        contexto="c"
+        sparkline={[1, 2, 3, 4]}
+      />,
+    );
+    const line = container.querySelector("polyline");
+    // Regla RV-V1: el color viene de la variable --color-chart-real, cero hex.
+    expect(line?.getAttribute("stroke")).toBe("var(--color-chart-real)");
+  });
+});

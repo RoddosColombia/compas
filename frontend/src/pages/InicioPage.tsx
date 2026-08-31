@@ -145,6 +145,14 @@ function Pulso({
   const vsUmbral = piso.minus(parseMonto(data.caja_minima));
   const caja = cajaHoy(mesActivo);
 
+  // RV-V3 r2: sparkline del piso — la trayectoria de caja mensual que aterriza
+  // en el piso. Toma los primeros 18 meses para ver la caída antes del valle;
+  // los valores se pasan CRUDOS (millones) para no perder precisión monetaria,
+  // el KpiTile solo dibuja la forma, cero cálculo financiero en el front.
+  const trayectoriaPiso = data.meses
+    .slice(0, 18)
+    .map((m) => parseMonto(m.caja).toNumber());
+
   // Ventana del gráfico; el juicio de arriba SIEMPRE mira los 60 (patrón F1: una
   // ventana corta no puede producir un ✓ falso). SUP-1: la elige el CEO.
   const ventana = data.meses.slice(0, ventanaMeses);
@@ -165,6 +173,7 @@ function Pulso({
           }}
           contexto={`en ${formatMesCorto(data.mes_mas_ajustado)}`}
           tono={perforada ? "critico" : "positivo"}
+          sparkline={trayectoriaPiso}
         />
         <KpiTileV2
           label="Meses bajo el mínimo"
