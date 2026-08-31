@@ -1,11 +1,19 @@
 # backend/tests/cfo/vigilante/test_iva.py
 """FABS · vigilante — Task 6: evaluador + `generar_y_entregar_iva` (tesorería IVA,
-proactivo). Monkeypatch de los helpers de lectura (`_fondo_mes_actual`/
-`_proximo_dian`/`_disponible_real`/`leer_alerta_iva_dias`) a nivel del módulo `iva`,
-espejando `test_disparadores.py` (helpers en vez de servicios crudos) +
-`test_alerta.py` (supersede diario/soft-audit/envío, aquí mensual); auditoría
-verificada contra mongomock vía `service.configure_audit` (AuditLog es un BaseModel,
-no un Document — no se puede `AuditLog.find_one`)."""
+proactivo).
+
+Dos capas de test, como `test_disparadores.py`/`test_alerta.py`:
+(1) los 3 helpers de lectura (`_fondo_mes_actual`/`_proximo_dian`/`_disponible_real`)
+se prueban DIRECTO — monkeypatch de sus DEPENDENCIAS (`proy_service.
+proyectar_vigente`, `fact_service.obtener_periodicidad`/`obtener_calendario_dian`,
+`iva_calc.iva_cuatrimestre`, `conciliacion`) a nivel de módulo, nunca de los helpers
+mismos, para que corra su cuerpo real (el query a `MesControl`, las ramas
+`CierreError`/`sin_dato`, el catch de `ProyeccionError`, el match de fila del fondo);
+(2) `evaluar_iva`/`generar_y_entregar_iva` se prueban con los helpers monkeypateados
+(mismo patrón que `evaluar_disparadores` en `test_disparadores.py`, que a su vez
+monkeypatchea `_disparador_real`). Auditoría verificada contra mongomock vía
+`service.configure_audit` (AuditLog es un BaseModel, no un Document — no se puede
+`AuditLog.find_one`)."""
 
 from decimal import Decimal
 
@@ -14,8 +22,11 @@ import pytest_asyncio
 from app.audit import service as audit_service
 from app.cfo.vigilante import iva as I
 from app.cfo.vigilante.modelos import AvisoVigilante
-from app.core.time import now_bogota
+from app.core.time import now_bogota, today_bogota
 from app.domain import DOMAIN_DOCUMENTS
+from app.domain.mes_control import EstadoMes, MesControl
+from app.iva.liquidacion import Periodicidad, clave_dian
+from app.iva.liquidacion import periodo_de as _periodo_de
 from beanie import init_beanie
 from mongomock_motor import AsyncMongoMockClient
 
@@ -82,6 +93,186 @@ def _fake_lecturas(
     monkeypatch.setattr(I, "_proximo_dian", fake_proximo)
     monkeypatch.setattr(I, "_disponible_real", fake_disponible)
     monkeypatch.setattr(I, "leer_alerta_iva_dias", fake_umbral)
+
+
+# --- helpers de lectura, DIRECTO (sus cuerpos reales, no monkeypateados) -----
+
+
+@pytest.mark.asyncio
+async def test_disponible_real_devuelve_consolidado(db, monkeypatch):
+    await MesControl(
+        mes="2026-08-01",
+        estado=EstadoMes.EN_EJECUCION,
+        saldo_inicial_caja=Decimal("0"),
+    ).insert()
+
+    async def fake_conciliacion(mes):
+        assert mes == "2026-08-01"
+        return {"consolidado_reportado": "12345", "sin_dato": []}
+
+    monkeypatch.setattr(I, "conciliacion", fake_conciliacion)
+    assert await I._disponible_real() == Decimal("12345")
+
+
+@pytest.mark.asyncio
+async def test_disponible_real_none_sin_mes_en_ejecucion(db):
+    assert await I._disponible_real() is None
+
+
+@pytest.mark.asyncio
+async def test_disponible_real_none_si_cierre_error(db, monkeypatch):
+    await MesControl(
+        mes="2026-08-01",
+        estado=EstadoMes.EN_EJECUCION,
+        saldo_inicial_caja=Decimal("0"),
+    ).insert()
+
+    async def fake_conciliacion(mes):
+        raise I.CierreError("solo se concilia un mes en ejecución", 409)
+
+    monkeypatch.setattr(I, "conciliacion", fake_conciliacion)
+    assert await I._disponible_real() is None
+
+
+@pytest.mark.asyncio
+async def test_disponible_real_none_si_bancos_sin_dato(db, monkeypatch):
+    await MesControl(
+        mes="2026-08-01",
+        estado=EstadoMes.EN_EJECUCION,
+        saldo_inicial_caja=Decimal("0"),
+    ).insert()
+
+    async def fake_conciliacion(mes):
+        return {"consolidado_reportado": "500", "sin_dato": ["bancolombia"]}
+
+    monkeypatch.setattr(I, "conciliacion", fake_conciliacion)
+    assert await I._disponible_real() is None
+
+
+@pytest.mark.asyncio
+async def test_fondo_mes_actual_extrae_saldo_y_reserva(monkeypatch):
+    mes_actual = f"{now_bogota().year:04d}-{now_bogota().month:02d}"
+
+    async def fake_proyectar(**kwargs):
+        return {
+            "fondo_provision": [
+                {"mes": mes_actual, "reserva": "2500", "pago": "0", "saldo": "10000"},
+                {"mes": "2099-01", "reserva": "999", "pago": "0", "saldo": "999"},
+            ]
+        }
+
+    monkeypatch.setattr(I.proy_service, "proyectar_vigente", fake_proyectar)
+    reserva_objetivo, reserva_mes = await I._fondo_mes_actual()
+    assert reserva_objetivo == Decimal("10000")
+    assert reserva_mes == Decimal("2500")
+
+
+@pytest.mark.asyncio
+async def test_fondo_mes_actual_none_si_proyeccion_error(monkeypatch):
+    async def fake_proyectar(**kwargs):
+        raise I.ProyeccionError("sin modelos activos", 409)
+
+    monkeypatch.setattr(I.proy_service, "proyectar_vigente", fake_proyectar)
+    assert await I._fondo_mes_actual() == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_fondo_mes_actual_none_si_sin_fila_del_mes(monkeypatch):
+    async def fake_proyectar(**kwargs):
+        return {
+            "fondo_provision": [
+                {"mes": "2099-01", "reserva": "1", "pago": "0", "saldo": "1"}
+            ]
+        }
+
+    monkeypatch.setattr(I.proy_service, "proyectar_vigente", fake_proyectar)
+    assert await I._fondo_mes_actual() == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_proximo_dian_compone_periodicidad_y_calendario(monkeypatch):
+    hoy = today_bogota()
+    anio, idx = _periodo_de(hoy.isoformat(), Periodicidad.cuatrimestral)
+    clave = clave_dian(idx, Periodicidad.cuatrimestral)
+    fecha_dian = "2099-12-31"  # lejos: dias siempre positivo, test estable en el tiempo
+
+    async def fake_periodicidad():
+        return Periodicidad.cuatrimestral
+
+    async def fake_calendario():
+        return {str(anio): {clave: fecha_dian}}
+
+    class _FakeIvaRes:
+        disponible = True
+        valor = Decimal("777000")
+
+    async def fake_iva_cuatrimestre():
+        return _FakeIvaRes()
+
+    monkeypatch.setattr(I.fact_service, "obtener_periodicidad", fake_periodicidad)
+    monkeypatch.setattr(I.fact_service, "obtener_calendario_dian", fake_calendario)
+    monkeypatch.setattr(I.iva_calc, "iva_cuatrimestre", fake_iva_cuatrimestre)
+
+    proximo, proximo_monto = await I._proximo_dian()
+    assert proximo is not None
+    assert proximo["fecha"] == fecha_dian
+    assert proximo_monto == Decimal("777000")
+
+
+@pytest.mark.asyncio
+async def test_proximo_dian_none_sin_fecha_en_calendario(monkeypatch):
+    async def fake_periodicidad():
+        return Periodicidad.cuatrimestral
+
+    async def fake_calendario():
+        return {}  # sin vigencia: proximo_pago no inventa una fecha (R5)
+
+    class _FakeIvaRes:
+        disponible = False
+        valor = None
+
+    async def fake_iva_cuatrimestre():
+        return _FakeIvaRes()
+
+    monkeypatch.setattr(I.fact_service, "obtener_periodicidad", fake_periodicidad)
+    monkeypatch.setattr(I.fact_service, "obtener_calendario_dian", fake_calendario)
+    monkeypatch.setattr(I.iva_calc, "iva_cuatrimestre", fake_iva_cuatrimestre)
+
+    proximo, proximo_monto = await I._proximo_dian()
+    assert proximo is None
+    assert proximo_monto is None
+
+
+@pytest.mark.asyncio
+async def test_proximo_dian_monto_none_si_iva_cuatrimestre_abstiene(monkeypatch):
+    """Periodicidad ≠ cuatrimestral: `proximo_pago` sigue funcionando (es
+    periodicidad-agnóstico), pero `iva_cuatrimestre()` falla-cerrado a
+    `disponible=False` (esa calc asume cuatrimestral) — `proximo_monto` sale None."""
+    hoy = today_bogota()
+    anio, idx = _periodo_de(hoy.isoformat(), Periodicidad.bimestral)
+    clave = clave_dian(idx, Periodicidad.bimestral)
+    fecha_dian = "2099-12-31"
+
+    async def fake_periodicidad():
+        return Periodicidad.bimestral
+
+    async def fake_calendario():
+        return {str(anio): {clave: fecha_dian}}
+
+    class _FakeIvaRes:
+        disponible = False
+        valor = None
+
+    async def fake_iva_cuatrimestre():
+        return _FakeIvaRes()
+
+    monkeypatch.setattr(I.fact_service, "obtener_periodicidad", fake_periodicidad)
+    monkeypatch.setattr(I.fact_service, "obtener_calendario_dian", fake_calendario)
+    monkeypatch.setattr(I.iva_calc, "iva_cuatrimestre", fake_iva_cuatrimestre)
+
+    proximo, proximo_monto = await I._proximo_dian()
+    assert proximo is not None and proximo["fecha"] == fecha_dian
+    assert proximo_monto is None
 
 
 # --- evaluar_iva -------------------------------------------------------------
