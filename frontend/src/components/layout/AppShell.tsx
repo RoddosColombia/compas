@@ -7,6 +7,7 @@ import { type ReactNode, useState } from "react";
 import { useLocation } from "react-router-dom";
 
 import { useAuth } from "@/auth/AuthContext";
+import { FabsPanel } from "@/components/fabs/FabsPanel";
 import { MesStatusBar } from "@/components/layout/MesStatusBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 
@@ -22,6 +23,7 @@ export function anchoContenido(pathname: string): string {
 export function AppShell({ children }: { children: ReactNode }) {
   const { rol, puede, cerrarSesion } = useAuth();
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const [fabsAbierto, setFabsAbierto] = useState(false);
   const cerrar = () => void cerrarSesion();
   const { pathname } = useLocation();
 
@@ -74,6 +76,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className={anchoContenido(pathname)}>{children}</div>
         </main>
       </div>
+
+      {puede("cfo:consultar") && (
+        <>
+          <button
+            type="button"
+            onClick={() => setFabsAbierto(true)}
+            className="fixed right-4 bottom-4 z-40 rounded-full bg-cyan px-4 py-2 font-sans text-sm font-medium text-white shadow-lg"
+          >
+            Preguntá a FABS
+          </button>
+          {fabsAbierto && <FabsPanel onCerrar={() => setFabsAbierto(false)} />}
+        </>
+      )}
     </div>
   );
 }
