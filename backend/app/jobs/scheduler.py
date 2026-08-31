@@ -4,8 +4,9 @@
 Se arranca con:  python -m app.jobs.scheduler
 y SOLO debe correr con RUN_SCHEDULER=true (worker de 1 instancia).
 
-Primer job registrado: `vigilante_paquete_lunes` (lunes 7:00, paquete del
-comité — FABS proactivo). Los demás jobs financieros (recordatorio de carga
+Jobs registrados: `vigilante_paquete_lunes` (lunes 7:00, paquete del comité —
+FABS proactivo) y `vigilante_alerta_caja` (diario 8:00, alerta de umbral de
+caja — FABS proactivo). Los demás jobs financieros (recordatorio de carga
 8:30, snapshot diario de caja, recálculo de sugeridos, alertas IVA/vencimientos,
 reaper de cargas, dump nocturno, archivado mensual, verificación referencial)
 se registran en sprints posteriores. Todos idempotentes; jobstore en Mongo;
@@ -49,6 +50,16 @@ def build_scheduler():
         misfire_grace_time=3600,
         replace_existing=True,
     )
+    scheduler.add_job(
+        _job_alerta_caja,
+        "cron",
+        hour=8,
+        minute=0,
+        id="vigilante_alerta_caja",
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
     return scheduler
 
 
@@ -65,6 +76,25 @@ async def _job_paquete_lunes() -> None:
         await generar_y_entregar_paquete()
     except Exception:  # noqa: BLE001 — un job proactivo no revienta el worker
         logger.exception("fallo en el job del paquete del lunes")
+
+
+async def _job_alerta_caja() -> None:
+    """Diario 8:00 (America/Bogota). No-op si CFO_ENABLED off o la alerta está
+    apagada por config. Import perezoso para no acoplar el scheduler al dominio cfo."""
+    from app.cfo import config as cfo_config
+
+    if not cfo_config.cfo_enabled():
+        return
+    from app.configuracion.service import leer_alerta_caja_activa
+
+    if not await leer_alerta_caja_activa():
+        return
+    from app.cfo.vigilante.alerta import generar_y_entregar_alerta
+
+    try:
+        await generar_y_entregar_alerta()
+    except Exception:  # noqa: BLE001 — un job proactivo no revienta el worker
+        logger.exception("fallo en el job de la alerta de caja")
 
 
 def main() -> None:
