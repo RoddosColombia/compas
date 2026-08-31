@@ -46,9 +46,10 @@
      distinguen por color de ESTADO (regla 2 del DESIGN.md): la diferencia
      real/proyección es FORMA (sólido/punteado); los tokens de rol solo
      REFUERZAN visualmente. Los categóricos de composición son DISJUNTOS del
-     semáforo (regla 9): ni verde de estado, ni ámbar, ni rojo. Se afinarán
-     en RV-V3 con tweakcn (verificación AA + daltonismo); aquí quedan las
-     variables para que RV-V2 no hardcodee ningún hex. */
+     semáforo (regla 9): ni verde de estado, ni ámbar, ni rojo. Afinados en
+     RV-V3 rebanada 1 (PR de este cambio): matriz Machado-Oliveira-Fernandes
+     verifica que los 3 se distinguen bajo protanopia + deuteranopia + tritanopia;
+     WCAG 2.1 los pone a los 3 en AAA sobre el fondo claro del cockpit. */
 
   /* Series de la curva de caja — el trazo (forma) manda; el color refuerza. */
   --color-chart-real: #0f172a; /* = --color-ink · trazo sólido con ancla */
@@ -58,9 +59,9 @@
   /* Composición del flujo — categórica, disjunta del semáforo. */
   --color-chart-ingreso: #15803d; /* = --color-positivo · única categoría que
                                      * toca el verde (arriba del cero) */
-  --color-chart-gasto-fijo: #2563eb; /* azul (blue-600) · fuera del semáforo */
-  --color-chart-auteco: #c026d3; /* magenta (fuchsia-600) · dispara el valle */
-  --color-chart-otros: #0d9488; /* teal-600 · distinto del cyan de marca */
+  --color-chart-gasto-fijo: #1d4ed8; /* azul profundo (blue-700) · AAA 7.83:1 sobre fondo claro · resiste protanopia/deuteranopia/tritanopia (no colapsa con Otros) */
+  --color-chart-auteco: #86198f; /* magenta profundo (fuchsia-800) · AAA 8.94:1 · resiste las 3 formas de daltonismo */
+  --color-chart-otros: #78350f; /* marrón tabaco (amber-900) · AAA 9.36:1 · disjunto del ámbar del semáforo (b45309) y del rojo crítico (b91c1c) · el provisional teal-600 se juntaba con blue bajo tritanopia */
 
   /* Compat: alias del token histórico `brand` (verde) para no romper vistas previas */
   --color-brand: #12a312;
