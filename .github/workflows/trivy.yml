@@ -1,0 +1,37 @@
+# G-TRIVY · COMPAS 2.0 Fundacional §5. Escaneo de vulnerabilidades en
+# dependencias (npm + pip + IaC + docs), OBLIGATORIO antes de introducir
+# cualquier librería de gráficos (RV-V3 · tweakcn). Complementa a `pip-audit`
+# (que ya corre sobre Python runtime) — Trivy también cubre npm y dev deps.
+
+name: G-TRIVY
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  trivy-fs:
+    name: escaneo fs (npm + pip + IaC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Trivy fs escanea package-lock.json, requirements*.txt, Dockerfile, IaC.
+      # `severity: HIGH,CRITICAL` — MEDIUM y bajos no bloquean el PR (ruido).
+      # `exit-code: 1` — falla el job si encuentra HIGH/CRITICAL.
+      # `ignore-unfixed: true` — no bloquea por CVE sin parche disponible aún.
+      - name: trivy fs
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          format: table
+          # Excluye caches y artefactos generados (no aportan CVEs útiles).
+          skip-dirs: "node_modules,frontend/node_modules,frontend/dist,backend/.venv,docs/design-references"

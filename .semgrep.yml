@@ -1,0 +1,113 @@
+# .semgrep.yml — G-SEMGREP (COMPAS 2.0 Fundacional §5).
+#
+# Reglas inviolables que un PR NO puede pasar. Reglas de negocio, no de estilo:
+# cazan las 3 formas de romper CLAUDE.md que un review humano deja pasar.
+# El workflow `.github/workflows/semgrep.yml` corre este archivo en cada PR.
+#
+# Cómo probar una regla localmente:
+#   pip install semgrep && semgrep --config .semgrep.yml backend/app/
+
+rules:
+  # ─── Regla 1 (CLAUDE.md § "Reglas innegociables"): dinero es Decimal, nunca float ───
+  - id: dinero-nunca-float
+    languages: [python]
+    severity: ERROR
+    message: |
+      Dinero SIEMPRE es Decimal, nunca float (CLAUDE.md regla 1). `float()` sobre
+      un monto rompe la precisión de COP. Si es geometría de presentación (SVG,
+      layout), usa parseMonto(...).toNumber() y comenta el porqué.
+    paths:
+      include:
+        - "backend/app/**/*.py"
+      exclude:
+        - "backend/tests/**"
+        # `int_deuda`, `tasa`, y otros son Decimal por construcción; los coerce
+        # a float solo si el módulo es SOLO presentación. Estos módulos son la
+        # excepción legítima documentada:
+        - "backend/app/cfo/telegram/cliente.py"    # timeout de red, no dinero
+    patterns:
+      - pattern-either:
+          - pattern: float($X)
+      # No dispares en anotaciones de tipo (`x: float = 1.0` de un timeout)
+      - pattern-not: float
+      # No dispares en literales sueltos (`float | None` en type-hints)
+      - pattern-not-inside: |
+          def $F(..., $ARG: float, ...) -> ...:
+            ...
+
+  # ─── Regla 4 (CLAUDE.md): el histórico es inmutable — audit_log append-only ───
+  # audit_log NUNCA se update-ea ni se borra. La única API válida es emit_audit().
+  # Si aparece `.update_one`, `.delete_one`, etc. sobre audit_log, es violación.
+  - id: audit-log-append-only
+    languages: [python]
+    severity: ERROR
+    message: |
+      El audit_log es append-only (CLAUDE.md regla 4). Nunca .update_*() ni
+      .delete_*() sobre él — solo emit_audit() lo agrega. Un evento equivocado
+      se corrige con un evento COMPENSATORIO, no modificando la fila.
+    paths:
+      include:
+        - "backend/app/**/*.py"
+      exclude:
+        - "backend/tests/**"
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $DB.audit_log.$MUT(...)
+          - pattern: |
+              $COL.$MUT(...)
+      - metavariable-regex:
+          metavariable: $MUT
+          regex: "^(update_one|update_many|delete_one|delete_many|find_one_and_update|find_one_and_replace|replace_one)$"
+      - metavariable-regex:
+          metavariable: $COL
+          regex: "audit_log|audit_col"
+
+  # ─── Regla 9 (CLAUDE.md § RBAC): ninguna ruta sin auth ───
+  # Cada @router.get/post/put/patch/delete debe declarar require_permission()
+  # o verify_origin() como dependencia. Las rutas públicas de auth (login,
+  # refresh, logout) están en la lista blanca.
+  - id: ruta-sin-auth
+    languages: [python]
+    severity: ERROR
+    message: |
+      Ruta FastAPI sin `Depends(require_permission(...))` — todo endpoint que
+      lea o mute datos exige RBAC (CLAUDE.md regla 9). Si es una ruta pública
+      legítima (auth), añádela al `paths.exclude` de esta regla con una nota.
+    paths:
+      include:
+        - "backend/app/**/router.py"
+      exclude:
+        # Auth flow legítimo: login/refresh/logout NO pueden exigir estar
+        # autenticado (paradoja). CSRF los cubre por verify_origin.
+        - "backend/app/auth/router.py"
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @$ROUTER.get(...)
+              async def $F(...):
+                ...
+          - pattern: |
+              @$ROUTER.post(...)
+              async def $F(...):
+                ...
+          - pattern: |
+              @$ROUTER.put(...)
+              async def $F(...):
+                ...
+          - pattern: |
+              @$ROUTER.patch(...)
+              async def $F(...):
+                ...
+          - pattern: |
+              @$ROUTER.delete(...)
+              async def $F(...):
+                ...
+      - pattern-not: |
+          @$ROUTER.$METHOD(...)
+          async def $F(..., ...: ... = Depends(require_permission(...)), ...):
+            ...
+      - pattern-not: |
+          @$ROUTER.$METHOD(...)
+          async def $F(..., _: ... = Depends(require_permission(...)), ...):
+            ...
