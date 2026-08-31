@@ -18,7 +18,11 @@ from app.auth.deps import require_permission
 from app.auth.models import User
 from app.auth.router import verify_origin
 from app.caja import service
+from app.cierre.service import CierreError, conciliacion, mes_en_ejecucion
+from app.core.money import money_str
+from app.core.time import now_bogota
 from app.domain.bancos import Banco
+from app.proyeccion.service import ProyeccionError, proyectar_vigente
 
 router = APIRouter(prefix="/meses", tags=["caja"])
 
@@ -50,6 +54,74 @@ async def caja_diaria(
     except InvalidOperation:
         raise HTTPException(422, "caja_inicial no es un decimal válido") from None
     return await service.caja_diaria(desde=desde, hasta=hasta, caja_inicial=inicial)
+
+
+class DisponibleTesoreria(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    bruto: str
+    reserva_iva: str
+    neto: str
+    fecha_corte: str | None
+    sin_dato: list[str]
+
+
+@diaria_router.get("/disponible", response_model=DisponibleTesoreria)
+async def caja_disponible(
+    _: User = Depends(require_permission("dashboard:leer")),
+) -> DisponibleTesoreria:
+    """RF-IVA-TES · Task 4 — 'la cerca' (backend): descompone la caja disponible EN
+    VIVO en bruto/reserva-IVA/neto, para que la barra de saldo muestre el dinero del
+    IVA como apartado (no como caja libre). `bruto` = `consolidado_reportado` de la
+    conciliación (misma verdad que D4) del mes EN_EJECUCION; `reserva_iva` = saldo
+    acumulado del fondo de provisión de IVA (P1.4) del mes calendario de HOY (América/
+    Bogotá), leído de la proyección vigente -- mismo patrón que
+    `cfo/agente/tools.py:_iva_tesoreria` (Task 3, `mes_inicio=(hoy.year, hoy.month)`,
+    `horizonte_meses=None`): el fondo acumula su saldo DESDE `mes_inicio`, así que hay
+    que anclar ahí, no en el mes EN_EJECUCION del ciclo (que puede no coincidir con
+    hoy) para no truncar los aportes ya acumulados del período. `neto = bruto -
+    reserva_iva` (puede ser negativo). Todo money como STRING (regla 1). Sin mes en
+    ejecución o sin fondo/proyección configurada → respuesta en cero / `reserva_iva='0'`
+    (fail-closed a 'no hay reserva', nunca se inventa una cifra — regla 7)."""
+    mes = await mes_en_ejecucion()
+    if mes is None:
+        return DisponibleTesoreria(
+            bruto="0", reserva_iva="0", neto="0", fecha_corte=None, sin_dato=[]
+        )
+
+    try:
+        con = await conciliacion(mes)
+    except CierreError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+    bruto = con["consolidado_reportado"]
+    sin_dato = con["sin_dato"]
+
+    hoy = now_bogota()
+    mes_actual = f"{hoy.year:04d}-{hoy.month:02d}"
+    reserva_iva = "0"
+    try:
+        proy = await proyectar_vigente(
+            escenario="base",
+            mes_inicio=(hoy.year, hoy.month),
+            horizonte_meses=None,
+        )
+    except ProyeccionError:
+        proy = None
+    if proy is not None:
+        for f in proy.get("fondo_provision", []):
+            if f["mes"] == mes_actual:
+                reserva_iva = f["saldo"]
+                break
+
+    neto = money_str(Decimal(bruto) - Decimal(reserva_iva))
+    return DisponibleTesoreria(
+        bruto=bruto,
+        reserva_iva=reserva_iva,
+        neto=neto,
+        fecha_corte=None,
+        sin_dato=sin_dato,
+    )
 
 
 def _mes_key(mes: str) -> str:
