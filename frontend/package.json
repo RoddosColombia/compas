@@ -21,7 +21,7 @@
     "lucide-react": "^1.29.0",
     "react": "^19.0.0",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.1.1",
+    "react-router-dom": "^7.18.2",
     "tailwind-merge": "^2.6.0"
   },
   "overrides": {
