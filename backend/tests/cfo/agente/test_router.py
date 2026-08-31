@@ -37,7 +37,7 @@ RESPUESTA_FAKE = RespuestaCFO(
 
 
 async def _fake_consultar(
-    pregunta: str, *, actor_id: str, cliente=None
+    pregunta: str, *, actor_id: str, cliente=None, historial=None
 ) -> RespuestaCFO:
     return RESPUESTA_FAKE
 
