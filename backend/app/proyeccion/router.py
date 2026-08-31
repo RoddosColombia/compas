@@ -56,6 +56,77 @@ async def proyectar(
         raise HTTPException(e.status, e.detalle) from e
 
 
+class UnidadesExtraBody(BaseModel):
+    """RV-V2 rebanada 3 · AC #7. Motos por mes tecleadas por el CEO antes de
+    activar el escenario superpuesto. Cap 10_000 = mismo cap del solver
+    `resolver_unidades_para_umbral` (simetría de contrato)."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    unidades_extra: int = Field(ge=0, le=10_000)
+
+
+class SolverUnidadesBody(BaseModel):
+    """RV-V2 rebanada 3 · AC #7 «vender de más». Colchón opcional (COP encima
+    del umbral crítico) + cap de bisección."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    colchon: str | None = None
+    cap_unidades: int = Field(default=10_000, ge=0, le=10_000)
+
+
+@router.post("/con-unidades-extra")
+async def con_unidades_extra(
+    body: UnidadesExtraBody,
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """RV-V2 rebanada 3 · AC #5/#7 — proyección con N motos extra por mes.
+    Compute-only; motor sin tocar. El frontend la pinta como serie
+    superpuesta sobre la base."""
+    try:
+        return await service.proyectar_con_unidades_extra(
+            unidades_extra=body.unidades_extra,
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
+@router.post("/solver-unidades")
+async def solver_unidades(
+    body: SolverUnidadesBody,
+    escenario: str = Query(default="base"),
+    horizonte_meses: int | None = Query(default=None),
+    mes_inicio: str | None = Query(default=None),
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    """RV-V2 rebanada 3 · AC #7 «vender de más» — devuelve el mínimo N para
+    que el piso >= caja_minima + colchon. Bisección entera acotada; cada
+    candidato re-corre el pipeline completo (I/O)."""
+    colchon_dec = Decimal("0")
+    if body.colchon is not None:
+        try:
+            colchon_dec = Decimal(body.colchon)
+        except (InvalidOperation, ValueError) as e:
+            raise HTTPException(422, f"colchon inválido: {body.colchon}") from e
+    try:
+        return await service.resolver_unidades_vigente(
+            escenario=escenario,
+            mes_inicio=_parse_mes_inicio(mes_inicio),
+            horizonte_meses=horizonte_meses,
+            colchon=colchon_dec,
+            cap_unidades=body.cap_unidades,
+        )
+    except service.ProyeccionError as e:
+        raise HTTPException(e.status, e.detalle) from e
+
+
 @router.get("/agregada")
 async def proyectar_agregado(
     granularidad: Literal["trimestre", "anual"] = Query(),

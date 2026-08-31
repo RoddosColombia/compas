@@ -633,6 +633,7 @@ async def _resultado_con(
     facturas_override: list[FacturaReconciliar] | None = None,
     anclas_override: tuple[dict[str, AnclaMes], list[RubroInfo], set[str]]
     | None = None,
+    unidades_extra: int = 0,
 ) -> tuple[
     ResultadoProyeccion,
     Decimal,  # caja_minima (crítico)
@@ -704,6 +705,10 @@ async def _resultado_con(
         iva_egreso,
         arranque.valor,
     )
+    # RV-V2 rebanada 3 · AC #7: motos extra del escenario superpuesto. El motor
+    # nunca las ve como parámetro nuevo — se suman a `motos_base` antes de correr.
+    if unidades_extra:
+        pm = replace(pm, motos_base=pm.motos_base + unidades_extra)
     r = proyectar(pm)
 
     # E1 (P3) — anclar a la ejecución real ANTES de la reconciliación D2.
@@ -816,6 +821,7 @@ async def _proyectar_con(
     mes_inicio: tuple[int, int],
     horizonte_meses: int | None,
     caja_inicial_override: object | None = None,
+    unidades_extra: int = 0,
 ) -> dict:
     """Serializa la proyección de `_resultado_con` (mismo shape que GET /proyeccion),
     marcando la ventana reconciliada y el interés de obligaciones (§4)."""
@@ -826,6 +832,7 @@ async def _proyectar_con(
         mes_inicio=mes_inicio,
         horizonte_meses=horizonte_meses,
         caja_inicial_override=caja_inicial_override,
+        unidades_extra=unidades_extra,
     )
     return _serializar(
         r,
@@ -839,6 +846,90 @@ async def _proyectar_con(
         # el resultado en vez de pedirle al usuario que adivine.
         supuestos=_supuestos_visibles(params, escenario),
     )
+
+
+async def proyectar_con_unidades_extra(
+    *,
+    unidades_extra: int,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+) -> dict:
+    """RV-V2 rebanada 3 · AC #5/#7 — corre la proyección con `motos_base + N` para
+    superponer el escenario "vender N motos extra por mes" sobre la base. Compute
+    only; motor sin tocar. `unidades_extra` en [0, 10_000] (mismo cap que el
+    solver `resolver_unidades_para_umbral`, para simetría de contrato)."""
+    from app.proyeccion.solver_unidades import UnidadesResultado  # noqa: F401 (cap)
+
+    if not (0 <= unidades_extra <= 10_000):
+        raise ProyeccionError(
+            f"unidades_extra debe estar en [0, 10000] (recibido {unidades_extra})",
+            422,
+        )
+    params, modelos = await _cargar_config_vigente()
+    return await _proyectar_con(
+        params,
+        modelos,
+        escenario=escenario,
+        mes_inicio=mes_inicio,
+        horizonte_meses=horizonte_meses,
+        unidades_extra=unidades_extra,
+    )
+
+
+async def resolver_unidades_vigente(
+    *,
+    escenario: str,
+    mes_inicio: tuple[int, int],
+    horizonte_meses: int | None,
+    colchon: Decimal = Decimal("0"),
+    cap_unidades: int = 10_000,
+) -> dict:
+    """RV-V2 rebanada 3 · AC #7 «vender de más» — envuelve
+    `resolver_unidades_para_umbral` (bisección entera ya existente) sobre la
+    proyección vigente, exponiendo el goal-seek de unidades al cockpit.
+
+    RF-F5 lo dejó como stub honesto (`disponible=False`) porque no cabía en el
+    hot-path de las palancas por valle; aquí se llama por CLIC EXPLÍCITO del CEO,
+    no en cada refresco. Cada candidato N re-corre el pipeline completo motor→E1
+    →D2. Devuelve el shape plano de `UnidadesResultado` (montos como str, regla 1)."""
+    from app.proyeccion.solver_unidades import resolver_unidades_para_umbral
+
+    if not (0 <= cap_unidades <= 10_000):
+        raise ProyeccionError(
+            f"cap_unidades debe estar en [0, 10000] (recibido {cap_unidades})", 422
+        )
+    params, modelos = await _cargar_config_vigente()
+
+    async def proyectar_fn(n: int):
+        r, _cm, _fondo, _rec, _meta, _atn = await _resultado_con(
+            params,
+            modelos,
+            escenario=escenario,
+            mes_inicio=mes_inicio,
+            horizonte_meses=horizonte_meses,
+            unidades_extra=n,
+        )
+        return r
+
+    caja_min = params.caja_minima
+    res = await resolver_unidades_para_umbral(
+        proyectar_fn,
+        ajustes=[],
+        caja_minima=caja_min,
+        colchon=colchon,
+        cap_unidades=cap_unidades,
+    )
+    return {
+        "unidades_extra": res.unidades_extra,
+        "alcanzable": res.alcanzable,
+        "piso_resultante": (
+            money_str(res.piso_resultante)
+            if res.piso_resultante is not None
+            else None
+        ),
+        "meta": money_str(res.meta),
+    }
 
 
 async def proyectar_vigente(

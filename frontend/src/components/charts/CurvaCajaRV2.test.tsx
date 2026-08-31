@@ -200,3 +200,36 @@ describe("CurvaCajaRV2 · AC #10 enlazada a los campos reales de Proyeccion", ()
     expect(screen.getByText(/Sin datos para dibujar/)).toBeInTheDocument();
   });
 });
+
+describe("CurvaCajaRV2 · AC #5 escenario superpuesto (rebanada 3)", () => {
+  it("sin escenarioData no dibuja curva-escenario ni área", () => {
+    const { container } = render(<CurvaCajaRV2 data={proyeccion()} />);
+    expect(container.querySelector('[data-testid="curva-escenario"]')).toBeNull();
+    expect(container.querySelector('[data-testid="area-escenario"]')).toBeNull();
+  });
+
+  it("con escenarioData dibuja LÍNEA punteada + ÁREA rellena entre base y escenario", () => {
+    const base = proyeccion();
+    // Escenario con cajas mayores (motos extra = ingreso extra vía cuotas iniciales).
+    const escenario: Proyeccion = {
+      ...base,
+      meses: base.meses.map((m, i) =>
+        i === 0 ? m : { ...m, caja: (200_000_000 + i * 20_000_000).toString() },
+      ),
+    };
+    const { container } = render(
+      <CurvaCajaRV2 data={base} escenarioData={escenario} />,
+    );
+    const linea = container.querySelector('[data-testid="curva-escenario"]');
+    const area = container.querySelector('[data-testid="area-escenario"]');
+    expect(linea).toBeInTheDocument();
+    expect(area).toBeInTheDocument();
+    // Escenario usa el token dedicado, cero hex hardcodeado (regla RV-V1).
+    expect(linea?.getAttribute("stroke")).toBe(
+      "var(--color-chart-escenario)",
+    );
+    expect(area?.getAttribute("fill")).toBe("var(--color-chart-escenario)");
+    // Línea del escenario es PUNTEADA (mockup drawCash: dashed).
+    expect(linea?.getAttribute("stroke-dasharray")).toBe("4 3");
+  });
+});
