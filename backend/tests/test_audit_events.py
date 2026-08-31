@@ -15,7 +15,8 @@ parametros_proyeccion.actualizado (CR-COCK, C7 motor de proyección, GO CEO
 vigilante.paquete.generado/publicado (CR-CFO-3, FABS vigilante paquete lunes,
 GO CEO 2026-08-30) llevan el catálogo a 68 + vigilante.alerta.generada/publicada
 (CR-CFO-4, FABS vigilante alerta de caja, GO CEO 2026-08-30) lo llevan a 70
-(ver test abajo)."""
++ vigilante.cierre.generado/publicado (CR-CFO-5, FABS vigilante cierre mensual
+comentado, GO CEO 2026-08-30) lo llevan a 72 (ver test abajo)."""
 
 from app.audit.events import CATALOGO_EVENTOS, AuditEvento
 
@@ -32,8 +33,10 @@ def test_catalogo_tiene_exactamente_70_eventos():
     #   vigilante paquete lunes, GO CEO 2026-08-30) = 68.
     # + vigilante.alerta.generada + vigilante.alerta.publicada (CR-CFO-4, FABS
     #   vigilante alerta de caja, GO CEO 2026-08-30) = 70.
-    assert len(AuditEvento) == 70
-    assert len(CATALOGO_EVENTOS) == 70
+    # + vigilante.cierre.generado + vigilante.cierre.publicado (CR-CFO-5, FABS
+    #   vigilante cierre mensual comentado, GO CEO 2026-08-30) = 72.
+    assert len(AuditEvento) == 72
+    assert len(CATALOGO_EVENTOS) == 72
     assert AuditEvento.factura_actualizada.value == "factura.actualizada"
     assert AuditEvento.factura_obligacion_pagada.value == "factura_obligacion.pagada"
     assert AuditEvento.transaccion_dividida.value == "transaccion.dividida"
@@ -101,6 +104,8 @@ def test_eventos_clave_presentes():
         "vigilante.paquete.publicado",  # CR-CFO-3: revisor difunde al comité
         "vigilante.alerta.generada",  # CR-CFO-4: job diario arma el borrador de alerta
         "vigilante.alerta.publicada",  # CR-CFO-4: revisor difunde la alerta al comité
+        "vigilante.cierre.generado",  # CR-CFO-5: job diario detectó mes cerrado y armó comentario
+        "vigilante.cierre.publicado",  # CR-CFO-5: revisor difundió el comentario al comité
     ):
         assert esperado in CATALOGO_EVENTOS
 

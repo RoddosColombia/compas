@@ -165,6 +165,14 @@ class AuditEvento(StrEnum):
     vigilante_alerta_generada = "vigilante.alerta.generada"
     vigilante_alerta_publicada = "vigilante.alerta.publicada"
 
+    # ── CR-CFO-5 (2) — FABS vigilante cierre mensual comentado (GO CEO 2026-08-30) ──
+    # `vigilante.cierre.generado` = el job diario detectó un mes cerrado y armó el
+    # comentario (metadata {periodo, abstuvo, conceptos_usados}); `vigilante.cierre.
+    # publicado` = el revisor lo difundió al comité (metadata {periodo,
+    # n_destinatarios}). Catálogo 70 -> 72.
+    vigilante_cierre_generado = "vigilante.cierre.generado"
+    vigilante_cierre_publicado = "vigilante.cierre.publicado"
+
 
 # Conjunto de los valores canónicos del catálogo (para validación/tests de completitud).
 CATALOGO_EVENTOS: frozenset[str] = frozenset(e.value for e in AuditEvento)
