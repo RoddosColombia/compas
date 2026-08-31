@@ -5,8 +5,12 @@ dedup por update_id y append/trim al persistir un turno."""
 from datetime import UTC, datetime
 
 import pytest
-from app.cfo.telegram import hilos
+import pytest_asyncio
+from app.cfo.telegram import hilos, repositorio
 from app.cfo.telegram.modelos import HiloCFO
+from app.domain import DOMAIN_DOCUMENTS
+from beanie import init_beanie
+from mongomock_motor import AsyncMongoMockClient
 
 
 def _hilo(turnos, uid=None):
@@ -107,19 +111,24 @@ async def test_registrar_turno_sin_hilo_previo(monkeypatch):
     assert len(guardados) == 1
     h = guardados[0]
     assert h.user_id == "u1"
-    assert h.turnos == [
-        {"rol": "user", "contenido": "cuanto vendimos"},
-        {"rol": "assistant", "contenido": "vendimos [[V1]]"},
-    ]
+    assert len(h.turnos) == 2
+    assert h.turnos[0]["rol"] == "user"
+    assert h.turnos[0]["contenido"] == "cuanto vendimos"
+    assert h.turnos[0]["mostrado"] == "cuanto vendimos"
+    assert h.turnos[0]["canal"] == "telegram"
+    assert h.turnos[1]["rol"] == "assistant"
+    assert h.turnos[1]["contenido"] == "vendimos [[V1]]"
+    assert h.turnos[1]["mostrado"] == "vendimos $10.000.000"
+    assert h.turnos[1]["canal"] == "telegram"
     assert h.ultimo_update_id == 7
     assert h.ultimo_envio == "vendimos $10.000.000"
 
 
 @pytest.mark.asyncio
 async def test_registrar_turno_recorta_al_maximo(monkeypatch):
-    # hilo previo ya en el tope (_MAX_TURNOS=40 -> 20 pares)
+    # hilo previo ya en el tope (_MAX_TURNOS=200 -> 100 pares)
     previos = []
-    for i in range(20):
+    for i in range(100):
         previos.append({"rol": "user", "contenido": f"u{i}"})
         previos.append({"rol": "assistant", "contenido": f"a{i}"})
     hilo_previo = _hilo(list(previos), uid=98)
@@ -144,13 +153,93 @@ async def test_registrar_turno_recorta_al_maximo(monkeypatch):
     )
 
     h = guardados[0]
-    assert len(h.turnos) == 40  # se mantiene en el tope, no crece sin límite
-    assert h.turnos[0] == {
-        "rol": "user",
-        "contenido": "u1",
-    }  # se botó el par mas viejo (u0,a0)
-    assert h.turnos[-2:] == [
-        {"rol": "user", "contenido": "nueva pregunta"},
-        {"rol": "assistant", "contenido": "nueva respuesta"},
-    ]
+    assert len(h.turnos) == 200  # se mantiene en el tope, no crece sin límite
+    assert h.turnos[0]["rol"] == "user"
+    assert h.turnos[0]["contenido"] == "u1"  # se botó el par mas viejo (u0,a0)
+    assert h.turnos[-2]["rol"] == "user"
+    assert h.turnos[-2]["contenido"] == "nueva pregunta"
+    assert h.turnos[-1]["rol"] == "assistant"
+    assert h.turnos[-1]["contenido"] == "nueva respuesta"
+    assert h.turnos[-1]["mostrado"] == "env99"
+    assert h.turnos[-1]["canal"] == "telegram"
     assert h.ultimo_update_id == 99
+
+
+@pytest_asyncio.fixture
+async def db():
+    client = AsyncMongoMockClient(tz_aware=True)
+    await init_beanie(database=client["compas_test"], document_models=DOMAIN_DOCUMENTS)
+    yield client
+
+
+@pytest.mark.asyncio
+async def test_registrar_turno_web_guarda_mostrado_y_no_toca_dedup(db):
+    # un turno de Telegram deja estado de dedup
+    await hilos.registrar_turno("u1", "hola tg", "[[x]]", 55, "MOSTRADO TG")
+    # un turno web NO debe pisar ultimo_update_id/ultimo_envio
+    await hilos.registrar_turno_web("u1", "hola web", "[[y]]", "MOSTRADO WEB")
+    hilo = await repositorio.obtener_hilo("u1")
+    assert hilo.ultimo_update_id == 55  # intacto
+    assert hilo.ultimo_envio == "MOSTRADO TG"  # intacto
+    # 4 turnos, el último assistant es el web con su mostrado + canal
+    ult = hilo.turnos[-1]
+    assert ult["rol"] == "assistant" and ult["mostrado"] == "MOSTRADO WEB"
+    assert ult["canal"] == "web" and ult["contenido"] == "[[y]]"
+    tg_asst = hilo.turnos[1]
+    assert tg_asst["canal"] == "telegram" and tg_asst["mostrado"] == "MOSTRADO TG"
+
+
+@pytest.mark.asyncio
+async def test_historial_para_display_enmascara_legacy(db):
+    # sembrar un hilo con un turno assistant LEGACY (sin mostrado) + uno nuevo
+    from app.core.time import now_utc
+
+    await repositorio.guardar_hilo(
+        HiloCFO(
+            user_id="u2",
+            turnos=[
+                {"rol": "user", "contenido": "q vieja"},  # legacy user (sin mostrado)
+                {
+                    "rol": "assistant",
+                    "contenido": "[[caja_hoy]]",
+                },  # legacy assistant sin mostrado
+                {
+                    "rol": "user",
+                    "contenido": "q nueva",
+                    "mostrado": "q nueva",
+                    "canal": "web",
+                    "ts": "2026-08-30T00:00:00+00:00",
+                },
+                {
+                    "rol": "assistant",
+                    "contenido": "[[x]]",
+                    "mostrado": "$5.000.000 (al 2026-08-30)",
+                    "canal": "web",
+                    "ts": "2026-08-30T00:00:00+00:00",
+                },
+            ],
+            actualizado_at=now_utc(),
+        )
+    )
+    disp = hilos.historial_para_display(await repositorio.obtener_hilo("u2"))
+    assert disp[0] == {
+        "rol": "user",
+        "texto": "q vieja",
+        "canal": "desconocido",
+        "ts": None,
+    }
+    assert (
+        disp[1]["texto"] == "(respuesta anterior)"
+    )  # legacy assistant NO expone crudo
+    assert "[[" not in disp[1]["texto"]
+    assert (
+        disp[3]["texto"] == "$5.000.000 (al 2026-08-30)" and disp[3]["canal"] == "web"
+    )
+
+
+@pytest.mark.asyncio
+async def test_retencion_200(db):
+    for i in range(150):  # 150 pares = 300 turnos → recorta a 200
+        await hilos.registrar_turno_web("u3", f"q{i}", f"[[{i}]]", f"m{i}")
+    hilo = await repositorio.obtener_hilo("u3")
+    assert len(hilo.turnos) == 200
