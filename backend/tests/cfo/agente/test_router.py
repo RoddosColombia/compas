@@ -135,6 +135,48 @@ async def test_guard_defensivo_404_si_flag_se_apaga_en_runtime(api, monkeypatch)
     assert r.json()["detail"] == "No encontrado."
 
 
+async def test_historial_devuelve_lista_para_rol_autorizado(api):
+    # Nivel HTTP (Task-2 §9): a diferencia de tests/cfo/test_router_chat.py
+    # (llama cfo_router.historial(user=_U()) directo, saltándose
+    # require_permission), este va por el stack ASGI real — login → JWT →
+    # dependencia RBAC → handler.
+    tok = await _token(api, "admin@roddos.com")
+    h = {"Authorization": f"Bearer {tok}"}
+    await api.post(
+        "/api/v1/cfo", json={"pregunta": "¿cuánta caja hay hoy?"}, headers=h
+    )
+    r = await api.get("/api/v1/cfo/historial", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, list)
+    assert any(t["texto"] == "¿cuánta caja hay hoy?" for t in body)
+
+
+async def test_historial_rol_consulta_no_autorizado_403(api):
+    tok = await _token(api, "consulta@roddos.com")
+    h = {"Authorization": f"Bearer {tok}"}
+    r = await api.get("/api/v1/cfo/historial", headers=h)
+    assert r.status_code == 403
+
+
+async def test_historial_sin_token_es_401(api):
+    r = await api.get("/api/v1/cfo/historial")
+    assert r.status_code == 401
+
+
+async def test_historial_guard_defensivo_404_si_flag_se_apaga_en_runtime(
+    api, monkeypatch
+):
+    # Barrera 2 del GET (mismo guard que el POST, mismo patrón de flip en
+    # caliente que test_guard_defensivo_404_si_flag_se_apaga_en_runtime).
+    tok = await _token(api, "admin@roddos.com")
+    h = {"Authorization": f"Bearer {tok}"}
+    monkeypatch.setenv("CFO_ENABLED", "false")
+    r = await api.get("/api/v1/cfo/historial", headers=h)
+    assert r.status_code == 404
+    assert r.json()["detail"] == "No encontrado."
+
+
 async def test_ruta_ausente_si_flag_apagado_al_construir_la_app(monkeypatch):
     # Barrera 1: con el flag apagado desde el arranque, create_app() NUNCA monta el
     # router — la ruta no existe (404 genérico de FastAPI, no el guard del handler).
