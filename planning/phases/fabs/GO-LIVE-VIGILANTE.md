@@ -123,9 +123,9 @@ No hace falta esperar al lunes para confirmar que el worker arrancó bien:
 ## Alerta de caja
 
 > El mismo worker **`compas-jobs`** corre la segunda pieza del Vigilante: una alerta proactiva
-> diaria (8:00 América/Bogotá) cuando la caja proyectada cruza el umbral crítico (`caja_minima`)
-> o se acerca (umbral de atención `UMBRAL_ATENCION`). Complementa el paquete del lunes (que es
-> semanal, determinista, sin LLM) con vigilancia continua de la salud de caja.
+> diaria (8:00 América/Bogotá, determinista, sin LLM) cuando la caja proyectada cruza el umbral crítico (`caja_minima`)
+> o se acerca (umbral de atención `UMBRAL_ATENCION`). A diferencia del paquete del lunes y el cierre mensual 
+> (que son narrados por FABS), la alerta es completamente determinista y vigila la salud de caja sin intervención de IA.
 
 ### Qué hace esta pieza (una vez viva)
 Cada **día 8:00 América/Bogotá**, el worker corre un job que:
@@ -169,8 +169,10 @@ El job lee esos valores cada ejecución (no precisa restart del worker si los ca
 
 ## Cierre mensual comentado
 
-> La tercera y última pieza del Vigilante: un comentario determinista que COMPAS genera una vez
+> La tercera y última pieza del Vigilante: un comentario narrado por FABS que COMPAS genera una vez
 > por mes (cuando detecta que el mes anterior se cerró) y que vos revisás y publicás al comité.
+> Reusa `servicio.consultar()` (igual contrato anti-alucinación que el paquete y el chat: cita cifras por token `[[x]]`,
+> nunca valores crudos; la difusión publica el texto ya verificado, jamás vuelve a llamar al LLM).
 > Es el **cierre de ciclo** del vigilante — síntesis de los 5 pilares clave (caja, real vs. presupuesto,
 > composición, tendencia, rumbo al umbral).
 
