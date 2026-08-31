@@ -42,16 +42,18 @@ async def _audit_soft(evento, entidad_id: str, metadata: dict) -> None:
         logger.exception("fallo al auditar %s", evento)
 
 
-async def _publicar_paquete(
-    chat_id: int, cliente_telegram: ClienteTelegramProto
+async def _publicar_aviso(
+    chat_id: int, cliente_telegram: ClienteTelegramProto, *, tipo: str, evento
 ) -> str:
-    """Difunde el último borrador a todo el comité (todos los vínculos) y lo marca
-    `publicado` DESPUÉS de difundir. `cliente_telegram.enviar` traga sus propios
-    errores de red, así que el loop de difusión no revienta a medio camino.
-    Devuelve el texto de confirmación enviado al revisor (para dedup del comando)."""
+    """Difunde el último borrador de `tipo` a todo el comité (todos los vínculos) y
+    lo marca `publicado` DESPUÉS de difundir. `cliente_telegram.enviar` traga sus
+    propios errores de red, así que el loop de difusión no revienta a medio camino.
+    Devuelve el texto de confirmación enviado al revisor (para dedup del comando).
+    `tipo` distingue el paquete semanal (`paquete_lunes`) de la alerta
+    (`alerta_caja`) — ambos comparten el mismo modelo `AvisoVigilante`."""
     borradores = await (
         AvisoVigilante.find(
-            AvisoVigilante.tipo == "paquete_lunes",
+            AvisoVigilante.tipo == tipo,
             AvisoVigilante.estado == "borrador",
         )
         .sort(-AvisoVigilante.generado_at)
@@ -60,7 +62,11 @@ async def _publicar_paquete(
     )
     pq = borradores[0] if borradores else None
     if pq is None:
-        msg = "No hay un paquete pendiente para publicar."
+        msg = (
+            "No hay un paquete pendiente para publicar."
+            if tipo == "paquete_lunes"
+            else "No hay una alerta pendiente para publicar."
+        )
         await cliente_telegram.enviar(chat_id, msg)
         return msg
 
@@ -73,12 +79,14 @@ async def _publicar_paquete(
     await pq.save()
 
     await _audit_soft(
-        AuditEvento.vigilante_paquete_publicado,
+        evento,
         pq.periodo,
         {"periodo": pq.periodo, "n_destinatarios": len(vinculos_all)},
     )
 
-    msg = f"✅ Paquete publicado al comité ({len(vinculos_all)} destinatarios)."
+    etiqueta = "Paquete" if tipo == "paquete_lunes" else "Alerta"
+    participio = "publicado" if tipo == "paquete_lunes" else "publicada"
+    msg = f"✅ {etiqueta} {participio} al comité ({len(vinculos_all)} destinatarios)."
     await cliente_telegram.enviar(chat_id, msg)
     return msg
 
@@ -141,15 +149,26 @@ async def procesar_update(
             await cliente_telegram.enviar(chat_id, hilo.ultimo_envio)
         return
 
-    es_comando_publicar = (
-        texto.strip().lower() == "publicar"
-        and telegram_id == config.vigilante_revisor_telegram_id()
-    )
-    if es_comando_publicar:
-        # 'publicar' NO llama al LLM: registrar SOLO el dedup (sin tocar los turnos que
-        # se re-alimentan al modelo) para que un reintento reenvíe la confirmación en
-        # vez de re-difundir.
-        envio = await _publicar_paquete(chat_id, cliente_telegram)
+    comando = texto.strip().lower()
+    es_revisor = telegram_id == config.vigilante_revisor_telegram_id()
+    if es_revisor and comando in ("publicar", "publicar alerta"):
+        # 'publicar'/'publicar alerta' NO llaman al LLM: registrar SOLO el dedup (sin
+        # tocar los turnos que se re-alimentan al modelo) para que un reintento
+        # reenvíe la confirmación en vez de re-difundir.
+        if comando == "publicar alerta":
+            envio = await _publicar_aviso(
+                chat_id,
+                cliente_telegram,
+                tipo="alerta_caja",
+                evento=AuditEvento.vigilante_alerta_publicada,
+            )
+        else:
+            envio = await _publicar_aviso(
+                chat_id,
+                cliente_telegram,
+                tipo="paquete_lunes",
+                evento=AuditEvento.vigilante_paquete_publicado,
+            )
         await hilos.registrar_dedup(user_id, update_id, envio)
         return
 
