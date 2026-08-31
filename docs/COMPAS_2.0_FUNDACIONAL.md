@@ -13,6 +13,8 @@
 **Histórico**
 - 0.1 (2026-08-27): versión inicial. Deriva de la hoja de ruta y de la revisión del código real. Decisiones D-1 y D-2 fijadas por el CEO. Pendiente de revisión independiente (Fase 0) y aprobación.
 
+> **📊 Velocímetro (fuente única):** `docs/COMPAS_2.0_ROADMAP.md`. Este documento describe el ALCANCE; el ROADMAP muestra la EVOLUCIÓN a peso contra `origin/main`. Ante conflicto sobre "cómo vamos", manda el ROADMAP.
+>
 > Instancia condensada del «Método de trabajo con IA» (11 fases), en modo crítico. Referencia —no repite— las fases ya cerradas. Ante duda de alcance manda `NORTE.md`; ante conflicto de este documento con el código verificado, manda el código.
 
 ---
