@@ -1,0 +1,54 @@
+# Keep-alive del backend compas-api en Render Free.
+#
+# CONTEXTO: Render Free duerme el servicio tras ~15 min sin tráfico
+# (render.yaml línea 8 lo declara: "DEV: $0. Subir a 'standard' en go-live").
+# Cuando el CEO abre https://compas.roddos.com y el backend está dormido, el
+# navegador timeoutea el fetch del login antes de que Render lo despierte
+# (~20-30s de cold start) y muestra "Failed to fetch".
+#
+# ARREGLO (opción 2 elegida por el CEO 2026-08-31): un cron de GitHub Actions
+# hace GET /health cada 10 min. Con tráfico regular Render no duerme.
+#
+# Costo: minutos de GitHub Actions (~5s por corrida × 144/día = 12 min/día
+# = ~370 min/mes). Bajo el límite de la memoria ci-actions-billing-bloqueado
+# (repo privado, plan gratis), esto es material — se pausa el cron y se ve.
+#
+# NO reemplaza subir a Render Standard en go-live; es paliativo de DEV.
+
+name: keep-alive
+
+on:
+  schedule:
+    # */10 no siempre corre exactamente cada 10 min en Actions gratis
+    # (github delay tolerable): con 6 corridas/hora aún suficiente para
+    # que Render nunca alcance 15 min sin tráfico.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: # permite dispararlo a mano desde la UI para probar
+
+# Cero permisos: no lee ni escribe nada del repo, solo hace un curl al exterior.
+permissions: {}
+
+# Solo una corrida en vuelo a la vez; si el cron dispara antes de que
+# termine la anterior (raro con este trabajo de segundos), lo saltamos.
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: ping compas-api /health
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: GET /health con timeout de 60s (cold start puede tardar ~25s)
+        # -f (fail on 4xx/5xx), --max-time 60 (aborta si Render no despierta
+        # en 60s — algo va mal más allá de cold start), --retry 2 con backoff.
+        # Log del código HTTP y del tiempo total para telemetría en Actions.
+        run: |
+          set -euo pipefail
+          URL="https://compas-api.onrender.com/health"
+          echo "GET $URL"
+          curl -fsS --max-time 60 --retry 2 --retry-delay 5 \
+               -o /dev/null \
+               -w "HTTP %{http_code} en %{time_total}s\n" \
+               "$URL"
