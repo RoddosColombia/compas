@@ -79,6 +79,11 @@ interface ComposicionFlujoRV2Props {
   meses: MesProyeccion[];
   /** Ventana visible (default = todos). */
   ventanaMeses?: number;
+  /** RV-V4: escenario superpuesto. Si viene, dibuja la LÍNEA de flujo neto
+   * del escenario como overlay dashed sobre --color-chart-escenario. Las
+   * barras del BASE quedan intactas (evita el ruido de barras dobles/mes).
+   * Se recorta a la misma ventana que `meses`. */
+  escenarioMeses?: MesProyeccion[];
 }
 
 // ─────────────────────────── componente ───────────────────────────
@@ -86,6 +91,7 @@ interface ComposicionFlujoRV2Props {
 export function ComposicionFlujoRV2({
   meses,
   ventanaMeses,
+  escenarioMeses,
 }: ComposicionFlujoRV2Props) {
   const {
     ventana,
@@ -98,18 +104,32 @@ export function ComposicionFlujoRV2({
     marcasNeg,
     bw,
     lineaFlujo,
+    lineaFlujoEscenario,
     xLabels,
   } = useMemo(() => {
     const ventana = meses.slice(0, ventanaMeses ?? meses.length);
     const bloques = ventana.map(bloqueDe);
+    // RV-V4: recortamos el escenario a la misma ventana. Los índices se
+    // alinean por posición (el motor entrega ambos con la misma cadencia).
+    const ventanaEscenario =
+      escenarioMeses?.slice(0, ventana.length) ?? [];
+    const bloquesEscenario = ventanaEscenario.map(bloqueDe);
 
     // Escala: max positivo (solo ingreso) y max negativo (suma de egresos apilados).
+    // Cuando hay escenario, extendemos la escala para acomodar sus valores
+    // (ingreso y flujo pueden ser mayores/menores que el base). El BASE se
+    // sigue dibujando con la misma geometría — solo aumentamos el rango.
     let maxPos = 0;
     let maxNeg = 0;
     for (const b of bloques) {
       if (b.ingreso > maxPos) maxPos = b.ingreso;
       const totalNeg = b.gastoFijo + b.auteco + b.otros;
       if (totalNeg > maxNeg) maxNeg = totalNeg;
+    }
+    for (const b of bloquesEscenario) {
+      if (b.ingreso > maxPos) maxPos = b.ingreso;
+      if (b.flujo > maxPos) maxPos = b.flujo;
+      if (-b.flujo > maxNeg) maxNeg = -b.flujo;
     }
     // Al menos algo para no dividir por cero cuando la ventana viene toda en 0.
     if (maxPos === 0) maxPos = 1;
@@ -149,6 +169,18 @@ export function ComposicionFlujoRV2({
             .join(" L ")
         : "";
 
+    // RV-V4: mismo formato que la base, pero con los flujos del escenario.
+    const lineaFlujoEscenario =
+      ventanaEscenario.length >= 2
+        ? "M " +
+          ventanaEscenario
+            .map(
+              (_m, j) =>
+                `${xPos(j).toFixed(1)},${yFlujo(bloquesEscenario[j].flujo).toFixed(1)}`,
+            )
+            .join(" L ")
+        : "";
+
     // Etiquetas eje X — misma regla que la curva.
     const paso = pasoEtiquetas(ventana.length);
     const xLabels: number[] = [];
@@ -169,9 +201,10 @@ export function ComposicionFlujoRV2({
       marcasNeg,
       bw,
       lineaFlujo,
+      lineaFlujoEscenario,
       xLabels,
     };
-  }, [meses, ventanaMeses]);
+  }, [meses, ventanaMeses, escenarioMeses]);
 
   if (ventana.length === 0) {
     return (
@@ -296,6 +329,18 @@ export function ComposicionFlujoRV2({
           data-testid="linea-flujo-neto"
         />
 
+        {/* RV-V4: escenario superpuesto — flujo neto del escenario dashed */}
+        {lineaFlujoEscenario && (
+          <path
+            d={lineaFlujoEscenario}
+            fill="none"
+            stroke="var(--color-chart-escenario)"
+            strokeWidth={1.8}
+            strokeDasharray="4 3"
+            data-testid="linea-flujo-escenario"
+          />
+        )}
+
         {/* Línea del cero (referencia visual clara del signo) */}
         <line
           x1={X0}
@@ -364,6 +409,19 @@ export function ComposicionFlujoRV2({
           />
           flujo neto
         </span>
+        {lineaFlujoEscenario && (
+          <span className="flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="inline-block h-[2px] w-4"
+              style={{
+                background:
+                  "repeating-linear-gradient(to right, var(--color-chart-escenario) 0 4px, transparent 4px 7px)",
+              }}
+            />
+            flujo neto · escenario
+          </span>
+        )}
       </div>
     </div>
   );

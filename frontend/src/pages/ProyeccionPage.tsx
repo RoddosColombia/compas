@@ -598,7 +598,10 @@ function ProyeccionContenido({
         subtitulo={`composición del flujo · ${ventana.length} de ${data.meses.length} meses · ingreso arriba, egresos por concepto abajo`}
         pie="Las 4 categorías (ingreso · gastos fijos · Auteco · otros) no comparten familia de color con los umbrales — el semáforo queda reservado a estado (regla 9 del DESIGN.md)."
       >
-        <ComposicionFlujoRV2 meses={ventana} />
+        <ComposicionFlujoRV2
+          meses={ventana}
+          escenarioMeses={escenarioData?.meses}
+        />
       </ChartCard>
 
       {/* SUP-5 — qué variables componen esa curva: los supuestos efectivos del
