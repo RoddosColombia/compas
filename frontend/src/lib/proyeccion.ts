@@ -179,6 +179,52 @@ export async function obtenerProyeccion(
   return apiJson(`/proyeccion${qs ? `?${qs}` : ""}`);
 }
 
+// RV-V2 rebanada 3 · Fundacional §3 AC #5/#7 — escenario superpuesto controlado
+// por «motos extra por mes». El CEO teclea N (editable antes de activar),
+// activa el escenario y ve la curva superpuesta sobre la base. El botón
+// «vender de más» corre el goal-seek de unidades del backend.
+
+export async function obtenerProyeccionConUnidadesExtra(
+  unidadesExtra: number,
+  p: ProyeccionParams = {},
+): Promise<Proyeccion> {
+  const q = new URLSearchParams();
+  if (p.escenario) q.set("escenario", p.escenario);
+  if (p.horizonteMeses) q.set("horizonte_meses", String(p.horizonteMeses));
+  if (p.mesInicio) q.set("mes_inicio", p.mesInicio);
+  const qs = q.toString();
+  return apiJson(`/proyeccion/con-unidades-extra${qs ? `?${qs}` : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ unidades_extra: unidadesExtra }),
+  });
+}
+
+export interface SolverUnidadesResultado {
+  unidades_extra: number;
+  alcanzable: boolean;
+  piso_resultante: string | null;
+  meta: string;
+}
+
+export async function resolverUnidadesParaUmbral(
+  p: ProyeccionParams & { colchon?: string; capUnidades?: number } = {},
+): Promise<SolverUnidadesResultado> {
+  const q = new URLSearchParams();
+  if (p.escenario) q.set("escenario", p.escenario);
+  if (p.horizonteMeses) q.set("horizonte_meses", String(p.horizonteMeses));
+  if (p.mesInicio) q.set("mes_inicio", p.mesInicio);
+  const qs = q.toString();
+  const body: Record<string, unknown> = {};
+  if (p.colchon !== undefined) body.colchon = p.colchon;
+  if (p.capUnidades !== undefined) body.cap_unidades = p.capUnidades;
+  return apiJson(`/proyeccion/solver-unidades${qs ? `?${qs}` : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // RF-F10 · Fundacional §2 — Serie AGREGADA por trimestre/año. Para horizontes
 // largos (hasta 240 meses = 20 años) mostrar 240 puntos mensuales es ruido; el
 // backend colapsa preservando semántica stock/flujo (caja_final = último mes,

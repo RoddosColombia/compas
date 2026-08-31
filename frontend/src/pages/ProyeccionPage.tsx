@@ -10,7 +10,7 @@
 // .toNumber() SOLO geometría (regla 1).
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
 import { ComposicionFlujoRV2 } from "@/components/charts/ComposicionFlujoRV2";
@@ -51,9 +51,12 @@ import {
   type GranularidadAgregada,
   type PeriodoAgregado,
   type Proyeccion,
+  type SolverUnidadesResultado,
   obtenerProyeccion,
   obtenerProyeccionAgregada,
+  obtenerProyeccionConUnidadesExtra,
   obtenerVersionDiff,
+  resolverUnidadesParaUmbral,
 } from "@/lib/proyeccion";
 
 const ESCENARIOS: Escenario[] = ["pesimista", "base", "optimista"];
@@ -92,6 +95,11 @@ export default function ProyeccionPage() {
   const puedeGestionar = puede("proyeccion:gestionar");
   const [escenario, setEscenario] = useState<Escenario>("base");
   const [horizonte, setHorizonte] = useState(Number(HORIZONTE_DEFAULT));
+  // RV-V2 rebanada 3 · AC #5/#7 · Escenario superpuesto controlado por motos
+  // extra. `motosExtra` es el input EDITABLE ANTES de activar. Cuando el CEO
+  // hace clic en "Activar", la query corre y `escenarioActivo` marca true.
+  const [motosExtra, setMotosExtra] = useState<string>("0");
+  const [escenarioActivo, setEscenarioActivo] = useState(false);
 
   // Pieza 1 (ENTREGA 3) — techo de gasto del escenario en pantalla, a horizonte de
   // juicio (60 m: nunca un techo falsamente alto por ventana corta). Compute-only,
@@ -139,6 +147,27 @@ export default function ProyeccionPage() {
     queryKey: ["proyeccion", "version", "diff", escenario, fetchHorizonte],
     queryFn: () =>
       obtenerVersionDiff({ escenario, horizonteMeses: fetchHorizonte }),
+  });
+
+  // RV-V2 rebanada 3 · AC #5/#7 — proyección con motos extra. Se ejecuta SOLO
+  // cuando el CEO activa el escenario (evita gastar cómputo al escribir).
+  const motosExtraNum = Number.parseInt(motosExtra, 10);
+  const motosExtraValidas =
+    Number.isFinite(motosExtraNum) && motosExtraNum >= 0 && motosExtraNum <= 10_000;
+  const escenarioQ = useQuery({
+    queryKey: [
+      "proyeccion",
+      "con-unidades",
+      escenario,
+      fetchHorizonte,
+      motosExtraNum,
+    ],
+    queryFn: () =>
+      obtenerProyeccionConUnidadesExtra(motosExtraNum, {
+        escenario,
+        horizonteMeses: fetchHorizonte,
+      }),
+    enabled: escenarioActivo && motosExtraValidas,
   });
 
   return (
@@ -216,6 +245,28 @@ export default function ProyeccionPage() {
           ventanaMeses={horizonte}
           escenario={escenario}
           vallesMeses={(vallesQ.data?.valles ?? []).map((v) => v.mes)}
+          escenarioData={escenarioActivo ? escenarioQ.data : undefined}
+          escenarioBar={
+            <EscenarioBar
+              motosExtra={motosExtra}
+              onMotosExtraChange={setMotosExtra}
+              activo={escenarioActivo}
+              onActivarToggle={() => setEscenarioActivo((v) => !v)}
+              onVenderDeMas={async () => {
+                const r = await resolverUnidadesParaUmbral({
+                  escenario,
+                  horizonteMeses: fetchHorizonte,
+                });
+                if (r.alcanzable) {
+                  setMotosExtra(String(r.unidades_extra));
+                  setEscenarioActivo(true);
+                }
+                return r;
+              }}
+              cargando={escenarioQ.isFetching}
+              motosExtraValidas={motosExtraValidas}
+            />
+          }
         />
       )}
 
@@ -388,11 +439,15 @@ function ProyeccionContenido({
   ventanaMeses,
   escenario,
   vallesMeses,
+  escenarioData,
+  escenarioBar,
 }: {
   data: Proyeccion;
   ventanaMeses: number;
   escenario: Escenario;
   vallesMeses: string[];
+  escenarioData?: Proyeccion;
+  escenarioBar?: ReactNode;
 }) {
   const [expandida, setExpandida] = useState(false);
 
@@ -525,7 +580,12 @@ function ProyeccionContenido({
       >
         {/* RV-V2 rebanada 1 (2026-08-30): CurvaCajaRV2 reemplaza a ComposicionCaja
             en la vista principal. */}
-        <CurvaCajaRV2 data={data} ventanaMeses={ventanaMeses} />
+        <CurvaCajaRV2
+          data={data}
+          ventanaMeses={ventanaMeses}
+          escenarioData={escenarioData}
+        />
+        {escenarioBar}
       </ChartCard>
 
       {/* RV-V2 rebanada 2 (2026-08-30) · AC #8 · Composición del flujo en GRÁFICA
@@ -582,5 +642,113 @@ function ProyeccionContenido({
         )}
       </div>
     </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RV-V2 rebanada 3 · Fundacional §3 AC #5/#7
+// EscenarioBar — controla el escenario superpuesto con MOTOS EXTRA:
+//   · input libre editable ANTES de activar (AC #7 «editable antes»);
+//   · toggle "Activar escenario" (AC #5 · superposición);
+//   · botón "Vender de más" (AC #7 · goal-seek de unidades del backend).
+// ─────────────────────────────────────────────────────────────────────────────
+function EscenarioBar({
+  motosExtra,
+  onMotosExtraChange,
+  activo,
+  onActivarToggle,
+  onVenderDeMas,
+  cargando,
+  motosExtraValidas,
+}: {
+  motosExtra: string;
+  onMotosExtraChange: (v: string) => void;
+  activo: boolean;
+  onActivarToggle: () => void;
+  onVenderDeMas: () => Promise<SolverUnidadesResultado>;
+  cargando: boolean;
+  motosExtraValidas: boolean;
+}) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [buscandoN, setBuscandoN] = useState(false);
+  async function venderDeMas() {
+    setMsg(null);
+    setBuscandoN(true);
+    try {
+      const r = await onVenderDeMas();
+      if (r.alcanzable) {
+        setMsg(
+          `Con ${r.unidades_extra} motos extra/mes el piso queda sobre el umbral.`,
+        );
+      } else {
+        setMsg(
+          "El umbral no se alcanza ni con el máximo probado — hay que subir ingreso o bajar gasto.",
+        );
+      }
+    } catch (e) {
+      setMsg(
+        e instanceof Error
+          ? `No se pudo calcular: ${e.message}`
+          : "No se pudo calcular el mínimo de motos extra.",
+      );
+    } finally {
+      setBuscandoN(false);
+    }
+  }
+  return (
+    <div
+      data-testid="escenario-bar"
+      className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-hairline bg-surface-muted/50 px-3 py-2 font-sans text-cuerpo"
+    >
+      <label className="flex items-center gap-1.5 text-ink-soft">
+        <span>Vender</span>
+        <input
+          type="number"
+          min={0}
+          max={10000}
+          value={motosExtra}
+          onChange={(e) => onMotosExtraChange(e.target.value)}
+          className="w-20 rounded-md border border-hairline bg-surface px-2 py-1 text-right font-display tabular text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+          aria-label="motos extra por mes"
+        />
+        <span>motos extra/mes</span>
+      </label>
+      <button
+        type="button"
+        onClick={onActivarToggle}
+        disabled={!motosExtraValidas}
+        className={
+          activo
+            ? "rounded-full bg-chart-escenario/15 px-3 py-1 font-sans text-apoyo font-semibold text-chart-escenario"
+            : "rounded-full bg-surface px-3 py-1 font-sans text-apoyo text-ink-soft hover:bg-hairline"
+        }
+        aria-pressed={activo}
+        data-testid="activar-escenario"
+      >
+        {activo ? "Escenario activo · desactivar" : "Activar escenario"}
+      </button>
+      <button
+        type="button"
+        onClick={venderDeMas}
+        disabled={buscandoN}
+        className="rounded-full bg-cyan/10 px-3 py-1 font-sans text-apoyo font-semibold text-cyan hover:bg-cyan/15 disabled:opacity-50"
+        data-testid="vender-de-mas"
+      >
+        {buscandoN ? "Buscando N…" : "Vender de más"}
+      </button>
+      {cargando && activo && (
+        <span className="font-sans text-apoyo text-ink-faint">
+          calculando escenario…
+        </span>
+      )}
+      {msg && (
+        <span
+          className="font-sans text-apoyo text-ink-soft"
+          data-testid="escenario-msg"
+        >
+          {msg}
+        </span>
+      )}
+    </div>
   );
 }

@@ -122,6 +122,11 @@ interface CurvaCajaRV2Props {
   ventanaMeses?: number;
   /** Test hook: fija hoy para determinismo. */
   hoyMes?: string;
+  /** RV-V2 rebanada 3 · AC #5 · Escenario superpuesto: base + escenario con
+   * ÁREA rellena entre ambos. Se dibuja como línea punteada verde encima de
+   * la proyección base. Cuando llega, la etiqueta del ancla no se mueve —
+   * el ancla es del RESULTADO REAL, no del escenario. */
+  escenarioData?: Proyeccion;
 }
 
 interface Tooltip {
@@ -132,7 +137,11 @@ interface Tooltip {
 
 // ─────────────────────────── componente ───────────────────────────
 
-export function CurvaCajaRV2({ data, ventanaMeses }: CurvaCajaRV2Props) {
+export function CurvaCajaRV2({
+  data,
+  ventanaMeses,
+  escenarioData,
+}: CurvaCajaRV2Props) {
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
 
   const {
@@ -147,6 +156,8 @@ export function CurvaCajaRV2({ data, ventanaMeses }: CurvaCajaRV2Props) {
     rachas,
     pathReal,
     pathProy,
+    pathEscenario,
+    pathAreaEscenario,
     xLabels,
   } = useMemo(() => {
     const ventana = data.meses.slice(
@@ -159,9 +170,16 @@ export function CurvaCajaRV2({ data, ventanaMeses }: CurvaCajaRV2Props) {
       : null;
     const ancla = indiceAncla(ventana, data.meses_anclados);
 
-    // vmax: escalado con 8% de holgura arriba (como el mockup).
+    // vmax: escalado con 8% de holgura arriba (como el mockup). Cuando hay
+    // escenario superpuesto, escala hasta el mayor de los dos para que ninguna
+    // curva se recorte arriba.
     const cajas = ventana.map((m) => parseMonto(m.caja).toNumber());
-    const vmax = Math.max(umbralCritico, ...cajas) * 1.08;
+    const cajasEsc = escenarioData
+      ? escenarioData.meses
+          .slice(0, ventana.length)
+          .map((m) => parseMonto(m.caja).toNumber())
+      : [];
+    const vmax = Math.max(umbralCritico, ...cajas, ...cajasEsc) * 1.08;
 
     const xPos = (j: number): number =>
       X0 + ((X1 - X0) * j) / Math.max(1, ventana.length - 1);
@@ -201,6 +219,35 @@ export function CurvaCajaRV2({ data, ventanaMeses }: CurvaCajaRV2Props) {
           ).join(" L ")
         : "";
 
+    // AC #5 · escenario superpuesto: línea punteada verde + ÁREA rellena entre
+    // base y escenario. Solo la parte proyectada (desde el ancla): la real no
+    // cambia con el escenario. Sin escenarioData, ambos paths quedan vacíos.
+    let pathEscenario = "";
+    let pathAreaEscenario = "";
+    if (escenarioData && cajasEsc.length > 0) {
+      const desde = Math.max(0, ancla);
+      const nProy = ventana.length - desde;
+      if (nProy > 0) {
+        const puntoEsc = (i: number): string =>
+          `${xPos(i).toFixed(1)},${yPos(cajasEsc[i]).toFixed(1)}`;
+        pathEscenario =
+          "M " +
+          Array.from({ length: nProy }, (_, k) => puntoEsc(desde + k)).join(
+            " L ",
+          );
+        // Área entre base y escenario: polígono cerrado — sube por la base y
+        // baja por el escenario en orden inverso.
+        const idsUp = Array.from({ length: nProy }, (_, k) => desde + k);
+        const idsDown = [...idsUp].reverse();
+        pathAreaEscenario =
+          "M " +
+          idsUp.map((i) => puntoPath(i)).join(" L ") +
+          " L " +
+          idsDown.map((i) => puntoEsc(i)).join(" L ") +
+          " Z";
+      }
+    }
+
     // Etiquetas eje X (AC #6): en la parte real, cada 2 meses; en la proyección,
     // paso según horizonte. El ancla siempre está etiquetada.
     const paso = pasoEtiquetasProy(ventana.length);
@@ -225,9 +272,11 @@ export function CurvaCajaRV2({ data, ventanaMeses }: CurvaCajaRV2Props) {
       rachas,
       pathReal,
       pathProy,
+      pathEscenario,
+      pathAreaEscenario,
       xLabels,
     };
-  }, [data, ventanaMeses]);
+  }, [data, ventanaMeses, escenarioData]);
 
   if (ventana.length === 0) {
     return (
@@ -370,6 +419,31 @@ export function CurvaCajaRV2({ data, ventanaMeses }: CurvaCajaRV2Props) {
             crítico
           </text>
         </g>
+
+        {/* AC #5: escenario superpuesto (base + escenario con área coloreada).
+            Se dibuja DEBAJO de las curvas para que el trazo principal domine
+            visualmente y el escenario refuerce con la mancha. */}
+        {pathAreaEscenario && (
+          <path
+            d={pathAreaEscenario}
+            fill="var(--color-chart-escenario)"
+            fillOpacity={0.12}
+            stroke="none"
+            data-testid="area-escenario"
+          />
+        )}
+        {pathEscenario && (
+          <path
+            d={pathEscenario}
+            fill="none"
+            stroke="var(--color-chart-escenario)"
+            strokeWidth={2}
+            strokeDasharray="4 3"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            data-testid="curva-escenario"
+          />
+        )}
 
         {/* AC #1: real sólido */}
         {pathReal && (
