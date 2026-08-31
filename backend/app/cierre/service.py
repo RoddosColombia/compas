@@ -151,6 +151,16 @@ async def _conciliar(mc: MesControl, rubro_ajuste_id) -> dict:
     }
 
 
+async def mes_en_ejecucion() -> str | None:
+    """El mes `EN_EJECUCION` de hoy (o `None` si no hay ninguno). Expone solo el
+    string `mes` -- nunca el `MesControl` completo -- para que módulos con frontera
+    S1 (p. ej. `cfo/agente/`, que no puede importar `app.domain.*`, ver
+    `tests/cfo/test_s1_aislamiento.py`) puedan ubicar el mes en ejecución sin tocar
+    el modelo de dominio directamente."""
+    mc = await MesControl.find_one(MesControl.estado == EstadoMes.EN_EJECUCION)
+    return mc.mes if mc is not None else None
+
+
 async def conciliacion(mes: str) -> dict:
     """Cierre operativo: reporte de conciliación (compute-only)."""
     mc = await _mes(mes)

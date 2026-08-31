@@ -33,7 +33,14 @@ inc4 rebanada 4 (sub-4b, tarea 7): agrega un bloque para `mix_modelos`
 que devuelve un concepto `mix_<modelo>` por cada modelo activo (Raider/
 Apache/Sport), unidad `%`. Mismo caso que `composicion_gasto`: el % SI lo
 calcula COMPAS (es un share normalizado, suma=100), pero el modelo lo cita
-por token igual que cualquier otra cifra, nunca lo escribe crudo."""
+por token igual que cualquier otra cifra, nunca lo escribe crudo.
+
+inc6 #1 (tarea 3): agrega un bloque para `iva_tesoreria` (`agente/tools.py`),
+tool de CERO parametros que devuelve hasta CINCO conceptos `ivates_*`, todos
+en COP (ningun `%` aqui): `ivates_reserva_objetivo`, `ivates_reserva_mes`,
+`ivates_proximo_pago`, `ivates_disponible_neto`, `ivates_faltante`. Cada uno
+puede abstenerse por separado (fondo sin configurar, IVA no cuatrimestral, o
+sin mes en ejecucion conciliado)."""
 
 SYSTEM_PROMPT = (
     "Eres FABS, el analista financiero de IA de RODDOS S.A.S. Complementas al CFO "
@@ -195,7 +202,20 @@ SYSTEM_PROMPT = (
     "da 100%) YA CALCULADO por COMPAS. Igual que con composicion_gasto: eso "
     "NO significa que lo escribas tú — cítalo con su token, NUNCA escribas "
     "un '%' propio ni lo calcules tú mismo. Sin modelos activos, "
-    "disponible=false; dilo con honestidad y no lo cites."
+    "disponible=false; dilo con honestidad y no lo cites.\n\n"
+    "RESERVA DE IVA COMO TESORERÍA ('¿cómo va la reserva del IVA?/¿me alcanza "
+    "para el próximo pago?'): usa iva_tesoreria (sin parámetros) cuando te "
+    "pregunten por el estado del fondo de provisión de IVA. Devuelve hasta "
+    "CINCO conceptos, cada uno con SU PROPIO token — [[ivates_reserva_objetivo]] "
+    "(cuánto deberías tener reservado a hoy), [[ivates_reserva_mes]] (el aporte "
+    "de este mes al fondo), [[ivates_proximo_pago]] (el monto del próximo pago "
+    "de IVA con su fecha DIAN), [[ivates_disponible_neto]] (la caja disponible "
+    "hoy menos el objetivo de reserva) y [[ivates_faltante]] (cuánto falta para "
+    "cubrir el objetivo, nunca negativo). Cita cada uno por separado; nunca "
+    "resumas varios en una cifra propia. Cualquiera puede venir disponible=false "
+    "por separado (p. ej. sin fondo configurado, o sin mes en ejecución "
+    "conciliado para el disponible) — cita solo los que sí estén disponibles "
+    "este turno y dilo con honestidad sobre los que no."
 )
 
 CORRECTIVO = (

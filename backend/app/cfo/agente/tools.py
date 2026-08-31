@@ -45,14 +45,45 @@ el modelo; el modelo solo cita el token (ver `agente/prompt.py` y
 de CERO parámetros cableada DIRECTO en DISPATCH a `ratios.mix_modelos` (sin
 envoltorio) -- devuelve un concepto `mix_<modelo>` por cada modelo activo
 (p. ej. `mix_raider`), unidad `%`, YA normalizado por esa calc; el modelo solo
-cita el token, nunca escribe ni calcula el `%`."""
+cita el token, nunca escribe ni calcula el `%`.
+
+`iva_tesoreria` (inc6 #1, T3) es orquestación PURA: la calc de `cfo.calc.iva_tesoreria`
+(S1, intocada) solo arma `ResultadoCFO` a partir de números ya resueltos, así que este
+envoltorio (`_iva_tesoreria`) es quien lee los tres servicios y se los entrega. Lee
+`proyectar_vigente` del mes ACTUAL (`now_bogota()` → 'YYYY-MM') para ubicar la fila de
+`fondo_provision` de ese mes (`reserva_objetivo`=`saldo`, `reserva_mes`=`reserva`); ante
+`ProyeccionError` es abstención TOTAL (los cinco insumos en None, sin llamar a los otros
+dos servicios -- sin fondo configurado no hay objetivo de reserva que narrar). Reusa
+`iva.iva_cuatrimestre()` para `proximo_monto`/`proximo_fecha` (None si esa calc se
+abstuvo -- p. ej. periodicidad no cuatrimestral). `_disponible_hoy` (helper de módulo)
+usa `cierre.service.mes_en_ejecucion()` + `conciliacion` -- MISMO resultado que
+`vigilante/disparadores.py:_disparador_real` (mes EN_EJECUCION conciliado), pero SIN
+importar `MesControl`: `agente/` está en la frontera S1
+(`tests/cfo/test_s1_aislamiento.py`) y no puede importar `app.domain.*`, así que
+`mes_en_ejecucion()` -- función nueva de `cierre/service.py` -- expone solo el string
+del mes, nunca el modelo de dominio. `None` si no hay mes en ejecución, `CierreError`,
+o algún banco `sin_dato` (dato incompleto: mejor abstenerse que reportar una cobertura
+falsa)."""
 
 import inspect
 from collections.abc import Awaitable, Callable
 from decimal import Decimal, InvalidOperation
 
-from app.cfo.calc import caja, escenario, iva, palanca, ratios, runway, tendencias
+from app.cfo.calc import (
+    caja,
+    escenario,
+    iva,
+    iva_tesoreria,
+    palanca,
+    ratios,
+    runway,
+    tendencias,
+)
 from app.cfo.calc.evidencia import ResultadoCFO
+from app.cierre.service import CierreError, conciliacion, mes_en_ejecucion
+from app.core.time import now_bogota
+from app.proyeccion import service as proy_service
+from app.proyeccion.service import ProyeccionError
 
 CalcSinArgs = Callable[[], Awaitable[ResultadoCFO]]
 CalcConArgs = Callable[[dict], Awaitable[list[ResultadoCFO]]]
@@ -199,6 +230,68 @@ async def _composicion_gasto(entrada: dict) -> list[ResultadoCFO]:
     return await ratios.composicion_gasto(**_kwargs_composicion_gasto(entrada))
 
 
+async def _disponible_hoy() -> Decimal | None:
+    """Caja consolidada reportada del mes `EN_EJECUCION` de hoy (mismo resultado que
+    `vigilante/disparadores.py:_disparador_real`, pero vía `cierre.service.
+    mes_en_ejecucion()` -- SOLO el string del mes, nunca `MesControl` -- porque
+    `agente/` está en la frontera S1 y no puede importar `app.domain.*`). `None` si
+    no hay mes en ejecución, si `conciliacion` falla-cerrado (`CierreError`) o si
+    algún banco sigue `sin_dato` (dato incompleto: no se reporta una cobertura falsa
+    sobre data a medias)."""
+    mes = await mes_en_ejecucion()
+    if mes is None:
+        return None
+    try:
+        con = await conciliacion(mes)
+    except CierreError:
+        return None
+    if con["sin_dato"]:
+        return None
+    return Decimal(con["consolidado_reportado"])
+
+
+async def _iva_tesoreria(entrada: dict) -> list[ResultadoCFO]:
+    """Ver nota del módulo. Orquesta `proyectar_vigente` + `iva.iva_cuatrimestre` +
+    `_disponible_hoy` y le pasa los cinco insumos crudos a la calc pura
+    `iva_tesoreria.armar_conceptos` (S1: esa calc nunca lee servicios)."""
+    ahora = now_bogota()
+    mes_actual = f"{ahora.year:04d}-{ahora.month:02d}"
+    try:
+        proy = await proy_service.proyectar_vigente(
+            escenario="base",
+            mes_inicio=(ahora.year, ahora.month),
+            horizonte_meses=None,
+        )
+    except ProyeccionError:
+        return iva_tesoreria.armar_conceptos(
+            reserva_objetivo=None,
+            reserva_mes=None,
+            proximo_monto=None,
+            proximo_fecha=None,
+            disponible=None,
+        )
+
+    fila = next(
+        (f for f in proy.get("fondo_provision", []) if f["mes"] == mes_actual), None
+    )
+    reserva_objetivo = Decimal(fila["saldo"]) if fila is not None else None
+    reserva_mes = Decimal(fila["reserva"]) if fila is not None else None
+
+    iva_res = await iva.iva_cuatrimestre()
+    proximo_monto = iva_res.valor if iva_res.disponible else None
+    proximo_fecha = iva_res.evidencia.fecha_corte if iva_res.disponible else None
+
+    disponible = await _disponible_hoy()
+
+    return iva_tesoreria.armar_conceptos(
+        reserva_objetivo=reserva_objetivo,
+        reserva_mes=reserva_mes,
+        proximo_monto=proximo_monto,
+        proximo_fecha=proximo_fecha,
+        disponible=disponible,
+    )
+
+
 DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "caja_disponible_hoy": caja.caja_hoy,
     "runway_meses": runway.runway,
@@ -211,6 +304,7 @@ DISPATCH: dict[str, CalcSinArgs | CalcConArgs] = {
     "real_vs_presupuesto": _real_vs_presupuesto,
     "composicion_gasto": _composicion_gasto,
     "mix_modelos": ratios.mix_modelos,
+    "iva_tesoreria": _iva_tesoreria,
 }
 
 TOOLS_SCHEMA: list[dict] = [
@@ -509,6 +603,18 @@ TOOLS_SCHEMA: list[dict] = [
             "mix_apache, mix_sport), YA CALCULADO por COMPAS. Sin modelos "
             "activos, disponible=false. Es de solo lectura: nunca escribe "
             "nada."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "iva_tesoreria",
+        "description": (
+            "estado de la reserva de IVA como tesorería: objetivo de reserva a hoy, "
+            "próximo pago (monto + fecha DIAN) y cobertura (disponible vs objetivo)"
         ),
         "input_schema": {
             "type": "object",

@@ -59,7 +59,7 @@ def formatear(r: ResultadoCFO, hoy: date | None = None) -> str:
         ctx = "no cruzas el umbral" if mes == "nunca" else f"cruzas el umbral en {mes}"
         return f"{base} ({ctx})"
     fecha = r.evidencia.fecha_corte
-    if r.concepto == "iva_cuatrimestre":
+    if r.concepto in ("iva_cuatrimestre", "ivates_proximo_pago"):
         if fecha:
             dias = (date.fromisoformat(fecha) - (hoy or today_bogota())).days
             return f"{base} (vence el {fecha}, en {dias} días)"
