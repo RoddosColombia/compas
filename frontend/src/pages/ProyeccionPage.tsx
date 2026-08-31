@@ -13,7 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
-import { ComposicionCaja } from "@/components/charts/ComposicionCaja";
+import { CurvaCajaRV2 } from "@/components/charts/CurvaCajaRV2";
 import { VallesCard } from "@/components/decisiones/VallesCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ComposicionResultado } from "@/components/proyeccion/ComposicionResultado";
@@ -522,12 +522,11 @@ function ProyeccionContenido({
           ) : undefined
         }
       >
-        <ComposicionCaja
-          meses={ventana}
-          umbral={data.caja_minima}
-          ventanaReconciliada={data.ventana_reconciliada}
-          mesesAnclados={data.meses_anclados}
-        />
+        {/* RV-V2 rebanada 1 (2026-08-30): CurvaCajaRV2 reemplaza a ComposicionCaja
+            en la vista principal. La composición del flujo pasa a su gráfica propia
+            en la rebanada 2 (AC #8 pendiente). ComposicionCaja queda disponible
+            para usos futuros; sin consumidores hoy tras este cambio. */}
+        <CurvaCajaRV2 data={data} ventanaMeses={ventanaMeses} />
       </ChartCard>
 
       {/* SUP-5 — qué variables componen esa curva: los supuestos efectivos del

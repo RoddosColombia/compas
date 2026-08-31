@@ -44,8 +44,11 @@ describe("SUP-1 · filtro de tiempo de la gráfica", () => {
   });
 
   it("conserva las ventanas largas de decisión estructural", () => {
+    // RV-V2 · Fundacional §3 AC #6 + RF-F10 · Fundacional §2: la escala
+    // combinada tras rebase es 3·6·9·12·15·18·30·42·54·60·120·240. El «todo»
+    // pasó a 240 (20 años) con RF-F10; ya no hay «180» como opción.
     const valores = OPCIONES_HORIZONTE.map((o) => o.valor);
-    for (const v of ["18", "36", "60", "180"]) {
+    for (const v of ["18", "30", "60", "240"]) {
       expect(valores).toContain(v);
     }
   });
