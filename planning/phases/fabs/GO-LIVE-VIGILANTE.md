@@ -163,7 +163,57 @@ El job lee esos valores cada ejecución (no precisa restart del worker si los ca
 - **Sin datos bancarios frescos:** el job se abstiene — documentado en logs, no dispara alerta fantasma.
 - **Proyección falla:** fail-soft; audita sin bloquear el worker.
 - **Ya existe una alerta de la misma severidad hoy:** el job no regenera otra — una alerta por día por severidad.
-- **Revisor no responde:** alerta queda en `estado='borrador'`, nadie más la ve hasta que vos respondas "publicar alerta".
+- **Revisor no responde:** alerta queda en `estado='borrador'`, nadie más la ve hasta que vos respondás "publicar alerta".
+
+---
+
+## Cierre mensual comentado
+
+> La tercera y última pieza del Vigilante: un comentario determinista que COMPAS genera una vez
+> por mes (cuando detecta que el mes anterior se cerró) y que vos revisás y publicás al comité.
+> Es el **cierre de ciclo** del vigilante — síntesis de los 5 pilares clave (caja, real vs. presupuesto,
+> composición, tendencia, rumbo al umbral).
+
+### Qué hace esta pieza (una vez viva)
+Cada **día 7:30 América/Bogotá** (el mismo job del `paquete_lunes` pero orden de ejecución 3er), el worker corre un detector
+que identifica si se cerró un mes nuevo desde la última corrida. Si es así:
+1. Corre el servicio `consultar()` UNA única vez con un prompt fijo que le pide 5 puntos:
+   - Caja hoy y piso proyectado del mes cerrado.
+   - Real ejecutado vs. presupuesto aprobado — desvío.
+   - Composición del gasto (% por grupo).
+   - Tendencia mes-a-mes (ingreso/caja/gasto).
+   - Rumbo al umbral (¿cuánto falta o sobra para cruzar `caja_minima`?).
+2. Guarda el comentario como borrador (`estado='borrador'`) con `periodo=YYYY-MM` (el mes cerrado).
+3. Te lo envía por Telegram con la instrucción de responder **"publicar cierre"**.
+4. Vos revisás el comentario. Si está bien, respondés **"publicar cierre"** (exacto, ese texto).
+5. FABS reenvía el comentario tal cual (nunca lo recalcula) a todos los vinculados del comité y audita.
+6. Si no respondés, el comentario queda en borrador — nadie más lo ve.
+
+**Nota:** idempotencia mensual garantizada por índice único `periodo`. Si el mes ya se procesó, el job lo omite.
+
+### Configuración (Paso 1 de GO-LIVE-VIGILANTE.md se aplica aquí también)
+No hay variables nuevas — reutiliza:
+- `CFO_ENABLED=true` — si está OFF, el job es un no-op.
+- `VIGILANTE_REVISOR_TELEGRAM_ID` — el revisor (vos) que recibe el cierre.
+- El mismo canal Telegram y las mismas envs de infraestructura que el paquete y la alerta.
+
+### Orden de ejecución en el scheduler
+El worker `compas-jobs` **corre 3 jobs en orden** cada mañana a la hora exacta:
+1. **7:30:** generador del paquete del lunes (si es lunes).
+2. **8:00:** evaluador de alertas (cada día).
+3. **7:30:** generador del cierre (cada día, si se detectó mes cerrado).
+
+En la práctica, el cierre tarda segundos (es idempotente por mes) — si ya pasó en la corrida anterior, este job es un no-op.
+
+### Qué pasa si algo falla
+- **`CFO_ENABLED=false`:** el job es un no-op (ni siquiera detecta el mes cerrado).
+- **`VIGILANTE_REVISOR_TELEGRAM_ID` sin configurar:** el cierre se genera y guarda (borrador), pero no te llega mensaje — revisá los logs del worker.
+- **El detector no identifica el mes cerrado:** fail-soft, anota en logs que espera un mes cerrado nuevo.
+- **Ya existe un cierre del mes:** el job no regenera otro — un cierre por mes.
+- **Llamada a `consultar()` falla:** fail-soft; audita sin bloquear el worker.
+- **Revisor no responde:** cierre queda en `estado='borrador'`, nadie más lo ve hasta que vos respondás "publicar cierre".
+
+---
 
 ## Prompt para Claude-in-Chrome (verificar salud del worker, sin tocar secretos)
 ```
