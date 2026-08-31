@@ -181,3 +181,83 @@ describe("KpiTileV2 · sparkline (RV-V3 rebanada 2)", () => {
     expect(line?.getAttribute("stroke")).toBe("var(--color-chart-real)");
   });
 });
+
+// ── RV-V5: sparkline con overlay de escenario ──────────────────────────────
+// Mismo patrón que RV-V4 en la Composición del Flujo y que RV-V2 rebanada 3
+// en la curva de caja: cuando hay `sparklineEscenario` se dibuja una segunda
+// polyline dashed sobre --color-chart-escenario en el mismo mini-SVG. Punto
+// del extremo derecho también en el color del escenario. Escala compartida
+// (min/max de las DOS series combinadas) para que ambas sean comparables al ojo.
+
+describe("KpiTileV2 · sparkline overlay de escenario (RV-V5)", () => {
+  it("sin `sparklineEscenario` solo hay UNA polyline (backward compat con r2)", () => {
+    const { container } = render(
+      <KpiTileV2
+        label="Piso de caja"
+        valor="0"
+        contexto="c"
+        sparkline={[10, 8, 6, 4]}
+      />,
+    );
+    expect(container.querySelectorAll("polyline")).toHaveLength(1);
+  });
+
+  it("con `sparklineEscenario` dibuja DOS polylines en el mismo SVG", () => {
+    const { container } = render(
+      <KpiTileV2
+        label="Piso de caja"
+        valor="0"
+        contexto="c"
+        sparkline={[10, 8, 6, 4]}
+        sparklineEscenario={[10, 9, 8, 7]}
+      />,
+    );
+    expect(container.querySelectorAll("polyline")).toHaveLength(2);
+  });
+
+  it("la polyline del escenario es dashed y usa --color-chart-escenario", () => {
+    const { container } = render(
+      <KpiTileV2
+        label="Piso de caja"
+        valor="0"
+        contexto="c"
+        sparkline={[10, 8, 6, 4]}
+        sparklineEscenario={[10, 9, 8, 7]}
+      />,
+    );
+    const polylines = container.querySelectorAll("polyline");
+    // La segunda polyline es el escenario (la primera es el base).
+    const escenario = polylines[1];
+    expect(escenario.getAttribute("stroke")).toBe(
+      "var(--color-chart-escenario)",
+    );
+    expect(escenario.getAttribute("stroke-dasharray")).toBeTruthy();
+  });
+
+  it("el escenario solo se dibuja si la serie base también tiene ≥2 puntos", () => {
+    // Sin base no tiene sentido dibujar el overlay (nada contra qué comparar).
+    const { container } = render(
+      <KpiTileV2
+        label="X"
+        valor="0"
+        contexto="c"
+        sparklineEscenario={[10, 9, 8, 7]}
+      />,
+    );
+    expect(container.querySelectorAll("polyline")).toHaveLength(0);
+  });
+
+  it("el escenario con <2 puntos no rompe el base (backward silent)", () => {
+    const { container } = render(
+      <KpiTileV2
+        label="X"
+        valor="0"
+        contexto="c"
+        sparkline={[10, 8, 6, 4]}
+        sparklineEscenario={[7]}
+      />,
+    );
+    // Solo la del base.
+    expect(container.querySelectorAll("polyline")).toHaveLength(1);
+  });
+});

@@ -157,3 +157,94 @@ describe("ComposicionFlujoRV2 · AC #10 datos reales", () => {
     expect(container.querySelector('[data-testid="comp-bar-2026-09"]')).toBeNull();
   });
 });
+
+// ─── RV-V4: escenario superpuesto en la composición del flujo ───────────────
+// Extiende el patrón de RV-V2 rebanada 3 (curva de caja con escenario) a la
+// composición. Cuando el CEO activa el escenario "vender N motos más" en la
+// vista de Proyecciones, la segunda gráfica principal también debe mostrar
+// la LÍNEA de flujo neto del escenario superpuesta a la del base — dashed,
+// stroke = --color-chart-escenario (token RV-V1). Las barras del BASE
+// quedan intactas (evita el ruido de barras dobles por mes).
+
+const MESES_ESCENARIO: MesProyeccion[] = [
+  mes("2026-07", {
+    ingreso_bruto: "42000000", // sube ~40% con motos extra
+    gastos_fijos: "-15000000",
+    pago_inventario: "-7000000",
+    gps: "-2000000",
+    flujo: "18000000", // flujo mayor que base 8M
+  }),
+  mes("2026-08", {
+    ingreso_bruto: "37000000",
+    gastos_fijos: "-15000000",
+    pago_inventario: "-12000000",
+    gps: "-1000000",
+    flujo: "9000000", // flujo mayor que base -1M
+  }),
+  mes("2026-09", {
+    ingreso_bruto: "30000000",
+    gastos_fijos: "-12000000",
+    pago_inventario: "-5000000",
+    iva: "-1000000",
+    flujo: "12000000",
+  }),
+];
+
+describe("ComposicionFlujoRV2 · RV-V4 escenario superpuesto", () => {
+  it("sin `escenarioMeses` NO renderiza la línea del escenario (backward compat)", () => {
+    const { container } = render(<ComposicionFlujoRV2 meses={MESES} />);
+    expect(
+      container.querySelector('[data-testid="linea-flujo-escenario"]'),
+    ).toBeNull();
+  });
+
+  it("con `escenarioMeses` dibuja una segunda LÍNEA de flujo neto (path continuo)", () => {
+    const { container } = render(
+      <ComposicionFlujoRV2
+        meses={MESES}
+        escenarioMeses={MESES_ESCENARIO}
+      />,
+    );
+    const linea = container.querySelector(
+      '[data-testid="linea-flujo-escenario"]',
+    );
+    expect(linea).toBeInTheDocument();
+    const d = linea?.getAttribute("d") ?? "";
+    expect(d.startsWith("M ")).toBe(true);
+    expect((d.match(/ L /g) ?? []).length).toBe(2);
+  });
+
+  it("la línea del escenario es dashed y usa --color-chart-escenario (token RV-V1)", () => {
+    const { container } = render(
+      <ComposicionFlujoRV2
+        meses={MESES}
+        escenarioMeses={MESES_ESCENARIO}
+      />,
+    );
+    const linea = container.querySelector(
+      '[data-testid="linea-flujo-escenario"]',
+    );
+    expect(linea?.getAttribute("stroke")).toBe(
+      "var(--color-chart-escenario)",
+    );
+    // Dashed (patrón consistente con CurvaCajaRV2 rebanada 3).
+    expect(linea?.getAttribute("stroke-dasharray")).toBeTruthy();
+  });
+
+  it("la leyenda gana un ítem `flujo neto · escenario` cuando el escenario está activo", () => {
+    const { rerender } = render(<ComposicionFlujoRV2 meses={MESES} />);
+    expect(
+      screen.queryByText(/flujo neto · escenario/i),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <ComposicionFlujoRV2
+        meses={MESES}
+        escenarioMeses={MESES_ESCENARIO}
+      />,
+    );
+    expect(
+      screen.getByText(/flujo neto · escenario/i),
+    ).toBeInTheDocument();
+  });
+});
