@@ -5,8 +5,9 @@ Se arranca con:  python -m app.jobs.scheduler
 y SOLO debe correr con RUN_SCHEDULER=true (worker de 1 instancia).
 
 Jobs registrados: `vigilante_paquete_lunes` (lunes 7:00, paquete del comité —
-FABS proactivo) y `vigilante_alerta_caja` (diario 8:00, alerta de umbral de
-caja — FABS proactivo). Los demás jobs financieros (recordatorio de carga
+FABS proactivo), `vigilante_alerta_caja` (diario 8:00, alerta de umbral de
+caja — FABS proactivo) y `vigilante_cierre_mensual` (diario 7:30, comenta el
+último mes cerrado — FABS proactivo). Los demás jobs financieros (recordatorio de carga
 8:30, snapshot diario de caja, recálculo de sugeridos, alertas IVA/vencimientos,
 reaper de cargas, dump nocturno, archivado mensual, verificación referencial)
 se registran en sprints posteriores. Todos idempotentes; jobstore en Mongo;
@@ -60,6 +61,16 @@ def build_scheduler():
         misfire_grace_time=3600,
         replace_existing=True,
     )
+    scheduler.add_job(
+        _job_cierre_mensual,
+        "cron",
+        hour=7,
+        minute=30,
+        id="vigilante_cierre_mensual",
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
     return scheduler
 
 
@@ -95,6 +106,22 @@ async def _job_alerta_caja() -> None:
         await generar_y_entregar_alerta()
     except Exception:  # noqa: BLE001 — un job proactivo no revienta el worker
         logger.exception("fallo en el job de la alerta de caja")
+
+
+async def _job_cierre_mensual() -> None:
+    """Diario 7:30 (America/Bogota). Comenta el último mes cerrado si aún no tiene
+    comentario. No-op si CFO_ENABLED off. Import perezoso para no acoplar el
+    scheduler al dominio cfo."""
+    from app.cfo import config as cfo_config
+
+    if not cfo_config.cfo_enabled():
+        return
+    from app.cfo.vigilante.cierre import generar_y_entregar_cierre
+
+    try:
+        await generar_y_entregar_cierre()
+    except Exception:  # noqa: BLE001 — un job proactivo no revienta el worker
+        logger.exception("fallo en el job del cierre mensual")
 
 
 def main() -> None:
