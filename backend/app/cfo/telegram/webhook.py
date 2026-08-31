@@ -28,6 +28,18 @@ from app.core.time import now_bogota
 
 logger = logging.getLogger(__name__)
 
+_COMANDOS_PUBLICAR = {
+    "publicar": ("paquete_lunes", AuditEvento.vigilante_paquete_publicado),
+    "publicar alerta": ("alerta_caja", AuditEvento.vigilante_alerta_publicada),
+    "publicar cierre": ("cierre_mensual", AuditEvento.vigilante_cierre_publicado),
+}
+
+_ETIQUETAS_AVISO = {
+    "paquete_lunes": ("un paquete", "Paquete", "publicado"),
+    "alerta_caja": ("una alerta", "Alerta", "publicada"),
+    "cierre_mensual": ("un cierre", "Cierre", "publicado"),
+}
+
 
 async def _audit_soft(evento, entidad_id: str, metadata: dict) -> None:
     try:
@@ -49,8 +61,9 @@ async def _publicar_aviso(
     lo marca `publicado` DESPUÉS de difundir. `cliente_telegram.enviar` traga sus
     propios errores de red, así que el loop de difusión no revienta a medio camino.
     Devuelve el texto de confirmación enviado al revisor (para dedup del comando).
-    `tipo` distingue el paquete semanal (`paquete_lunes`) de la alerta
-    (`alerta_caja`) — ambos comparten el mismo modelo `AvisoVigilante`."""
+    `tipo` distingue el paquete semanal (`paquete_lunes`), la alerta (`alerta_caja`)
+    y el cierre mensual (`cierre_mensual`) — los tres comparten el mismo modelo
+    `AvisoVigilante`."""
     borradores = await (
         AvisoVigilante.find(
             AvisoVigilante.tipo == tipo,
@@ -62,11 +75,8 @@ async def _publicar_aviso(
     )
     pq = borradores[0] if borradores else None
     if pq is None:
-        msg = (
-            "No hay un paquete pendiente para publicar."
-            if tipo == "paquete_lunes"
-            else "No hay una alerta pendiente para publicar."
-        )
+        sustantivo, _etiqueta, _participio = _ETIQUETAS_AVISO[tipo]
+        msg = f"No hay {sustantivo} pendiente para publicar."
         await cliente_telegram.enviar(chat_id, msg)
         return msg
 
@@ -84,8 +94,7 @@ async def _publicar_aviso(
         {"periodo": pq.periodo, "n_destinatarios": len(vinculos_all)},
     )
 
-    etiqueta = "Paquete" if tipo == "paquete_lunes" else "Alerta"
-    participio = "publicado" if tipo == "paquete_lunes" else "publicada"
+    _sustantivo, etiqueta, participio = _ETIQUETAS_AVISO[tipo]
     msg = f"✅ {etiqueta} {participio} al comité ({len(vinculos_all)} destinatarios)."
     await cliente_telegram.enviar(chat_id, msg)
     return msg
@@ -151,24 +160,14 @@ async def procesar_update(
 
     comando = texto.strip().lower()
     es_revisor = telegram_id == config.vigilante_revisor_telegram_id()
-    if es_revisor and comando in ("publicar", "publicar alerta"):
-        # 'publicar'/'publicar alerta' NO llaman al LLM: registrar SOLO el dedup (sin
+    if es_revisor and comando in _COMANDOS_PUBLICAR:
+        # los comandos de publicar NO llaman al LLM: registrar SOLO el dedup (sin
         # tocar los turnos que se re-alimentan al modelo) para que un reintento
         # reenvíe la confirmación en vez de re-difundir.
-        if comando == "publicar alerta":
-            envio = await _publicar_aviso(
-                chat_id,
-                cliente_telegram,
-                tipo="alerta_caja",
-                evento=AuditEvento.vigilante_alerta_publicada,
-            )
-        else:
-            envio = await _publicar_aviso(
-                chat_id,
-                cliente_telegram,
-                tipo="paquete_lunes",
-                evento=AuditEvento.vigilante_paquete_publicado,
-            )
+        tipo, evento = _COMANDOS_PUBLICAR[comando]
+        envio = await _publicar_aviso(
+            chat_id, cliente_telegram, tipo=tipo, evento=evento
+        )
         await hilos.registrar_dedup(user_id, update_id, envio)
         return
 
