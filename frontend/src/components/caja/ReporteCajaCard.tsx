@@ -3,8 +3,13 @@
 // del último reporte, formulario de reporte (solo con caja:reportar — regla 9) y
 // la conciliación ("¿cuadra?") que devuelve el backend. Montos con formatCOP
 // (regla 1); las guardas viven en el backend, aquí solo se muestra su detail.
+//
+// RF-IVA-TES · Task 5 ("la cerca"): el disponible EN VIVO (GET /caja/disponible,
+// Task 4) se pinta arriba, bruto + "de eso, $X apartado para IVA → disponible
+// real $Y" — nunca Number()/parseFloat() sobre esas cifras (regla 1); si no hay
+// fondo (reserva_iva=0) la línea de IVA se OCULTA (la cerca no aplica sin fondo).
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
@@ -15,10 +20,11 @@ import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import {
   type Conciliacion,
   type ReporteSaldosResultado,
+  obtenerDisponible,
   reportarSaldos,
 } from "@/lib/caja";
 import { BANCOS, type Mes } from "@/lib/meses";
-import { formatCOP, formatFecha } from "@/lib/money";
+import { formatCOP, formatFecha, parseMonto } from "@/lib/money";
 
 const BANCO_LABEL: Record<string, string> = {
   bancolombia: "Bancolombia",
@@ -60,6 +66,8 @@ export function ReporteCajaCard({ mes }: { mes: Mes }) {
   return (
     <div className="flex flex-col gap-6">
       {mensaje && <AlertBanner variant="danger">{mensaje}</AlertBanner>}
+
+      <DisponibleTesoreriaBar />
 
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
@@ -107,6 +115,43 @@ export function ReporteCajaCard({ mes }: { mes: Mes }) {
 
       {conciliacion && <PanelConciliacion conc={conciliacion} />}
     </div>
+  );
+}
+
+/** RF-IVA-TES · Task 5: el disponible EN VIVO (bruto) + la cerca de IVA
+ * (bruto − reserva → neto), leído de GET /caja/disponible. Si el fetch falla
+ * o aún no hay dato, no rompe el resto de la tarjeta (no bloquea, no truena). */
+function DisponibleTesoreriaBar() {
+  const disponible = useQuery({
+    queryKey: ["caja", "disponible"],
+    queryFn: obtenerDisponible,
+    staleTime: 60_000,
+  });
+
+  if (disponible.isLoading || disponible.isError || !disponible.data) {
+    return null;
+  }
+
+  const { bruto, reserva_iva, neto } = disponible.data;
+  const hayReserva = !parseMonto(reserva_iva).isZero();
+
+  return (
+    <Card className="flex flex-col gap-1">
+      <p className="font-sans text-apoyo font-medium text-ink-soft">
+        Disponible hoy
+      </p>
+      <p className="tabular font-display text-2xl font-semibold text-ink">
+        {formatCOP(bruto)}
+      </p>
+      {hayReserva && (
+        <p className="font-sans text-apoyo text-ink-soft">
+          de eso, {formatCOP(reserva_iva)} apartado para IVA → disponible real{" "}
+          <span className="tabular font-semibold text-ink">
+            {formatCOP(neto)}
+          </span>
+        </p>
+      )}
+    </Card>
   );
 }
 

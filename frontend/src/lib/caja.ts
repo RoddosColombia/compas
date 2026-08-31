@@ -107,3 +107,20 @@ export function obtenerCajaDiaria(params: {
   });
   return apiJson(`/caja/diaria?${q.toString()}`);
 }
+
+// ── RF-IVA-TES · Task 5: "la cerca" (GET /api/v1/caja/disponible) ──────────
+// El disponible EN VIVO descompuesto en bruto/reserva-IVA/neto (Task 4 backend).
+// Montos como string (regla 1); el front solo presenta con formatCOP, nunca
+// Number/parseFloat sobre estas cifras.
+
+export interface DisponibleTesoreria {
+  bruto: string;
+  reserva_iva: string;
+  neto: string;
+  fecha_corte: string | null;
+  sin_dato: string[];
+}
+
+export function obtenerDisponible(): Promise<DisponibleTesoreria> {
+  return apiJson("/caja/disponible");
+}
