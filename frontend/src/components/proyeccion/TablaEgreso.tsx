@@ -57,6 +57,21 @@ const ESTADO_SIMBOLO: Record<EstadoMes, string> = {
   negativo: "✗",
 };
 
+// RV-V10 · 5 estados de fila. El chip de la última columna sigue diciendo el
+// estado semántico; la FILA entera lleva una barra a la izquierda que codifica
+// el estado en un segundo canal (color + posición) — un lector rápido ve el
+// estado sin buscar la columna Estado. `ok` queda limpio para no ruido; el
+// 5º estado `reconciliado` marca los meses ya cerrados con banca (histórico,
+// no proyección viva — no debe alarmar como si lo fuera).
+type EstadoVisualFila = EstadoMes | "reconciliado";
+const ESTADO_FILA_STYLE: Record<EstadoVisualFila, string> = {
+  ok: "",
+  atencion: "border-l-4 border-l-atencion",
+  critico: "border-l-4 border-l-critico",
+  negativo: "border-l-4 border-l-critico",
+  reconciliado: "border-l-4 border-l-hairline",
+};
+
 interface TablaEgresoProps {
   filas: MesProyeccion[];
   mesCritico: string;
@@ -174,13 +189,24 @@ export function TablaEgreso({
               const esCritico = perforada && m.mes === mesCritico;
               const abierto = abiertos.has(m.mes);
               const flujoNeg = b.flujo.isNegative();
+              // RV-V10: el estado visual de la fila es el semántico del motor
+              // SALVO que el mes ya esté anclado con banca (histórico). Un mes
+              // reconciliado ya pasó — no es proyección viva ni debe alarmar.
+              const estadoVisual: EstadoVisualFila = esReconciliado(
+                m.mes,
+                ventanaReconciliada,
+              )
+                ? "reconciliado"
+                : m.estado;
               return (
                 <Fragment key={m.mes}>
                   <tr
                     id={esCritico ? "mes-critico" : undefined}
+                    data-estado-visual={estadoVisual}
                     className={cn(
                       "border-b border-hairline/60 hover:bg-surface-muted",
                       esCritico && "scroll-mt-16 bg-atencion/10",
+                      ESTADO_FILA_STYLE[estadoVisual],
                     )}
                   >
                     <td className="sticky left-0 bg-surface p-0 font-medium text-ink">

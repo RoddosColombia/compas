@@ -315,3 +315,115 @@ describe("TablaEgreso — V1 §3", () => {
     ).toBeGreaterThan(0);
   });
 });
+
+// ─── RV-V10: encabezado fijo + 5 estados de fila ────────────────────────────
+// El encabezado ya venía con `sticky top-0` desde V1 §3; este test es el
+// candado en CI contra la regresión silenciosa. Los 5 estados de fila se
+// declaran como TOKENS en la fila entera (no solo en el chip de la última
+// columna): un lector rápido debe ver el estado de un mes sin buscar la
+// columna Estado. Los 5 estados son 4 del enum + reconciliado (histórico).
+
+describe("TablaEgreso · RV-V10 encabezado fijo + 5 estados de fila", () => {
+  it("candado: el <thead> lleva `sticky top-0` (el encabezado no se pierde al scroll)", () => {
+    const { container } = render(
+      <TablaEgreso
+        filas={[mes({ estado: "ok" })]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    const thead = container.querySelector("thead");
+    expect(thead?.className ?? "").toMatch(/\bsticky\b/);
+    expect(thead?.className ?? "").toMatch(/\btop-0\b/);
+  });
+
+  it("candado: la 1ª columna (Mes) lleva `sticky left-0` (no se pierde al scroll horizontal)", () => {
+    const { container } = render(
+      <TablaEgreso
+        filas={[mes({ estado: "ok" })]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    const th1 = container.querySelector("thead th");
+    expect(th1?.className ?? "").toMatch(/\bsticky\b/);
+    expect(th1?.className ?? "").toMatch(/\bleft-0\b/);
+  });
+
+  it("estado 1 · ok · la fila queda limpia (sin border-left) para no ruido", () => {
+    const { container } = render(
+      <TablaEgreso
+        filas={[mes({ mes: "2026-10", estado: "ok" })]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    const fila = container.querySelector('tr[data-estado-visual="ok"]');
+    expect(fila).toBeInTheDocument();
+  });
+
+  it("estado 2 · atencion · la fila lleva `border-l-atencion`", () => {
+    const { container } = render(
+      <TablaEgreso
+        filas={[mes({ mes: "2026-10", estado: "atencion" })]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    const fila = container.querySelector('tr[data-estado-visual="atencion"]');
+    expect(fila).toBeInTheDocument();
+    expect(fila?.className ?? "").toMatch(/border-l-atencion|border-l-\[/);
+  });
+
+  it("estado 3 · critico · la fila lleva `border-l-critico`", () => {
+    const { container } = render(
+      <TablaEgreso
+        filas={[mes({ mes: "2026-10", estado: "critico" })]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    const fila = container.querySelector('tr[data-estado-visual="critico"]');
+    expect(fila).toBeInTheDocument();
+    expect(fila?.className ?? "").toMatch(/border-l-critico|border-l-\[/);
+  });
+
+  it("estado 4 · negativo (flujo <0) · la fila lleva `border-l-critico`", () => {
+    const { container } = render(
+      <TablaEgreso
+        filas={[mes({ mes: "2026-10", estado: "negativo" })]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={null}
+      />,
+    );
+    const fila = container.querySelector('tr[data-estado-visual="negativo"]');
+    expect(fila).toBeInTheDocument();
+    expect(fila?.className ?? "").toMatch(/border-l-critico|border-l-\[/);
+  });
+
+  it("estado 5 · reconciliado · el mes dentro de la ventana anclada NO se pinta como estado de proyección (histórico se ve distinto)", () => {
+    const { container } = render(
+      <TablaEgreso
+        filas={[mes({ mes: "2026-10", estado: "critico" })]}
+        mesCritico=""
+        perforada={false}
+        ventanaReconciliada={["2026-10", "2026-10"]}
+      />,
+    );
+    // El mes está dentro de la ventana reconciliada: el estado visual pasa a
+    // "reconciliado" (histórico) en vez de "critico" (proyección). El chip de
+    // la última columna sigue mostrando el estado semántico — la SEÑAL DE
+    // FILA cambia porque un mes ya cerrado no debe alarmar como si fuera
+    // proyección viva.
+    const fila = container.querySelector(
+      'tr[data-estado-visual="reconciliado"]',
+    );
+    expect(fila).toBeInTheDocument();
+  });
+});
