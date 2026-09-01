@@ -481,3 +481,65 @@ async def aplicar_pendientes(*, usuario_id: str) -> dict:
             if r.rubro_id not in activos
         ),
     }
+
+
+# ───────────────── RV-V8/V9 · bandeja "Por clasificar" ─────────────────────
+#
+# Lista los movimientos con rubro 'Por clasificar' en meses NO cerrados,
+# agrupados por (descripción normalizada, tipo_flujo) — misma normalización
+# que usa el clasificador (patron_normalizado) para que la agrupación cuadre
+# con lo que va a matchear una regla creada desde aquí. Cada grupo trae:
+#   - descripcion_muestra: la 1ª descripción del grupo (frontend la usa como
+#     `patron` sugerido al pre-poblar el form)
+#   - tipo_flujo: 'egreso' | 'ingreso'
+#   - muestras: cuántas transacciones caen bajo la misma normalización
+#   - ejemplos: hasta 3 descripciones distintas del grupo (para que el CEO
+#     vea la variedad y no adivine el patrón desde una sola muestra)
+#
+# NO paginamos: si la bandeja tiene miles de grupos, el problema real es
+# semilla de reglas, no UX de scroll. Kimi B-2 similar en aplicar-pendientes.
+
+
+async def listar_por_clasificar() -> list[dict]:
+    pc = await Rubro.find_one(Rubro.nombre == RUBRO_POR_CLASIFICAR)
+    if pc is None:
+        return []
+    meses_abiertos = [
+        mc.id
+        async for mc in MesControl.find(MesControl.estado != EstadoMes.CERRADO)
+    ]
+    if not meses_abiertos:
+        return []
+
+    grupos: dict[tuple[str, str], dict] = {}
+    async for tx in Transaccion.find(
+        Transaccion.rubro_id == pc.id,
+        {"mes_id": {"$in": meses_abiertos}},
+    ):
+        tipo = tx.tipo_flujo.value if hasattr(tx.tipo_flujo, "value") else str(tx.tipo_flujo)
+        # Agrupamiento por PRIMERA PALABRA de la descripción normalizada — así
+        # 40 pagos de "UBER 12345", "UBER 67890"… caen en UN grupo con clave
+        # "uber", y el CEO ve la señal ("40 UBER sin clasificar") en vez de
+        # 40 líneas. Fallback: normalización completa si no hay palabras.
+        norm = normalizar_texto(tx.descripcion)
+        primera_palabra = norm.split(maxsplit=1)[0] if norm.split() else norm
+        clave = (primera_palabra, tipo)
+        g = grupos.get(clave)
+        if g is None:
+            g = {
+                "descripcion_muestra": tx.descripcion,
+                "tipo_flujo": tipo,
+                "muestras": 0,
+                "ejemplos": [],
+            }
+            grupos[clave] = g
+        g["muestras"] += 1
+        # Ejemplos: hasta 3 descripciones DISTINTAS (evita ruido por N idénticas).
+        if len(g["ejemplos"]) < 3 and tx.descripcion not in g["ejemplos"]:
+            g["ejemplos"].append(tx.descripcion)
+
+    # Orden estable: los grupos más grandes primero (más impacto al crear regla).
+    return sorted(
+        grupos.values(),
+        key=lambda g: (-g["muestras"], g["descripcion_muestra"]),
+    )

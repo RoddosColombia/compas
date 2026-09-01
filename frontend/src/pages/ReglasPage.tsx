@@ -9,7 +9,7 @@
 // reglas:gestionar (regla 9); la autoridad real la impone el backend.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -17,6 +17,7 @@ import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
+  type GrupoPorClasificar,
   type Regla,
   type ResultadoAplicar,
   aplicarPendientes,
@@ -24,10 +25,18 @@ import {
   crearRegla,
   desactivarRegla,
   editarRegla,
+  listarPorClasificar,
   listarReglas,
   reactivarRegla,
 } from "@/lib/reglas";
 import { type Rubro, type TipoFlujo, listarRubros } from "@/lib/rubros";
+
+// RV-V8/V9: pre-poblado del FormNueva al hacer clic en "Crear regla" desde
+// un grupo de la bandeja "Por clasificar".
+interface Sugerencia {
+  patron: string;
+  tipo_flujo: TipoFlujo;
+}
 
 export default function ReglasPage() {
   const { puede } = useAuth();
@@ -35,13 +44,22 @@ export default function ReglasPage() {
   const qc = useQueryClient();
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [reporte, setReporte] = useState<ResultadoAplicar | null>(null);
+  // RV-V8/V9: cuando el CEO hace clic en "Crear regla" desde un grupo de la
+  // bandeja "Por clasificar", esta sugerencia viaja al FormNueva de abajo.
+  const [sugerencia, setSugerencia] = useState<Sugerencia | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   const reglas = useQuery({ queryKey: ["reglas"], queryFn: listarReglas });
   const rubros = useQuery({ queryKey: ["rubros"], queryFn: listarRubros });
+  const porClasificar = useQuery({
+    queryKey: ["reglas", "por-clasificar"],
+    queryFn: listarPorClasificar,
+  });
 
   const alTerminar = {
     onSuccess: () => {
       setMensaje(null);
+      // RV-V8/V9: la bandeja depende del estado de las reglas → invalidar ambas.
       qc.invalidateQueries({ queryKey: ["reglas"] });
     },
     onError: (e: unknown) =>
@@ -168,14 +186,108 @@ export default function ReglasPage() {
         </Card>
       )}
 
-      {gestiona && rubros.data && (
-        <FormNueva
-          rubros={rubros.data}
-          creando={crear.isPending}
-          onCrear={(i) => crear.mutate(i)}
+      {/* RV-V8/V9: bandeja "Por clasificar". Muestra grupos de movimientos con
+          rubro 'Por clasificar' agrupados por primera-palabra. El botón "Crear
+          regla" scrollea al form + pre-pobla el patrón. */}
+      {porClasificar.data && porClasificar.data.length > 0 && (
+        <PorClasificarPanel
+          grupos={porClasificar.data}
+          onSugerir={(s) => {
+            setSugerencia(s);
+            formRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          }}
         />
       )}
+
+      {gestiona && rubros.data && (
+        <div ref={formRef}>
+          <FormNueva
+            rubros={rubros.data}
+            creando={crear.isPending}
+            sugerencia={sugerencia}
+            onSugerenciaAplicada={() => setSugerencia(null)}
+            onCrear={(i) => crear.mutate(i)}
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+// ─── RV-V8/V9 · panel "Por clasificar" ─────────────────────────────────────
+
+function PorClasificarPanel({
+  grupos,
+  onSugerir,
+}: {
+  grupos: GrupoPorClasificar[];
+  onSugerir: (sug: Sugerencia) => void;
+}) {
+  const total = grupos.reduce((acc, g) => acc + g.muestras, 0);
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="border-b border-hairline bg-atencion/5 px-4 py-3">
+        <CardTitle>Por clasificar</CardTitle>
+        <p className="mt-0.5 font-sans text-apoyo text-ink-soft">
+          <span className="font-semibold text-atencion">
+            {total} movimiento{total === 1 ? "" : "s"}
+          </span>{" "}
+          esperando regla, agrupados en {grupos.length} concepto
+          {grupos.length === 1 ? "" : "s"}. Crea una regla que los cubra.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full font-sans text-sm">
+          <thead>
+            <tr className="border-b border-hairline text-left text-ink-faint">
+              <th className="px-4 py-2.5 font-semibold">Concepto (muestra)</th>
+              <th className="px-4 py-2.5 font-semibold">Tipo</th>
+              <th className="px-4 py-2.5 text-right font-semibold">Muestras</th>
+              <th className="px-4 py-2.5 font-semibold">Ejemplos</th>
+              <th className="px-4 py-2.5" />
+            </tr>
+          </thead>
+          <tbody>
+            {grupos.map((g) => (
+              <tr
+                key={`${g.descripcion_muestra}-${g.tipo_flujo}`}
+                className="border-b border-hairline/60 hover:bg-surface-muted"
+              >
+                <td className="px-4 py-2 font-medium text-ink">
+                  {g.descripcion_muestra}
+                </td>
+                <td className="px-4 py-2 text-apoyo text-ink-soft">
+                  {g.tipo_flujo}
+                </td>
+                <td className="tabular px-4 py-2 text-right text-ink">
+                  {g.muestras}
+                </td>
+                <td className="px-4 py-2 text-apoyo text-ink-soft">
+                  {g.ejemplos.slice(0, 3).join(" · ")}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <Button
+                    size="sm"
+                    variant="cyan"
+                    onClick={() =>
+                      onSugerir({
+                        patron: g.descripcion_muestra,
+                        tipo_flujo: g.tipo_flujo,
+                      })
+                    }
+                  >
+                    Crear regla
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
@@ -419,10 +531,15 @@ function EstadoBadge({
 function FormNueva({
   rubros,
   creando,
+  sugerencia,
+  onSugerenciaAplicada,
   onCrear,
 }: {
   rubros: Rubro[];
   creando: boolean;
+  // RV-V8/V9: pre-poblado desde el panel "Por clasificar".
+  sugerencia?: Sugerencia | null;
+  onSugerenciaAplicada?: () => void;
   onCrear: (input: {
     patron: string;
     rubro_id: string;
@@ -434,6 +551,19 @@ function FormNueva({
   const [patron, setPatron] = useState("");
   const [rubroId, setRubroId] = useState("");
   const [prioridad, setPrioridad] = useState("100");
+  const patronRef = useRef<HTMLInputElement>(null);
+
+  // RV-V8/V9: aplica la sugerencia una sola vez cuando llega.
+  useEffect(() => {
+    if (!sugerencia) return;
+    setPatron(sugerencia.patron);
+    setTipo(sugerencia.tipo_flujo);
+    setRubroId("");
+    onSugerenciaAplicada?.();
+    // Enfoca el input para que el CEO ajuste el patrón antes de guardar.
+    patronRef.current?.focus();
+    patronRef.current?.select();
+  }, [sugerencia, onSugerenciaAplicada]);
 
   const destinos = rubros.filter((r) => r.tipo_flujo === tipo && r.activo);
   const valido =
@@ -477,6 +607,7 @@ function FormNueva({
         <label className="flex flex-col gap-1 font-sans text-apoyo text-ink-soft">
           Si la descripción contiene…
           <input
+            ref={patronRef}
             className={`w-64 ${inputCls}`}
             value={patron}
             minLength={3}
