@@ -167,6 +167,33 @@ describe("InicioPage — piloto F1 (§7)", () => {
     );
   });
 
+  // ── BK-1 ② antes → después ──
+  it("BK-1: la caja hoy compara vs. inicio del mes (sube) cuando hay saldo_inicial > 0", async () => {
+    mocks.listarMeses.mockResolvedValue({
+      items: [
+        {
+          ...MES_ACTIVO,
+          // caja al abrir el mes: $ 500 M. Caja hoy = $ 704,7 M. Δ = +204,7 M
+          saldo_inicial_caja: "500000000.00",
+        },
+      ],
+    });
+    renderPage();
+    await screen.findByText("$ 704,7 M");
+    // el delta + "vs. inicio del mes" son la comparación del KpiTile
+    expect(screen.getByText(/▲ \+\$ 204,7 M/)).toBeInTheDocument();
+    expect(screen.getByText(/vs\. inicio del mes/)).toBeInTheDocument();
+  });
+
+  it("BK-1: sin saldo_inicial (primer mes) el tile no muestra comparación — usa contexto", async () => {
+    // saldo_inicial_caja "0.00" (default del fixture): sin punto de comparación
+    renderPage();
+    await screen.findByText("$ 704,7 M");
+    // El chip de contexto (conciliada hoy / parcial / etc.) queda como antes.
+    // Y NO aparece la comparación "vs. inicio del mes".
+    expect(screen.queryByText(/vs\. inicio del mes/)).toBeNull();
+  });
+
   it("el gráfico protagonista lleva conclusión, ejes y umbral etiquetado", async () => {
     renderPage();
     expect(
