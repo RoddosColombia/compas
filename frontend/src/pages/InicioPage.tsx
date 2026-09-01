@@ -27,6 +27,7 @@ import { FiltroBarra, OPCIONES_HORIZONTE } from "@/components/ui/filtro-barra";
 import { KpiTileV2 } from "@/components/ui/kpi-tile";
 import { type Mes, listarMeses, mesEnEjecucion } from "@/lib/meses";
 import {
+  type Delta,
   formatCOP,
   formatCOPCompact,
   formatDelta,
@@ -93,12 +94,22 @@ export default function InicioPage() {
 }
 
 // ── Caja hoy (conecta con la barra de C2): suma de saldos del mes operando ──
+//
+// BK-1 ② (2026-09-01): el KpiTile de "Caja hoy" ahora dice también el DELTA
+// vs. cómo abrió el mes (saldo_inicial_caja) — un "antes → después" del ciclo
+// vivo. El delta viaja en el campo `comparacion` que ya entiende KpiTileV2 y
+// respeta la regla 1 (Decimal, cero Number). Sin `saldo_inicial_caja > 0`
+// (primer mes de la historia) queda sin comparación y el chip de contexto
+// se muestra como antes.
 
-function cajaHoy(mesActivo: Mes | undefined): {
+interface CajaHoy {
   valor: Decimal;
   contexto: string;
   tono: "positivo" | "atencion" | "neutro";
-} | null {
+  comparacion?: { delta: Delta; contra: string };
+}
+
+function cajaHoy(mesActivo: Mes | undefined): CajaHoy | null {
   if (!mesActivo || mesActivo.saldos_banco.length === 0) return null;
   let total = new Decimal(0);
   for (const s of mesActivo.saldos_banco) {
@@ -112,23 +123,38 @@ function cajaHoy(mesActivo: Mes | undefined): {
     (s) => s.fecha_reporte === hoy,
   ).length;
   const n = mesActivo.saldos_banco.length;
-  if (alDia === n)
-    return { valor: total, contexto: "conciliada hoy ✓", tono: "positivo" };
-  if (alDia > 0)
-    return {
-      valor: total,
-      contexto: `reporte parcial hoy (${alDia}/${n})`,
-      tono: "atencion",
-    };
-  const ultima = mesActivo.saldos_banco
-    .map((s) => s.fecha_reporte)
-    .sort()
-    .reverse()[0];
-  return {
-    valor: total,
-    contexto: `último reporte: ${ultima}`,
-    tono: "atencion",
-  };
+
+  // BK-1 ②: comparación vs. inicio del mes cuando hay ancla positiva.
+  // `caja_inicial_total` incluye tránsito heredado (CR-WAVA); si no viene,
+  // caemos a `saldo_inicial_caja` puro. Solo activamos la comparación cuando
+  // la ancla es > 0 (evita "▲ +704 M vs 0" del primer mes de la historia).
+  const inicial = parseMonto(
+    mesActivo.caja_inicial_total ?? mesActivo.saldo_inicial_caja,
+  );
+  const comparacion = inicial.greaterThan(0)
+    ? {
+        delta: formatDelta(total.minus(inicial), "sube"),
+        contra: "vs. inicio del mes",
+      }
+    : undefined;
+
+  let contexto: string;
+  let tono: "positivo" | "atencion" | "neutro";
+  if (alDia === n) {
+    contexto = "conciliada hoy ✓";
+    tono = "positivo";
+  } else if (alDia > 0) {
+    contexto = `reporte parcial hoy (${alDia}/${n})`;
+    tono = "atencion";
+  } else {
+    const ultima = mesActivo.saldos_banco
+      .map((s) => s.fecha_reporte)
+      .sort()
+      .reverse()[0];
+    contexto = `último reporte: ${ultima}`;
+    tono = "atencion";
+  }
+  return { valor: total, contexto, tono, comparacion };
 }
 
 function Pulso({
@@ -199,6 +225,7 @@ function Pulso({
             label="Caja hoy"
             valor={caja.valor}
             contexto={caja.contexto}
+            comparacion={caja.comparacion}
             tono={caja.tono}
             to="/mes"
           />
