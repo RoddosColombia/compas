@@ -5,7 +5,9 @@ Regla 6 de CLAUDE.md: el servicio web NUNCA arranca el scheduler. El lifespan
 falla en duro si detecta RUN_SCHEDULER=true (defensa contra un despliegue mal
 configurado)."""
 
+import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -65,22 +67,44 @@ def _init_sentry(settings) -> None:
 async def ensure_beanie(app: FastAPI, client, db_name: str) -> bool:
     """Inicializa Beanie una sola vez (idempotente). NO fatal: si Mongo está caído
     devuelve False y deja `app.state.beanie_ready=False`, sin tumbar la liveness.
-    Readiness lo reintenta hasta que la BD responda."""
+    Readiness lo reintenta hasta que la BD responda.
+
+    HOTFIX 2026-09-01 (Render startup hang): antes solo dependíamos del
+    server_selection_timeout de Motor (30s), pero en Render los deploys se
+    colgaban indefinidamente en `init_beanie_for` — probablemente por el DNS
+    SRV lookup de Atlas o algún handshake que no respeta el timeout. Ahora
+    envolvemos con `asyncio.wait_for(..., timeout=15)` para forzar el hard
+    limit: si Mongo no responde en 15s, degradamos y seguimos. La liveness
+    (/health) queda igual; los endpoints que usan Beanie devolverán 503 hasta
+    que readiness reintente exitosamente."""
     if getattr(app.state, "beanie_ready", False):
         return True
     try:
-        await mongo.init_beanie_for(client, db_name)
+        await asyncio.wait_for(
+            mongo.init_beanie_for(client, db_name), timeout=15.0
+        )
         app.state.beanie_ready = True
         return True
-    except Exception:  # noqa: BLE001 — degradación controlada, no crash de startup
-        logger.warning("init_beanie falló (Mongo no disponible aún); se reintentará.")
+    except (Exception, asyncio.TimeoutError):  # noqa: BLE001 — degradación controlada
+        logger.warning(
+            "init_beanie falló o timed out (Mongo no disponible aún); se reintentará."
+        )
         app.state.beanie_ready = False
         return False
 
 
+def _mark(step: str) -> None:
+    """HOTFIX 2026-09-01: prints al stderr con flush inmediato para localizar
+    dónde se cuelga el startup en Render (uvicorn oculta logs de la app hasta
+    completar startup; stderr + flush sí se muestra en tiempo real)."""
+    print(f"[lifespan] {step}", file=sys.stderr, flush=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _mark("A0 · get_settings()")
     settings = get_settings()
+    _mark(f"A1 · settings OK · app_env={settings.app_env}")
 
     # Regla 6: el web jamás corre el scheduler.
     if settings.run_scheduler:
@@ -105,26 +129,33 @@ async def lifespan(app: FastAPI):
             "MFA_ENC_KEY requerida fuera de dev: cifra el secreto TOTP (DoD #11)."
         )
 
+    _mark("A2 · pre-sentry")
     _init_sentry(
         settings
     )  # H3: observabilidad de errores (incl. fallos del canal audit)
+    _mark("A3 · sentry OK")
 
     # Cliente Motor perezoso (no conecta hasta el primer comando) → el web
     # arranca aunque Mongo esté caído; la liveness no depende de la BD.
+    _mark("A4 · mongo.create_client(uri_compas)")
     client = mongo.create_client(settings.mongodb_uri_compas)
     app.state.mongo_client = client
     app.state.settings = settings
     app.state.beanie_ready = False
+    _mark("A5 · client creado")
 
     # init_beanie SÍ conecta (crea índices) → si Mongo está caído al arrancar,
     # colgaría/reventaría el startup y romperia la garantía "liveness sin BD".
     # Por eso es NO fatal aquí y se reintenta idempotentemente desde readiness.
-    await ensure_beanie(app, client, settings.mongodb_db)
+    _mark("A6 · pre-ensure_beanie (con timeout 15s)")
+    ok = await ensure_beanie(app, client, settings.mongodb_db)
+    _mark(f"A7 · ensure_beanie retornó ok={ok}")
 
     # Conexión DEDICADA de auditoría (DoD #6). MONGODB_URI_AUDIT usa el usuario
     # `compas_audit` (audit_writer). FAIL-FAST fuera de dev (Kimi C-01): un warning
     # no es un control — degradar el canal de auditoría en prod es degradación
     # silenciosa de un requisito de primera clase. Solo dev cae a la conexión general.
+    _mark("A8 · pre-audit_client")
     if settings.mongodb_uri_audit:
         audit_client = mongo.create_client(settings.mongodb_uri_audit)
     elif settings.app_env == "development":
@@ -138,19 +169,24 @@ async def lifespan(app: FastAPI):
             "puede degradarse silenciosamente (DoD #6, Kimi C-01)."
         )
     app.state.audit_client = audit_client
+    _mark("A9 · audit_client creado")
     audit_service.configure_audit(audit_client, settings.mongodb_db)
+    _mark("A10 · audit configurado")
 
     # Auth usa la conexión GENERAL de la app (no la de auditoría).
     auth_repository.configure_auth(client, settings.mongodb_db)
+    _mark("A11 · auth configurado — startup COMPLETO")
 
     try:
         yield
     finally:
+        _mark("Z0 · shutdown")
         audit_service.reset_audit()
         auth_repository.reset_auth()
         if audit_client is not client:
             audit_client.close()
         client.close()
+        _mark("Z1 · shutdown OK")
 
 
 def create_app() -> FastAPI:
