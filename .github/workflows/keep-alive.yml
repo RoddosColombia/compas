@@ -40,15 +40,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: GET /health con timeout de 60s (cold start puede tardar ~25s)
-        # -f (fail on 4xx/5xx), --max-time 60 (aborta si Render no despierta
-        # en 60s — algo va mal más allá de cold start), --retry 2 con backoff.
-        # Log del código HTTP y del tiempo total para telemetría en Actions.
+      - name: GET /health con timeout de 90s (cold start Render Free ~25-45s)
+        # ARREGLO 2026-09-01: URL correcta. La versión previa apuntaba a
+        # compas-api.onrender.com, pero ese subdominio de Render sirve otro
+        # servicio Node.js (SISMO?), NO nuestro FastAPI. El backend de COMPAS
+        # solo responde por el custom domain api.compas.roddos.com (fronteado
+        # por Cloudflare). Verificado por body distinto: onrender devuelve
+        # {status,timestamp} formato Node; el nuestro {status,service,version}.
+        #
+        # -f fail on 4xx/5xx, --max-time 90 (buffer para cold start Free),
+        # --retry 2 con backoff. Log del HTTP + tiempo total para telemetría.
         run: |
           set -euo pipefail
-          URL="https://compas-api.onrender.com/health"
+          URL="https://api.compas.roddos.com/health"
           echo "GET $URL"
-          curl -fsS --max-time 60 --retry 2 --retry-delay 5 \
+          curl -fsS --max-time 90 --retry 2 --retry-delay 10 \
                -o /dev/null \
                -w "HTTP %{http_code} en %{time_total}s\n" \
                "$URL"
