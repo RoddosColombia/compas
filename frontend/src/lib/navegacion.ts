@@ -1,11 +1,13 @@
 // Navegación del cockpit — ÚNICA fuente del árbol del sidebar (regla 9: la
 // navegación se deriva de un solo config de permisos; prohibido mapear rol→UI
-// disperso). El Sidebar filtra cada ítem por la capacidad requerida.
+// disperso). El Sidebar filtra cada ítem por la capacidad requerida y colapsa
+// automáticamente los items que declaran `subItems`.
 //
-// Árbol del Blueprint UX (3 grupos, 8 vistas):
-//   Principal            → Inicio · Proyecciones
-//   Planeación y control → Escenarios · Presupuesto · IVA
-//   Operación            → Dashboards · Reportes · Datos
+// RV-V6/V7 (Fase B del navegador · 2026-09-01): 19 → 11 entradas top-level.
+// El "mes" pasa a ser un objeto con 7 sub-vistas colapsables (Cabina · Ciclo ·
+// Presupuesto · IVA · Metas · Obligaciones · Flujo diario), y los 3 catálogos
+// (Categorías · Reglas · Semilla) se colapsan bajo "Catálogos". Las rutas
+// individuales NO cambian — solo la presentación.
 
 import {
   Banknote,
@@ -23,6 +25,7 @@ import {
   LineChart,
   Receipt,
   Repeat,
+  Settings2,
   Sprout,
   Tags,
   Target,
@@ -35,6 +38,11 @@ export interface ItemNav {
   path: string;
   icon: ComponentType<{ className?: string }>;
   cap: string;
+  /** RV-V6/V7: si trae subItems, el sidebar lo pinta como grupo colapsable
+   * y `path` es solo el destino por default al hacer clic en el header (no
+   * un enlace navegable en sí). El header se auto-expande cuando la ruta
+   * actual matchea uno de los sub-paths. */
+  subItems?: ItemNav[];
 }
 
 export interface GrupoNav {
@@ -47,12 +55,49 @@ export const NAVEGACION: GrupoNav[] = [
     titulo: "Principal",
     items: [
       { label: "Inicio", path: "/inicio", icon: Home, cap: "dashboard:leer" },
-      // La Cabina (C2): el ciclo completo del mes en una sola vista.
       {
-        label: "Mes en curso",
+        // RV-V6/V7: el mes como OBJETO con pestañas. Colapsa 7 vistas antes
+        // dispersas (Mes en curso, Ciclo mensual, Presupuesto, IVA, Metas,
+        // Obligaciones, Flujo diario) bajo un solo header. Los paths reales
+        // no cambian — cada subitem sigue en su ruta actual.
+        label: "Mes",
         path: "/mes",
         icon: Gauge,
         cap: "dashboard:leer",
+        subItems: [
+          { label: "Cabina", path: "/mes", icon: Gauge, cap: "dashboard:leer" },
+          {
+            label: "Ciclo mensual",
+            path: "/meses",
+            icon: CalendarRange,
+            cap: "dashboard:leer",
+          },
+          {
+            label: "Presupuesto",
+            path: "/control",
+            icon: Wallet,
+            cap: "dashboard:leer",
+          },
+          { label: "IVA", path: "/iva", icon: Receipt, cap: "dashboard:leer" },
+          {
+            label: "Metas de ingreso",
+            path: "/metas",
+            icon: Target,
+            cap: "dashboard:leer",
+          },
+          {
+            label: "Obligaciones",
+            path: "/obligaciones",
+            icon: Landmark,
+            cap: "dashboard:leer",
+          },
+          {
+            label: "Flujo diario",
+            path: "/flujo-diario",
+            icon: CalendarDays,
+            cap: "dashboard:leer",
+          },
+        ],
       },
       {
         label: "Proyecciones",
@@ -60,55 +105,17 @@ export const NAVEGACION: GrupoNav[] = [
         icon: LineChart,
         cap: "dashboard:leer",
       },
-    ],
-  },
-  {
-    titulo: "Planeación y control",
-    items: [
       {
         label: "Escenarios",
         path: "/escenarios",
         icon: Layers,
         cap: "dashboard:leer",
       },
-      // Ciclo mensual (C1): abrir mes → sugerido → acotar → aprobar. NavLink
-      // marca activo también en /meses/:mes/presupuesto (match por prefijo).
-      {
-        label: "Ciclo mensual",
-        path: "/meses",
-        icon: CalendarRange,
-        cap: "dashboard:leer",
-      },
-      {
-        label: "Presupuesto",
-        path: "/control",
-        icon: Wallet,
-        cap: "dashboard:leer",
-      },
-      { label: "IVA", path: "/iva", icon: Receipt, cap: "dashboard:leer" },
-      {
-        label: "Metas de ingreso",
-        path: "/metas",
-        icon: Target,
-        cap: "dashboard:leer",
-      },
-      {
-        label: "Obligaciones",
-        path: "/obligaciones",
-        icon: Landmark,
-        cap: "dashboard:leer",
-      },
     ],
   },
   {
-    titulo: "Operación",
+    titulo: "Análisis",
     items: [
-      {
-        label: "Flujo diario",
-        path: "/flujo-diario",
-        icon: CalendarDays,
-        cap: "dashboard:leer",
-      },
       {
         label: "Dashboards",
         path: "/dashboards",
@@ -121,6 +128,11 @@ export const NAVEGACION: GrupoNav[] = [
         icon: FileText,
         cap: "dashboard:leer",
       },
+    ],
+  },
+  {
+    titulo: "Configuración",
+    items: [
       // Supuestos (C3): el editor de los drivers del motor, con impacto en vivo.
       {
         label: "Supuestos",
@@ -128,20 +140,38 @@ export const NAVEGACION: GrupoNav[] = [
         icon: Database,
         cap: "cargas:gestionar",
       },
+      {
+        // Datos maestros — Categorías + Reglas + Semilla de reglas colapsados.
+        label: "Catálogos",
+        path: "/categorias",
+        icon: Settings2,
+        cap: "dashboard:leer",
+        subItems: [
+          {
+            label: "Categorías",
+            path: "/categorias",
+            icon: Tags,
+            cap: "dashboard:leer",
+          },
+          {
+            label: "Reglas",
+            path: "/reglas",
+            icon: Filter,
+            cap: "dashboard:leer",
+          },
+          {
+            label: "Semilla de reglas",
+            path: "/reglas/semilla",
+            icon: Sprout,
+            cap: "reglas:gestionar",
+          },
+        ],
+      },
     ],
   },
   {
-    // Administración presupuestal: catálogos y captura. (Nav provisional —
-    // reubicación fina del árbol pendiente de Claude Cowork; aquí solo se
-    // vuelven ALCANZABLES rutas que estaban huérfanas.)
-    titulo: "Administración",
+    titulo: "Bancos",
     items: [
-      {
-        label: "Gastos recurrentes",
-        path: "/gastos-recurrentes",
-        icon: Repeat,
-        cap: "dashboard:leer",
-      },
       {
         label: "Movimientos bancarios",
         path: "/cargas",
@@ -150,17 +180,10 @@ export const NAVEGACION: GrupoNav[] = [
       },
       { label: "Caja", path: "/caja", icon: Coins, cap: "dashboard:leer" },
       {
-        label: "Categorías",
-        path: "/categorias",
-        icon: Tags,
+        label: "Gastos recurrentes",
+        path: "/gastos-recurrentes",
+        icon: Repeat,
         cap: "dashboard:leer",
-      },
-      { label: "Reglas", path: "/reglas", icon: Filter, cap: "dashboard:leer" },
-      {
-        label: "Semilla de reglas",
-        path: "/reglas/semilla",
-        icon: Sprout,
-        cap: "reglas:gestionar",
       },
     ],
   },
