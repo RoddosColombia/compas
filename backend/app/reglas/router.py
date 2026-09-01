@@ -158,6 +158,21 @@ async def aplicar_pendientes(
         raise HTTPException(e.status, e.detalle) from e
 
 
+# ── RV-V8/V9 · bandeja "Por clasificar" (GET · dashboard:leer) ──
+#
+# Lista los movimientos con rubro 'Por clasificar' en meses NO cerrados,
+# agrupados por descripción normalizada, para poblar la sección "Por clasificar"
+# del cockpit (crear una regla que los cubra queda a un POST existente).
+
+
+@router.get("/por-clasificar")
+async def por_clasificar(
+    _: User = Depends(require_permission("dashboard:leer")),
+):
+    grupos = await service.listar_por_clasificar()
+    return {"grupos": grupos}
+
+
 # ── RF-F1: semilla (aprender reglas de la curaduría histórica) ──
 
 

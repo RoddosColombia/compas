@@ -559,3 +559,101 @@ async def test_fail_closed_desactivar_compensa(api, monkeypatch):
         await ac.post(f"{BASE}/{rid}/desactivar", headers=h)
     regla = await ReglaClasificacion.find_one()
     assert regla.activa is True  # revertido
+
+
+# ─── RV-V8/V9 · bandeja "Por clasificar" (GET /por-clasificar) ───────────────
+# Lista los movimientos con rubro 'Por clasificar' en meses NO cerrados,
+# agrupados por descripción normalizada (misma regla que patron_normalizado
+# del clasificador) para que el operador vea CUÁNTAS caen bajo el mismo
+# concepto y pueda crear UNA regla que cubra todas. La respuesta trae
+# `descripcion_muestra` (para pre-poblar el patrón sugerido en el frontend),
+# `tipo_flujo`, `muestras` (int) y `ejemplos` (hasta 3 descripciones distintas).
+
+
+async def test_por_clasificar_lista_grupos_de_meses_abiertos(api):
+    """El endpoint devuelve los movimientos por clasificar agrupados por
+    descripción normalizada, en meses NO cerrados."""
+    ac, _ = api
+    h = await _token(ac)
+    # 2 movimientos con la MISMA descripción base (agrupables) + 1 distinto
+    await _tx_por_clasificar("2026-03-10", "COMPRA CAFETERÍA LA 14")
+    await _tx_por_clasificar("2026-03-15", "COMPRA CAFETERÍA LA 14")
+    await _tx_por_clasificar("2026-03-20", "GASOLINA TEXACO")
+    r = await ac.get(f"{BASE}/por-clasificar", headers=h)
+    assert r.status_code == 200
+    grupos = r.json()["grupos"]
+    # 2 grupos: uno con 2 muestras (cafetería), otro con 1 (gasolina)
+    assert len(grupos) == 2
+    caf = next(g for g in grupos if "CAFETER" in g["descripcion_muestra"].upper())
+    assert caf["muestras"] == 2
+    assert caf["tipo_flujo"] == "egreso"
+    gas = next(g for g in grupos if "GASOLINA" in g["descripcion_muestra"].upper())
+    assert gas["muestras"] == 1
+
+
+async def test_por_clasificar_omite_mes_cerrado(api):
+    """Regla 4: los meses cerrados no se tocan — no aparecen en la bandeja."""
+    ac, _ = api
+    h = await _token(ac)
+    # Uno en mes abierto, uno en mes CERRADO (enero-2026 según fixture).
+    await _tx_por_clasificar("2026-03-10", "COMPRA UBER")
+    await _tx_por_clasificar("2026-01-10", "COMPRA UBER")
+    r = await ac.get(f"{BASE}/por-clasificar", headers=h)
+    assert r.status_code == 200
+    grupos = r.json()["grupos"]
+    # Solo el del mes abierto: 1 muestra.
+    assert len(grupos) == 1
+    assert grupos[0]["muestras"] == 1
+
+
+async def test_por_clasificar_omite_los_ya_clasificados(api):
+    """Después de aplicar una regla que clasifica cafetería, el grupo
+    desaparece de la bandeja (solo queda lo que sigue en 'Por clasificar')."""
+    ac, _ = api
+    h = await _token(ac)
+    await _crear(ac, h, patron="cafeteria")
+    await _tx_por_clasificar("2026-03-10", "COMPRA CAFETERÍA LA 14")
+    await _tx_por_clasificar("2026-03-11", "GASOLINA TEXACO")
+    await ac.post(f"{BASE}/aplicar-pendientes", headers=h)
+    r = await ac.get(f"{BASE}/por-clasificar", headers=h)
+    assert r.status_code == 200
+    grupos = r.json()["grupos"]
+    assert len(grupos) == 1
+    assert "GASOLINA" in grupos[0]["descripcion_muestra"].upper()
+
+
+async def test_por_clasificar_vacio_si_todo_esta_clasificado(api):
+    """Sin transacciones por clasificar → la respuesta trae grupos=[] (no 404).
+    El frontend usa esto para mostrar 'todo al día'."""
+    ac, _ = api
+    h = await _token(ac)
+    r = await ac.get(f"{BASE}/por-clasificar", headers=h)
+    assert r.status_code == 200
+    assert r.json()["grupos"] == []
+
+
+async def test_por_clasificar_rbac_consulta_puede_leer(api):
+    """RBAC: la bandeja es de LECTURA (dashboard:leer) — igual que el listado
+    de reglas. Escribir una regla desde ahí exige reglas:gestionar (POST existente)."""
+    ac, _ = api
+    h = await _token(ac, email="consulta@roddos.com")
+    r = await ac.get(f"{BASE}/por-clasificar", headers=h)
+    assert r.status_code == 200
+
+
+async def test_por_clasificar_ejemplos_muestra_hasta_3_descripciones(api):
+    """Cada grupo trae hasta 3 ejemplos DISTINTOS de descripciones para que
+    el CEO vea la variedad y no adivine el patrón desde una sola muestra."""
+    ac, _ = api
+    h = await _token(ac)
+    await _tx_por_clasificar("2026-03-10", "UBER 12345")
+    await _tx_por_clasificar("2026-03-11", "UBER 67890")
+    await _tx_por_clasificar("2026-03-12", "UBER 11111")
+    await _tx_por_clasificar("2026-03-13", "UBER 22222")
+    r = await ac.get(f"{BASE}/por-clasificar", headers=h)
+    grupos = r.json()["grupos"]
+    assert len(grupos) == 1
+    assert grupos[0]["muestras"] == 4
+    # ejemplos = hasta 3 (no todas las descripciones).
+    assert len(grupos[0]["ejemplos"]) <= 3
+    assert len(grupos[0]["ejemplos"]) >= 1

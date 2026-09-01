@@ -80,6 +80,25 @@ export async function aprobarRegla(id: string): Promise<Regla> {
   return apiJson(`/reglas-clasificacion/${id}/aprobar`, { method: "POST" });
 }
 
+// ─── RV-V8/V9 · bandeja "Por clasificar" ───────────────────────────────────
+// Cada grupo se dibuja como una fila con el conteo de muestras y un botón
+// "Crear regla" que pre-pobla el FormNueva con `descripcion_muestra` como
+// patrón sugerido y `tipo_flujo` para acotar los destinos.
+
+export interface GrupoPorClasificar {
+  descripcion_muestra: string;
+  tipo_flujo: TipoFlujo;
+  muestras: number;
+  ejemplos: string[];
+}
+
+export async function listarPorClasificar(): Promise<GrupoPorClasificar[]> {
+  const r = await apiJson<{ grupos: GrupoPorClasificar[] }>(
+    "/reglas-clasificacion/por-clasificar",
+  );
+  return r.grupos;
+}
+
 export async function aplicarPendientes(): Promise<ResultadoAplicar> {
   return apiJson("/reglas-clasificacion/aplicar-pendientes", {
     method: "POST",
