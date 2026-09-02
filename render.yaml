@@ -18,7 +18,14 @@ services:
     # código vía CF-Connecting-IP (Kimi L2); el origen DEBE quedar restringido a IPs de
     # Cloudflare (RUNBOOK §5) para que ese header no sea spoofeable.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2 --proxy-headers
-    healthCheckPath: /health
+    healthCheckPath: /api/v1/health/ready  # F-03 (auditoría 2026-09-02): readiness
+                                           # honesto — devuelve 503 si Beanie no
+                                           # inicializó. /health (liveness) sigue
+                                           # existiendo pero Render usa esta ruta
+                                           # para decidir si reinicia; con eso la
+                                           # próxima degradación silenciosa de Mongo
+                                           # SE DETECTA y el servicio se reinicia,
+                                           # no queda 30 días en 200 mintiendo.
     envVars:
       - key: PYTHON_VERSION      # PIN de Python (2026-09-01): sin esto Render pica su
                                  # default actual (3.14.3), que cuelga el startup de

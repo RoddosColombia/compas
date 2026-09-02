@@ -218,8 +218,15 @@ async def _asegurar_beanie_en_request(request):
     cuanto Mongo responde por primera vez.
 
     Solo se dispara cuando beanie_ready=False; una vez True se salta (el
-    getattr es O(1)). Se salta también en /health (liveness sin BD)."""
-    if request.url.path in ("/health", "/", "/favicon.ico"):
+    getattr es O(1)). Se salta también en /health (liveness) y en
+    /api/v1/health/ready (readiness observacional F-03) — esos endpoints
+    solo LEEN el estado, no lo cambian: el reintento pesado no encaja ahí."""
+    if request.url.path in (
+        "/health",
+        "/api/v1/health/ready",
+        "/",
+        "/favicon.ico",
+    ):
         return
     app = request.app
     if getattr(app.state, "beanie_ready", False):
