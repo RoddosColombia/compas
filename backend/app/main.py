@@ -84,11 +84,29 @@ async def ensure_beanie(app: FastAPI, client, db_name: str) -> bool:
             mongo.init_beanie_for(client, db_name), timeout=15.0
         )
         app.state.beanie_ready = True
+        print("[ensure_beanie] init_beanie OK", file=sys.stderr, flush=True)
         return True
-    except (Exception, asyncio.TimeoutError):  # noqa: BLE001 — degradación controlada
-        logger.warning(
-            "init_beanie falló o timed out (Mongo no disponible aún); se reintentará."
+    except asyncio.TimeoutError:
+        # HOTFIX 2026-09-01: log honesto de qué está pasando (antes decíamos "falló
+        # o timed out" sin distinguir; el CEO no puede saber si es allowlist, DNS,
+        # auth o cluster dormido). Timeout puro = Mongo silencioso 15s+.
+        msg = (
+            "[ensure_beanie] TIMEOUT tras 15s — Mongo no respondió. "
+            "Causas probables: (a) Atlas IP allowlist no permite la IP de Render "
+            "(fix rápido: agregar 0.0.0.0/0 a Network Access en Atlas dev); "
+            "(b) cluster Free-tier pausado (despertar en Atlas dashboard); "
+            "(c) DNS SRV lento (cambiar URI a formato non-SRV)."
         )
+        logger.warning(msg)
+        print(msg, file=sys.stderr, flush=True)
+        app.state.beanie_ready = False
+        return False
+    except Exception as e:  # noqa: BLE001 — degradación controlada
+        # Cualquier otra excepción — imprimimos tipo + mensaje al stderr para
+        # que el log de Render lo muestre en tiempo real y sepamos QUÉ falla.
+        msg = f"[ensure_beanie] {type(e).__name__}: {e}"
+        logger.warning(msg)
+        print(msg, file=sys.stderr, flush=True)
         app.state.beanie_ready = False
         return False
 
@@ -189,6 +207,31 @@ async def lifespan(app: FastAPI):
         _mark("Z1 · shutdown OK")
 
 
+_beanie_retry_lock = asyncio.Lock()
+
+
+async def _asegurar_beanie_en_request(request):
+    """HOTFIX 2026-09-01 (reintento lazy): si `beanie_ready=False` al llegar
+    un request, intentamos init_beanie ANTES de servirlo. Lock global evita
+    N reintentos concurrentes. Sin esto, el startup con Mongo caído dejaba
+    el servicio inutilizable hasta el próximo deploy — ahora recuperamos en
+    cuanto Mongo responde por primera vez.
+
+    Solo se dispara cuando beanie_ready=False; una vez True se salta (el
+    getattr es O(1)). Se salta también en /health (liveness sin BD)."""
+    if request.url.path in ("/health", "/", "/favicon.ico"):
+        return
+    app = request.app
+    if getattr(app.state, "beanie_ready", False):
+        return
+    async with _beanie_retry_lock:
+        if getattr(app.state, "beanie_ready", False):
+            return  # double-check tras adquirir el lock
+        client = app.state.mongo_client
+        db_name = app.state.settings.mongodb_db
+        await ensure_beanie(app, client, db_name)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="COMPAS API",
@@ -209,6 +252,14 @@ def create_app() -> FastAPI:
     # de CORS a propósito (Kimi B-1): el último add_middleware es la capa MÁS EXTERNA,
     # así Security envuelve también las respuestas de CORS (preflight, rechazos).
     app.add_middleware(SecurityHeadersMiddleware)
+
+    # HOTFIX 2026-09-01: reintento LAZY de Beanie si el startup lo dejó off.
+    # Middleware ASGI puro (más liviano que middleware HTTP) porque solo lee
+    # request.url.path; no necesita el request completo.
+    @app.middleware("http")
+    async def _reintento_beanie_mw(request, call_next):
+        await _asegurar_beanie_en_request(request)
+        return await call_next(request)
 
     @app.get("/health", tags=["health"])
     def liveness() -> dict[str, str]:
