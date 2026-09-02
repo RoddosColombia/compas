@@ -1,107 +1,217 @@
-# COMPAS 2.0 — Roadmap de desarrollo (artefacto vivo)
+# COMPAS 2.0 — Roadmap · Checklist accionable
 
-> **Qué es:** el artefacto de control ÚNICO del avance de COMPAS 2.0 (rediseño del cockpit
-> presupuestal + predictivo de caja). Muestra la evolución tarea a tarea en el tiempo, no
-> solo la foto de hoy. **Manda sobre cualquier presentación, tracker `.xlsx` o correo:**
-> si algo lo contradice, gana este archivo.
+> **Qué es:** la fuente única de verdad del avance de COMPAS 2.0. Cada tarea es
+> un `- [ ]` (pendiente) o `- [x]` (hecha) con evidencia inline (PR + commit).
+> **Manda sobre cualquier otro artefacto:** velocímetro visual, tracker `.xlsx`,
+> correos o memoria — si algo lo contradice, gana este archivo.
 >
-> **Mecánica de actualización (regla del CEO 2026-08-30):** se actualiza **tan pronto
-> cierra cada tarea** (no al final del bucket). Cada cambio queda **fechado** en el
-> Registro de cambios (§4). Responsable de revisarlo: Claude, en cada cierre de pieza.
+> **Regla de actualización:** cada vez que una tarea cierra, el mismo PR que la
+> cierra actualiza este archivo (checkbox + evidencia). Sin excepciones.
 >
-> **Gobierno:** COMPAS 2.0 vive en `backend/app/` y `frontend/src/` sobre la base v1.1.2.
-> `motor.py` es intocable (golden-master 176 meses); todo lo nuevo es capa post-motor.
-> Decisiones fundacionales en `docs/COMPAS_2.0_FUNDACIONAL.md`. Reglas innegociables: las
-> de `CLAUDE.md`. Mismo estilo que `docs/COMPAS_FABS_ROADMAP.md` (el roadmap de FABS).
+> **Regla de agregado:** todo hallazgo, hotfix o deuda nueva entra acá como
+> checkbox antes de trabajarse. Si no está acá, no existe.
 
-## 1. Norte de COMPAS 2.0 (una línea)
+## Norte
 
-Sistema **PREDICTIVO** de presupuesto y caja para RODDOS: el CEO no ve la caja caer bajo
-sus umbrales sin que la app se lo advierta con anticipación y con las palancas para
-evitarlo — **sin sacrificar la paridad al peso del motor** (golden-master 176 meses).
+Sistema **predictivo** de presupuesto y caja para RODDOS: el CEO no ve la caja
+caer bajo sus umbrales sin que la app se lo advierta con anticipación y con las
+palancas para evitarlo — **sin sacrificar la paridad al peso del motor**
+(golden-master 176 meses).
 
-## 2. Fases / incrementos
+## Velocímetro · avance ponderado
 
-Estado: ⬜ Pendiente · 🟡 En curso · ✅ Hecho · 🔒 Bloqueado
+**Estado 2026-09-02:**
 
-| # | Incremento | Qué entrega | Gate | Estado |
-|---|---|---|---|---|
-| **F0** | **Fase 0 · Andamio del método** | F0-1 `CAPACIDADES.md` (mapa código→C1..C11) · F0-2 candado del motor (2 jobs CI: golden-master + parity-guard) · F0-3 `DESIGN.md` (gramática 8 reglas + tokens marca) · AND-1 SkillSpector (checklist pre-instalación) · AND-2 ECC (`.claude/settings.json` con allow/ask/deny) · AND-3 skills `spec-miner` + `tdd-guide` · AND-4 herramientas declaradas (Browser MCP + tweakcn) · AND-5 candado del método (gates activos en CI). | Gate G-GM (golden-master required en branch protection) | ✅ **CIERRA Fase 0 (8/8)** — F0-1/2/3 hechos, AND-1..5 hechos, ver §4 |
-| **1** | **Funcional · imprescindibles (must)** — RF-F1..F5 | RF-F1 reglas sembradas (semilla real, 90%+ auto-clasif) · RF-F2 costura presupuesto→proyección versionada · RF-F3 valles como entidad (umbral atención D-1) · RF-F4 techo de gasto en ventana · RF-F5 solvers en la app (3 palancas por valle) | gate-waiver GO CEO (Kimi ausente ~semanas, retroactivos pendientes — NUNCA simulado) | ✅ **MERGEADO a main** — 5/5 hechos, ver §4 |
-| **2** | **Funcional · debería (should)** — RF-F6, RF-F7, RF-F9 | RF-F6 cargas idempotentes por huella · RF-F7 recomendaciones por impacto (reparto por rubro) · RF-F9 plan de cuentas completo (código+clase obligatorios al crear categoría) | gate-waiver GO CEO | ✅ **MERGEADO a main** — 3/3 hechos, ver §4 |
-| **3** | **Funcional · podría (could)** — RF-F8, RF-F10 | RF-F8 rebanada A: simulación compute-only "negocia esta deuda" (rebanada B = persistida, difierida a CR-RF-F8-B con evento audit nuevo) · RF-F10 horizonte 240 meses + agregación por año/trimestre | gate-waiver GO CEO | ✅ **MERGEADO a main** — 2/2 hechos (rebanada A de F8, F10 completa). **CIERRA funcional 10/10.** Ver §4 |
-| **4** | **Visual · RV-V1 tokens + RV-V2 completa** | RV-V1 `DESIGN.md §3` con paleta como tokens (`--color-chart-*`, contrato para RV-V2) · RV-V2 rehacer las 2 gráficas principales contra el mockup (rebanada 1: curva de caja · rebanada 2: composición separada · rebanada 3: escenario superpuesto + motos editable + «vender de más») | Kimi ausente ⇒ gate-waiver GO CEO. Gates finales: G-PIXEL (chrome-devtools-mcp + lost-pixel vs mockup) + G-AXE (accesibilidad) | ✅ **MERGEADO a main** — RV-V1 + RV-V2 **CIERRA 10 de 10 AC** (3 rebanadas mergeadas). Ver §4 |
-| **5** | **Visual · RV-V3..V10** | **RV-V3 rebanada 1** ✅ tokens categóricos vs daltonismo · **RV-V3 rebanada 2** ✅ sparklines de KPI · **RV-V4** ✅ escenario superpuesto en `ComposicionFlujoRV2` · **RV-V5** ✅ overlay de escenario en el sparkline de KpiTileV2 · **RV-V6/V7** ✅ Fase B del navegador (19→11 entradas top-level, Mes y Catálogos como grupos colapsables con auto-expansión por ruta) · **RV-V8/V9** ✅ bandeja "Por clasificar" (nuevo endpoint agrupado por primera-palabra) + crear-regla con patrón pre-poblado desde el panel · **RV-V10** ✅ encabezado de tabla fijo (candado en CI) + 5 estados de fila en TablaEgreso | G-TRIVY (npm de librería de gráficos) previo a RV-V3 · G-PIXEL/G-AXE al cierre | ✅ **CIERRA bucket visual 5/5** |
-| **6** | **Gates finales** (6 gates) | G-SEC (seguridad bloqueante externa) · G-GM (motor-parity-guard required en branch protection) · G-SEMGREP (reglas inviolables) · G-TRIVY (npm) · G-PIXEL (lost-pixel vs mockup) · G-AXE (axe-core en proyección) | — | ✅ **6/6 MERGEADOS en main** — 4 activos en CI (G-GM required, G-SEMGREP + G-TRIVY + G-AXE workflows verdes) · 2 documentados por diseño (G-SEC = revisor externo pendiente por Kimi ausente; G-PIXEL = espera GO CEO para introducir Playwright). Ver §4. |
-| **7** | **Backlog (post-plan)** | BK-1 mejoras UI del saldo — ② antes→después ✅ (Δ vs. inicio del mes en el tile "Caja hoy" de Inicio) · ③ puente real/proyectado ⬜ (diferido, requiere diseño más pensado) | — | 🟡 ½ hecho (② mergeada; ③ backlog explícito) |
+| Bucket | Peso | Hecho | Aporte al total |
+|---|---|---|---|
+| 1 · Fase 0 (Fundacional + AND) | 8% | 8/8 | 8.00 |
+| 2 · Funcional imprescindibles (RF-F1..F5) | 22% | 5/5 | 22.00 |
+| 3 · Funcional debería (RF-F6, F7, F9) | 15% | 3/3 | 15.00 |
+| 4 · Funcional podría (RF-F8, F10) | 8% | 2/2 | 8.00 |
+| 5 · Visual (RV-V1..V10) | 22% | 5/5 | 22.00 |
+| 6 · Gates finales (6 gates) | 8% | 6/6 | 8.00 |
+| 7 · Infra hotfixes (crisis backend) | 5% | 5/5 | 5.00 |
+| 8 · Auditoría Ola 2 (F-03..F-05) | 6% | 0/3 | 0.00 |
+| 9 · Deuda funcional descubierta (F-06..F-08) | 4% | 0/3 | 0.00 |
+| 10 · Limpieza técnica | 1% | 0/2 | 0.00 |
+| BK-1 · Backlog UI del saldo | 1% | 0.5/2 | 0.25 |
+| **TOTAL** | **100%** | **34.5 / 39** | **88%** |
 
-## 3. Gates y prerrequisitos
+**Velocímetro visual:** <https://claude.ai/code/artifact/057cbe89-c263-4194-ae0f-c1b6fba14015>
+
+---
+
+## Bucket 1 · Fase 0 · Andamio del método (8/8 ✅)
+
+- [x] **F0-1** · `docs/CAPACIDADES.md` mapa código→C1..C11 · `3bbbde9`
+- [x] **F0-2** · Candado del motor (2 jobs CI: golden-master + motor-parity-guard) · `3bbbde9`
+- [x] **F0-3** · `docs/DESIGN.md` gramática 8 reglas + tokens marca · `3bbbde9`
+- [x] **AND-1** · SkillSpector checklist pre-instalación (`docs/COMPAS_2.0_AND_1_SKILLSPECTOR.md`) · [PR #139](https://github.com/RoddosColombia/compas/pull/139)
+- [x] **AND-2** · ECC `.claude/settings.json` (allow/ask/deny + hooks off + versiones fijadas) · PR #139
+- [x] **AND-3** · Skills `spec-miner` + `tdd-guide` (`.claude/skills/`) · PR #139
+- [x] **AND-4** · Herramientas declaradas (Browser MCP + tweakcn) · PR #139
+- [x] **AND-5** · Candado del método operativo (gates activos en CI) · PR #139
+
+## Bucket 2 · Funcional imprescindibles — must (5/5 ✅)
+
+- [x] **RF-F1** · Reglas sembradas con patrones reales (≥90% auto-clasif) · (main)
+- [x] **RF-F2** · Costura presupuesto→proyección con serie versionada (`ProyeccionVersion`) · (main)
+- [x] **RF-F3** · Valles como entidad, umbral atención D-1 · (main)
+- [x] **RF-F4** · `techo_gasto_ventana(mes_inicio, ventana_meses=9, referencia)` · (main)
+- [x] **RF-F5** · 3 palancas por valle (recorte, ingreso extra, unidades stub) · `6288c00`
+
+## Bucket 3 · Funcional debería — should (3/3 ✅)
+
+- [x] **RF-F6** · Cargas idempotentes por huella (índice único parcial) · (main)
+- [x] **RF-F7** · Recomendaciones por impacto (reparto por rubro) · [PR #119](https://github.com/RoddosColombia/compas/pull/119) · `62d24d5`
+- [x] **RF-F9** · Plan de cuentas completo (código+tipo obligatorios al crear rubro) · [PR #121](https://github.com/RoddosColombia/compas/pull/121) · `7aebfba`
+
+## Bucket 4 · Funcional podría — could (2/2 ✅)
+
+- [x] **RF-F8** · "Negocia esta deuda" rebanada A (simulación compute-only) · [PR #120](https://github.com/RoddosColombia/compas/pull/120) · `a24466b`
+- [x] **RF-F10** · Horizonte 240 meses + agregación año/trimestre · [PR #122](https://github.com/RoddosColombia/compas/pull/122) · `ab05af7`
+
+> **RF-F8 rebanada B (persistida):** difierida a `CR-RF-F8-B` — requiere evento
+> audit nuevo `factura_obligacion.editada`, regla 11 prohíbe inventar eventos.
+
+## Bucket 5 · Visual (5/5 ✅)
+
+- [x] **RV-V1** · 7 tokens `--color-chart-*` en `frontend/src/index.css` · [PR #123](https://github.com/RoddosColombia/compas/pull/123) · `a071d46`
+- [x] **RV-V2 r1** · `CurvaCajaRV2` 7/10 AC · [PR #124](https://github.com/RoddosColombia/compas/pull/124) · `031b1ad`
+- [x] **RV-V2 r2** · `ComposicionFlujoRV2` AC #8 · [PR #131](https://github.com/RoddosColombia/compas/pull/131) · `2e39c04`
+- [x] **RV-V2 r3** · Escenario superpuesto + «vender de más» AC #5 + #7 · [PR #133](https://github.com/RoddosColombia/compas/pull/133) · `c510158`
+- [x] **RV-V3 r1** · 3 tokens categóricos afinados vs daltonismo (blue-700 · fuchsia-800 · amber-900) · [PR #140](https://github.com/RoddosColombia/compas/pull/140) · `0b5b067`
+- [x] **RV-V3 r2** · Sparklines de KPI (KpiTileV2 acepta `sparkline?: number[]`) · [PR #141](https://github.com/RoddosColombia/compas/pull/141) · `5008a59`
+- [x] **RV-V4** · Escenario superpuesto en `ComposicionFlujoRV2` (línea dashed) · [PR #142](https://github.com/RoddosColombia/compas/pull/142) · `39739b7`
+- [x] **RV-V5** · Overlay de escenario en el sparkline (2ª polyline dashed) · PR #142
+- [x] **RV-V10** · Encabezado sticky (candado en CI) + 5 estados de fila en `TablaEgreso` · [PR #144](https://github.com/RoddosColombia/compas/pull/144) · `efe4205`
+- [x] **RV-V6/V7** · Fase B del navegador (19 → 11 entradas top-level, `Mes` y `Catálogos` colapsables) · [PR #147](https://github.com/RoddosColombia/compas/pull/147) · `e94f653`
+- [x] **RV-V8/V9** · Bandeja "Por clasificar" (GET `/reglas-clasificacion/por-clasificar` + `PorClasificarPanel` con crear-regla pre-poblada) · [PR #148](https://github.com/RoddosColombia/compas/pull/148) · `902e66a`
+
+## Bucket 6 · Gates finales (6/6 ✅)
+
+- [x] **G-SEC** · Doc del proceso de revisor externo (`docs/COMPAS_2.0_GATE_SEGURIDAD.md`) · [PR #136](https://github.com/RoddosColombia/compas/pull/136)
+- [x] **G-GM** · `golden-master` + `motor-parity-guard` REQUIRED en branch protection · PR #136
+- [x] **G-SEMGREP** · 3 reglas inviolables (`.semgrep.yml`) activas en CI · PR #136
+- [x] **G-TRIVY** · Escaneo `fs` npm+pip+IaC activo en CI · PR #136
+- [x] **G-PIXEL** · Declarado no-activo con proceso de activación (`docs/COMPAS_2.0_GATE_PIXEL.md`) · [PR #137](https://github.com/RoddosColombia/compas/pull/137)
+- [x] **G-AXE** · `axe-core` + `vitest-axe` en `ProyeccionPage.a11y.test.tsx` · PR #137 · `6478369`
+
+## Bucket 7 · Infra hotfixes — crisis backend 2026-08-31/09-01 (5/5 ✅)
+
+Cadena de fixes que restauró el backend en producción tras el hang de startup
+por Python 3.14 y luego por handshake Atlas lento.
+
+- [x] **HF-1** · Keep-alive cron GitHub Actions (`/health` cada 10 min) · [PR #143](https://github.com/RoddosColombia/compas/pull/143) · `cbaa319`
+- [x] **HF-2** · Keep-alive apunta a URL correcta (`api.compas.roddos.com` en vez del servicio Node de onrender) · [PR #146](https://github.com/RoddosColombia/compas/pull/146) · `b5fb85e`
+- [x] **HF-3** · Pin Python 3.12.7 vía env var `PYTHON_VERSION` en `render.yaml` · [PR #150](https://github.com/RoddosColombia/compas/pull/150) · `ead0abd`
+- [x] **HF-4** · Hard timeout 15s en `ensure_beanie` + startup completo garantizado · [PR #151](https://github.com/RoddosColombia/compas/pull/151) · `c58304b`
+- [x] **HF-5** · Log honesto del fallo real + reintento lazy en cada request (middleware ASGI) · [PR #152](https://github.com/RoddosColombia/compas/pull/152) · `16e85f2`
+
+> **Nota infra:** el cluster `sismo-v3.onh5xm` es compartido con SISMO. Hay
+> ticket abierto con MongoDB Support por flap de 30 días en `shard-00-01`.
+> `w=majority + retryWrites` protege de rollbacks. Decisión pendiente con Iván:
+> ¿COMPAS con cluster propio o seguir compartido? Ver
+> [[render-startup-hang-fix]] en memoria.
+
+## Bucket 8 · Auditoría Ola 2 — F-03/F-04/F-05 (0/3 ⬜)
+
+Hallazgos del artefacto `claude.ai/code/artifact/e6615ca1-a49e-4c9a-8e22-27320d6f538b`
+(auditoría independiente contra prod, 2026-09-02). Correcciones que blindan
+al sistema para que la próxima degradación de Mongo NO pase 30 días en silencio.
+
+- [ ] **F-03** · `/health/ready` honesto — devuelve 503 cuando `beanie != "up"` + `render.yaml` cambia `healthCheckPath` a `/api/v1/health/ready` (para que Render detecte y reinicie solo)
+- [ ] **F-04** · Cliente HTTP frontend con `AbortSignal.timeout(15000)` + errores tipados (`expired`/`failed`/`unauthorized`) + banner "servicio degradado" cuando readiness falla
+- [ ] **F-05** · Single-flight promise para `refresh()` (una sola promesa compartida entre llamados concurrentes; si falla, cerrar sesión limpio en vez de reintentar)
+
+## Bucket 9 · Deuda funcional descubierta — F-06/F-07/F-08 (0/3 ⬜)
+
+Backend construido y desplegado pero **sin UI que lo consuma**. Detectado por
+auditoría cruzando 79 llamados del bundle contra 96 rutas del OpenAPI.
+
+- [ ] **F-06** · UI de **Pagos Planeados** — 5 endpoints backend sin pantalla (`GET /meses/{mes}/pagos-planeados`, `GET /meses/{mes}/pagos-semana`, `PATCH /pagos-planeados/{id}`, `POST /pagos-planeados/{id}/cancelar`, `POST /pagos-planeados/{id}/marcar-pagado`)
+- [ ] **F-07** · UI de **enrolamiento MFA** — `POST /auth/mfa/setup` y `POST /auth/mfa/activate` sin pantalla (login pide código pero un usuario nuevo no tiene cómo enrolarse)
+- [ ] **F-08** · Botón **reabrir mes** — `POST /meses/{mes}/reabrir` sin UI (si el CEO cierra un mes por error hoy no hay vuelta atrás desde la app)
+
+## Bucket 10 · Limpieza técnica (0/2 ⬜)
+
+Deuda técnica de los hotfixes de la crisis. Cero riesgo, valor de higiene.
+
+- [ ] **LT-1** · Quitar prints `[lifespan] A0..A11` de `backend/app/main.py` (ya cumplieron su función diagnóstica; el timeout de 15s + reintento lazy + log de excepciones se quedan como salvaguardas perpetuas)
+- [ ] **LT-2** · Eliminar `backend/runtime.txt` (Render lo ignora — el pin ahora vive en `PYTHON_VERSION` env var; queda como archivo muerto en el repo)
+
+## Bucket 11 · Backlog (post-plan) · BK-1 (½ hecho)
+
+- [x] **BK-1 ②** · Δ vs. inicio del mes en el tile "Caja hoy" de Inicio · [PR #149](https://github.com/RoddosColombia/compas/pull/149) · `417043a`
+- [ ] **BK-1 ③** · Puente real/proyectado como barra visual en `MesStatusBar` (backlog explícito — requiere diseño más pensado)
+
+---
+
+## Gates y prerrequisitos
 
 | Gate | Cuándo | Debe cumplirse |
 |---|---|---|
-| Kimi (por PR crítico) | antes de cada merge que toque motor/RBAC/audit/parsers/aprobación/cierre/migraciones | nota ≥ 9.0 + GO CEO; si Kimi ausente (regla vigente 2026-08-26), **gate-waiver del CEO + auditoría retroactiva pendiente** (NUNCA simulado) |
-| G-SEC | antes de liberar | segunda revisión de seguridad externa al equipo |
-| G-GM | siempre en CI | `golden-master` + `motor-parity-guard` verdes obligatorios; falta marcarlos como *required* en branch protection |
-| G-SEMGREP | siempre en CI | reglas inviolables (Decimal, histórico inmutable, ninguna ruta sin auth) fallan el PR |
-| G-TRIVY | antes de introducir librería de gráficos (RV-V3) | escaneo npm limpio |
-| G-PIXEL | antes de mergear cualquier RV que toque las 2 gráficas principales | chrome-devtools-mcp + lost-pixel contra `docs/design-references/proyeccion-mockup.html` |
-| G-AXE | siempre en las vistas de proyección | axe-core sin issues bloqueantes |
+| **Kimi** (por PR crítico) | antes de cada merge que toque motor/RBAC/audit/parsers/aprobación/cierre/migraciones | nota ≥ 9.0 + GO CEO. **Kimi ausente ~semanas (regla 2026-08-26):** gate-waiver del CEO + auditoría retroactiva pendiente. NUNCA simulado |
+| **G-SEC** | antes de liberar | Segunda revisión de seguridad externa al equipo |
+| **G-GM** | siempre en CI | `golden-master` + `motor-parity-guard` verdes, REQUIRED en branch protection |
+| **G-SEMGREP** | siempre en CI | 3 reglas inviolables (Decimal / audit-log append-only / ruta sin auth) |
+| **G-TRIVY** | antes de introducir librería npm | Escaneo `fs` limpio |
+| **G-PIXEL** | antes de mergear cualquier RV que toque las 2 gráficas principales | `chrome-devtools-mcp` + `lost-pixel` vs `docs/design-references/proyeccion-mockup.html` (activación pendiente de GO CEO) |
+| **G-AXE** | siempre en las vistas de proyección | `axe-core` sin issues bloqueantes |
 
-**Prerrequisitos / dependencias externas:**
-- **Kimi disponible:** hoy AUSENTE ~semanas → gate-waiver GO CEO por cada merge crítico, con paquete `PAQUETE.pdf` preparado por Claude para cuando Kimi vuelva (regla del CEO 2026-08-26).
-- **Branch protection en `main`:** falta marcar `golden-master` y `motor-parity-guard` como *required*.
+**Prerrequisitos externos:**
+
+- **Kimi disponible:** HOY AUSENTE ~semanas → gate-waiver GO CEO por cada merge crítico, con `PAQUETE.pdf` preparado por Claude para cuando Kimi vuelva.
+- **Branch protection en `main`:** `golden-master` + `motor-parity-guard` marcados como REQUIRED (HF activo).
+- **Ticket MongoDB Support** por `sismo-v3-shard-00-01` flap · abierto por el CEO 2026-09-01.
 - **Datos de PROD frescos** (Liz): cargas diarias sin gap (movs + caja).
-- **Mockup vinculante:** `docs/design-references/proyeccion-mockup.html` — cualquier PR de RV-V2 que se desvíe se rechaza en G-PIXEL.
+- **Mockup vinculante:** `docs/design-references/proyeccion-mockup.html` — cualquier PR de RV que se desvíe se rechaza en G-PIXEL.
 
-## 4. Registro de cambios (fechado, append-only)
-
-| Fecha | Bucket | Qué cerró / cambió | Evidencia |
-|---|---|---|---|
-| 2026-08-27 | F0 | **Fase 0 abierta** en modo crítico. F0-1 `docs/CAPACIDADES.md` (C7/C8/C10/C11 ya estaban ✅ en código; C9 parcial sin pantalla) + F0-2 candado del motor (2 jobs CI: `golden-master` + `motor-parity-guard`) + F0-3 `docs/DESIGN.md` (gramática 8 reglas). Velocímetro inicial con 30 tareas del plan en 5 buckets. | rama `feat/compas-2.0-fase0` (`3bbbde9`) |
-| 2026-08-27 | 1 | **RF-F1 MERGEADO a main** — reglas sembradas con patrones reales (`Base real egresos`). ≥90% auto-clasif; cada mov con `clasificada_por/at` + `regla_id`. Motor 0 diffs. | (main) |
-| 2026-08-28 | 1 | **RF-F2 MERGEADO a main** — costura presupuesto→proyección con serie versionada (`ProyeccionVersion` = única entidad cuyo ciclo de vida cambia en 2.0). Aprobar mes genera ajustes según D-2 (motor > mes en ejecución, presupuesto ≤ mes en ejecución). | (main) |
-| 2026-08-28 | 1 | **RF-F3 MERGEADO a main** — objetivo como regla de valles. Umbral de atención administrable (D-1). Valle como entidad con entrada/fondo/salida/duración; alertas por nivel y por "nuevo/más profundo" vs versión aprobada. Reusa `valles.py`. | (main) |
-| 2026-08-29 | 1 | **RF-F4 MERGEADO a main** — `techo_gasto_ventana(mes_inicio, ventana_meses=9, referencia)`. Bandera roja si el valle DENTRO de la ventana perfora la ATENCIÓN (no el mínimo), aunque el horizonte cierre bien. Parametriza `techo_gasto`. | (main) |
-| 2026-08-30 | 1 | **RF-F5 MERGEADO a main** — cada valle llega con sus 3 palancas (recorte gasto vía `goal_seek`, ingreso extra vía `goal_seek`, unidades extra = stub honesto `disponible=False` porque el solver de unidades vive en FABS `cfo.calc.escenario.motos_para_evitar_umbral`, síncrono-Mongo, no cabe en el hot-path del cockpit). `_palancas_por_valle` en `proyeccion/service.py`. | `6288c00` |
-| 2026-08-30 | 2 | **RF-F6 MERGEADO a main** — cargas idempotentes por huella (antes de que entre Bancolombia en septiembre). Índice único parcial `(banco, id_banco)` con `partialFilterExpression {id_banco: {$type: 'string'}}` + candado adicional `unique(banco, archivo_hash) WHERE estado='completada'`. `DuplicateKeyError`/`RevisionIdWasChanged` → `CargaDuplicadaError` (409 idempotente). | (main) |
-| 2026-08-30 | 4 | **RV-V1 MERGEADO a main (PR #123)** — DESIGN.md §3 con paleta como TOKENS. 7 tokens `--color-chart-*` en `frontend/src/index.css` (real/proyectado/escenario + ingreso/gasto-fijo/auteco/otros); categóricos DISJUNTOS del semáforo (regla 9). Tailwind 4 genera utilidades. Test estático `design-tokens.test.ts` = candado en CI (3 checks). Motor/backend 0 cambios. Prerrequisito de RV-V2 cerrado. | `a071d46` |
-| 2026-08-30 | 2 | **RF-F7 MERGEADO a main (PR #119)** — recomendaciones por impacto (reparto del recorte por rubro; motor corrido al revés). `reparto_por_rubro` función pura (orden por impacto DESC + regla del 50%). Servicio `_recomendaciones_recorte_por_impacto` reusa `_ejecutados_por_rubro_mes` §1.4.1. Frontend `VallesCard` con botón "ver reparto". Motor 0 diffs, golden-master intacto. **24/24 unit + broad regresión + `npm run build` limpio.** | `62d24d5` |
-| 2026-08-30 | 3 | **RF-F8 rebanada A MERGEADO a main (PR #120)** — "negocia esta deuda" simulación compute-only. `simular_negociacion_factura(factura_id, plazo?, fecha?)` reusa `_resultado_con(facturas_override=...)`. Endpoint `POST /obligaciones/{id}/facturas/{fid}/simular` RBAC `dashboard:leer`. Frontend `ObligacionesPage` con botón "Simular negociación" + `NegociarDialog` (visible solo con `plazo_max > plazo_base`). **La rebanada B (persistida) queda para CR-RF-F8-B: requiere evento `factura_obligacion.editada` en el catálogo audit, regla 11 prohíbe inventar eventos sin CR.** | `a24466b` |
-| 2026-08-30 | 2 | **RF-F9 MERGEADO a main (PR #121)** — plan de cuentas completo. `RubroCrearBody.codigo:str + tipo:TipoRubro` (sin `\| None`) + validación en `crear_rubro` (422 sin código o vacío, 422 sin tipo). Editar/reactivar NO exigen los nuevos campos (regla es "al CREAR", no reescritura del histórico). Semilla intacta: única excepción legítima sin código sigue siendo `Ajuste de conciliación` (`es_sistema=True`). Frontend `CategoriasPage` con campos `required`. Motor 0 diffs. | `7aebfba` |
-| 2026-08-30 | 3 | **RF-F10 MERGEADO a main (PR #122)** — horizonte a 240 meses + agregación por año/trimestre. `HORIZONTE_MAX` 180→240; `proyeccion/agregacion.py::agregar_por_periodo` con semántica STOCK vs FLUJO correcta (`caja_final`=último mes del periodo, `piso`=min, `flujo`/`ingreso_bruto`/`egresos`/`motos`=suma). Endpoint `GET /proyeccion/agregada?granularidad=trimestre\|anual`. Frontend `HorizonteLargoCard` visible solo con horizonte ≥ 60 meses. **CIERRA el alcance FUNCIONAL de COMPAS 2.0 (10/10).** | `ab05af7` |
-| 2026-08-30 | 4 | **RV-V2 rebanada 1 MERGEADO a main (PR #124)** — curva de caja principal contra el mockup vinculante (7 de 10 AC). `CurvaCajaRV2.tsx` SVG inline sin librería (Trivy pendiente), consume 23 campos reales de `MesProyeccion`, cero hex hardcodeado (todos por token RV-V1). AC cubiertos: #1 (real+proyectado+ancla), #2 (umbrales+valle+duración), #3 (fondo del valle escrito), #4 (tooltip), #6 (selector `3·6·9·12·15·18·30·42·54·60·120·240` combinado), #9 (color solo estado), #10 (23 campos reales). Reemplaza `<ComposicionCaja>` en `ProyeccionPage`. **Diferidos:** AC #5 (escenario superpuesto), #7 (motos editable), #8 (composición separada) para rebanadas 2 y 3. **12/12 unit + 339/339 suite frontend + `npm run build` limpio.** | `031b1ad` |
-| 2026-08-30 | 4 | **RV-V2 rebanada 2 MERGEADO a main (PR #131)** — composición del flujo en gráfica PROPIA (AC #8). `ComposicionFlujoRV2.tsx` SVG inline sin librería implementa `drawComp` del mockup: un mes = un grupo de barras (ingreso arriba positivo · gasto-fijo/Auteco/otros abajo apilados) + línea del flujo neto encima (ink 55% opacity) + línea del cero visible. Los 4 categóricos vienen de tokens RV-V1 (`--color-chart-ingreso/gasto-fijo/auteco/otros`), disjuntos del semáforo (regla 9); cero hex hardcodeado. Mapping concepto→campo por valor absoluto (`|gastos_fijos|`, `|pago_inventario|+|adelanto|+|fondeo|` Auteco, `|gps|+|costo_nueva|+|int_deuda|+|iva|+|aval|` otros). Segunda `ChartCard` en `ProyeccionPage` bajo la curva, con conclusión "De qué está hecho el flujo cada mes" (frase del mockup). **RV-V2 avanza a 8 de 10 AC.** Diferidos: AC #5 (escenario superpuesto) + AC #7 (motos editable, depende de exponer solver de unidades que hoy vive en FABS). **9/9 unit + 348/348 suite frontend + `npm run build` limpio.** | `2e39c04` |
-| 2026-08-31 | 6 | **Gates 5..8 MERGEADOS a main (PR #136 · PR-1 de 2 gates)** — `G-SEMGREP` con `.semgrep.yml` + workflow (3 reglas inviolables: `dinero-nunca-float`/regla 1, `audit-log-append-only`/regla 4, `ruta-sin-auth`/regla 9). `G-TRIVY` con workflow `aquasecurity/trivy-action` (fs scan npm + pip + IaC, severity HIGH/CRITICAL bloqueante, `ignore-unfixed: true`). `G-SEC` documentado en `docs/COMPAS_2.0_GATE_SEGURIDAD.md` (proceso completo, checklist 6 áreas, revisor externo requerido). **G-GM** activado con `gh api PATCH`: `golden-master` + `motor-parity-guard` ahora son *required* status checks en `main` — ningún PR se mergea sin el golden-master verde. Motor/backend/frontend runtime cero cambios. | `ffc8ce6` |
-| 2026-08-31 | 6 | **Gates 9..10 MERGEADOS a main (PR #137 · PR-2 de 2 gates) — CIERRA 6/6 gates.** `G-AXE` activo: `axe-core` + `vitest-axe` en frontend + nuevo `src/pages/ProyeccionPage.a11y.test.tsx` que corre `axe.run` sobre la vista de Proyecciones y falla el PR si aparece violación WCAG 2 A/AA con impact `serious`/`critical`. La vista actual ya pasa el gate (351/351 suite frontend GREEN). `G-PIXEL` DECLARADO no activo: `docs/COMPAS_2.0_GATE_PIXEL.md` con proceso de activación (Playwright/puppeteer + lost-pixel), config recomendada, alternativa liviana. Diferido porque exige introducir dependencia npm binaria pesada — decisión de deps requiere GO CEO tras G-TRIVY verde. Mientras: revisión visual manual del CEO por PR que toque `CurvaCajaRV2`/`ComposicionFlujoRV2`. Motor/backend runtime cero cambios. | `6478369` |
-| 2026-08-30 | 4 | **RV-V2 rebanada 3 MERGEADO a main (PR #133) — CIERRA RV-V2 10 de 10 AC.** Backend: 2 endpoints compute-only, motor sin tocar. `POST /proyeccion/con-unidades-extra` corre `_resultado_con` con `motos_base + N` (AC #5 · escenario superpuesto). `POST /proyeccion/solver-unidades` envuelve `resolver_unidades_para_umbral` ya existente en `solver_unidades.py` (bisección entera acotada; RF-F5 lo dejó como stub `disponible=False` porque no cabía en el hot-path — aquí se llama por CLIC EXPLÍCITO, no en cada refresco). Frontend: `CurvaCajaRV2` acepta `escenarioData?` opcional y dibuja LÍNEA punteada verde con `--color-chart-escenario` + ÁREA rellena entre base y escenario (fill-opacity 0.12); escala vmax al mayor de las dos series para no recortar. Cero hex hardcodeado. Nuevo `EscenarioBar` debajo de la curva: input libre editable ANTES de activar (AC #7 «editable antes») + toggle "Activar escenario" + botón «Vender de más» que corre el goal-seek de unidades y, si alcanza, pisa el input y activa el escenario. Motor 0 diffs. **6 backend + 2 frontend + 25/25 broad + 350/350 suite frontend + golden-master intacto + ruff limpio + `npm run build` limpio.** | `c510158` |
-| 2026-08-30 | — | **fix test_db MERGEADO (PR #125)** — `DOMAIN_DOCUMENTS == 25` (subió con `PaqueteVigilante` de FABS-VIGILANTE-1 `df3b0b1`). Desbloquea suite backend completo. | `4e9ecd7` |
-| 2026-08-30 | 4 | **RV-V2 rebanada 2 CONSTRUIDA, sin merger** — `ComposicionFlujoRV2.tsx` cubre AC #8 (composición del flujo en gráfica propia: ingreso arriba, egresos por concepto abajo apilados, línea de flujo neto). Consume tokens `--color-chart-ingreso/gasto-fijo/auteco/otros` de RV-V1. **9/9 tests pasando** (mapping de conceptos, orden apilado, línea de flujo). Vive en rama `feat/rv-v2-composicion` esperando GO del CEO para abrir PR. | rama `feat/rv-v2-composicion` (`13acd0b`) |
-| 2026-08-30 | — | **Regla nueva del CEO:** el tracker `.xlsx` se toca **solo en un PR de cierre después del merge de la feature**, cero clobber posible entre ramas paralelas. Aplicada por primera vez con PR #126 (cierra RF-F7..F10 + RV-V1 Hechas + RV-V2 En curso). | `599fc1b` (PR #126) |
-| 2026-08-30 | — | **Regla nueva del CEO (segunda del día):** el velocímetro se lee en **este archivo Markdown** (mismo patrón que `COMPAS_FABS_ROADMAP.md`), no en el Dashboard del `.xlsx`. Motivación: el Dashboard depende de fórmulas Excel + caché + auto-cálculo del usuario — no confiable. Este `.md` se ve al instante en GitHub, cero dependencias. El `.xlsx` queda como base de datos histórica pero NO manda: manda este archivo. Primera versión del velocímetro publicada en PR #129; reescrita al estilo FABS en el PR de este cambio. | (este PR) |
-| 2026-09-01 | 7 | **BK-1 rebanada ② MERGEADA a main (este PR) — el KpiTile "Caja hoy" ahora dice el "antes → después".** El tile de Inicio agrega `comparacion={delta, contra: "vs. inicio del mes"}` cuando `caja_inicial_total || saldo_inicial_caja > 0`. El delta usa `formatDelta(total.minus(inicial), "sube")` — cero Number, todo Decimal (regla 1). Se salta cuando la ancla es 0 (primer mes de la historia) para evitar "▲ +$704M vs $0" ruidoso. La comparación reusa la infra que ya entiende KpiTileV2 (nada nuevo en el sistema de diseño). La rebanada ③ (puente real/proyectado como barra visual en `MesStatusBar`) queda como backlog explícito — requiere diseño más pensado. **2 tests nuevos + 10/10 InicioPage + 391/391 suite frontend + `npm run build` limpio (5.77s).** | (este PR) |
-| 2026-09-01 | 5 | **RV-V8/V9 MERGEADO a main (PR #148) — bandeja "Por clasificar" + crear-regla con patrón pre-poblado.** Nuevo endpoint `GET /api/v1/reglas-clasificacion/por-clasificar` (RBAC `dashboard:leer`) que lista los movimientos con rubro 'Por clasificar' en meses NO cerrados, AGRUPADOS por primera-palabra de la descripción normalizada (así 40 pagos de UBER caen en un solo grupo con muestras=40 en vez de 40 filas). Cada grupo trae `descripcion_muestra` (para pre-poblar el patrón), `tipo_flujo`, `muestras` (int) y `ejemplos` (hasta 3 descripciones distintas). Orden estable: grupos más grandes primero. Frontend: nuevo `PorClasificarPanel` en ReglasPage encima del FormNueva; muestra tabla con las columnas + botón "Crear regla" que sube el patrón sugerido a la sección de creación (patrón y tipo_flujo pre-cargados, foco automático en el input del patrón, scroll suave al form). Motor / TablaEgreso / caja / lib de money: cero cambios. Regla 4 (meses cerrados intocables) y regla 9 (nav derivada de permisos) intactas. **7 tests backend + 41/41 reglas endpoints + 389/389 suite frontend + `npm run build` limpio (9.00s).** | (este PR) |
-| 2026-09-01 | 5 | **RV-V6/V7 MERGEADOS a main (PR #147) — Fase B del navegador: 19 → 11 entradas top-level.** El sidebar pasa de 19 items sueltos a 11 top-level en 4 grupos: `Principal` (4: Inicio · Mes · Proyecciones · Escenarios) · `Análisis` (2: Dashboards · Reportes) · `Configuración` (2: Supuestos · Catálogos) · `Bancos` (3: Movimientos · Caja · Gastos recurrentes). Nuevo tipo `ItemNav.subItems?: ItemNav[]` en `frontend/src/lib/navegacion.ts`: si un item lo trae, el Sidebar lo pinta como grupo COLAPSABLE con un `<button aria-expanded>` en vez de un `<NavLink>`. Se auto-expande cuando la ruta actual matchea uno de los sub-paths (patrón "el mes como objeto con pestañas": entrar a `/control` abre el grupo `Mes` sin clic). Dos grupos colapsables definidos: `Mes` con 7 sub-vistas (Cabina · Ciclo · Presupuesto · IVA · Metas · Obligaciones · Flujo diario — todos los paths reales intactos, solo cambia la presentación) y `Catálogos` con 3 sub-vistas (Categorías · Reglas · Semilla de reglas, la última filtrada por `reglas:gestionar`). Los permisos siguen filtrando a nivel de subitem (regla 9). Cero cambios en las páginas ni en las rutas. **7 tests nuevos + 11/11 en Sidebar + 389/389 suite completa + `npm run build` limpio (5.57s).** | (este PR) |
-| 2026-08-31 | 5 | **RV-V10 MERGEADO a main (PR #144) — CIERRA el bucket bundled RV-V3-5-10.** Encabezado de tabla fijo + 5 estados de fila en `TablaEgreso` (la tabla mes-a-mes de Proyecciones). Encabezado sticky top+left ya venía de V1 §3; este PR agrega el CANDADO en CI (2 tests de regresión que fallan si alguien borra las clases). 5 estados visuales: ok (limpio, sin ruido) · atencion (border-l-atencion) · critico (border-l-critico) · negativo (border-l-critico, misma severidad crítico) · **reconciliado** (border-l-hairline — los meses ya cerrados con banca son histórico, no proyección viva; no deben alarmar como si lo fueran, aunque el chip de la última columna siga mostrando el estado semántico del motor). Los 5 estados se codifican en un `data-estado-visual` en el `<tr>` para test estable + una clase `border-l-*` para el segundo canal (color + posición). Cero cambios en motor / backend / lib de money. **11 tests nuevos + 22/22 en TablaEgreso + 382/382 suite completa + `npm run build` limpio (4.45s).** | (este PR) |
-| 2026-08-31 | 5 | **RV-V4 + RV-V5 MERGEADOS a main (PR #142) — escenario superpuesto en las gráficas y sparklines restantes.** RV-V4 · `ComposicionFlujoRV2` acepta `escenarioMeses?: MesProyeccion[]` opcional: si viene, dibuja la LÍNEA de flujo neto del escenario como overlay dashed sobre `--color-chart-escenario` (RV-V1 token, cero hex). Las barras del base quedan intactas (evita el ruido de barras dobles por mes); la escala Y se extiende para incluir el rango del escenario. Leyenda gana un ítem `flujo neto · escenario` cuando el escenario está activo. `ProyeccionPage` lo conecta con `escenarioData?.meses` — el mismo estado del escenario que ya alimentaba a `CurvaCajaRV2` (RV-V2 r3). RV-V5 · `KpiTileV2` acepta `sparklineEscenario?: number[]` opcional: si TAMBIÉN hay `sparkline` con ≥2 puntos, el Sparkline interno dibuja una segunda polyline dashed sobre `--color-chart-escenario` con escala compartida (min/max de las dos series combinadas). Backward compat: los otros 17 usos de KpiTileV2 y el consumidor de sparkline (tile "Piso de caja" en InicioPage) siguen igual. **9/9 unit ComposicionFlujoRV2 + 15/15 unit KpiTile + 371/371 suite frontend + `npm run build` limpio (7.84s).** | (este PR) |
-| 2026-08-31 | 5 | **RV-V3 rebanada 2 MERGEADO a main (PR #141)** — sparklines de KPI en el cockpit. `KpiTileV2` acepta un `sparkline?: number[]` opcional (crudos, sin formato); si trae ≥2 valores dibuja un mini-SVG polyline de 20px de alto sobre `--color-chart-real` (RV-V1 token, cero hex hardcodeado), con punto en el extremo derecho (patrón Tufte) y `aria-label` que describe la tendencia («sube/baja/estable») para lectores de pantalla. Cero librerías (evita G-TRIVY), cero cálculo financiero en el front. Primer consumidor: `InicioPage` en el tile "Piso de caja" con la trayectoria de caja de los primeros 18 meses — se ve la caída antes del valle SIN abrir Proyecciones. Los otros 17 usos de `KpiTileV2` en el repo siguen igual (prop opcional). **10/10 unit KpiTile + 362/362 suite frontend + `npm run build` limpio (6.43s).** | (este PR) |
-| 2026-08-31 | 5 | **RV-V3 rebanada 1 MERGEADO a main (PR #140) — refina los 3 tokens categóricos provisionales de RV-V1 contra daltonismo.** Cambian solo 3 valores en `frontend/src/index.css` — el contrato de tokens (7 `--color-chart-*` en el bloque `@theme`) y el test `design-tokens.test.ts` quedan intactos. Nuevos hex: `--color-chart-gasto-fijo` `#2563eb` blue-600 → `#1d4ed8` blue-700 (AAA 7.83:1) · `--color-chart-auteco` `#c026d3` fuchsia-600 → `#86198f` fuchsia-800 (AAA 8.94:1) · `--color-chart-otros` `#0d9488` teal-600 → `#78350f` amber-900 tabaco (AAA 9.36:1). Método: matriz Machado-Oliveira-Fernandes para simulación de protanopia/deuteranopia/tritanopia; artefacto de verificación en https://claude.ai/code/artifact/730a413f-4cd8-476d-832e-d891c8eec29d muestra los 8 escenarios lado a lado. Los provisionales pasaban WCAG AA pero colapsaban bajo tritanopia (gasto y otros se juntaban al mismo teal) y protanopia (los mismos dos al mismo azul-morado); los nuevos separan las hues en 3 cuadrantes del círculo cromático, disjuntos entre sí y del semáforo. Motor / backend runtime: cero cambios. **Verificaciones:** 26/26 unit tests afectados (design-tokens + CurvaCajaRV2 + ComposicionFlujoRV2) + 357/357 suite frontend completa + `npm run build` limpio (10.00s). | (este PR) |
-| 2026-08-31 | F0 | **AND-1..5 MERGEADOS a main — CIERRA Fase 0 8/8.** AND-1 · `docs/COMPAS_2.0_AND_1_SKILLSPECTOR.md` (checklist SkillSpector + AgentShield + log de skills instaladas). AND-2 · `.claude/settings.json` con `permissions.allow`/`ask`/`deny` (deniega lectura de `.env`/INVENTARIO-SECRETOS y `rm -rf`/`git reset --hard`/`gh repo delete`; pide confirmación en `git push`/`gh pr merge`/`npm install`), `hooks: {}` apagados por default y `$fijados` (python 3.12 · node 22 · mongodb 7). AND-3 · `.claude/skills/spec-miner.md` (5-step: enunciar problema · 2-3 enfoques · elegir simple · mapa con evidencia real archivo:línea · TDD) + `.claude/skills/tdd-guide.md` (4-step RED-GREEN-refactor, obligatorio para Alegra/MongoDB/motor/endpoints, con reglas COMPAS del motor intocable + golden-master + real-mongo). AND-4 · `docs/COMPAS_2.0_AND_4_HERRAMIENTAS.md` (Browser MCP con dominios permitidos + tweakcn para RV-V3/V4/V5/V10 + explícito "chrome-devtools-mcp NO instalado" + Playwright/Selenium fuera). AND-5 · candado del método operativo — G-GM ya *required* en branch protection (PR #136), G-SEMGREP + G-TRIVY + G-AXE activos en CI (PRs #136/#137), G-SEC/G-PIXEL declarados diferidos con proceso escrito. **Cero cambios en motor/backend/frontend runtime.** | (este PR) |
-
-## 5. Estado de datos / decisiones abiertas del CEO
+## Estado de datos / decisiones abiertas del CEO
 
 - **Alegra:** CERO en esta fase 2.0 (misma decisión que FABS).
 - **Fuera de alcance permanente:** CXC socios, interés presuntivo, devengado/P&L, labores contables (COMPAS NO es ERP).
-- **Kimi:** ausente ~semanas → **gate-waiver + GO CEO** por cada merge crítico (regla vigente 2026-08-26). Kimi retroactivo pendiente para: RF-F5..F10, RV-V1, RV-V2 rebanada 1 (paquetes `PAQUETE.pdf` preparados por Claude).
-- **Repo público hasta cerrar Fase 0:** privatizar + rotar credenciales = parte del gate G-SEC (memoria `kimi-auditoria-plan-maestro`).
-- **Pendientes del CEO:** GO para mergear RV-V2 rebanada 2 (`feat/rv-v2-composicion`); decidir orden de RV-V3..V10 vs. Gates.
+- **Kimi retroactivo pendiente para:** RF-F5..F10, RV-V1, RV-V2 rebanadas 1/2/3, RV-V3 r1/r2, RV-V4/V5, RV-V6/V7, RV-V8/V9, RV-V10, BK-1 ②, HF-1..HF-5. Paquetes `PAQUETE.pdf` preparados por Claude.
+- **Repo público hasta cerrar Fase 0:** privatizar + rotar credenciales = parte del gate G-SEC.
+- **Cluster compartido con SISMO:** decisión pendiente (cluster propio para COMPAS vs seguir compartido) — discutir con Iván tras estabilizar el ticket con Support.
+- **F-06 Pagos Planeados:** decidir si entra al alcance o se marca como pendiente explícito (5 endpoints sin UI hoy).
 
-## 6. Refinamientos conocidos (para siguientes buckets)
+## Registro de cambios (append-only, más reciente arriba)
 
-- **RF-F8 rebanada B (persistida)** — requiere abrir CR-RF-F8-B con evento audit nuevo `factura_obligacion.editada`. Regla 11 prohíbe inventar eventos sin CR. No urgente hoy (la simulación cubre el 90% del uso).
-- **RV-V2 rebanadas 2 y 3** — rebanada 2 (composición AC #8) YA CONSTRUIDA sin merger; rebanada 3 (escenario superpuesto AC #5 + motos editable AC #7) pendiente. AC #7 depende de exponer `motos_para_evitar_umbral` (hoy stub honesto en RF-F5 con `disponible=False` porque vive en FABS síncrono-Mongo).
-- **RV-V3 tokens tweakcn** — los 3 categóricos provisionales (`--color-chart-gasto-fijo` blue-600, `--color-chart-auteco` fuchsia-600, `--color-chart-otros` teal-600) se afinan con tweakcn + verificación de daltonismo antes de cerrar RV-V3.
-- **G-GM en branch protection** — hoy los jobs `golden-master` y `motor-parity-guard` existen y corren verdes; falta marcarlos como *required* en branch protection de `main` para que un PR no pueda mergearse sin ellos.
-- **CI billing bloqueaba el merge automático** — memoria `ci-actions-billing-bloqueado`; hoy resuelto (el CEO desbloqueó). Merges del pipeline 119..129 hechos con `--admin` (autorización explícita del CEO en chat).
+| Fecha | Bucket | Cambio | Evidencia |
+|---|---|---|---|
+| 2026-09-02 | — | **Roadmap convertido a checklist accionable + rebalanceo de pesos.** Se agregaron 3 buckets nuevos con scope descubierto: Bucket 7 (infra hotfixes), Bucket 8 (auditoría Ola 2 F-03..F-05), Bucket 9 (deuda funcional F-06..F-08), Bucket 10 (limpieza técnica). Pesos rebalanceados de 5→11 buckets. Total ahora refleja realidad ampliada: 88% ponderado con 34.5/39 tareas hechas (contra 99% anterior en scope estrecho). | (este PR) |
+| 2026-09-01 | 7 | HF-5 · Log honesto de Beanie + reintento lazy | PR #152 · `16e85f2` |
+| 2026-09-01 | 7 | HF-4 · Hard timeout 15s en `ensure_beanie` + prints diagnóstico | PR #151 · `c58304b` |
+| 2026-09-01 | 7 | HF-3 · `PYTHON_VERSION=3.12.7` env var | PR #150 · `ead0abd` |
+| 2026-09-01 | 5 | **BK-1 rebanada ②** · Δ vs. inicio del mes en tile "Caja hoy" | PR #149 · `417043a` |
+| 2026-09-01 | 5 | **RV-V8/V9** · Bandeja Por clasificar + crear-regla pre-poblada · CIERRA bucket visual 5/5 | PR #148 · `902e66a` |
+| 2026-09-01 | 5 | **RV-V6/V7** · Fase B del navegador 19 → 11 entradas | PR #147 · `e94f653` |
+| 2026-09-01 | 7 | HF-2 · Keep-alive apunta a URL correcta | PR #146 · `b5fb85e` |
+| 2026-08-31 | 7 | HF-1 · Keep-alive cron backend (posteriormente corregido en HF-2) | PR #143 · `cbaa319` |
+| 2026-08-31 | 5 | **RV-V10** · Encabezado sticky + 5 estados de fila | PR #144 · `efe4205` |
+| 2026-08-31 | 5 | **RV-V4 + RV-V5** · Escenarios superpuestos en composición + sparkline | PR #142 · `39739b7` |
+| 2026-08-31 | 5 | **RV-V3 r2** · Sparklines de KPI | PR #141 · `5008a59` |
+| 2026-08-31 | 5 | **RV-V3 r1** · 3 tokens categóricos vs daltonismo | PR #140 · `0b5b067` |
+| 2026-08-31 | 1 | **AND-1..5** · CIERRA Fase 0 (8/8) | PR #139 |
+| 2026-08-31 | 6 | **Gates 5..10** · G-SEMGREP + G-TRIVY + G-AXE + G-SEC + G-GM + G-PIXEL — CIERRA 6/6 | PRs #136 · #137 |
+| 2026-08-30 | 4 | **RV-V2 rebanada 3** · CIERRA RV-V2 10/10 AC | PR #133 · `c510158` |
+| 2026-08-30 | 4 | **RV-V2 rebanada 2** · Composición del flujo AC #8 | PR #131 · `2e39c04` |
+| 2026-08-30 | 4 | **RV-V2 rebanada 1** · Curva de caja 7/10 AC | PR #124 · `031b1ad` |
+| 2026-08-30 | 4 | **RV-V1** · 7 tokens de gráfico | PR #123 · `a071d46` |
+| 2026-08-30 | 3 | **RF-F10** · Horizonte 240 + agregación · CIERRA FUNCIONAL 10/10 | PR #122 · `ab05af7` |
+| 2026-08-30 | 3 | **RF-F8 rebanada A** · Simular negociación | PR #120 · `a24466b` |
+| 2026-08-30 | 2 | **RF-F9** · Plan de cuentas completo | PR #121 · `7aebfba` |
+| 2026-08-30 | 2 | **RF-F7** · Recomendaciones por impacto | PR #119 · `62d24d5` |
+| 2026-08-30 | 2 | **RF-F6** · Cargas idempotentes por huella | (main) |
+| 2026-08-30 | 1 | **RF-F5** · 3 palancas por valle | `6288c00` |
+| 2026-08-29 | 1 | **RF-F4** · Techo de gasto en ventana | (main) |
+| 2026-08-28 | 1 | **RF-F3** · Valles como entidad | (main) |
+| 2026-08-28 | 1 | **RF-F2** · Costura versionada presupuesto→proyección | (main) |
+| 2026-08-27 | 1 | **RF-F1** · Reglas sembradas | (main) |
+| 2026-08-27 | 0 | **Fase 0 abierta** · F0-1 CAPACIDADES.md + F0-2 candado motor + F0-3 DESIGN.md | `3bbbde9` |
 
 ---
-*Creado 2026-08-30. Este archivo se actualiza al cerrar cada tarea (no al final del bucket), mismo patrón que `docs/COMPAS_FABS_ROADMAP.md`.*
+
+*Última actualización: 2026-09-02. Este archivo es la fuente única del avance
+de COMPAS 2.0. Cada tarea se actualiza en el mismo PR que la cierra.*
