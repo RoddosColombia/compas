@@ -91,12 +91,22 @@ async function refrescar(): Promise<boolean> {
         credentials: "include",
         signal: ctrl.signal,
       });
-      if (!r.ok) return false;
+      if (!r.ok) {
+        // F-05 (auditoría 2026-09-02): limpiar el token cuando refresh falla.
+        // Antes: el token viejo quedaba en memoria → la próxima petición lo
+        // enviaba, otro 401, otro refresh que fallaba igual, loop. Ahora la
+        // próxima llamada a apiFetch no envía Authorization y el UI puede
+        // detectar `haySesion() === false` para redirigir a /login limpio.
+        accessToken = null;
+        return false;
+      }
       const data = (await r.json()) as { access_token: string };
       accessToken = data.access_token;
       return true;
     } catch {
-      return false; // 401, red caída, o timeout (cold-start) → sin sesión
+      // Timeout, red caída o body no-json — misma consecuencia: sesión perdida.
+      accessToken = null;
+      return false;
     } finally {
       clearTimeout(t);
       refreshEnCurso = null;

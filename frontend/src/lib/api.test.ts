@@ -8,7 +8,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ApiErrorKind, apiFetch, apiJson, setAccessToken } from "@/lib/api";
+import {
+  ApiError,
+  type ApiErrorKind,
+  apiFetch,
+  apiJson,
+  haySesion,
+  restaurarSesion,
+  setAccessToken,
+} from "@/lib/api";
 
 // Mock global de fetch. Cada test lo re-configura.
 const fetchMock = vi.fn();
@@ -115,5 +123,73 @@ describe("apiJson · errores tipados por status (F-04)", () => {
       kind: "client",
       status: 422,
     });
+  });
+});
+
+// ─── F-05: refresh single-flight + limpieza de sesión al fallar ───────────
+//
+// Auditor 2026-09-02 marcó F-05 pero: (a) el single-flight YA existe
+// (`refreshEnCurso ??= ...`) — sólo lo blindamos con test; (b) el retry
+// después de refresh fallido YA se cortocircuita con `&&` en apiFetch.
+// GAP REAL: refresh fallido no limpiaba `accessToken` — la próxima petición
+// mandaba el Bearer viejo, otro 401, otro refresh fallido, loop. FIX +
+// tests que blindan el comportamiento correcto para siempre.
+
+describe("refresh: single-flight + limpieza al fallar (F-05)", () => {
+  it("single-flight — N llamadas concurrentes disparan UN solo POST /auth/refresh", async () => {
+    setAccessToken("token-viejo");
+    // 6 peticiones paralelas — todas reciben 401.
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/auth/refresh")) {
+        // Simula latencia leve para forzar concurrencia.
+        await new Promise((r) => setTimeout(r, 5));
+        return new Response(
+          JSON.stringify({ access_token: "token-nuevo" }),
+          { status: 200 },
+        );
+      }
+      return new Response("{}", { status: 401 });
+    });
+
+    const paralelo = Array.from({ length: 6 }, () => apiFetch("/x"));
+    await Promise.allSettled(paralelo);
+
+    const llamadasRefresh = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).endsWith("/auth/refresh"),
+    );
+    expect(llamadasRefresh).toHaveLength(1);
+  });
+
+  it("refresh fallido limpia accessToken — la próxima petición ya no envía el Bearer viejo", async () => {
+    setAccessToken("token-expirado");
+    expect(haySesion()).toBe(true);
+
+    // /auth/refresh también responde 401 (cookie inválida, sesión perdida).
+    fetchMock.mockImplementation(async (url) => {
+      return new Response("{}", { status: 401 });
+    });
+
+    // Llamamos restaurarSesion (patrón del arranque de la app). El refresh
+    // interno falla; el token viejo DEBE quedar limpio.
+    const ok = await restaurarSesion();
+    expect(ok).toBe(false);
+    expect(haySesion()).toBe(false); // ← el fix de F-05
+  });
+
+  it("apiFetch NO reintenta el fetch original si refresh falla", async () => {
+    setAccessToken("token-viejo");
+    fetchMock.mockImplementation(async (url) => {
+      return new Response("{}", { status: 401 });
+    });
+
+    await apiFetch("/x");
+
+    // Debe haberse llamado: 1) /x (401) → 2) /auth/refresh (401). NO
+    // una 3ª llamada a /x reintentada.
+    const llamadasA_x = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).endsWith("/x"),
+    );
+    expect(llamadasA_x).toHaveLength(1);
   });
 });
