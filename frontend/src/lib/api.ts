@@ -6,6 +6,12 @@
 //   • En 401 se intenta UN refresh (single-flight: N peticiones concurrentes
 //     comparten el mismo POST /auth/refresh) y se reintenta la petición.
 //   • Los montos viajan como string; este módulo no los toca.
+//
+// F-04 (auditoría 2026-09-02): el cliente HTTP ahora tiene TIMEOUT de 15s y
+// errores TIPADOS. Antes un backend degradado colgaba al usuario con un spinner
+// eterno; ahora la petición aborta a los 15s y `ApiError.kind` distingue
+// timeout / network / unauthorized / server / client — el UI puede mostrar
+// mensajes honestos y un banner de "servicio degradado" cuando toca.
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 const API = `${BASE}/api/v1`;
@@ -21,19 +27,59 @@ export function haySesion(): boolean {
   return accessToken !== null;
 }
 
+// ─── Errores tipados (F-04) ────────────────────────────────────────────────
+//
+// El UI escoge el mensaje por `kind`, no por status. `status=0` significa
+// "no hubo respuesta" (timeout o red caída) — el backend nunca lo envía.
+
+export type ApiErrorKind =
+  | "timeout"      // AbortController disparó — servidor tardó > 15s
+  | "network"     // fetch rechazó sin abort (DNS, CORS bloqueado, offline)
+  | "unauthorized" // 401 sin refresh viable — sesión perdida
+  | "server"      // 5xx — backend degradado / mongo caído / bug
+  | "client";     // 4xx (no-401) — validación / RBAC / recurso inexistente
+
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, detail: string) {
+  kind: ApiErrorKind;
+  constructor(status: number, detail: string, kind?: ApiErrorKind) {
     super(detail);
     this.status = status;
+    // Si el call site no pasa `kind`, lo derivamos del status (mismo mapeo
+    // que usa `kindDeStatus` para respuestas HTTP). Los call sites viejos
+    // en `lib/cargas.ts`, `lib/facturas.ts`, etc. quedan compatibles sin
+    // tocarlos — el `kind` se les asigna correctamente por el status.
+    this.kind = kind ?? kindDeStatus(status);
   }
 }
 
-// Timeout del refresh de arranque: en Render Free un cold-start puede tardar
-// ~50s; sin tope, el spinner de "Cargando sesión…" se ve congelado. Con 15s el
-// arranque cae al login en vez de colgarse, y el reintento del usuario ya
-// encuentra el server despierto.
+// Timeout de cada petición autenticada. En Render Free un cold-start puede
+// tardar ~50s; con 15s el usuario ve el error rápido y reintenta cuando el
+// server ya despertó, en vez de esperar un minuto de spinner.
+const REQUEST_TIMEOUT_MS = 15000;
 const REFRESH_TIMEOUT_MS = 15000;
+
+/** Clasifica cualquier excepción de `fetch` en un `ApiError` tipado. */
+function excepcionAApiError(e: unknown): ApiError {
+  // AbortError puede venir como DOMException o como TimeoutError (según runtime).
+  if (
+    e instanceof DOMException &&
+    (e.name === "AbortError" || e.name === "TimeoutError")
+  ) {
+    return new ApiError(0, "La petición tardó demasiado (más de 15 s).", "timeout");
+  }
+  const msg = e instanceof Error ? e.message : String(e);
+  return new ApiError(0, `Sin conexión con el servidor: ${msg}`, "network");
+}
+
+/** Traduce status HTTP a `ApiErrorKind` (después de descartar timeout/network). */
+function kindDeStatus(status: number): ApiErrorKind {
+  if (status === 401) return "unauthorized";
+  if (status >= 500) return "server";
+  return "client";
+}
+
+// ─── refresh (single-flight) ──────────────────────────────────────────────
 
 async function refrescar(): Promise<boolean> {
   refreshEnCurso ??= (async () => {
@@ -59,7 +105,11 @@ async function refrescar(): Promise<boolean> {
   return refreshEnCurso;
 }
 
-/** fetch autenticado contra /api/v1; reintenta UNA vez tras refresh en 401. */
+// ─── apiFetch: fetch autenticado con timeout duro ─────────────────────────
+
+/** fetch autenticado contra /api/v1 con timeout de 15s; reintenta UNA vez
+ *  tras refresh en 401. Errores de red/timeout viajan como ApiError tipado
+ *  (no como TypeError sin diagnóstico). */
 export async function apiFetch(
   path: string,
   init: RequestInit = {},
@@ -67,11 +117,21 @@ export async function apiFetch(
 ): Promise<Response> {
   const headers = new Headers(init.headers);
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-  const r = await fetch(`${API}${path}`, {
-    ...init,
-    headers,
-    credentials: "include",
-  });
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  let r: Response;
+  try {
+    r = await fetch(`${API}${path}`, {
+      ...init,
+      headers,
+      credentials: "include",
+      signal: init.signal ?? ctrl.signal,
+    });
+  } catch (e) {
+    throw excepcionAApiError(e);
+  } finally {
+    clearTimeout(t);
+  }
   if (r.status === 401 && reintentar && (await refrescar())) {
     return apiFetch(path, init, false);
   }
@@ -90,7 +150,7 @@ export async function apiJson<T>(
       typeof body.detail === "string"
         ? body.detail
         : JSON.stringify(body.detail ?? body);
-    throw new ApiError(r.status, detail);
+    throw new ApiError(r.status, detail, kindDeStatus(r.status));
   }
   return body as T;
 }
@@ -103,29 +163,58 @@ export async function login(
   email: string,
   password: string,
 ): Promise<LoginResultado> {
-  const r = await fetch(`${API}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ email, password }),
-  });
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  let r: Response;
+  try {
+    r = await fetch(`${API}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email, password }),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    throw excepcionAApiError(e);
+  } finally {
+    clearTimeout(t);
+  }
   const body = await r.json().catch(() => ({}));
   if (!r.ok)
-    throw new ApiError(r.status, body.detail ?? "Error de autenticación");
+    throw new ApiError(
+      r.status,
+      body.detail ?? "Error de autenticación",
+      kindDeStatus(r.status),
+    );
   if (body.mfa_required) return { tipo: "mfa", mfaToken: body.mfa_token };
   accessToken = body.access_token;
   return { tipo: "ok" };
 }
 
 export async function mfaVerify(mfaToken: string, code: string): Promise<void> {
-  const r = await fetch(`${API}/auth/mfa/verify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ mfa_token: mfaToken, code }),
-  });
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  let r: Response;
+  try {
+    r = await fetch(`${API}/auth/mfa/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ mfa_token: mfaToken, code }),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    throw excepcionAApiError(e);
+  } finally {
+    clearTimeout(t);
+  }
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ApiError(r.status, body.detail ?? "Código inválido");
+  if (!r.ok)
+    throw new ApiError(
+      r.status,
+      body.detail ?? "Código inválido",
+      kindDeStatus(r.status),
+    );
   accessToken = body.access_token;
 }
 
