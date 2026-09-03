@@ -33,11 +33,11 @@ export function haySesion(): boolean {
 // "no hubo respuesta" (timeout o red caída) — el backend nunca lo envía.
 
 export type ApiErrorKind =
-  | "timeout"      // AbortController disparó — servidor tardó > 15s
-  | "network"     // fetch rechazó sin abort (DNS, CORS bloqueado, offline)
+  | "timeout" // AbortController disparó — servidor tardó > 15s
+  | "network" // fetch rechazó sin abort (DNS, CORS bloqueado, offline)
   | "unauthorized" // 401 sin refresh viable — sesión perdida
-  | "server"      // 5xx — backend degradado / mongo caído / bug
-  | "client";     // 4xx (no-401) — validación / RBAC / recurso inexistente
+  | "server" // 5xx — backend degradado / mongo caído / bug
+  | "client"; // 4xx (no-401) — validación / RBAC / recurso inexistente
 
 export class ApiError extends Error {
   status: number;
@@ -66,7 +66,11 @@ function excepcionAApiError(e: unknown): ApiError {
     e instanceof DOMException &&
     (e.name === "AbortError" || e.name === "TimeoutError")
   ) {
-    return new ApiError(0, "La petición tardó demasiado (más de 15 s).", "timeout");
+    return new ApiError(
+      0,
+      "La petición tardó demasiado (más de 15 s).",
+      "timeout",
+    );
   }
   const msg = e instanceof Error ? e.message : String(e);
   return new ApiError(0, `Sin conexión con el servidor: ${msg}`, "network");
@@ -246,4 +250,31 @@ export async function capabilities(): Promise<{
   capabilities: string[];
 }> {
   return apiJson("/auth/capabilities");
+}
+
+// ─── Mensajes en lenguaje llano (fix 2026-09-03) ──────────────────────────
+//
+// Regla F1 §5: nunca un código pelado. Cualquier pantalla que caiga en
+// `isError` traduce la excepción con esto en vez de renderizar NADA — que era
+// el bug real: pantallas con branches solo para `isLoading` / `data` dejaban
+// la página literalmente en blanco cuando la query fallaba.
+
+export function mensajeDeError(e: unknown): string {
+  if (e instanceof ApiError) {
+    switch (e.kind) {
+      case "timeout":
+        return "El servidor tardó demasiado en responder. Puede estar despertando después de un rato inactivo.";
+      case "network":
+        return "No hay conexión con el servidor de COMPAS.";
+      case "unauthorized":
+        return "Tu sesión venció. Volvé a entrar.";
+      case "server":
+        return `El servidor respondió con un error (${e.status}). El servicio está degradado.`;
+      case "client":
+        return e.message || `No se pudo cargar la información (${e.status}).`;
+    }
+  }
+  return e instanceof Error && e.message
+    ? e.message
+    : "No se pudo cargar la información.";
 }

@@ -144,10 +144,9 @@ describe("refresh: single-flight + limpieza al fallar (F-05)", () => {
       if (u.endsWith("/auth/refresh")) {
         // Simula latencia leve para forzar concurrencia.
         await new Promise((r) => setTimeout(r, 5));
-        return new Response(
-          JSON.stringify({ access_token: "token-nuevo" }),
-          { status: 200 },
-        );
+        return new Response(JSON.stringify({ access_token: "token-nuevo" }), {
+          status: 200,
+        });
       }
       return new Response("{}", { status: 401 });
     });
@@ -166,7 +165,9 @@ describe("refresh: single-flight + limpieza al fallar (F-05)", () => {
     expect(haySesion()).toBe(true);
 
     // /auth/refresh también responde 401 (cookie inválida, sesión perdida).
-    fetchMock.mockImplementation(async (url) => {
+    // (sin parámetro `url`: no se usa, y con `noUnusedParameters` rompía
+    // `tsc -b` -> `npm run build` fallaba y Vercel no publicaba NADA.)
+    fetchMock.mockImplementation(async () => {
       return new Response("{}", { status: 401 });
     });
 
@@ -179,7 +180,9 @@ describe("refresh: single-flight + limpieza al fallar (F-05)", () => {
 
   it("apiFetch NO reintenta el fetch original si refresh falla", async () => {
     setAccessToken("token-viejo");
-    fetchMock.mockImplementation(async (url) => {
+    // (sin parámetro `url`: no se usa, y con `noUnusedParameters` rompía
+    // `tsc -b` -> `npm run build` fallaba y Vercel no publicaba NADA.)
+    fetchMock.mockImplementation(async () => {
       return new Response("{}", { status: 401 });
     });
 

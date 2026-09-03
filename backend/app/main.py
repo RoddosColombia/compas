@@ -64,38 +64,45 @@ def _init_sentry(settings) -> None:
     )
 
 
+# Red de seguridad del registro de modelos. Con skip_indexes=True esto debería
+# tardar milisegundos; 30s es holgura, no una expectativa.
+_BEANIE_TIMEOUT_S = 30.0
+
+
 async def ensure_beanie(app: FastAPI, client, db_name: str) -> bool:
     """Inicializa Beanie una sola vez (idempotente). NO fatal: si Mongo está caído
     devuelve False y deja `app.state.beanie_ready=False`, sin tumbar la liveness.
     Readiness lo reintenta hasta que la BD responda.
 
-    HOTFIX 2026-09-01 (Render startup hang): antes solo dependíamos del
-    server_selection_timeout de Motor (30s), pero en Render los deploys se
-    colgaban indefinidamente en `init_beanie_for` — probablemente por el DNS
-    SRV lookup de Atlas o algún handshake que no respeta el timeout. Ahora
-    envolvemos con `asyncio.wait_for(..., timeout=15)` para forzar el hard
-    limit: si Mongo no responde en 15s, degradamos y seguimos. La liveness
-    (/health) queda igual; los endpoints que usan Beanie devolverán 503 hasta
-    que readiness reintente exitosamente."""
+    FIX 2026-09-03 (la causa real): el arranque NO se colgaba por DNS ni por
+    allowlist — el ping a Mongo respondía en ~0.1s mientras `init_beanie`
+    moría a los 15s. Lo que no cabía era la creación de índices de los 25
+    Documents: decenas de `createIndexes` EN SERIE, Ohio -> mexico-central-1.
+    Ahora `init_beanie_for` registra los modelos con `skip_indexes=True` (sin
+    red) y los índices se construyen aparte, en segundo plano, sin bloquear
+    el arranque ni la readiness. El timeout se mantiene como red de seguridad.
+
+    Sigue siendo NO fatal: si falla, `beanie_ready=False` y el middleware
+    lazy reintenta en el siguiente request."""
     if getattr(app.state, "beanie_ready", False):
         return True
     try:
         await asyncio.wait_for(
-            mongo.init_beanie_for(client, db_name), timeout=15.0
+            mongo.init_beanie_for(client, db_name), timeout=_BEANIE_TIMEOUT_S
         )
         app.state.beanie_ready = True
         print("[ensure_beanie] init_beanie OK", file=sys.stderr, flush=True)
         return True
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # HOTFIX 2026-09-01: log honesto de qué está pasando (antes decíamos "falló
         # o timed out" sin distinguir; el CEO no puede saber si es allowlist, DNS,
         # auth o cluster dormido). Timeout puro = Mongo silencioso 15s+.
         msg = (
-            "[ensure_beanie] TIMEOUT tras 15s — Mongo no respondió. "
-            "Causas probables: (a) Atlas IP allowlist no permite la IP de Render "
-            "(fix rápido: agregar 0.0.0.0/0 a Network Access en Atlas dev); "
-            "(b) cluster Free-tier pausado (despertar en Atlas dashboard); "
-            "(c) DNS SRV lento (cambiar URI a formato non-SRV)."
+            f"[ensure_beanie] TIMEOUT tras {_BEANIE_TIMEOUT_S}s. Como ahora el "
+            "registro de modelos NO crea índices (skip_indexes=True) y no toca la "
+            "red, un timeout aquí ya no es 'Atlas lento': revisar (a) IP allowlist "
+            "de Atlas, (b) cluster Free pausado, (c) DNS SRV. El estado real de la "
+            "conexión se ve en /api/v1/health/ready (campo `mongo`)."
         )
         logger.warning(msg)
         print(msg, file=sys.stderr, flush=True)
@@ -109,6 +116,37 @@ async def ensure_beanie(app: FastAPI, client, db_name: str) -> bool:
         print(msg, file=sys.stderr, flush=True)
         app.state.beanie_ready = False
         return False
+
+
+async def _crear_indices_en_background(app: FastAPI) -> None:
+    """Construye los índices de Beanie sin bloquear el arranque (fix 2026-09-03).
+
+    Espera a que Beanie esté registrado (si el arranque quedó degradado, el
+    middleware lazy lo resolverá en el primer request) y entonces corre
+    `crear_indices`. Errores: se registran, no tumban el servicio."""
+    for _ in range(60):  # hasta ~5 min esperando a que Beanie quede listo
+        if getattr(app.state, "beanie_ready", False):
+            break
+        await asyncio.sleep(5)
+    else:
+        print(
+            "[indices] Beanie nunca quedó listo — no se crearon índices.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+    try:
+        await mongo.crear_indices(app.state.mongo_client, app.state.settings.mongodb_db)
+        print("[indices] índices creados/verificados OK", file=sys.stderr, flush=True)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:  # noqa: BLE001 — nunca fatal
+        msg = (
+            f"[indices] fallo al crear índices ({type(e).__name__}: {e}). "
+            "La app sigue; las queries irán sin índice."
+        )
+        logger.warning(msg)
+        print(msg, file=sys.stderr, flush=True)
 
 
 def _mark(step: str) -> None:
@@ -195,10 +233,20 @@ async def lifespan(app: FastAPI):
     auth_repository.configure_auth(client, settings.mongodb_db)
     _mark("A11 · auth configurado — startup COMPLETO")
 
+    # A12 · índices EN SEGUNDO PLANO (fix 2026-09-03). Crear los índices es lo
+    # que antes reventaba el arranque (decenas de round-trips cross-region). Ya
+    # no bloquea a nadie: la app queda sirviendo y esta tarea los construye
+    # detrás. `createIndexes` es idempotente, así que en arranques posteriores
+    # es una comprobación barata. Si falla, se registra y la app sigue viva —
+    # sin índices las queries son más lentas, pero funcionan.
+    _mark("A12 · lanzando creación de índices en segundo plano")
+    tarea_indices = asyncio.create_task(_crear_indices_en_background(app))
+
     try:
         yield
     finally:
         _mark("Z0 · shutdown")
+        tarea_indices.cancel()
         audit_service.reset_audit()
         auth_repository.reset_auth()
         if audit_client is not client:
@@ -231,12 +279,27 @@ async def _asegurar_beanie_en_request(request):
     app = request.app
     if getattr(app.state, "beanie_ready", False):
         return
+    # FIX 2026-09-03: si el lifespan no llegó a poblar app.state (arranque
+    # abortado, o un TestClient montado sin lifespan), esto lanzaba
+    # AttributeError DENTRO del middleware — o sea un 500 en CADA ruta,
+    # incluidas las que no tocan la BD. Un reintento oportunista jamás puede
+    # ser el que tumbe el request: si no hay con qué reintentar, se sigue.
+    client = getattr(app.state, "mongo_client", None)
+    settings = getattr(app.state, "settings", None)
+    if client is None or settings is None:
+        return
+
     async with _beanie_retry_lock:
         if getattr(app.state, "beanie_ready", False):
             return  # double-check tras adquirir el lock
-        client = app.state.mongo_client
-        db_name = app.state.settings.mongodb_db
-        await ensure_beanie(app, client, db_name)
+        try:
+            await ensure_beanie(app, client, settings.mongodb_db)
+        except Exception as e:  # noqa: BLE001 — el reintento nunca tumba el request
+            print(
+                f"[reintento_beanie] {type(e).__name__}: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 def create_app() -> FastAPI:

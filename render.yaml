@@ -17,15 +17,25 @@ services:
     # --proxy-headers: honra X-Forwarded-* del edge. La IP real del cliente se lee en
     # código vía CF-Connecting-IP (Kimi L2); el origen DEBE quedar restringido a IPs de
     # Cloudflare (RUNBOOK §5) para que ese header no sea spoofeable.
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2 --proxy-headers
-    healthCheckPath: /api/v1/health/ready  # F-03 (auditoría 2026-09-02): readiness
-                                           # honesto — devuelve 503 si Beanie no
-                                           # inicializó. /health (liveness) sigue
-                                           # existiendo pero Render usa esta ruta
-                                           # para decidir si reinicia; con eso la
-                                           # próxima degradación silenciosa de Mongo
-                                           # SE DETECTA y el servicio se reinicia,
-                                           # no queda 30 días en 200 mintiendo.
+    # --workers 1: el plan Free son 512 MB. Con 2 workers cada proceso carga
+    # FastAPI+beanie+motor+pdfplumber+boto3+anthropic y hace su PROPIO init_beanie
+    # (app.state es por-proceso) -> el doble de memoria y el doble de trabajo de
+    # arranque contra Atlas. En Free eso es OOM/arranque lento. Subir a 2 cuando
+    # el plan sea 'standard' (STACK §5).
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers
+    # REGRESIÓN 2026-09-03: esto apuntaba a /api/v1/health/ready. Desde que F-03
+    # (PR #154) hizo ese endpoint devolver 503 con `beanie: pending`, Render dejó
+    # de promover TODOS los deploys ("Timed out waiting for /api/v1/health/ready",
+    # 5 deploys fallidos desde el 31/08) y entró en ciclo de reinicio. Efecto real:
+    # la API viva quedó congelada en un build viejo y ningún fix posterior llegó a
+    # producción.
+    #
+    # REGLA: el health check de Render es LIVENESS. Nunca puede depender de una BD
+    # cross-region: si Atlas tarda, Render mata el deploy y el arranque nunca puede
+    # completarse -> deadlock. /api/v1/health/ready sigue siendo honesto (503 si
+    # Beanie no está listo) y es la ruta que debe vigilar el monitor externo
+    # (Better Stack, RUNBOOK §7) para que la degradación silenciosa SÍ alarme.
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION      # PIN de Python (2026-09-01): sin esto Render pica su
                                  # default actual (3.14.3), que cuelga el startup de

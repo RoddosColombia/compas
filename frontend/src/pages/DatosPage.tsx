@@ -25,8 +25,9 @@ import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Cargando } from "@/components/ui/cargando";
+import { ErrorEstado } from "@/components/ui/error-estado";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
-import { ApiError } from "@/lib/api";
+import { ApiError, mensajeDeError } from "@/lib/api";
 import {
   type ResumenCarga,
   cargarCronograma,
@@ -338,7 +339,25 @@ export default function DatosPage() {
   return (
     <div className="flex flex-col gap-6">
       {q.isLoading && <Cargando variante="card" />}
-      {q.data === null && !q.isLoading && (
+
+      {/* FIX 2026-09-03: faltaba el branch de error. Si la query fallaba
+          (timeout, 401, 5xx) `isLoading` terminaba en false y `data` quedaba
+          undefined -> ninguna condición hacía match y la página renderizaba
+          NADA. En blanco absoluto, sin explicación ni forma de reintentar. */}
+      {q.isError && (
+        <>
+          <PageHeader
+            titulo="Supuestos"
+            descripcion="Los supuestos que alimentan el motor. Es el cimiento: sin ellos no hay caja proyectada."
+          />
+          <ErrorEstado
+            mensaje={`No se pudieron cargar los supuestos. ${mensajeDeError(q.error)}`}
+            onReintentar={() => void q.refetch()}
+          />
+        </>
+      )}
+
+      {q.isSuccess && q.data === null && (
         <>
           <PageHeader
             titulo="Supuestos"
@@ -351,7 +370,7 @@ export default function DatosPage() {
           <ModelosPanel puedeGestionar={puedeGestionar} />
         </>
       )}
-      {q.data && (
+      {q.isSuccess && q.data && (
         <>
           <UmbralAtencionCard puedeGestionar={puedeGestionar} />
           <Editor vigente={q.data} puedeGestionar={puedeGestionar} />
