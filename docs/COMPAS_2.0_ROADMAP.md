@@ -31,11 +31,11 @@ palancas para evitarlo — **sin sacrificar la paridad al peso del motor**
 | 5 · Visual (RV-V1..V10) | 22% | 5/5 | 22.00 |
 | 6 · Gates finales (6 gates) | 8% | 6/6 | 8.00 |
 | 7 · Infra hotfixes (crisis backend) | 5% | 5/5 | 5.00 |
-| 8 · Auditoría Ola 2 (F-03..F-05) | 6% | 2/3 | 4.00 |
+| 8 · Auditoría Ola 2 (F-03..F-05) | 6% | 3/3 | 6.00 |
 | 9 · Deuda funcional descubierta (F-06..F-08) | 4% | 0/3 | 0.00 |
 | 10 · Limpieza técnica | 1% | 0/2 | 0.00 |
 | BK-1 · Backlog UI del saldo | 1% | 0.5/2 | 0.25 |
-| **TOTAL** | **100%** | **36.5 / 39** | **92%** |
+| **TOTAL** | **100%** | **37.5 / 39** | **94%** |
 
 **Velocímetro visual:** <https://claude.ai/code/artifact/057cbe89-c263-4194-ae0f-c1b6fba14015>
 
@@ -114,7 +114,7 @@ por Python 3.14 y luego por handshake Atlas lento.
 > ¿COMPAS con cluster propio o seguir compartido? Ver
 > [[render-startup-hang-fix]] en memoria.
 
-## Bucket 8 · Auditoría Ola 2 — F-03/F-04/F-05 (2/3 🟡)
+## Bucket 8 · Auditoría Ola 2 — F-03/F-04/F-05 (3/3 ✅)
 
 Hallazgos del artefacto `claude.ai/code/artifact/e6615ca1-a49e-4c9a-8e22-27320d6f538b`
 (auditoría independiente contra prod, 2026-09-02). Correcciones que blindan
@@ -122,7 +122,7 @@ al sistema para que la próxima degradación de Mongo NO pase 30 días en silenc
 
 - [x] **F-03** · `/health/ready` honesto — 503 cuando `beanie != up` (los 3 escenarios cubiertos: mongo down / mongo up+beanie pending / ambos up) + `render.yaml` cambia `healthCheckPath` a `/api/v1/health/ready` + timeout duro 3s en `mongo.ping` + middleware lazy PR #152 se salta este endpoint (observacional) · [PR #154](https://github.com/RoddosColombia/compas/pull/154)
 - [x] **F-04** · Cliente HTTP con timeout 15s (`AbortController` en cada fetch) + `ApiError.kind` tipado (`timeout` / `network` / `unauthorized` / `server` / `client`) + `<ServicioDegradadoBanner>` en AppShell que aparece automáticamente cuando una query falla con `kind='timeout'` o `kind='server'` y ofrece botón "Reintentar" · [PR #155](https://github.com/RoddosColombia/compas/pull/155)
-- [ ] **F-05** · Single-flight promise para `refresh()` — **ya estaba implementado** desde antes (`refreshEnCurso ??= ...` en `api.ts`); resta solo confirmar que NO reintenta el fetch original cuando el refresh falla (auditor no vio esta parte del código)
+- [x] **F-05** · Refresh single-flight blindado con test + fix del gap real: refresh fallido ahora limpia `accessToken` (antes: token viejo se quedaba en memoria → siguiente fetch mandaba Bearer expirado → 401 → refresh que fallaba igual → loop). Auditor tenía 2 afirmaciones falsas (el `refreshEnCurso ??=` YA era single-flight y el `&&` en apiFetch YA cortocircuitaba el retry) + 1 gap real (la limpieza del token) · [PR #156](https://github.com/RoddosColombia/compas/pull/156)
 
 ## Bucket 9 · Deuda funcional descubierta — F-06/F-07/F-08 (0/3 ⬜)
 
