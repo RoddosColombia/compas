@@ -9,6 +9,7 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { FabsPanel } from "@/components/fabs/FabsPanel";
 import { MesStatusBar } from "@/components/layout/MesStatusBar";
+import { ServicioDegradadoBanner } from "@/components/layout/ServicioDegradadoBanner";
 import { Sidebar } from "@/components/layout/Sidebar";
 
 // FIX-UI-1: Proyecciones es la vista-cockpit del CEO (tabla ancha + gráfica) y debe
@@ -68,6 +69,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             COMPAS
           </span>
         </div>
+
+        {/* F-04 (auditoría 2026-09-02): banner de servicio degradado — se
+            muestra automáticamente cuando una query falla con ApiError.kind
+            timeout|server; oculto por default. Va ANTES del MesStatusBar para
+            que un backend caído no oculte la señal más urgente. */}
+        <ServicioDegradadoBanner />
 
         {/* Barra de estado del mes (C2): visible en todas las rutas del cockpit */}
         <MesStatusBar />
