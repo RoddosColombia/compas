@@ -567,9 +567,7 @@ async def test_ejecutar_mix_modelos_sin_entrada(monkeypatch):
             ("Sport", Decimal("15")),
         ]
 
-    monkeypatch.setattr(
-        "app.modelos_moto.service.mix_activos", fake_mix_activos
-    )
+    monkeypatch.setattr("app.modelos_moto.service.mix_activos", fake_mix_activos)
     r = await tools.ejecutar_tool("mix_modelos")
     assert isinstance(r, list) and all(isinstance(x, ResultadoCFO) for x in r)
     assert {x.concepto for x in r} == {"mix_raider", "mix_apache", "mix_sport"}

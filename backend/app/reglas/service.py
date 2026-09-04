@@ -505,8 +505,7 @@ async def listar_por_clasificar() -> list[dict]:
     if pc is None:
         return []
     meses_abiertos = [
-        mc.id
-        async for mc in MesControl.find(MesControl.estado != EstadoMes.CERRADO)
+        mc.id async for mc in MesControl.find(MesControl.estado != EstadoMes.CERRADO)
     ]
     if not meses_abiertos:
         return []
@@ -516,7 +515,11 @@ async def listar_por_clasificar() -> list[dict]:
         Transaccion.rubro_id == pc.id,
         {"mes_id": {"$in": meses_abiertos}},
     ):
-        tipo = tx.tipo_flujo.value if hasattr(tx.tipo_flujo, "value") else str(tx.tipo_flujo)
+        tipo = (
+            tx.tipo_flujo.value
+            if hasattr(tx.tipo_flujo, "value")
+            else str(tx.tipo_flujo)
+        )
         # Agrupamiento por PRIMERA PALABRA de la descripción normalizada — así
         # 40 pagos de "UBER 12345", "UBER 67890"… caen en UN grupo con clave
         # "uber", y el CEO ve la señal ("40 UBER sin clasificar") en vez de

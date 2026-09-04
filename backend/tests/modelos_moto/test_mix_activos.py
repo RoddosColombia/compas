@@ -41,12 +41,8 @@ def _modelo(**extra) -> ModeloMoto:
 async def test_mix_activos_solo_devuelve_nombre_y_participacion_de_activos(db):
     from app.modelos_moto.service import mix_activos
 
-    await _modelo(
-        nombre="Raider", participacion_mix=Decimal("0.5"), orden=1
-    ).insert()
-    await _modelo(
-        nombre="Apache", participacion_mix=Decimal("0.3"), orden=2
-    ).insert()
+    await _modelo(nombre="Raider", participacion_mix=Decimal("0.5"), orden=1).insert()
+    await _modelo(nombre="Apache", participacion_mix=Decimal("0.3"), orden=2).insert()
     await _modelo(
         nombre="Sport",
         participacion_mix=Decimal("0.2"),

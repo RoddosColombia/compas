@@ -33,7 +33,13 @@ from app.proyeccion.motor import MesProyeccion, _estado_caja
 
 
 def _mes(
-    y: int, m: int, caja: str, flujo: str, ing: str, egr: str, motos: int,
+    y: int,
+    m: int,
+    caja: str,
+    flujo: str,
+    ing: str,
+    egr: str,
+    motos: int,
 ) -> MesProyeccion:
     caja_dec = Decimal(caja)
     return MesProyeccion(

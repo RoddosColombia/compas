@@ -2,8 +2,10 @@
 import pytest
 import pytest_asyncio
 from app.configuracion.service import (
-    escribir_alerta_iva_activa, escribir_alerta_iva_dias,
-    leer_alerta_iva_activa, leer_alerta_iva_dias,
+    escribir_alerta_iva_activa,
+    escribir_alerta_iva_dias,
+    leer_alerta_iva_activa,
+    leer_alerta_iva_dias,
 )
 from app.domain import DOMAIN_DOCUMENTS
 from beanie import init_beanie

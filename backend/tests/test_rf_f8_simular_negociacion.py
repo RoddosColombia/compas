@@ -182,7 +182,8 @@ async def test_rff8_sin_cambios_es_422(api):
     _, factura = await _sembrar_obligacion_con_factura()
     with pytest.raises(ObligacionesError) as ex:
         await simular_negociacion_factura(
-            factura_id=str(factura.id), plazo_elegido_dias_nuevo=None,
+            factura_id=str(factura.id),
+            plazo_elegido_dias_nuevo=None,
             fecha_factura_nueva=None,
         )
     assert ex.value.status == 422
@@ -204,7 +205,8 @@ async def test_rff8_factura_pagada_es_409(api):
     await factura.save()
     with pytest.raises(ObligacionesError) as ex:
         await simular_negociacion_factura(
-            factura_id=str(factura.id), plazo_elegido_dias_nuevo=120,
+            factura_id=str(factura.id),
+            plazo_elegido_dias_nuevo=120,
         )
     assert ex.value.status == 409
     assert "pagada" in ex.value.detalle.lower()
@@ -234,7 +236,8 @@ async def test_rff8_obligacion_de_cuotas_es_409(api):
     ).insert()
     with pytest.raises(ObligacionesError) as ex:
         await simular_negociacion_factura(
-            factura_id=str(f.id), plazo_elegido_dias_nuevo=60,
+            factura_id=str(f.id),
+            plazo_elegido_dias_nuevo=60,
         )
     assert ex.value.status == 409
     assert "facturacion" in ex.value.detalle.lower()
@@ -251,7 +254,8 @@ async def test_rff8_plazo_fuera_de_rango_es_422(api):
     _, factura = await _sembrar_obligacion_con_factura()  # base=90, max=180
     with pytest.raises(ObligacionesError) as ex:
         await simular_negociacion_factura(
-            factura_id=str(factura.id), plazo_elegido_dias_nuevo=210,
+            factura_id=str(factura.id),
+            plazo_elegido_dias_nuevo=210,
         )
     assert ex.value.status == 422
     assert "[90, 180]" in ex.value.detalle or "plazo" in ex.value.detalle.lower()
@@ -268,7 +272,8 @@ async def test_rff8_alargar_plazo_no_persiste_cambios(api):
     plazo_original = factura.plazo_elegido_dias
     fecha_original = factura.fecha_factura
     await simular_negociacion_factura(
-        factura_id=str(factura.id), plazo_elegido_dias_nuevo=150,
+        factura_id=str(factura.id),
+        plazo_elegido_dias_nuevo=150,
     )
     tras = await FacturaObligacion.get(factura.id)
     assert tras is not None
@@ -288,7 +293,8 @@ async def test_rff8_shape_de_salida(api):
 
     _, factura = await _sembrar_obligacion_con_factura()
     r = await simular_negociacion_factura(
-        factura_id=str(factura.id), plazo_elegido_dias_nuevo=180,
+        factura_id=str(factura.id),
+        plazo_elegido_dias_nuevo=180,
     )
     assert set(r) >= {
         "piso_actual",
@@ -319,7 +325,8 @@ async def test_rff8_alargar_plazo_mejora_piso_o_lo_deja_igual(api):
 
     _, factura = await _sembrar_obligacion_con_factura()
     r = await simular_negociacion_factura(
-        factura_id=str(factura.id), plazo_elegido_dias_nuevo=180,
+        factura_id=str(factura.id),
+        plazo_elegido_dias_nuevo=180,
     )
     assert Decimal(r["delta_piso"]) >= Decimal("0")
 

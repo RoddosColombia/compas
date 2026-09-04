@@ -52,8 +52,7 @@ def agregar_por_periodo(
     orden cronológico (dict ordered en Python 3.7+ + inserción en orden)."""
     if granularidad not in ("trimestre", "anual"):
         raise ValueError(
-            f"granularidad no soportada: {granularidad!r} "
-            "(usa 'trimestre' o 'anual')"
+            f"granularidad no soportada: {granularidad!r} (usa 'trimestre' o 'anual')"
         )
     # dict preserva orden de inserción → los meses vienen ordenados por diseño
     # del motor, así que la iteración natural respeta cronología.

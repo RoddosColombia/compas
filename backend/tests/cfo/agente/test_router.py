@@ -142,9 +142,7 @@ async def test_historial_devuelve_lista_para_rol_autorizado(api):
     # dependencia RBAC → handler.
     tok = await _token(api, "admin@roddos.com")
     h = {"Authorization": f"Bearer {tok}"}
-    await api.post(
-        "/api/v1/cfo", json={"pregunta": "¿cuánta caja hay hoy?"}, headers=h
-    )
+    await api.post("/api/v1/cfo", json={"pregunta": "¿cuánta caja hay hoy?"}, headers=h)
     r = await api.get("/api/v1/cfo/historial", headers=h)
     assert r.status_code == 200
     body = r.json()

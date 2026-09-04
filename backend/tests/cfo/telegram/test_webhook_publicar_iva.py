@@ -75,9 +75,7 @@ async def test_publicar_iva_difunde_al_comite(db, audit_col, monkeypatch):
     assert {c for c, t in tg.enviados if t == "EL AVISO DE IVA"} == {999, 888}
     got = await AvisoVigilante.find_one(AvisoVigilante.periodo == "2026-08")
     assert got.estado == "publicado"
-    assert (
-        await audit_col.find_one({"evento": "vigilante.iva.publicado"}) is not None
-    )
+    assert await audit_col.find_one({"evento": "vigilante.iva.publicado"}) is not None
 
 
 @pytest.mark.asyncio
@@ -166,9 +164,7 @@ async def test_frase_que_solo_contiene_publicar_iva_cae_a_qa(
             uso=UsoLLM(modelo="m", tokens_in=1, tokens_out=1, iteraciones=1),
         )
 
-    monkeypatch.setattr(
-        "app.cfo.telegram.webhook.servicio.consultar", _fake_consultar
-    )
+    monkeypatch.setattr("app.cfo.telegram.webhook.servicio.consultar", _fake_consultar)
 
     async def _fake_registrar(user_id, pregunta, texto_crudo, update_id, envio):
         return None

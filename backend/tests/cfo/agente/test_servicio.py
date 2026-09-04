@@ -587,9 +587,7 @@ async def test_composicion_gasto_publica_valores_sustituidos(monkeypatch, _audit
         assert ventana == "cerrado"
         return [_COMP_GASTO_TOTAL, _COMP_COP_NOMINA, _COMP_PCT_NOMINA]
 
-    monkeypatch.setattr(
-        "app.cfo.calc.ratios.composicion_gasto", fake_composicion_gasto
-    )
+    monkeypatch.setattr("app.cfo.calc.ratios.composicion_gasto", fake_composicion_gasto)
     guiones = [
         RespuestaLLM(
             "tool_use",
@@ -648,9 +646,7 @@ async def test_composicion_gasto_porcentaje_crudo_reintenta_y_abstiene(
     async def fake_composicion_gasto(*, ventana):
         return [_COMP_GASTO_TOTAL, _COMP_COP_NOMINA, _COMP_PCT_NOMINA]
 
-    monkeypatch.setattr(
-        "app.cfo.calc.ratios.composicion_gasto", fake_composicion_gasto
-    )
+    monkeypatch.setattr("app.cfo.calc.ratios.composicion_gasto", fake_composicion_gasto)
     guiones = [
         RespuestaLLM(
             "tool_use",
@@ -1202,9 +1198,7 @@ async def test_mix_modelos_publica_valores_sustituidos(monkeypatch, _audit):
     assert "55,0%" in r.texto
     assert "30,0%" in r.texto
     assert "15,0%" in r.texto
-    assert {"mix_raider", "mix_apache", "mix_sport"}.issubset(
-        set(r.conceptos_usados)
-    )
+    assert {"mix_raider", "mix_apache", "mix_sport"}.issubset(set(r.conceptos_usados))
 
 
 @pytest.mark.asyncio

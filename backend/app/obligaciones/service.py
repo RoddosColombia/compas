@@ -516,9 +516,7 @@ async def simular_negociacion_factura(
         "piso_actual": money_str(r_actual.piso_caja),
         "piso_negociado": money_str(r_negociado.piso_caja),
         "delta_piso": money_str(delta),
-        "mes_pago_actual": _mes_pago(
-            factura.fecha_factura, factura.plazo_elegido_dias
-        ),
+        "mes_pago_actual": _mes_pago(factura.fecha_factura, factura.plazo_elegido_dias),
         "mes_pago_negociado": _mes_pago(fecha_negociada, plazo_negociado),
         "valles_actuales": [
             {"mes": v.mes, "caja": money_str(v.caja)} for v in valles_actuales

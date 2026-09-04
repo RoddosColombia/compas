@@ -196,9 +196,7 @@ async def test_rff7_endpoint_valles_adjunta_reparto_por_rubro(api):
     valles = body["valles"]
     # El escenario tiene gastos_fijos altos y caja pequeña → hay al menos 1 valle.
     if not valles:
-        pytest.skip(
-            "escenario no produjo valle; ajustar semilla si el motor cambia"
-        )
+        pytest.skip("escenario no produjo valle; ajustar semilla si el motor cambia")
     valle_con_reparto = next(
         (
             v

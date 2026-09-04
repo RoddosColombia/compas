@@ -53,7 +53,7 @@ async def readiness(
     #    de Render esperando algo que ya sabemos que está mal.
     try:
         await asyncio.wait_for(mongo.ping(client), timeout=_PING_TIMEOUT_S)
-    except (Exception, asyncio.TimeoutError):  # noqa: BLE001 — degradación observacional
+    except (TimeoutError, Exception):  # noqa: BLE001 — degradación observacional
         response.status_code = 503
         return {"status": "not_ready", "mongo": "down"}
 

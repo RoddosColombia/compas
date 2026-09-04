@@ -108,12 +108,12 @@ def test_eventos_clave_presentes():
         "meta_ingreso.eliminada",  # CR-D2: baja lógica de meta
         "vigilante.paquete.generado",  # CR-CFO-3: job arma el borrador semanal
         "vigilante.paquete.publicado",  # CR-CFO-3: revisor difunde al comité
-        "vigilante.alerta.generada",  # CR-CFO-4: job diario arma el borrador de alerta
+        "vigilante.alerta.generada",  # CR-CFO-4: job diario arma el borrador
         "vigilante.alerta.publicada",  # CR-CFO-4: revisor difunde la alerta al comité
-        "vigilante.cierre.generado",  # CR-CFO-5: job diario detectó mes cerrado y armó comentario
-        "vigilante.cierre.publicado",  # CR-CFO-5: revisor difundió el comentario al comité
-        "vigilante.iva.generado",  # CR-CFO-6: job proactivo armó el borrador de alerta de IVA
-        "vigilante.iva.publicado",  # CR-CFO-6: revisor difundió la alerta de IVA al comité
+        "vigilante.cierre.generado",  # CR-CFO-5: mes cerrado -> arma comentario
+        "vigilante.cierre.publicado",  # CR-CFO-5: revisor difunde el comentario
+        "vigilante.iva.generado",  # CR-CFO-6: arma el borrador de alerta IVA
+        "vigilante.iva.publicado",  # CR-CFO-6: revisor difunde la alerta IVA
     ):
         assert esperado in CATALOGO_EVENTOS
 

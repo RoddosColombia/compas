@@ -924,9 +924,7 @@ async def resolver_unidades_vigente(
         "unidades_extra": res.unidades_extra,
         "alcanzable": res.alcanzable,
         "piso_resultante": (
-            money_str(res.piso_resultante)
-            if res.piso_resultante is not None
-            else None
+            money_str(res.piso_resultante) if res.piso_resultante is not None else None
         ),
         "meta": money_str(res.meta),
     }
@@ -1221,9 +1219,9 @@ async def valles_vigente(
         rg = palancas["recorte_gasto"]
         if rg["alcanzable"]:
             monto = Decimal(rg["monto"])
-            rg["recomendaciones_por_rubro"] = (
-                await _recomendaciones_recorte_por_impacto(monto)
-            )
+            rg[
+                "recomendaciones_por_rubro"
+            ] = await _recomendaciones_recorte_por_impacto(monto)
         v["palancas"] = palancas
     return {
         "escenario": escenario,

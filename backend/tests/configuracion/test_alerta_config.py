@@ -37,6 +37,10 @@ async def test_horizonte_invalido_cae_al_default(db):
     await escribir_alerta_horizonte_meses(meses=9, usuario_id="andres")
     # una fila posterior con dato malo no debe romper: el resolver valida > 0 int
     from app.domain.configuracion import ClaveConfig, Configuracion
-    await Configuracion(clave=ClaveConfig.ALERTA_CAJA_HORIZONTE_MESES,
-                        valor_json={"meses": 0}, vigente_desde="2999-01-01").insert()
+
+    await Configuracion(
+        clave=ClaveConfig.ALERTA_CAJA_HORIZONTE_MESES,
+        valor_json={"meses": 0},
+        vigente_desde="2999-01-01",
+    ).insert()
     assert await leer_alerta_horizonte_meses() == 6
