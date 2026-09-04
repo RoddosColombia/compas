@@ -62,10 +62,13 @@ interface Bloque {
 
 function bloqueDe(m: MesProyeccion): Bloque {
   const abs = (v: string): number => Math.abs(parseMonto(v).toNumber());
-  const auteco =
-    abs(m.pago_inventario) + abs(m.adelanto) + abs(m.fondeo);
+  const auteco = abs(m.pago_inventario) + abs(m.adelanto) + abs(m.fondeo);
   const otros =
-    abs(m.gps) + abs(m.costo_nueva) + abs(m.int_deuda) + abs(m.iva) + abs(m.aval);
+    abs(m.gps) +
+    abs(m.costo_nueva) +
+    abs(m.int_deuda) +
+    abs(m.iva) +
+    abs(m.aval);
   return {
     ingreso: parseMonto(m.ingreso_bruto).toNumber(),
     gastoFijo: abs(m.gastos_fijos),
@@ -111,8 +114,7 @@ export function ComposicionFlujoRV2({
     const bloques = ventana.map(bloqueDe);
     // RV-V4: recortamos el escenario a la misma ventana. Los índices se
     // alinean por posición (el motor entrega ambos con la misma cadencia).
-    const ventanaEscenario =
-      escenarioMeses?.slice(0, ventana.length) ?? [];
+    const ventanaEscenario = escenarioMeses?.slice(0, ventana.length) ?? [];
     const bloquesEscenario = ventanaEscenario.map(bloqueDe);
 
     // Escala: max positivo (solo ingreso) y max negativo (suma de egresos apilados).
@@ -144,13 +146,15 @@ export function ComposicionFlujoRV2({
     const up = (v: number): number => ((zero - PAD.top) * v) / maxPos;
     const dn = (v: number): number => ((H - PAD.bottom - zero) * v) / maxNeg;
 
-    // Marcas del eje Y (ambos lados del cero).
-    const stepP = niceStep(maxPos);
+    // Marcas del eje Y (ambos lados del cero). UN paso común para los dos lados:
+    // así las líneas quedan simétricas y espaciadas, y no se amontonan con
+    // densidades distintas (antes: 500 arriba vs 200 abajo). El cero NO lleva
+    // etiqueta —la línea del cero ya lo marca— para descongestionar el centro.
+    const step = niceStep(Math.max(maxPos, maxNeg));
     const marcasPos: number[] = [];
-    for (let g = 0; g <= maxPos; g += stepP) marcasPos.push(g);
-    const stepN = niceStep(maxNeg);
+    for (let g = step; g <= maxPos; g += step) marcasPos.push(g);
     const marcasNeg: number[] = [];
-    for (let g = stepN; g <= maxNeg; g += stepN) marcasNeg.push(g);
+    for (let g = step; g <= maxNeg; g += step) marcasNeg.push(g);
 
     // Ancho de barra: hasta 30 px, o el 62 % del espacio disponible por columna.
     const bw = Math.min(30, ((X1 - X0) / Math.max(1, ventana.length)) * 0.62);
