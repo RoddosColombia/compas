@@ -153,7 +153,9 @@ export default function ProyeccionPage() {
   // cuando el CEO activa el escenario (evita gastar cómputo al escribir).
   const motosExtraNum = Number.parseInt(motosExtra, 10);
   const motosExtraValidas =
-    Number.isFinite(motosExtraNum) && motosExtraNum >= 0 && motosExtraNum <= 10_000;
+    Number.isFinite(motosExtraNum) &&
+    motosExtraNum >= 0 &&
+    motosExtraNum <= 10_000;
   const escenarioQ = useQuery({
     queryKey: [
       "proyeccion",
@@ -380,12 +382,16 @@ function TablaAgregada({ periodos }: { periodos: PeriodoAgregado[] }) {
         <thead>
           <tr className="border-b border-hairline text-left text-ink-faint">
             <th className="px-3 py-2 font-semibold">Periodo</th>
-            <th className="px-3 py-2 text-right font-semibold">Caja al cierre</th>
+            <th className="px-3 py-2 text-right font-semibold">
+              Caja al cierre
+            </th>
             <th className="px-3 py-2 text-right font-semibold">
               Piso del periodo
             </th>
             <th className="px-3 py-2 text-right font-semibold">Flujo neto</th>
-            <th className="px-3 py-2 text-right font-semibold">Ingreso bruto</th>
+            <th className="px-3 py-2 text-right font-semibold">
+              Ingreso bruto
+            </th>
             <th className="px-3 py-2 text-right font-semibold">Egresos</th>
             <th className="px-3 py-2 text-right font-semibold">Motos</th>
           </tr>
@@ -557,6 +563,7 @@ function ProyeccionContenido({
         subtitulo={`caja proyectada · escenario ${ESCENARIO_LABEL[escenario].toLowerCase()} · ${ventana.length} de ${data.meses.length} meses`}
         pie={`${textoArranque(data.arranque)} · Caja final a ${data.meses.length} meses: ${formatCOPCompact(data.caja_final)} (exacta en la tabla) · Fuente: motor de proyección`}
         protagonista
+        lienzo="libre"
         acciones={
           perforada ? (
             <button
@@ -597,6 +604,7 @@ function ProyeccionContenido({
         conclusion="De qué está hecho el flujo cada mes"
         subtitulo={`composición del flujo · ${ventana.length} de ${data.meses.length} meses · ingreso arriba, egresos por concepto abajo`}
         pie="Las 4 categorías (ingreso · gastos fijos · Auteco · otros) no comparten familia de color con los umbrales — el semáforo queda reservado a estado (regla 9 del DESIGN.md)."
+        lienzo="libre"
       >
         <ComposicionFlujoRV2
           meses={ventana}

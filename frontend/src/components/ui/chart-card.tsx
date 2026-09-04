@@ -27,8 +27,10 @@ export function ChartCard({
   /** 2× el alto del resto — máximo uno por pantalla. */
   protagonista?: boolean;
   /** "fijo" = alto de lienzo para SVGs; "auto" = listas de barras con alto
-   * máximo + scroll (F1.1 §4: 24+ filas no revientan la tarjeta). */
-  lienzo?: "fijo" | "auto";
+   * máximo + scroll (F1.1 §4: 24+ filas no revientan la tarjeta); "libre" = sin
+   * alto impuesto — para SVGs `w-full h-auto` que fijan su alto por proporción
+   * (evita el desborde cuando el ancho de la tarjeta supera el alto fijo). */
+  lienzo?: "fijo" | "auto" | "libre";
   acciones?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -48,13 +50,15 @@ export function ChartCard({
       </div>
       <div
         className={cn(
-          lienzo === "fijo"
-            ? protagonista
-              ? "h-80"
-              : "h-40"
-            : protagonista
-              ? "max-h-[28rem] overflow-y-auto"
-              : "max-h-72 overflow-y-auto",
+          lienzo === "libre"
+            ? undefined
+            : lienzo === "fijo"
+              ? protagonista
+                ? "h-80"
+                : "h-40"
+              : protagonista
+                ? "max-h-[28rem] overflow-y-auto"
+                : "max-h-72 overflow-y-auto",
         )}
       >
         {children}
