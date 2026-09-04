@@ -219,7 +219,7 @@ export function ComposicionFlujoRV2({
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-[1040px]">
       <svg
         viewBox={`0 0 ${W} ${H}`}
         role="img"

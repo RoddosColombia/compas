@@ -160,10 +160,7 @@ export function CurvaCajaRV2({
     pathAreaEscenario,
     xLabels,
   } = useMemo(() => {
-    const ventana = data.meses.slice(
-      0,
-      ventanaMeses ?? data.meses.length,
-    );
+    const ventana = data.meses.slice(0, ventanaMeses ?? data.meses.length);
     const umbralCritico = parseMonto(data.caja_minima).toNumber();
     const umbralAtencion = data.caja_atencion
       ? parseMonto(data.caja_atencion).toNumber()
@@ -213,9 +210,8 @@ export function CurvaCajaRV2({
     const pathProy =
       desdeProy < ventana.length
         ? "M " +
-          Array.from(
-            { length: ventana.length - desdeProy },
-            (_, k) => puntoPath(desdeProy + k),
+          Array.from({ length: ventana.length - desdeProy }, (_, k) =>
+            puntoPath(desdeProy + k),
           ).join(" L ")
         : "";
 
@@ -286,11 +282,10 @@ export function CurvaCajaRV2({
     );
   }
 
-  const cajaFormato = (i: number): string =>
-    formatCOP(ventana[i].caja);
+  const cajaFormato = (i: number): string => formatCOP(ventana[i].caja);
 
   return (
-    <div className="relative">
+    <div className="relative mx-auto max-w-[1040px]">
       <svg
         viewBox={`0 0 ${W} ${H}`}
         role="img"
@@ -531,9 +526,7 @@ export function CurvaCajaRV2({
                 strokeWidth={2}
               />
               <text
-                x={
-                  xPos(piso) > X1 - 150 ? xPos(piso) - 8 : xPos(piso) + 8
-                }
+                x={xPos(piso) > X1 - 150 ? xPos(piso) - 8 : xPos(piso) + 8}
                 y={yPos(parseMonto(ventana[piso].caja).toNumber()) + 16}
                 fill="var(--color-critico)"
                 fontSize={10.5}
