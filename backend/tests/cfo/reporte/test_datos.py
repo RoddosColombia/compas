@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 from app.cfo.reporte import datos as D
 from app.cfo.reporte.modelos import DatosReporte
@@ -29,10 +31,26 @@ async def test_reunir_datos_arma_secciones_y_rumbo(monkeypatch):
         )
 
     monkeypatch.setattr(D.servicio, "consultar", fake_consultar)
-    # las demás lecturas (mix/gasto/iva/motos) se fakean o se dejan abstenerse — el
+
+    async def fake_mix_modelos():
+        from app.cfo.calc.evidencia import Evidencia, ResultadoCFO
+
+        ev = Evidencia(fuente="test", fecha_corte=None, ref="fake-mix")
+        return [
+            ResultadoCFO(
+                concepto="mix_raider",
+                valor=Decimal("45.3"),
+                unidad="%",
+                disponible=True,
+                evidencia=ev,
+            ),
+        ]
+
+    monkeypatch.setattr(D.ratios, "mix_modelos", fake_mix_modelos)
+    # las demás lecturas (gasto/iva/motos) se fakean o se dejan abstenerse — el
     # test verifica la ESTRUCTURA + el rumbo + el resumen narrado.
 
-    datos = await D.reunir_datos(periodo=None)
+    datos = await D.reunir_datos(periodo=None, actor_id="u1")
     assert isinstance(datos, DatosReporte)
     assert datos.periodo  # 'YYYY-MM' del mes vigente (now_bogota)
     assert datos.rumbo is not None and datos.rumbo.caja_minima == "1000000"
@@ -54,6 +72,14 @@ async def test_reunir_datos_arma_secciones_y_rumbo(monkeypatch):
     # el piso y el mes de quiebre vienen de la MISMA proyección fake ya fetcheada
     assert cifras_caja["Piso de caja proyectado"] == "1200000.00"
     assert cifras_caja["Mes de quiebre del umbral"] == "2026-10"
+
+    # Fix 2: el % del mix se formatea es-CO (coma decimal + '%'), nunca
+    # str(Decimal) crudo — prueba real del cambio en `_fmt`.
+    seccion_ventas = next(
+        s for s in datos.secciones if s.titulo == "Ventas / colocación"
+    )
+    cifras_ventas = {c.etiqueta: c.valor for c in seccion_ventas.cifras}
+    assert cifras_ventas["Mix Raider"] == "45,3%"
 
     # ninguna sección revienta ni deja cifras a medias: cada Cifra.valor es texto
     for s in datos.secciones:
@@ -83,7 +109,7 @@ async def test_sin_proyeccion_abstiene_rumbo(monkeypatch):
 
     monkeypatch.setattr(D.servicio, "consultar", fake_consultar)
 
-    datos = await D.reunir_datos(periodo=None)
+    datos = await D.reunir_datos(periodo=None, actor_id="u1")
     assert datos.rumbo is None  # sin proyección ⇒ sin serie ⇒ sin gráfica
 
     seccion_caja = next(s for s in datos.secciones if s.titulo.startswith("Caja"))
@@ -113,5 +139,5 @@ async def test_reunir_datos_usa_periodo_explicito(monkeypatch):
 
     monkeypatch.setattr(D.servicio, "consultar", fake_consultar)
 
-    datos = await D.reunir_datos(periodo="2026-01")
+    datos = await D.reunir_datos(periodo="2026-01", actor_id="u1")
     assert datos.periodo == "2026-01"

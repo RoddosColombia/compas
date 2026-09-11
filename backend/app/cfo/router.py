@@ -27,7 +27,7 @@ no dinero."""
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth.deps import require_permission
 from app.auth.models import User
@@ -63,7 +63,10 @@ class TurnoHistorial(BaseModel):
 class ReporteBody(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    periodo: str | None = None
+    # 'YYYY-MM' estricto (regla 2): viaja al filename (Content-Disposition) y a
+    # motos_para_evitar_umbral(mes_inicio=periodo) — un valor malformado 500ea
+    # el reporte si no se valida acá, antes de llegar al handler.
+    periodo: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
 
 
 @router.post("", response_model=RespuestaCFO)
@@ -98,7 +101,7 @@ async def reporte_inversionistas(
 ) -> Response:
     if not cfo_enabled():  # guard defensivo (barrera 2)
         raise HTTPException(404, "No encontrado.")
-    datos = await reunir_datos(body.periodo)
+    datos = await reunir_datos(body.periodo, actor_id=str(user.id))
     png = None
     if datos.rumbo is not None:
         try:
@@ -109,8 +112,7 @@ async def reporte_inversionistas(
     return Response(
         content=doc,
         media_type=(
-            "application/vnd.openxmlformats-officedocument"
-            ".wordprocessingml.document"
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ),
         headers={
             "Content-Disposition": (

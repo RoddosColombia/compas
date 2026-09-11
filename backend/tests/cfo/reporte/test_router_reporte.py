@@ -42,7 +42,7 @@ DATOS_SIN_RUMBO = DatosReporte(
 )
 
 
-async def _fake_reunir_datos(periodo: str | None) -> DatosReporte:
+async def _fake_reunir_datos(periodo: str | None, *, actor_id: str) -> DatosReporte:
     return DATOS_FAKE
 
 
@@ -164,6 +164,20 @@ async def test_body_extra_forbidden_422(api):
     assert r.status_code == 422
 
 
+async def test_periodo_malformado_422(api):
+    # Fix 1: `periodo` viaja al filename (Content-Disposition) y a
+    # motos_para_evitar_umbral(mes_inicio=periodo) — un valor malformado debe
+    # rechazarse en Pydantic (422), antes de llegar al handler.
+    tok = await _token(api, "admin@roddos.com")
+    h = {"Authorization": f"Bearer {tok}"}
+    r = await api.post(
+        "/api/v1/cfo/reporte-inversionistas",
+        json={"periodo": "2026-9"},
+        headers=h,
+    )
+    assert r.status_code == 422
+
+
 async def test_guard_defensivo_404_si_flag_se_apaga_en_runtime(api, monkeypatch):
     tok = await _token(api, "admin@roddos.com")
     h = {"Authorization": f"Bearer {tok}"}
@@ -215,7 +229,7 @@ async def test_sin_rumbo_no_intenta_renderizar_grafica(api, monkeypatch):
         llamado["veces"] += 1
         raise AssertionError("render_rumbo no debía llamarse sin rumbo")
 
-    async def _sin_rumbo(periodo):
+    async def _sin_rumbo(periodo, *, actor_id):
         return DATOS_SIN_RUMBO
 
     monkeypatch.setattr(cfo_router_module, "reunir_datos", _sin_rumbo)

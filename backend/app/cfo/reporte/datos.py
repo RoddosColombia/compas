@@ -18,8 +18,7 @@ Cada lectura que falla o se abstiene arma una `Cifra("<etiqueta>", "sin datos")`
 
 from decimal import Decimal
 
-from app.cfo.agente import servicio
-from app.cfo.agente.cliente import crear_cliente
+from app.cfo.agente import conceptos, servicio
 from app.cfo.calc import caja as caja_calc
 from app.cfo.calc import escenario, iva, ratios, runway, tendencias
 from app.cfo.calc.evidencia import ResultadoCFO
@@ -41,7 +40,18 @@ _GRUPOS_GASTO = {
 
 
 def _fmt(valor: Decimal, unidad: str) -> str:
-    return money_str(valor) if unidad == "COP" else str(valor)
+    """Money queda igual (money_str); % y meses/unidades se formatean es-CO
+    reusando los mismos helpers server-bound de `conceptos` (el chat/FABS ya los
+    usa) — nunca un `str(valor)` crudo en un documento cara a inversionistas."""
+    if unidad == "COP":
+        return money_str(valor)
+    if unidad == "%":
+        return conceptos._pct_es(valor)
+    if unidad == "meses":
+        return conceptos._meses_es(valor)
+    if unidad == "unidades":
+        return conceptos._unidades_es(valor)
+    return str(valor)
 
 
 def _cifra(etiqueta: str, resultado: ResultadoCFO | None) -> Cifra:
@@ -149,7 +159,7 @@ async def _seccion_deuda() -> Seccion:
     return Seccion(titulo="Deuda / obligaciones", cifras=cifras)
 
 
-async def reunir_datos(periodo: str | None) -> DatosReporte:
+async def reunir_datos(periodo: str | None, *, actor_id: str) -> DatosReporte:
     """Arma `DatosReporte`: la misma proyección vigente alimenta el rumbo, la
     sección de caja y (indirectamente, vía las tools) el resumen narrado — por eso
     tablas y narrativa siempre coinciden (spec §5.3)."""
@@ -181,9 +191,7 @@ async def reunir_datos(periodo: str | None) -> DatosReporte:
         await _seccion_deuda(),
     ]
 
-    resp = await servicio.consultar(
-        _prompt_reporte(periodo), actor_id="reporte", cliente=crear_cliente()
-    )
+    resp = await servicio.consultar(_prompt_reporte(periodo), actor_id=actor_id)
 
     return DatosReporte(
         periodo=periodo,
