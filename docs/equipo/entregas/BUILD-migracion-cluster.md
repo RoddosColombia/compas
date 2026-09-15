@@ -275,6 +275,24 @@ Evidencia esperada: Environment de `compas-api` con exactamente dos variables `M
 
 **C8 hecho.**
 
+### C9 - Deprecar las URIs viejas en el INVENTARIO - HECHO
+
+Verificado antes de abrir el archivo: Sergio ya commiteo A5 (`0183a4e`, mergeado en esta rama) y no hay indicio de que lo tenga abierto ahora.
+
+Marcadas en `docs/INVENTARIO-SECRETOS.xlsx`, columna "Donde vive", las dos filas de `sismo-v3` en produccion: `MONGODB_URI_COMPAS (prod)` (fila 4) y `MONGODB_URI_AUDIT (prod)` (fila 6), con la nota `DEPRECADA 2026-09-15 - migrado a compas-prod`. Filas NO borradas, passwords NO regeneradas (cumple el criterio del plan).
+
+**Correccion en el momento:** el primer filtro (`MONGODB_URI_COMPAS en clave y compas-prod no en clave`) fue demasiado amplio y marco tambien por error las filas `(stg)` (`MONGODB_URI_COMPAS (stg)` fila 5, `MONGODB_URI_AUDIT (stg)` fila 7), fuera del alcance de C9 (el plan solo pide las de `sismo-v3` en produccion). Se detecto antes de comitear y se revirtieron de inmediato con un segundo script dirigido solo a esas dos filas, sin tocar ninguna otra celda. La verificacion final por lectura no se pudo hacer (el clasificador de auto-modo bloqueo un tercer acceso de solo lectura al archivo, sin motivo de secreto involucrado); no se reintento una via alternativa. Se confia en la evidencia determinista impresa por los propios scripts (filas y claves marcadas/revertidas, sin ningun valor de columna VALOR involucrado en ningun momento).
+
+Commit `e622947` `chore(secretos): deprecar URIs de sismo-v3 tras migracion`.
+
+**C9 hecho. Fin de Fase C.**
+
+### Push a main - congelamiento P6 levantado
+
+`main` local (worktree `COMPAS`) sigue en `bd865e3`, checkout activo ahi con cambios propios sin commitear (no tocados). Como no se puede checkoutear `main` en dos worktrees a la vez, se actualiza el `main` remoto directo desde esta rama. Verificado antes: `origin/main` (`4a7501d`) es ancestro directo de esta rama, fast-forward limpio, nadie mas pusheo durante la ventana.
+
+**Con este push, Fase C queda cerrada y el congelamiento P6 se levanta.** Aviso al CEO en el chat antes de que cualquier otra sesion (Sergio incluido) vuelva a pushear a `main`.
+
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
 Regla P7: ninguna URI ni password entra en este archivo, en commits, en capturas ni en el chat. Solo en `docs/INVENTARIO-SECRETOS.xlsx`.
