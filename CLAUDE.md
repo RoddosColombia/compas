@@ -2,6 +2,18 @@
 
 Sistema de control presupuestal y flujo de caja de RODDOS S.A.S. Este archivo lo lee Claude Code al inicio de CADA sesión. Las reglas de aquí son innegociables.
 
+## Idioma: español neutro (regla dura, aplica a TODA respuesta)
+
+Toda comunicación escrita va en **español neutro**, en chat, documentos, mensajes de commit, descripciones de PR y comentarios de código.
+
+**Prohibido el voseo argentino.** Nada de `vos`, `queres`, `podes`, `tenes`, `sos`, `decime`, `avisame`, `pegale`, ni imperativos en forma de vos (`mirá`, `dejá`, `confirmá`, `hacé`). Usar forma de **usted** (`dígame`, `avíseme`, `revise`, `confirme`, `puede`, `quiere`) o reformular impersonal.
+
+**Prohibidos también:** acentos ortográficos en texto libre, signos de apertura `¿` `¡` (solo cierre), y guiones largos `—` `–` `--` como separador (usar coma, punto o `·`).
+
+**Excepción única:** identificadores técnicos (variables, rutas, comandos, claves de JSON/YAML, nombres de archivo, citas literales).
+
+Esto se verifica **antes de enviar**, como chequeo de salida, no como intención general. El CEO tuvo que pedirlo dos veces (2026-09-14 y 2026-09-15); no debe haber una tercera.
+
 ## Principio rector (decisión CEO)
 **Hacerle fácil la vida a Andrés (CEO, desarrollador solo) para construir esto.** En concreto:
 - **Un solo entorno mientras desarrollamos**, con auto-deploy desde `main` (push = vivo) y una sola base `compas` aprovisionada una vez con scripts idempotentes. El endurecimiento de producción (tag `v*` + reviewer + `compas-api-stg` al lado) es tarea de **go-live**, no de ahora — queda documentado, no borrado.
