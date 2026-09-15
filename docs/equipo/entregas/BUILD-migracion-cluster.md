@@ -101,3 +101,5 @@ El CEO corrio la prueba de conexion el mismo, en su propia terminal, fuera de cu
 Nota tecnica del CEO, guardada en memoria para Fase C: la conexion con `mongodb+srv://` fallo dos veces desde su maquina (`querySrv ECONNREFUSED`), aunque el DNS del sistema resuelve bien. Uso una connection string estandar (sin SRV, con los 3 hosts directos + `replicaSet=atlas-myw4u7-shard-0`) y esa si funciono. Si a Jorge le pasa lo mismo en el `mongorestore` real de Fase C, ese es el fallback ya verificado.
 
 **Fase A completa (A1-A6).** Fase D (cierre de docs) sigue esperando a que Jorge cierre C9.
+
+Nota pendiente para el arranque de Fase D (confirmado por el CEO 2026-09-15, no es bloqueo): la seccion 4 del plan (linea 66) dice "D arranca al cierre del no-retorno (C8)", pero el encabezado propio de Fase D dice "arranca tras C9". C9 es lo correcto. Corregir esa linea del plan junto con los ajustes de D1 cuando Sergio entre a Fase D.
