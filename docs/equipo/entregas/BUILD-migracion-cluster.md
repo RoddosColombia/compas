@@ -139,7 +139,9 @@ Evidencia esperada (cuatro lineas exactas): `OK update audit_log rechazado: Unau
 
 **C3 hecho.** Las cuatro conductas esperadas se cumplieron (tres rechazos + un permiso), con la salvedad de nomenclatura de arriba.
 
-### >>> Gate G3 (CEO): autorizar el switch de Render — PENDIENTE DE GO
+### >>> Gate G3 (CEO): autorizar el switch de Render — GO AUTORIZADO
+
+**GO recibido del CEO, 2026-09-15, por escrito en el chat.** Autoriza C4 con la evidencia de A6, B6, C1, C2, C3 de arriba.
 
 Segun el plan (`docs/equipo/entregas/PLAN-migracion-cluster.md` §7, fila G3): "Fin de C3, antes de C4. Autorizar el switch de URIs en Render con la evidencia de A6, B6, C1, C2, C3." Presento la evidencia completa:
 
@@ -154,6 +156,12 @@ Segun el plan (`docs/equipo/entregas/PLAN-migracion-cluster.md` §7, fila G3): "
 **Sin escalera en B5** (funciono en escalon 1), por lo que no aplica Gate G2.
 
 **Pedido explicito:** necesito su GO por escrito, en este chat, antes de tocar las variables de entorno `MONGODB_URI_COMPAS` y `MONGODB_URI_AUDIT` de `compas-api` en Render (paso C4). Sin ese GO no continuo con C4, tal como exige el plan. Recuerde que C4 es el switch real: a partir de ahi la app empieza a leer y escribir en `compas-prod`, y entra en juego el esquema de rollback RB-1/RB-2/RB-3 de la seccion 6 del plan.
+
+### C4 · Cambiar las DOS env vars en Render — EN CURSO (ejecuta el CEO)
+
+Mismo mecanismo que C1/C2/C3: las URIs reales no pasan por Claude Code. El CEO ejecuta el click-path de C4 directamente en el Dashboard de Render (`compas-api`, Environment: agrega `MONGODB_URI_COMPAS_OLD` y `MONGODB_URI_AUDIT_OLD` con los valores actuales, edita `MONGODB_URI_COMPAS` y `MONGODB_URI_AUDIT` con los valores nuevos de `compas-prod`, un solo "Save, rebuild, and deploy"). No se toca `render.yaml` ni se bumpea ningun timeout (advertencia 4 del plan).
+
+Esperando que el CEO pase: la hora exacta del guardado (T0 del switch) y la confirmacion de que el deploy quedo disparado. Con eso, sigo a C5 (observar el deploy y la readiness via `/health` y `/api/v1/health/ready`).
 
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
