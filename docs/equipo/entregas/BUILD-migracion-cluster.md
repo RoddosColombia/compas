@@ -227,6 +227,30 @@ ready={"status":"ready","mongo":"up","beanie":"ready"}
 
 Pendiente para cerrar C7 (no lo puede verificar esta sesion, requiere consola): confirmacion del CEO de (a) Logs de Render sin `[ensure_beanie]` con error durante la hora, (b) Atlas `compas-prod` > Metrics con `Connections > 0` y actividad en `Opcounters`, y (c) si hubo alguna escritura de negocio durante la ventana (de ser asi, pasa a regir RB-3 en vez de RB-2, con la hora exacta anotada aqui).
 
+**Cierre de C7, evidencia consolidada por el CEO, 2026-09-15:**
+- **Atlas `compas-prod` Metrics:** Connections activas (~5-8 en los 3 nodos), Opcounters con movimiento real (~0.2/s, no plano en cero). Confirmado por el CEO en consola.
+- **Logs de Render:** no aparece la linea literal `[ensure_beanie]` (ni de exito ni de error), solo pings de `/health`. **Desviacion documentada, no bloqueante:** el criterio literal del plan pedia ver esa linea sin error; en su lugar, la evidencia usada es que `/api/v1/health/ready` respondio `beanie:"ready"` en las 4 lecturas (ver arriba), que es evidencia mas directa de que `init_beanie` corrio bien contra `compas-prod` que buscar una linea de log especifica. No se persigue mas la linea porque el resultado de fondo (Beanie inicializado y conectado) ya esta probado por un camino mas confiable.
+- **Escrituras de negocio durante la hora:** ninguna. Solo el login de C6. **RB-2 sigue vigente, no pasa a RB-3.**
+
+**C7 hecho.** T0 sin cambios (11:05 AM, C4). 4/4 lecturas `ready`, sin errores de conexion en la hora, write de C6 confirmado, Connections y Opcounters activos, cero escrituras de negocio nuevas. **Fin de C7.**
+
+### >>> Gate G4 (CEO): declarar el checkpoint de no-retorno — PENDIENTE DE GO
+
+Segun el plan (`docs/equipo/entregas/PLAN-migracion-cluster.md` §7, fila G4): "Fin de C7. Con la evidencia de C7, el CEO autoriza por escrito cerrar el rollback. A partir de aqui, cualquier problema se arregla hacia adelante sobre `compas-prod`."
+
+Resumen de evidencia de C7:
+
+| Item | Evidencia |
+|---|---|
+| Ventana | 60 minutos desde C6 (11:18 AM a 12:18 PM Bogota) |
+| Readiness | 4/4 lecturas `ready` (11:31, 11:48, 12:03, 12:18), sin fallas de conexion |
+| Atlas Metrics | Connections activas (~5-8), Opcounters con movimiento real (~0.2/s) |
+| Logs de Render | Sin linea `[ensure_beanie]` (ni exito ni error visible); sustituido por evidencia mas directa (`beanie:"ready"` en las 4 lecturas) |
+| Escrituras de negocio | Ninguna durante la hora. Solo el login de C6 (`user.login`, `audit_log` 2386→2387) |
+| Rollback vigente | RB-2 (no escaló a RB-3) |
+
+**Pedido explicito:** necesito su GO por escrito, en este chat, para declarar el checkpoint de no-retorno y autorizar C8 (borrar las variables `MONGODB_URI_COMPAS_OLD` y `MONGODB_URI_AUDIT_OLD` de `compas-api` en Render). Sin ese GO no continuo con C8. Recuerde que, segun la seccion 6 del plan, desde que se declare el no-retorno cualquier problema se arregla hacia adelante sobre `compas-prod`; ya no hay vuelta atras a `sismo-v3` sin repetir la Fase B completa (nuevo dump).
+
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
 Regla P7: ninguna URI ni password entra en este archivo, en commits, en capturas ni en el chat. Solo en `docs/INVENTARIO-SECRETOS.xlsx`.
