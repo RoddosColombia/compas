@@ -211,6 +211,13 @@ ready={"status":"ready","mongo":"up","beanie":"ready"}
 ```
 `ready`. Faltan 2 lecturas.
 
+**Lectura 3 — 12:03 PM Bogota (17:03:37 UTC), T+45min desde C6:**
+```
+health=200
+ready={"status":"ready","mongo":"up","beanie":"ready"}
+```
+`ready`. Falta 1 lectura para completar la hora.
+
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
 Regla P7: ninguna URI ni password entra en este archivo, en commits, en capturas ni en el chat. Solo en `docs/INVENTARIO-SECRETOS.xlsx`.
