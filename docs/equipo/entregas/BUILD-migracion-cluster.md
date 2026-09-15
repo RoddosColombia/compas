@@ -234,7 +234,9 @@ Pendiente para cerrar C7 (no lo puede verificar esta sesion, requiere consola): 
 
 **C7 hecho.** T0 sin cambios (11:05 AM, C4). 4/4 lecturas `ready`, sin errores de conexion en la hora, write de C6 confirmado, Connections y Opcounters activos, cero escrituras de negocio nuevas. **Fin de C7.**
 
-### >>> Gate G4 (CEO): declarar el checkpoint de no-retorno — PENDIENTE DE GO
+### >>> Gate G4 (CEO): declarar el checkpoint de no-retorno — GO AUTORIZADO
+
+**GO recibido del CEO, 2026-09-15, por escrito en el chat.** Rollback declarado cerrado. De aca en adelante cualquier problema se arregla hacia adelante sobre `compas-prod`; no hay vuelta atras a `sismo-v3`.
 
 Segun el plan (`docs/equipo/entregas/PLAN-migracion-cluster.md` §7, fila G4): "Fin de C7. Con la evidencia de C7, el CEO autoriza por escrito cerrar el rollback. A partir de aqui, cualquier problema se arregla hacia adelante sobre `compas-prod`."
 
@@ -250,6 +252,26 @@ Resumen de evidencia de C7:
 | Rollback vigente | RB-2 (no escaló a RB-3) |
 
 **Pedido explicito:** necesito su GO por escrito, en este chat, para declarar el checkpoint de no-retorno y autorizar C8 (borrar las variables `MONGODB_URI_COMPAS_OLD` y `MONGODB_URI_AUDIT_OLD` de `compas-api` en Render). Sin ese GO no continuo con C8. Recuerde que, segun la seccion 6 del plan, desde que se declare el no-retorno cualquier problema se arregla hacia adelante sobre `compas-prod`; ya no hay vuelta atras a `sismo-v3` sin repetir la Fase B completa (nuevo dump).
+
+### C8 · Borrar las env vars de respaldo — EN CURSO (ejecuta el CEO)
+
+Esta accion NO requiere manejar ningun valor de URI (solo se eliminan dos variables por nombre), asi que no aplica la restriccion de secretos de C1/C4; aun asi, sigue el mismo criterio operativo: la ejecuta el CEO directamente en el Dashboard de Render.
+
+Instruccion preparada (paso C8 del plan, literal):
+1. `compas-api` → Environment.
+2. Eliminar la variable `MONGODB_URI_COMPAS_OLD`.
+3. Eliminar la variable `MONGODB_URI_AUDIT_OLD`.
+4. Un solo guardado ("Save, rebuild, and deploy"). Esto dispara un deploy nuevo.
+5. Esperar a que el deploy quede Live, y volver a chequear:
+```
+curl -s -o /dev/null -w '%{http_code}\n' https://api.compas.roddos.com/health
+curl -s https://api.compas.roddos.com/api/v1/health/ready
+```
+Evidencia esperada: Environment de `compas-api` con exactamente dos variables `MONGODB_URI_*` (las nuevas, sin las `_OLD`), y `/api/v1/health/ready` en `{"status":"ready","mongo":"up","beanie":"ready"}` despues del redeploy.
+
+**Rama B2.2 no aplica:** no existe worker `compas-jobs` (ver B2), asi que no hace falta repetir esto en ningun worker.
+
+Esperando que el CEO confirme que elimino las dos variables y guardo, con la hora, para volver a chequear el `ready` y cerrar C8.
 
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
