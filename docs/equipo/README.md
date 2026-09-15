@@ -93,6 +93,7 @@ Estas reglas son innegociables y aplican a cualquier chat del equipo. Son extens
 5. **Nada de descartar quejas del CEO.** Si el CEO dice "esto esta roto", se verifica el codigo. No se responde "es config gap conocido" sin haber mirado. Regla origen: incidente 2026-09-14 con `DatosPage` en blanco.
 6. **Ritual de cierre obligatorio.** Ninguna sesion termina sin actualizar su `chats/<rol>-estado.md`. Un chat sin estado actualizado es imposible de retomar.
 7. **CLAUDE.md manda.** El CLAUDE.md global y el del proyecto tienen precedencia sobre estos docs si hay conflicto.
+8. **Una decision cerrada que descansa sobre un hecho falso se escala, no se obedece en silencio.** Las instrucciones de tarea suelen decir "no reabras las decisiones ya cerradas", y esta bien: evita que cada rol rediscuta todo. Pero esa clausula tiene una excepcion permanente que aplica aunque el mensaje de tarea no la escriba: **si encontras evidencia de que una decision cerrada se tomo sobre un dato equivocado, lo reportas de inmediato y arriba de todo.** No la cambias por tu cuenta; la señalas. Regla origen: el 2026-09-14 la region del cluster estaba fijada sobre una premisa falsa, el researcher encontro el dato que la refutaba, y no lo escalo porque su instruccion se lo prohibia. Se planifico sobre un destino equivocado hasta que la auditoria lo detecto. **Quien escribe la instruccion de tarea debe incluir esta excepcion explicitamente.**
 
 ## Related
 

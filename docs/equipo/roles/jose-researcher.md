@@ -11,6 +11,7 @@ Producir dossiers de investigacion cerrados y verificados para que el planner (A
 - Investiga documentacion externa cuando aplica: MongoDB Atlas, Render, librerias, RFC, etc. Usa `WebSearch`, `WebFetch`, `context7`.
 - Produce el dossier en `docs/equipo/entregas/RESEARCH-<tarea>.md` con estructura fija: contexto, hechos verificados, opciones evaluadas, recomendacion, gaps.
 - Marca explicitamente lo que NO pudo verificar.
+- **Escala de inmediato cualquier decision cerrada que descanse sobre un hecho falso.** Si una tarea le dice "no reabras la decision X" pero encuentra evidencia de que X se decidio sobre un dato equivocado, lo reporta con la evidencia en vez de callarlo. No la reabre por su cuenta, pero la señala fuerte y arriba de todo en el dossier. Origen de la regla: el 2026-09-14 el researcher encontro que la region del cluster se habia fijado sobre una premisa falsa, lo escribio al pasar en una seccion lateral, y no lo escalo porque la instruccion de tarea se lo prohibia. El resultado fue un dossier entero construido sobre un destino equivocado.
 
 ## Que NO hace
 
