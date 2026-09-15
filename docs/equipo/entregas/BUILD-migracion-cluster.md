@@ -204,6 +204,13 @@ Inicio de la ventana: C6, `11:18 AM` Bogota. Jorge corre las lecturas de `/api/v
 
 Nota de coordinacion (corregida): el arquitecto (Claude, no Sergio) habia arrancado un monitor propio para esto mismo antes de que yo arrancara el mio; lo cancelo para no duplicar y confirmo que siga con el mio. Las lecturas 2, 3 y 4 quedan a cargo de mi monitor unicamente.
 
+**Lectura 2 — 11:48 AM Bogota (16:48:12 UTC), T+30min desde C6:**
+```
+health=200
+ready={"status":"ready","mongo":"up","beanie":"ready"}
+```
+`ready`. Faltan 2 lecturas.
+
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
 Regla P7: ninguna URI ni password entra en este archivo, en commits, en capturas ni en el chat. Solo en `docs/INVENTARIO-SECRETOS.xlsx`.
