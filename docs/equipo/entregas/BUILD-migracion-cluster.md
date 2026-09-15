@@ -62,10 +62,17 @@ Confirmado por el CEO en la consola, 2026-09-14:
 
 Rama tomada: **A2.1** (reutilizar, ya es M0 en us-east-1). Rama de A4: **A4.1** (mismo proyecto, usuarios y rol ya existen).
 
-### A2 - EN CURSO
+### A2 - HECHO
 
-Verificar que `compas-prod` este vacio (Browse Collections: "no databases" o solo `admin`/`local`). Dictado al CEO, esperando resultado.
+`compas-prod` vacio: Browse Collections muestra solo `admin`/`local`, 0 colecciones (verificado por el arquitecto en Data Explorer). Sin Terminate, sin Gate G1.
 
-### A3 - EN CURSO
+### A3 - HECHO
 
-Verificar IP Access List del proyecto (Security > Network Access): si ya figura `0.0.0.0/0` Active, no tocar. Dictado al CEO, esperando resultado.
+`0.0.0.0/0` ya figura Active en el IP Access List del proyecto SISMO-V3 (comentario "CI/CD + dev local. SCRAM auth + TLS forzado"). No se toca nada.
+
+### A4 - EN CURSO
+
+Rama A4.1 (mismo proyecto que sismo-v3). Verificar en el proyecto SISMO-V3:
+- Database Access > Database Users: abrir `compas_app` y `compas_audit` con Edit (sin guardar), anotar roles exactos, scope de base, y si "Restrict Access to Specific Clusters" esta marcado (y si esta marcado, que clusters incluye).
+- Database Access > Custom Roles: abrir `audit_writer`, anotar sus acciones y su scope.
+Dictado al CEO/arquitecto, esperando resultado. Si algun usuario tiene la restriccion marcada excluyendo `compas-prod`: unica accion permitida es editarlo para incluir `compas-prod` (o quitar la restriccion) y Update User. NO regenerar passwords bajo ninguna circunstancia.
