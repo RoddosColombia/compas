@@ -157,11 +157,50 @@ Segun el plan (`docs/equipo/entregas/PLAN-migracion-cluster.md` §7, fila G3): "
 
 **Pedido explicito:** necesito su GO por escrito, en este chat, antes de tocar las variables de entorno `MONGODB_URI_COMPAS` y `MONGODB_URI_AUDIT` de `compas-api` en Render (paso C4). Sin ese GO no continuo con C4, tal como exige el plan. Recuerde que C4 es el switch real: a partir de ahi la app empieza a leer y escribir en `compas-prod`, y entra en juego el esquema de rollback RB-1/RB-2/RB-3 de la seccion 6 del plan.
 
-### C4 · Cambiar las DOS env vars en Render — EN CURSO (ejecuta el CEO)
+### C4 · Cambiar las DOS env vars en Render — HECHO
 
-Mismo mecanismo que C1/C2/C3: las URIs reales no pasan por Claude Code. El CEO ejecuta el click-path de C4 directamente en el Dashboard de Render (`compas-api`, Environment: agrega `MONGODB_URI_COMPAS_OLD` y `MONGODB_URI_AUDIT_OLD` con los valores actuales, edita `MONGODB_URI_COMPAS` y `MONGODB_URI_AUDIT` con los valores nuevos de `compas-prod`, un solo "Save, rebuild, and deploy"). No se toca `render.yaml` ni se bumpea ningun timeout (advertencia 4 del plan).
+Mismo mecanismo que C1/C2/C3: las URIs reales no pasaron por Claude Code, ejecutado por el CEO directamente en el Dashboard de Render. Un solo guardado, sin tocar `render.yaml` ni timeouts (advertencia 4 del plan).
 
-Esperando que el CEO pase: la hora exacta del guardado (T0 del switch) y la confirmacion de que el deploy quedo disparado. Con eso, sigo a C5 (observar el deploy y la readiness via `/health` y `/api/v1/health/ready`).
+**Evidencia real, pegada por el CEO, 2026-09-15:**
+- T0 = 11:05 AM (hora Bogota) del guardado.
+- Deploy manual disparado, commit `4a7501d`, estado Live a las 11:06 AM (1m15s).
+- 4 variables `MONGODB_URI_*` visibles en Environment (2 nuevas + 2 `_OLD`), confirmado en Events de Render.
+
+**C4 hecho.**
+
+### C5 · Observar el deploy y la readiness — HECHO
+
+```
+curl -s -o /dev/null -w '%{http_code}\n' https://api.compas.roddos.com/health
+curl -s https://api.compas.roddos.com/api/v1/health/ready
+```
+
+**Evidencia real:** `/api/v1/health/ready` respondio `{"status":"ready","mongo":"up","beanie":"ready"}`. Conexion real a `compas-prod` confirmada (no solo el deploy en verde: `mongo:"up"` y `beanie:"ready"` implican que `init_beanie` corrio OK contra el cluster nuevo).
+
+**C5 hecho.**
+
+### C6 · Smoke del CEO — HECHO
+
+El CEO hizo login en `compas.roddos.com` con MFA. Las cuatro pantallas de la lista del plan quedaron confirmadas, con una variacion de nombres pero mismo contenido exigido:
+- **Inicio:** piso de caja y proyeccion visibles.
+- **Ciclo mensual:** jul y ago-2026 cerrados, con saldos reales.
+- **Supuestos** (equivalente a "Configuracion del motor" del plan): 3 modelos de moto activos (Raider/Apache 160, Sport 110), parametros completos, cartera por cobrar $1.758.647.416 en 82 semanas — coincide con `cartera_previa_recaudo` del dump (82 documentos, ver B6).
+- **Datos/Transacciones:** cubierto implicitamente por el crecimiento de `audit_log` de abajo (no se listo aparte, pero el login y el resto de pantallas ya prueban lectura real contra `compas-prod`).
+
+**Escritura confirmada (define fin de RB-1):** `audit_log` crecio de `2386` (origen, ver C3) a `2387` (+1 exacto). Ultimo evento verificado: `user.login`, `actor_id` poblado, `timestamp` `2026-09-15T16:18:05 UTC` (11:18 AM Bogota), coincide con la hora del login.
+
+**C6 hecho. Desde aqui rige RB-2, no RB-1** (seccion 6 del plan): un rollback ahora perderia la sesion de login y el evento `user.login` del smoke, pero nada de negocio todavia.
+
+### C7 · Ventana de observacion de 60 minutos — EN CURSO
+
+Inicio de la ventana: C6, `11:18 AM` Bogota. Jorge corre las lecturas de `/api/v1/health/ready` el mismo (endpoint publico, sin secretos); Logs de Render y Atlas Metrics los confirma el CEO en paralelo porque esta sesion no tiene acceso a esas consolas (intento previo de Sergio con la herramienta de navegador de Claude Code fallo por binario no compilado para Windows, ver seccion Sergio P2).
+
+**Lectura 1 — 11:31 AM Bogota (16:31:53 UTC), T+13min desde C6:**
+```
+200
+{"status":"ready","mongo":"up","beanie":"ready"}
+```
+`ready`. Faltan 3 lecturas (aprox. 11:46, 12:01, 12:16 AM/PM Bogota) y la confirmacion del CEO de Logs de Render (sin `[ensure_beanie]` con error) y Atlas Metrics (`Connections > 0`, actividad en `Opcounters`).
 
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
