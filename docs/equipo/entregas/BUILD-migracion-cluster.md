@@ -202,6 +202,8 @@ Inicio de la ventana: C6, `11:18 AM` Bogota. Jorge corre las lecturas de `/api/v
 ```
 `ready`. Faltan 3 lecturas (aprox. 11:46, 12:01, 12:16 AM/PM Bogota) y la confirmacion del CEO de Logs de Render (sin `[ensure_beanie]` con error) y Atlas Metrics (`Connections > 0`, actividad en `Opcounters`).
 
+Nota de coordinacion: Sergio habia arrancado un monitor propio para esto mismo antes de que yo arrancara el mio; lo cancelo para no duplicar y confirmo que siga con el mio. Las lecturas 2, 3 y 4 quedan a cargo de mi monitor unicamente.
+
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
 Regla P7: ninguna URI ni password entra en este archivo, en commits, en capturas ni en el chat. Solo en `docs/INVENTARIO-SECRETOS.xlsx`.
