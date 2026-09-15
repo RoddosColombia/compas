@@ -32,6 +32,60 @@ Hecho (owner Sergio, ver seccion de abajo).
 
 Este archivo. Hecho.
 
+### Nota de sesion (2026-09-14)
+
+Esta sesion de Jorge estaba en el directorio correcto (`COMPAS` en `main`, commit `bd865e3`, el mismo que aqui) cuando el CEO aviso de una sesion vieja/desconectada; esa sesion vieja resulto ser OTRO worktree (temp, rama `fix/ensure-beanie-timeout-60s`), no esta. Verificado con `git worktree list` antes de moverme. Me mude de todos modos a `COMPAS-jorge` (rama `session/jorge-migracion`) porque ya existia en la punta correcta y separa mi trabajo del de Sergio (evita el clobber de B1 que ya paso una vez). Nada se perdio: todo el trabajo previo de P1/P4/P5/P6/B1 esta commiteado en `main` (`4a7501d`..`e4aa1b8`).
+
+Estado del freeze P6: `main` local (y esta rama) tiene 4 commits sin pushear sobre `origin/main` (`275fb32`, `d51b7e0`, `e4aa1b8`, `bd865e3`, todos `docs(equipo)`, nada de codigo). No se pushea nada hasta levantar el freeze.
+
+### B2 · Worker `compas-jobs` en Render
+
+`render.yaml:72-108`: el worker `compas-jobs` esta COMENTADO completo, con la nota "DIFERIDO a Sprint 5-6" (Render no ofrece plan Free para workers). El blueprint no lo crea. Confirmado en vivo por Claude (arquitecto) en los dos workspaces de Render (SISMO y RODDOS-web): no existe ningun Background Worker ni Cron Job para `compas-jobs`. Coincide con el hallazgo en `render.yaml:72-108`.
+
+**Hecho.** Rama tomada: B2.1 (no existe worker).
+
+### B3 · Congelar escrituras al cluster viejo
+
+1. Worker: segun B2, no existe. N/A.
+2. `Get-Process python*` en la maquina del CEO: sin resultados. Ningun script ni migracion corriendo. Hecho (2026-09-14).
+3. Confirmacion del CEO de que nadie usa `compas.roddos.com` hasta que Jorge avise: CONFIRMADO en el chat, 2026-09-14 21:34.
+4. Nadie mergea a main: confirmado P6 (ver arriba).
+
+**Hecho.** Los cuatro items con hora. Fin de B3.
+
+### B4 · Nodo sano de sismo-v3 hoy
+
+Confirmado por el CEO en consola, 2026-09-14:
+- `sismo-v3-shard-00-00`: SECONDARY, sano.
+- `sismo-v3-shard-00-01`: PRIMARY, sano.
+- `sismo-v3-shard-00-02`: badge R naranja, ANOMALO (banner "2 of 3 servers complete"). Coincide con lo ya sabido (nodo enfermo = -02, ver memoria del arquitecto).
+- Replica set: `atlas-103u1m-shard-0`.
+
+**Hecho.** Nodo PRIMARY sano identificado: `-01`.
+
+### B5 · mongodump, escalon 1
+
+Primer intento (SRV normal, `serverSelectionTimeoutMS=20000`, `--nsInclude 'compas.*'`) fallo de inmediato, ANTES de conectar: `error parsing command line options: unknown option 'nsInclude'`. Root cause verificado con `mongodump --help` (build 100.18.0, oficial `fastdl.mongodb.org`, instalado por winget en P4): la seccion "namespace options" de esta version solo tiene `--db`/`-d` y `--collection`/`-c`; no existe `--nsInclude`/`--nsExclude` en este build. No es el CRITICO 1 (cluster colgado); es una diferencia de flags entre versiones de mongodump.
+
+Desviacion aprobada por el CEO en el chat, 2026-09-14: usar `--db compas` en vez de `--nsInclude 'compas.*'`. Efecto identico porque `compas` es la unica base de datos relevante (28 colecciones del handshake); no hay perdida de alcance.
+
+Reintentando con `--db compas`.
+
+**Resultado:** exit code 0. 28 lineas `done dumping`, 0 errores. Log completo en `mongodump.log` dentro de la carpeta de P5 (no se pega aqui: son datos financieros).
+
+**Hecho.** Escalon 1 funciono al primer intento; no hizo falta escalon 2/3/4. Conteos coinciden con el handshake:
+`reglas_clasificacion` 159, `audit_log` 2386, `presupuesto_lineas` 130, `transacciones` 2223, `facturas` 482, `refresh_sessions` 99, `cartera_previa_recaudo` 82, `rubros` 54, `parametros_proyeccion` 14, `configuracion` 11, `facturas_obligacion` 9, `meses_control` 7, `cargas` 6, `modelos_moto` 3, `metas_ingreso` 2, `users` 1, `cfo_hilos` 1, `obligaciones` 1, `cfo_vinculos_telegram` 1, y las nueve en 0 exactas del handshake (`idempotency_keys`, `proyeccion_versiones`, `gastos_recurrentes`, `jwt_denylist`, `colocacion_mes`, `cfo_avisos_vigilante`, `pagos_planeados`, `login_throttle`, `loantape_creditos`). Sin escalera, no aplica Gate G2.
+
+### B6 · Verificacion y copia permanente
+
+- `bson: 28  metadata: 28`. `conteo-origen.txt`: 28 filas (ver arriba). Tamano de la carpeta: 2.5M.
+- Zip: `C:\Users\AndresSanJuan\roddos-backups\compas\2026-09-14_pre-migracion.zip`, 333299 bytes.
+- SHA256: `4302437A47B277AE8EB547B63D25AECA5C0A0CC4B8A96D8AA5C41AB22AC10C73`.
+- Segunda ubicacion (autorizada por el CEO, carpeta OneDrive sincronizada local que espeja el SharePoint `BP 26/Tecnologia/Compas/V 2.0`): `C:\Users\AndresSanJuan\OneDrive - RODDOS SAS\BP 26\Tecnologia\Compas\V 2.0\2026-09-14_pre-migracion.zip`. Copia verificada: mismo hash y mismo tamano (333299 bytes) que el original.
+- Los `.bson` y el `.zip` NO se tocaron desde el chat ni se pegaron aqui; solo rutas y hash (no son secretos).
+
+**Hecho.** 28 y 28, conteos plausibles, zip con hash, dos copias en ubicaciones distintas. **Fin de Fase B.**
+
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
 Regla P7: ninguna URI ni password entra en este archivo, en commits, en capturas ni en el chat. Solo en `docs/INVENTARIO-SECRETOS.xlsx`.
