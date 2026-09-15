@@ -12,6 +12,7 @@ import type { Mes } from "@/lib/meses";
 import CajaPage from "@/pages/CajaPage";
 
 const editarMock = vi.hoisted(() => vi.fn());
+const listarMesesMock = vi.hoisted(() => vi.fn());
 
 const MESES: { items: Mes[] } = {
   items: [
@@ -44,7 +45,7 @@ vi.mock("@/auth/AuthContext", () => ({
 
 vi.mock("@/lib/meses", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/meses")>();
-  return { ...real, listarMeses: () => Promise.resolve(MESES) };
+  return { ...real, listarMeses: listarMesesMock };
 });
 
 vi.mock("@/lib/caja", async (importOriginal) => {
@@ -62,6 +63,8 @@ function renderPage() {
 }
 
 describe("CajaPage", () => {
+  beforeEach(() => listarMesesMock.mockReset().mockResolvedValue(MESES));
+
   it("muestra los saldos del mes en ejecución y el formulario con caja:reportar", async () => {
     puedeMock.mockImplementation(() => true);
     renderPage();
@@ -87,7 +90,10 @@ describe("CajaPage", () => {
 });
 
 describe("CajaPage — FIX-F: editar saldo inicial (ciclo:config)", () => {
-  beforeEach(() => editarMock.mockReset());
+  beforeEach(() => {
+    editarMock.mockReset();
+    listarMesesMock.mockReset().mockResolvedValue(MESES);
+  });
 
   it("admin abre el diálogo y guarda con mes/saldo/motivo", async () => {
     puedeMock.mockImplementation(() => true);
@@ -146,5 +152,19 @@ describe("CajaPage — FIX-F: editar saldo inicial (ciclo:config)", () => {
     expect(
       screen.queryByRole("button", { name: "Editar saldo inicial" }),
     ).toBeNull();
+  });
+});
+
+describe("CajaPage — si listarMeses falla, la página no queda en blanco", () => {
+  it("muestra ErrorEstado con botón de reintentar en vez de no renderizar nada", async () => {
+    puedeMock.mockImplementation(() => true);
+    listarMesesMock.mockReset().mockRejectedValue(new Error("boom"));
+    renderPage();
+    expect(
+      await screen.findByText(/no se pudo leer el estado de los meses/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Reintentar" }),
+    ).toBeInTheDocument();
   });
 });

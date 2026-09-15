@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { ErrorEstado } from "@/components/ui/error-estado";
 import { editarSaldoInicial } from "@/lib/caja";
 import { type Mes, listarMeses } from "@/lib/meses";
 import { formatCOP } from "@/lib/money";
@@ -56,6 +57,12 @@ export default function CajaPage() {
 
       {meses.isLoading && (
         <p className="font-sans text-sm text-ink-soft">Cargando…</p>
+      )}
+      {meses.isError && (
+        <ErrorEstado
+          mensaje="No se pudo leer el estado de los meses."
+          onReintentar={() => void meses.refetch()}
+        />
       )}
       {meses.data && !mesActivo && (
         <p className="font-sans text-sm text-ink-soft">
