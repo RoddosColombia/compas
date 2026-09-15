@@ -46,6 +46,26 @@ P2 (acceso a Atlas): intente usar la herramienta de navegador de Claude Code (sk
 
 Estado: EN CURSO. Click-path dictado al CEO, esperando las 5 lineas de evidencia (proyecto, tier, region, estado, mismo proyecto que sismo-v3 si/no).
 
-### Escalacion abierta (P6)
+### Escalacion P6: CERRADA
 
-Ver mensaje al CEO en el chat: el commit `7747f01` (`fix(caja): agrega rama isError a CajaPage`) llego a `main` a las 20:32:06 del 2026-09-14, en la misma ventana en la que este archivo registra "P6 confirmado por el CEO: nadie mergea a main". No se toca ese commit ni se revierte nada; se escala para que el CEO aclare si P6 sigue vigente antes de que Sergio haga el proximo push (A5) o Jorge haga C4.
+Se encontro en local el commit `d51b7e0` (sesion de Jorge, sin push): explica que `7747f01` lo hizo una sesion que todavia no tenia el aviso de congelamiento, agrega regla nueva de equipo (verificar el BUILD antes de cualquier push a main) y deja ese commit sin pushear hasta que Jorge levante P6. P6 sigue vigente. Sergio no pushea nada mas hasta que Jorge confirme el descongelamiento en este archivo.
+
+### A1 - Identificar el proyecto y el estado real de `compas-prod`. HECHO
+
+Confirmado por el CEO en la consola, 2026-09-14:
+- Proyecto: SISMO-V3 (id `6a14574dacf958ad8dd73c4f`)
+- Tier: M0 (Free)
+- Proveedor y region: AWS, us-east-1 (N. Virginia)
+- Version: 8.0.32
+- Estado: activo ("Monitoring is Paused" es normal en M0 tras dias sin conexion, no es pausa del cluster)
+- Mismo proyecto que `sismo-v3`: SI (tambien comparte con `sismo-v3-recovery` y `sismo-v3-ci`)
+
+Rama tomada: **A2.1** (reutilizar, ya es M0 en us-east-1). Rama de A4: **A4.1** (mismo proyecto, usuarios y rol ya existen).
+
+### A2 - EN CURSO
+
+Verificar que `compas-prod` este vacio (Browse Collections: "no databases" o solo `admin`/`local`). Dictado al CEO, esperando resultado.
+
+### A3 - EN CURSO
+
+Verificar IP Access List del proyecto (Security > Network Access): si ya figura `0.0.0.0/0` Active, no tocar. Dictado al CEO, esperando resultado.
