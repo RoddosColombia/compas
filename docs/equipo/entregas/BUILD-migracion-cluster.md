@@ -218,6 +218,15 @@ ready={"status":"ready","mongo":"up","beanie":"ready"}
 ```
 `ready`. Falta 1 lectura para completar la hora.
 
+**Lectura 4 (final) — 12:18 PM Bogota (17:18:59 UTC), T+60min desde C6:**
+```
+health=200
+ready={"status":"ready","mongo":"up","beanie":"ready"}
+```
+`ready`. **4 de 4 lecturas `ready`, sin ninguna falla de conexion en toda la hora.**
+
+Pendiente para cerrar C7 (no lo puede verificar esta sesion, requiere consola): confirmacion del CEO de (a) Logs de Render sin `[ensure_beanie]` con error durante la hora, (b) Atlas `compas-prod` > Metrics con `Connections > 0` y actividad en `Opcounters`, y (c) si hubo alguna escritura de negocio durante la ventana (de ser asi, pasa a regir RB-3 en vez de RB-2, con la hora exacta anotada aqui).
+
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
 Regla P7: ninguna URI ni password entra en este archivo, en commits, en capturas ni en el chat. Solo en `docs/INVENTARIO-SECRETOS.xlsx`.
