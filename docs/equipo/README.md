@@ -59,6 +59,12 @@ docs/equipo/
 
 Los dos manuales son estables (cambian poco). Los estados son volatiles (se sobrescriben al cierre de cada sesion por su duenio).
 
+## Verificar el propio directorio ANTES de leer nada
+
+Cada sesion de Claude Code puede terminar en un worktree distinto del repositorio, a veces uno viejo que quedo de otra tarea. Si eso pasa, un rol puede intentar leer `docs/equipo/...` y no encontrar nada, sin que eso signifique que el archivo no existe: existe en `main`, simplemente esa sesion no esta parada ahi.
+
+**Primer comando de cualquier sesion, antes de leer el boilerplate de su rol:** `git log -1 --format='%h %ci %s'`. Si la fecha no es de hoy o el mensaje no coincide con el trabajo esperado, PARAR y avisar al CEO en vez de seguir. Seguir adelante en un directorio equivocado produce exactamente lo que paso el 2026-09-14: dos builders reinstalando las mismas herramientas y reconfirmando las mismas precondiciones por separado, sin verse, porque cada uno estaba en su propia realidad desconectada de la del otro.
+
 ## Como se abre un chat en frio
 
 Cada rol tiene, en su archivo `roles/<rol>.md`, un bloque **Boilerplate de arranque**. El CEO abre la sesion Claude Code correspondiente, pega ese boilerplate como primer mensaje, y el rol arranca cargado de contexto.
