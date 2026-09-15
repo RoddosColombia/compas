@@ -70,9 +70,26 @@ Rama tomada: **A2.1** (reutilizar, ya es M0 en us-east-1). Rama de A4: **A4.1** 
 
 `0.0.0.0/0` ya figura Active en el IP Access List del proyecto SISMO-V3 (comentario "CI/CD + dev local. SCRAM auth + TLS forzado"). No se toca nada.
 
-### A4 - EN CURSO
+### A4 - HECHO
 
-Rama A4.1 (mismo proyecto que sismo-v3). Verificar en el proyecto SISMO-V3:
-- Database Access > Database Users: abrir `compas_app` y `compas_audit` con Edit (sin guardar), anotar roles exactos, scope de base, y si "Restrict Access to Specific Clusters" esta marcado (y si esta marcado, que clusters incluye).
-- Database Access > Custom Roles: abrir `audit_writer`, anotar sus acciones y su scope.
-Dictado al CEO/arquitecto, esperando resultado. Si algun usuario tiene la restriccion marcada excluyendo `compas-prod`: unica accion permitida es editarlo para incluir `compas-prod` (o quitar la restriccion) y Update User. NO regenerar passwords bajo ninguna circunstancia.
+Rama A4.1 confirmada por el CEO/arquitecto:
+- `compas_app`: `readWrite@compas`, sin "Restrict Access to Specific Clusters".
+- `compas_audit`: rol custom `audit_writer`, sin restriccion de cluster.
+- `audit_writer` (Custom Role): exactamente `find` + `insert` sobre `compas.audit_log`, nada mas.
+Sin restriccion de cluster en ninguno de los dos: van a funcionar en `compas-prod` automaticamente. Sin editar nada, sin regenerar passwords.
+
+Nota de proceso: el CEO senalo que con A1-A4 hechos "mi parte de Fase A esta completa" y que seguia Fase D. Es incorrecto contra el plan: A5 y A6 siguen siendo parte de Fase A (ver texto de A5/A6 y §4 "Sergio queda sin trabajo entre A6 y C8", no entre A4 y C8). Se lo senale y seguimos con A5.
+
+### A5 - HECHO
+
+Host de `compas-prod` confirmado por el CEO via Connect > Drivers: `compas-prod.kd5v5rr.mongodb.net`.
+
+Formato del INVENTARIO revisado antes de escribir (hoja `Secretos`, columnas: Secreto/Clave, Servicio, Para que, Donde vive, Formato SIN valor, Como se obtiene, Rotacion, Cargado?, VALOR). Nota menor sin impacto: la columna "Formato (SIN valor)" de `MONGODB_URI_AUDIT (prod)` dice `authSource=compas`, pero el VALOR real no lo tiene (verificado sin exponer el valor, solo comprobando la presencia de la subcadena); esa columna de documentacion quedo desactualizada, no cambia nada de lo que se ejecuta. Se sigue el template exacto del plan (con `appName=compas-prod`, sin `authSource`).
+
+Dos filas nuevas agregadas en `docs/INVENTARIO-SECRETOS.xlsx` (filas 14 y 15): `MONGODB_URI_COMPAS (compas-prod)` y `MONGODB_URI_AUDIT (compas-prod)`. Mismo usuario/password que hoy en `sismo-v3` (rama A4.1), host nuevo, sin regenerar nada. Filas viejas sin tocar (las deprecara Jorge en C9).
+
+Commit local `0183a4e` en la rama `session/sergio-migracion` de este worktree. **Sin push: P6 sigue congelado.**
+
+### A6 - BLOQUEADO
+
+Intento: extraer la URI nueva del INVENTARIO dentro de la misma invocacion de Bash (sustitucion de comando, `$(...)`) y pasarla directo a `mongosh --eval` contra `compas-prod`, sin que el valor apareciera nunca como texto plano en la salida ni en el chat. El clasificador de modo automatico de Claude Code bloqueo la accion (motivo reportado: "Auto-Mode Bypass"). No se intento una forma alternativa de sortear el bloqueo. Se escala al CEO para que decida como continuar (correrlo el mismo en su propia terminal, o autorizar el permiso puntual).
