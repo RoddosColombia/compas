@@ -253,7 +253,7 @@ Resumen de evidencia de C7:
 
 **Pedido explicito:** necesito su GO por escrito, en este chat, para declarar el checkpoint de no-retorno y autorizar C8 (borrar las variables `MONGODB_URI_COMPAS_OLD` y `MONGODB_URI_AUDIT_OLD` de `compas-api` en Render). Sin ese GO no continuo con C8. Recuerde que, segun la seccion 6 del plan, desde que se declare el no-retorno cualquier problema se arregla hacia adelante sobre `compas-prod`; ya no hay vuelta atras a `sismo-v3` sin repetir la Fase B completa (nuevo dump).
 
-### C8 · Borrar las env vars de respaldo — EN CURSO (ejecuta el CEO)
+### C8 · Borrar las env vars de respaldo — HECHO
 
 Esta accion NO requiere manejar ningun valor de URI (solo se eliminan dos variables por nombre), asi que no aplica la restriccion de secretos de C1/C4; aun asi, sigue el mismo criterio operativo: la ejecuta el CEO directamente en el Dashboard de Render.
 
@@ -271,7 +271,9 @@ Evidencia esperada: Environment de `compas-api` con exactamente dos variables `M
 
 **Rama B2.2 no aplica:** no existe worker `compas-jobs` (ver B2), asi que no hace falta repetir esto en ningun worker.
 
-Esperando que el CEO confirme que elimino las dos variables y guardo, con la hora, para volver a chequear el `ready` y cerrar C8.
+**Evidencia real, confirmada por el CEO, 2026-09-15:** las dos variables `_OLD` eliminadas en Render, un solo guardado, redeploy disparado y completado. `/api/v1/health/ready` volvio a dar `{"status":"ready","mongo":"up","beanie":"ready"}` con solo las 2 variables finales (sin los respaldos). La app sigue conectando bien contra `compas-prod`.
+
+**C8 hecho.**
 
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
