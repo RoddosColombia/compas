@@ -100,6 +100,35 @@ El CEO decidio, de forma permanente para toda la Fase C: **C1, C2 y C3 los corre
 
 C1 esta corriendo ahora (script preparado por el arquitecto, ejecutado por el CEO). Evidencia pendiente de pegar aqui apenas el CEO la pase.
 
+### C1 · mongorestore contra `compas-prod` — HECHO
+
+Ejecutado por el CEO fuera de Claude Code (mecanismo de la resolucion de arriba). Resultado pegado por el CEO en el chat, 2026-09-15: `5671 document(s) restored successfully. 0 document(s) failed to restore.`
+
+Verificacion cruzada contra `conteo-origen.txt` de B6 (suma de las 19 colecciones con data): `2386+2223+482+159+130+99+82+54+14+11+9+7+6+3+2+1+1+1+1 = 5671`. Coincide exacto. **C1 hecho.**
+
+Nota tecnica del CEO para el registro: la hipotesis de un "bug de majority" en la herramienta que se venia manejando en sesiones previas queda descartada. La causa real era una URI vieja o equivocada usada en los primeros intentos; con la fila 14 correcta del INVENTARIO corrio limpio a la primera. No hay bug de `mongorestore` ni de `writeConcern`.
+
+### C2 · Verificar 28 colecciones, conteos identicos e indices — HECHO
+
+El CEO indico que el mismo log de C1 ya trae la evidencia que pedia este paso, sin correr un comando separado: las 28 colecciones fueron procesadas (incluidas las 9 en cero de B6/B5), el indice `forense_entidad_ts` en `audit_log` esta presente, y el indice unico parcial `banco_idbanco_unico` en `transacciones` con su `PartialFilterExpression` esta presente. Coincide con lo exigido en el paso C2 del plan (`docs/equipo/entregas/PLAN-migracion-cluster.md` C2). **C2 hecho**, sin ejecucion separada.
+
+### C3 · Verificar append-only de `audit_log` en `compas-prod` — EN CURSO
+
+Script preparado para que lo corra el CEO (mismo mecanismo que C1/C2), literal del paso C3 del plan, sin ninguna URI real:
+
+```
+export URI_NEW_AUDIT='<MONGODB_URI_AUDIT (compas-prod), fila 15 del INVENTARIO>'; \
+mongosh "$URI_NEW_AUDIT" --quiet --eval '
+  function esperaRechazo(nombre, fn) { try { const r = fn(); print("FALLO " + nombre + ": permitido -> " + JSON.stringify(r)); } catch (e) { print("OK " + nombre + " rechazado: " + e.codeName); } }
+  esperaRechazo("update audit_log", () => db.audit_log.updateOne({_id: "no-existe"}, {$set: {x: 1}}));
+  esperaRechazo("delete audit_log", () => db.audit_log.deleteOne({_id: "no-existe"}));
+  esperaRechazo("find rubros",      () => db.rubros.findOne());
+  print("find audit_log permitido, docs: " + db.audit_log.countDocuments());
+'
+```
+
+Evidencia esperada (cuatro lineas exactas): `OK update audit_log rechazado: Unauthorized`, `OK delete audit_log rechazado: Unauthorized`, `OK find rubros rechazado: Unauthorized`, `find audit_log permitido, docs: 2386` (el conteo propio de `audit_log` en `conteo-origen.txt`, no el total de C1; no crecio porque no hubo login todavia, eso es C6). Sin insertar ningun documento de prueba (`audit_log` es append-only). Cualquier linea `FALLO`: PARAR, volver a A4, no hacer el switch.
+
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
 Regla P7: ninguna URI ni password entra en este archivo, en commits, en capturas ni en el chat. Solo en `docs/INVENTARIO-SECRETOS.xlsx`.
