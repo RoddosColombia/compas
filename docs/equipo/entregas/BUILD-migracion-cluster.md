@@ -112,7 +112,7 @@ Nota tecnica del CEO para el registro: la hipotesis de un "bug de majority" en l
 
 El CEO indico que el mismo log de C1 ya trae la evidencia que pedia este paso, sin correr un comando separado: las 28 colecciones fueron procesadas (incluidas las 9 en cero de B6/B5), el indice `forense_entidad_ts` en `audit_log` esta presente, y el indice unico parcial `banco_idbanco_unico` en `transacciones` con su `PartialFilterExpression` esta presente. Coincide con lo exigido en el paso C2 del plan (`docs/equipo/entregas/PLAN-migracion-cluster.md` C2). **C2 hecho**, sin ejecucion separada.
 
-### C3 · Verificar append-only de `audit_log` en `compas-prod` — EN CURSO
+### C3 · Verificar append-only de `audit_log` en `compas-prod` — HECHO
 
 Script preparado para que lo corra el CEO (mismo mecanismo que C1/C2), literal del paso C3 del plan, sin ninguna URI real:
 
@@ -128,6 +128,32 @@ mongosh "$URI_NEW_AUDIT" --quiet --eval '
 ```
 
 Evidencia esperada (cuatro lineas exactas): `OK update audit_log rechazado: Unauthorized`, `OK delete audit_log rechazado: Unauthorized`, `OK find rubros rechazado: Unauthorized`, `find audit_log permitido, docs: 2386` (el conteo propio de `audit_log` en `conteo-origen.txt`, no el total de C1; no crecio porque no hubo login todavia, eso es C6). Sin insertar ningun documento de prueba (`audit_log` es append-only). Cualquier linea `FALLO`: PARAR, volver a A4, no hacer el switch.
+
+**Resultado real, pegado por el CEO en el chat, 2026-09-15:**
+- `update audit_log`: RECHAZADO.
+- `delete audit_log`: RECHAZADO.
+- `find rubros`: RECHAZADO (`compas_audit` solo tiene `find`+`insert` sobre `audit_log`, confirmado; ningun otro permiso).
+- `find audit_log`: PERMITIDO, conteo `2386`, coincide exacto con `conteo-origen.txt`.
+
+**Anomalia documentada, no bloqueante:** el `codeName` real de las tres operaciones rechazadas fue `AtlasError`, no `Unauthorized` como escribia el texto literal del plan. El CEO lo describe como equivalente. No es una linea `FALLO` (las operaciones SI fueron rechazadas, que es el criterio de "hecho"), asi que no aplica "PARAR, volver a A4". Se registra la diferencia de nombre de codigo de error porque Atlas puede envolver el `Unauthorized` nativo de Mongo bajo su propio codigo (`AtlasError`) en clusters M0; no se investigo mas a fondo porque no cambia el resultado de seguridad verificado (rechazo real de escritura y de lectura fuera de alcance, permiso real de lectura de auditoria).
+
+**C3 hecho.** Las cuatro conductas esperadas se cumplieron (tres rechazos + un permiso), con la salvedad de nomenclatura de arriba.
+
+### >>> Gate G3 (CEO): autorizar el switch de Render — PENDIENTE DE GO
+
+Segun el plan (`docs/equipo/entregas/PLAN-migracion-cluster.md` §7, fila G3): "Fin de C3, antes de C4. Autorizar el switch de URIs en Render con la evidencia de A6, B6, C1, C2, C3." Presento la evidencia completa:
+
+| Item | Evidencia | Estado |
+|---|---|---|
+| A6 | `compas_app` y `compas_audit` autentican OK contra `compas-prod` (verificado por el CEO, fuera de Claude Code) | Hecho |
+| B6 | Dump verificado: 28/28 bson+metadata, `conteo-origen.txt` con 28 filas, zip con SHA256 `4302437A47B277AE8EB547B63D25AECA5C0A0CC4B8A96D8AA5C41AB22AC10C73`, dos copias en ubicaciones distintas | Hecho |
+| C1 | `mongorestore --drop`: 5671 documentos restaurados, 0 fallidos. Coincide exacto con la suma de `conteo-origen.txt` | Hecho |
+| C2 | 28 colecciones procesadas (incluidas las 9 en cero), indice `forense_entidad_ts` en `audit_log`, indice unico parcial `banco_idbanco_unico` en `transacciones` con su `PartialFilterExpression`, cubierto por el mismo log de C1 | Hecho |
+| C3 | `update`/`delete` sobre `audit_log` rechazados, `find` sobre `rubros` rechazado (fuera del scope de `compas_audit`), `find` sobre `audit_log` permitido con conteo `2386` (exacto contra origen). Anomalia de nomenclatura documentada arriba (`AtlasError` en vez de `Unauthorized`), no bloqueante | Hecho |
+
+**Sin escalera en B5** (funciono en escalon 1), por lo que no aplica Gate G2.
+
+**Pedido explicito:** necesito su GO por escrito, en este chat, antes de tocar las variables de entorno `MONGODB_URI_COMPAS` y `MONGODB_URI_AUDIT` de `compas-api` en Render (paso C4). Sin ese GO no continuo con C4, tal como exige el plan. Recuerde que C4 es el switch real: a partir de ahi la app empieza a leer y escribir en `compas-prod`, y entra en juego el esquema de rollback RB-1/RB-2/RB-3 de la seccion 6 del plan.
 
 ## Seccion Sergio (Builder 2) · Fase A y Fase D
 
