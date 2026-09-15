@@ -39,6 +39,8 @@
 ## 2. MongoDB Atlas (organización existente — Opción A)
 
 > ✅ **Ejecutado (20-jul-2026, decisión CEO):** `compas` vive en el **cluster del proyecto SISMO-V3** (`sismo-v3.onh5xm.mongodb.net`) — facilita futuras integraciones con SISMO-V3 y es donde ya existía `compas_app`. Entorno ÚNICO de desarrollo (sin `compas_stg`, ver principio rector de CLAUDE.md); staging se monta en go-live. Sembrado verificado: índices auth+forense+dominio, 32 rubros, 3 config. `compas_audit` probado en vivo: no puede escribir fuera de `audit_log` ni hacer update en él (DoD #6). La `compas` huérfana sembrada por error en `sismo-prod` (V2) fue eliminada.
+>
+> ⚠️ **CORRECCION 2026-09-15:** compas migrada al cluster propio compas-prod (M0, AWS us-east-1, proyecto SISMO-V3). sismo-v3 ya no aloja compas en produccion. Rol y usuarios: rama A4.1 (mismos compas_app/compas_audit). Dump pre-migracion en disco del CEO (ruta y SHA256 en BUILD-migracion-cluster.md). Sin backup automatico: riesgo aceptado por el CEO (handshake).
 
 - [x] Database `compas` en el cluster de SISMO-V3 (`compas_stg`: diferida a go-live)
 - [x] Usuario `compas_app`: readWrite SOLO sobre `compas`

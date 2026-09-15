@@ -364,3 +364,22 @@ Nota tecnica del CEO, guardada en memoria para Fase C: la conexion con `mongodb+
 **Fase A completa (A1-A6).** Fase D (cierre de docs) sigue esperando a que Jorge cierre C9.
 
 Nota pendiente para el arranque de Fase D (confirmado por el CEO 2026-09-15, no es bloqueo): la seccion 4 del plan (linea 66) dice "D arranca al cierre del no-retorno (C8)", pero el encabezado propio de Fase D dice "arranca tras C9". C9 es lo correcto. Corregir esa linea del plan junto con los ajustes de D1 cuando Sergio entre a Fase D.
+
+## Fase D · Cierre documental (Sergio)
+
+C9 cerrado por Jorge, congelamiento P6 levantado (ver seccion Jorge arriba). Arranca Fase D.
+
+### D1 - HECHO
+
+Nota de correccion agregada en `docs/RUNBOOK-INFRA.md`, seccion 2, debajo de la linea "Ejecutado (20-jul-2026)": migracion a `compas-prod` (M0, AWS us-east-1, proyecto SISMO-V3), sismo-v3 ya no aloja compas en produccion, rol/usuarios rama A4.1, dump en disco del CEO, sin backup automatico (riesgo aceptado). Nada existente reescrito, mismo patron de nota fechada que ya usa el archivo.
+
+### D2 - HECHO (Evidencia pendiente del hash de D3)
+
+Verificado antes de abrir el archivo: sin lock de Excel sobre `COMPAS_Control_Desarrollo.xlsx` (proceso EXCEL.EXE corriendo en la maquina pero sin archivo `~$COMPAS_Control...` de bloqueo; no es este archivo el que esta abierto). Fila `INFRA-01`: `Estado` -> `Hecha`, `Fecha cierre` -> `2026-09-15`. Columna `Evidencia / Nota` (H193) sin tocar todavia: se completa con el hash del commit de D3 en un commit de seguimiento inmediato despues de D3 (el commit no puede citar su propio hash). Encabezados y formulas del Dashboard no tocados (solo se escribieron celdas de datos F193/G193).
+
+### D4 - Recomendaciones pendientes de decision del CEO (no ejecutadas, solo registradas)
+
+- Dump manual mensual de `compas-prod` (mas alla del que se hizo pre-migracion), para no depender de un solo respaldo.
+- Alerta de storage al 70% en Atlas para `compas-prod` (M0 tiene limite de espacio fijo, sin autoscale).
+- El keep-alive de Render (`ver memoria keep-alive-render-free.md`) pinguea `/health`, NO genera actividad real contra Mongo; no sirve como sustituto de un chequeo de conexion a la base.
+- Borrar la base `compas` vieja en `sismo-v3` queda FUERA de este plan (las URIs viejas solo se deprecaron en el INVENTARIO en C9, la data sigue ahi). Requiere decision explicita aparte.
